@@ -170,7 +170,7 @@
                                                     'cotizacion' => $muestra->cotizacion->coti_num,
                                                     'item' => $muestra->cotio_item,
                                                     'instance' => $muestra->instance_number
-                                                ]) }}">{{ $muestra->cotio_descripcion ?? 'N/A' }} {{ $muestra->id ? '#' . str_pad($muestra->id, 8, '0', STR_PAD_LEFT) : null }}</a>
+                                                ]) }}">{{ $muestra->cotio_descripcion ?? 'N/A' }}</a>
                                             </td>
                                             <td>
                                                 <span class="d-block">{{ $muestra->fecha_inicio_muestreo->format('d/m/Y') }}</span>

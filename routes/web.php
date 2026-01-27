@@ -27,6 +27,7 @@ use App\Http\Controllers\ItemController;
 use App\Http\Controllers\MetodosController;
 use App\Http\Controllers\LeyNormativaController;
 use App\Http\Controllers\VariableController;
+use App\Http\Controllers\CustomerController;
 
 
 
@@ -81,6 +82,8 @@ Route::middleware(CheckAuth::class)->group(function () {
     Route::post('/notificaciones/leer-todas', [SimpleNotificationController::class, 'marcarTodasComoLeidas'])->name('notificaciones.leer-todas');
     Route::post('/notificaciones/marcar-leidas', [SimpleNotificationController::class, 'marcarLeidas'])->name('notificaciones.marcar-leidas');
     
+    // Ruta para usuarios clientes
+    Route::get('/customers', [CustomerController::class, 'index'])->name('customers.index');
 });
 
 // Rutas para usuarios con nivel 900 o más (admin)
@@ -117,6 +120,7 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
     Route::post('/users', [UserController::class, 'storeUser'])->name('users.storeUser');
     Route::get('/users/{usu_codigo}', [UserController::class, 'showUser'])->name('users.showUser');
     Route::put('/users/{usu_codigo}', [UserController::class, 'update'])->name('users.update');
+    Route::get('/users/exportar/excel', [UserController::class, 'exportar'])->name('users.exportar');
     
 
     // Gestión de sectores
@@ -180,9 +184,13 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
     Route::post('/asignar-detalles-analisis', [OrdenController::class, 'asignarDetallesAnalisis'])->name('asignar.detalles-analisis');
     Route::post('/ordenes/{ordenId}/asignacion-masiva', [OrdenController::class, 'asignacionMasiva'])->name('ordenes.asignacionMasiva');
     Route::post('/ordenes/finalizar-todas', [OrdenController::class, 'finalizarTodas'])->name('ordenes.finalizar-todas');
+    Route::post('/ordenes/finalizar-analisis-seleccionados', [OrdenController::class, 'finalizarAnalisisSeleccionados'])->name('ordenes.finalizar-analisis-seleccionados');
+    Route::post('/ordenes/asignar-responsables-analisis-seleccionados', [OrdenController::class, 'asignarResponsablesAnalisisSeleccionados'])->name('ordenes.asignar-responsables-analisis-seleccionados');
     Route::post('/ordenes/{ordenId}/remover-responsable', [OrdenController::class, 'removerResponsable'])->name('ordenes.remover-responsable');
     Route::put('/ordenes/{cotio_numcoti}/editar-responsables', [OrdenController::class, 'editarResponsables'])->name('ordenes.editar-responsables');
+    Route::post('/ordenes/{cotio_numcoti}/editar-responsables', [OrdenController::class, 'editarResponsables'])->name('ordenes.editar-responsables');
     Route::delete('/ordenes/{cotio_numcoti}/quitar-responsable', [OrdenController::class, 'quitarResponsable'])->name('ordenes.quitar-responsable');
+    Route::post('/ordenes/{cotio_numcoti}/quitar-responsable', [OrdenController::class, 'quitarResponsable'])->name('ordenes.quitar-responsable');
     Route::get('/debug/responsables/{cotio_numcoti}', [OrdenController::class, 'debugResponsables'])->name('debug.responsables');
     Route::delete('/debug/forzar-eliminacion/{cotio_numcoti}', [OrdenController::class, 'forzarEliminacion'])->name('debug.forzar-eliminacion');
     Route::post('/ordenes/{cotio_numcoti}/{cotio_item}/{cotio_subitem}/{instance}/enable-informe', [OrdenController::class, 'enableInforme'])->name('ordenes.enable-informe');
@@ -208,12 +216,16 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
     Route::post('/muestras/recoordinar', [MuestrasController::class, 'recoordinar'])->name('muestras.recoordinar');
     Route::put('/muestras/update-variable', [MuestrasController::class, 'updateVariable'])->name('muestras.updateVariable');
     Route::put('/muestras/update-all-data', [MuestrasController::class, 'updateAllData'])->name('muestras.updateAllData');
+    Route::post('/muestras/update-all-data', [MuestrasController::class, 'updateAllData'])->name('muestras.updateAllData');
+    Route::post('/muestras/update-all-data', [MuestrasController::class, 'updateAllData'])->name('muestras.updateAllData');
     Route::post('/muestras/pasar-directo-a-ot/{cotio_numcoti}/{cotio_item}/{instance_number}', [MuestrasController::class, 'pasarDirectoAOT'])->name('muestras.pasar-directo-a-ot');
     Route::delete('/muestras/quitar-directo-a-ot/{cotio_numcoti}/{cotio_item}/{instance_number}', [MuestrasController::class, 'quitarDirectoAOT'])->name('muestras.quitar-directo-a-ot');
     Route::delete('/muestras/quitar-directo-a-ot-from-coordinador/{cotio_numcoti}/{cotio_item}/{instance_number}', [MuestrasController::class, 'quitarDirectoAOTFromCoordinador'])->name('muestras.quitar-directo-a-ot-from-coordinador');
 
     // Rutas para gestionar responsables de muestreo
     Route::put('/muestras/editar-responsables', [MuestrasController::class, 'editarResponsablesMuestreo'])->name('muestras.editar-responsables-muestreo');
+    Route::post('/muestras/editar-responsables', [MuestrasController::class, 'editarResponsablesMuestreo'])->name('muestras.editar-responsables-muestreo');
+    Route::post('/muestras/quitar-responsable-muestreo', [MuestrasController::class, 'quitarResponsableMuestreo'])->name('muestras.quitar-responsable-muestreo');
     Route::delete('/muestras/quitar-responsable-muestreo', [MuestrasController::class, 'quitarResponsableMuestreo'])->name('muestras.quitar-responsable-muestreo');
     Route::post('/api/get-responsables-muestreo', [MuestrasController::class, 'getResponsablesMuestreo'])->name('api.get-responsables-muestreo');
 
@@ -308,10 +320,16 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
     Route::get('leyes-normativas', [LeyNormativaController::class, 'index'])->name('leyes-normativas.index');
     Route::get('leyes-normativas/create', [LeyNormativaController::class, 'create'])->name('leyes-normativas.create');
     Route::post('leyes-normativas/store', [LeyNormativaController::class, 'store'])->name('leyes-normativas.store');
+    // Rutas específicas deben ir antes de las rutas con parámetros dinámicos
+    Route::get('leyes-normativas/export/template', [LeyNormativaController::class, 'exportTemplate'])->name('leyes-normativas.export.template');
+    Route::get('leyes-normativas/import', [LeyNormativaController::class, 'showImport'])->name('leyes-normativas.import');
+    Route::post('leyes-normativas/import', [LeyNormativaController::class, 'import'])->name('leyes-normativas.import.process');
+    // Rutas con parámetros dinámicos al final
     Route::get('leyes-normativas/{leyNormativa}', [LeyNormativaController::class, 'show'])->name('leyes-normativas.show');
     Route::get('leyes-normativas/{leyNormativa}/edit', [LeyNormativaController::class, 'edit'])->name('leyes-normativas.edit');
     Route::put('leyes-normativas/{leyNormativa}', [LeyNormativaController::class, 'update'])->name('leyes-normativas.update');
-    Route::delete('leyes-normativas/{leyNormativa}', [LeyNormativaController::class, 'delete'])->name('leyes-normativas.delete');
+    Route::get('leyes-normativas/{leyNormativa}/delete', [LeyNormativaController::class, 'delete'])->name('leyes-normativas.delete');
+    Route::delete('leyes-normativas/{leyNormativa}', [LeyNormativaController::class, 'destroy'])->name('leyes-normativas.destroy');
     Route::delete('leyes-normativas/{leyNormativa}/remove-variable', [LeyNormativaController::class, 'removeVariable'])->name('leyes-normativas.remove-variable');
     
     // Variables
@@ -395,9 +413,13 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
     Route::post('/asignar-detalles-analisis', [OrdenController::class, 'asignarDetallesAnalisis'])->name('asignar.detalles-analisis');
     Route::post('/ordenes/{ordenId}/asignacion-masiva', [OrdenController::class, 'asignacionMasiva'])->name('ordenes.asignacionMasiva');
     Route::post('/ordenes/finalizar-todas', [OrdenController::class, 'finalizarTodas'])->name('ordenes.finalizar-todas');
+    Route::post('/ordenes/finalizar-analisis-seleccionados', [OrdenController::class, 'finalizarAnalisisSeleccionados'])->name('ordenes.finalizar-analisis-seleccionados');
+    Route::post('/ordenes/asignar-responsables-analisis-seleccionados', [OrdenController::class, 'asignarResponsablesAnalisisSeleccionados'])->name('ordenes.asignar-responsables-analisis-seleccionados');
     Route::post('/ordenes/{ordenId}/remover-responsable', [OrdenController::class, 'removerResponsable'])->name('ordenes.remover-responsable');
     Route::put('/ordenes/{cotio_numcoti}/editar-responsables', [OrdenController::class, 'editarResponsables'])->name('ordenes.editar-responsables');
+    Route::post('/ordenes/{cotio_numcoti}/editar-responsables', [OrdenController::class, 'editarResponsables'])->name('ordenes.editar-responsables');
     Route::delete('/ordenes/{cotio_numcoti}/quitar-responsable', [OrdenController::class, 'quitarResponsable'])->name('ordenes.quitar-responsable');
+    Route::post('/ordenes/{cotio_numcoti}/quitar-responsable', [OrdenController::class, 'quitarResponsable'])->name('ordenes.quitar-responsable');
     Route::get('/debug/responsables/{cotio_numcoti}', [OrdenController::class, 'debugResponsables'])->name('debug.responsables');
     Route::delete('/debug/forzar-eliminacion/{cotio_numcoti}', [OrdenController::class, 'forzarEliminacion'])->name('debug.forzar-eliminacion');
     Route::post('/ordenes/{cotio_numcoti}/{cotio_item}/{cotio_subitem}/{instance}/enable-informe', [OrdenController::class, 'enableInforme'])->name('ordenes.enable-informe');
@@ -416,6 +438,7 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
     Route::post('/users', [UserController::class, 'storeUser'])->name('users.storeUser');
     Route::get('/users/{usu_codigo}', [UserController::class, 'showUser'])->name('users.showUser');
     Route::put('/users/{usu_codigo}', [UserController::class, 'update'])->name('users.update');
+    Route::get('/users/exportar/excel', [UserController::class, 'exportar'])->name('users.exportar');
     
 
     // Gestión de sectores
@@ -438,6 +461,8 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
     Route::get('/cotizaciones/{cotizacion}/categoria/{item}/{instance}', [CotioController::class, 'verCategoria'])->name('categoria.ver');
 
     Route::get('/dashboard/muestreo', [DashboardController::class, 'dashboardMuestreo'])->name('dashboard.muestreo');
+    Route::post('/dashboard/muestreo/exportar', [DashboardController::class, 'exportarMuestrasMuestreo'])->name('dashboard.muestreo.exportar');
+    Route::post('/dashboard/analisis/exportar', [DashboardController::class, 'exportarAnalisis'])->name('dashboard.analisis.exportar');
     
     Route::post('/asignar-fechas', [CotioController::class, 'asignarFechas'])->name('asignar.fechas');
     Route::post('/tareas/actualizar-estado', [CotioController::class, 'actualizarEstado'])->name('tareas.actualizar-estado');
@@ -491,6 +516,7 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
     Route::post('/muestras/recoordinar', [MuestrasController::class, 'recoordinar'])->name('muestras.recoordinar');
     Route::put('/muestras/update-variable', [MuestrasController::class, 'updateVariable'])->name('muestras.updateVariable');
     Route::put('/muestras/update-all-data', [MuestrasController::class, 'updateAllData'])->name('muestras.updateAllData');
+    Route::post('/muestras/update-all-data', [MuestrasController::class, 'updateAllData'])->name('muestras.updateAllData');
 
 
     // Gestión de vehículos
@@ -509,6 +535,7 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
     Route::post('/users', [UserController::class, 'storeUser'])->name('users.storeUser');
     Route::get('/users/{usu_codigo}', [UserController::class, 'showUser'])->name('users.showUser');
     Route::put('/users/{usu_codigo}', [UserController::class, 'update'])->name('users.update');
+    Route::get('/users/exportar/excel', [UserController::class, 'exportar'])->name('users.exportar');
     
 
     // Gestión de sectores
@@ -535,6 +562,8 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
     Route::get('/ventas', [VentasController::class, 'index'])->name('ventas.index');
     Route::get('/ventas/create', [VentasController::class, 'create'])->name('ventas.create');
     Route::post('/ventas', [VentasController::class, 'store'])->name('ventas.store');
+    Route::get('/ventas/buscar-para-clonar', [VentasController::class, 'buscarParaClonar'])->name('ventas.buscar-para-clonar');
+    Route::get('/ventas/{cotiNum}/obtener-para-clonar', [VentasController::class, 'obtenerParaClonar'])->name('ventas.obtener-para-clonar');
     Route::get('/ventas/{id}/edit', [VentasController::class, 'edit'])->name('ventas.edit');
     Route::get('/ventas/{id}/print', [VentasController::class, 'imprimir'])->name('ventas.print');
     Route::put('/ventas/{id}', [VentasController::class, 'update'])->name('ventas.update');
@@ -542,12 +571,15 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
     
     // APIs para ventas/cotizaciones
     Route::get('/api/clientes/buscar', [VentasController::class, 'buscarClientes'])->name('api.clientes.buscar');
+    Route::get('/api/clientes/{codigo}/empresas-relacionadas', [VentasController::class, 'obtenerEmpresasRelacionadas'])->name('api.clientes.empresas-relacionadas');
     Route::get('/api/clientes/{codigo}', [VentasController::class, 'obtenerCliente'])->name('api.clientes.obtener');
     Route::get('/api/ensayos', [VentasController::class, 'obtenerEnsayos'])->name('api.ensayos');
     Route::get('/api/componentes', [VentasController::class, 'obtenerComponentes'])->name('api.componentes');
     Route::get('/api/metodos-muestreo', [VentasController::class, 'obtenerMetodosMuestreo'])->name('api.metodos-muestreo');
     Route::get('/api/metodos-analisis', [VentasController::class, 'obtenerMetodosAnalisis'])->name('api.metodos-analisis');
     Route::get('/api/leyes-normativas', [VentasController::class, 'obtenerLeyesNormativas'])->name('api.leyes-normativas');
+    Route::get('/api/cotizaciones/{cotiNum}/versiones', [VentasController::class, 'obtenerVersiones'])->name('api.cotizaciones.versiones');
+    Route::get('/api/cotizaciones/{cotiNum}/versiones/{version}', [VentasController::class, 'cargarVersion'])->name('api.cotizaciones.cargar-version');
 
     Route::get('/clientes', [ClientesController::class, 'index'])->name('clientes.index');
     Route::get('/clientes/create', [ClientesController::class, 'create'])->name('clientes.create');
@@ -588,7 +620,7 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
     // Route::resource('leyes-normativas', App\Http\Controllers\LeyNormativaController::class)->parameters([
     //     'leyes-normativas' => 'leyNormativa'
     // ]);
-    Route::get('leyes-normativas/{leyNormativa}/delete', [App\Http\Controllers\LeyNormativaController::class, 'delete'])->name('leyes-normativas.delete');
+    // Nota: Las rutas de leyes-normativas están definidas arriba en la línea 308
     
     // Variables
     Route::resource('variables', App\Http\Controllers\VariableController::class);

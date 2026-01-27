@@ -46,9 +46,19 @@
             </select>
         </div>
         <div class="col-auto">
+            <select name="matriz" class="form-select">
+                <option value="">Todas las matrices</option>
+                @foreach($matrices as $matriz)
+                    <option value="{{ $matriz->matriz_codigo }}" {{ $matrizCodigo === $matriz->matriz_codigo ? 'selected' : '' }}>
+                        {{ $matriz->matriz_codigo }} - {{ $matriz->matriz_descripcion }}
+                    </option>
+                @endforeach
+            </select>
+        </div>
+        <div class="col-auto">
             <button type="submit" class="btn btn-outline-secondary">Buscar</button>
         </div>
-        @if($search || $tipo)
+        @if($search || $tipo || $matrizCodigo)
         <div class="col-auto">
             <a href="{{ route('items.index') }}" class="btn btn-outline-danger">Limpiar</a>
         </div>
@@ -68,6 +78,7 @@
                             <th>Unidad de medida</th>
                             <th>Método Muestreo</th>
                             <th>Método</th>
+                            <th>Matriz</th>
                             <th>Componentes asociados</th>
                             <th>Precio</th>
                             <th style="width: 180px; text-align: center;">Acciones</th>
@@ -77,12 +88,27 @@
                         @forelse($items as $item)
                             <tr>
                                 <td class="align-middle">{{ $item->id }}</td>
-                                <td class="align-middle">{{ $item->cotio_descripcion }}</td>
+                                <td class="align-middle">
+                                    {{ $item->cotio_descripcion }}
+                                    @if(!$item->es_muestra && $item->agrupadores->isNotEmpty())
+                                        <br>
+                                        <small class="text-muted">
+                                            ({{ $item->agrupadores->pluck('cotio_descripcion')->join(', ') }})
+                                        </small>
+                                    @endif
+                                </td>
                                 <td class="align-middle">{{ $item->es_muestra ? 'Agrupador' : 'Componente' }}</td>
                                 <td class="align-middle">{{ $item->limites_establecidos ?? '-' }}</td>
                                 <td class="align-middle">{{ $item->unidad_medida ?? '-' }}</td>
                                 <td class="align-middle">{{ optional($item->metodoMuestreo)->metodo_descripcion ?? '-' }}</td>
                                 <td class="align-middle">{{ optional($item->metodoAnalitico)->metodo_descripcion ?? '-' }}</td>
+                                <td class="align-middle">
+                                    @if($item->matrices->isNotEmpty())
+                                        {{ $item->matrices->pluck('matriz_descripcion')->join(', ') }}
+                                    @else
+                                        -
+                                    @endif
+                                </td>
                                 <td class="align-middle">
                                     @if($item->es_muestra)
                                         <span class="badge bg-info text-dark">{{ $item->componentesAsociados->count() }}</span>
@@ -90,8 +116,14 @@
                                         <span class="text-muted">-</span>
                                     @endif
                                 </td>
-                                <td class="align-middle">{{ $item->precio ?? '-' }}</td>
-                                <td class="text-center">
+                                <td class="align-middle">
+                                    @if($item->precio !== null)
+                                        $ {{ number_format($item->precio, 2, ',', '.') }}
+                                    @else
+                                        -
+                                    @endif
+                                </td>
+                                <td class="text-center" style="vertical-align: middle;">
                                     <a href="{{ route('items.edit', $item) }}" class="btn btn-sm btn-outline-primary">
                                         <x-heroicon-o-pencil style="width: 16px; height: 16px;" />
                                     </a>

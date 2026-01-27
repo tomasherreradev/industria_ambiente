@@ -10,7 +10,7 @@
         <h1 class="mb-0">
             Detalle de Muestra
             @if($instanceNumber)
-                <span class="fs-5 text-muted">(Muestra {{ $instancia->id ? '#' . str_pad($instancia->id, 8, '0', STR_PAD_LEFT) : null }})</span>
+                <span class="fs-5 text-muted">(Muestra #{{ $instancia->instance_number }})</span>
             @endif
         </h1>
         <a href="{{ url()->previous() }}" class="btn btn-outline-secondary">
@@ -99,6 +99,58 @@
                     @endif
                 </div>
             </div>
+            
+            @php
+                // Parsear notas internas desde la categoría (ensayo)
+                $notasInternas = [];
+                
+                // Obtener la categoría (ensayo) - intentar primero con la relación, luego directamente
+                $categoria = $instancia->muestra ?? null;
+                if (!$categoria) {
+                    // Si la relación no está cargada, obtenerla directamente
+                    $categoria = \App\Models\Cotio::where('cotio_numcoti', $instancia->cotio_numcoti)
+                        ->where('cotio_item', $instancia->cotio_item)
+                        ->where('cotio_subitem', 0)
+                        ->first();
+                }
+                
+                if ($categoria && !empty($categoria->cotio_nota_contenido)) {
+                    try {
+                        $notasParsed = json_decode($categoria->cotio_nota_contenido, true);
+                        if (is_array($notasParsed)) {
+                            $notasInternas = collect($notasParsed)->filter(function($nota) {
+                                return isset($nota['tipo']) && $nota['tipo'] === 'interna';
+                            })->values()->toArray();
+                        } else {
+                            // Formato antiguo: nota simple
+                            if (!empty($categoria->cotio_nota_tipo) && $categoria->cotio_nota_tipo === 'interna') {
+                                $notasInternas = [['tipo' => 'interna', 'contenido' => $categoria->cotio_nota_contenido]];
+                            }
+                        }
+                    } catch (\Exception $e) {
+                        // No es JSON, es formato antiguo
+                        if (!empty($categoria->cotio_nota_tipo) && $categoria->cotio_nota_tipo === 'interna') {
+                            $notasInternas = [['tipo' => 'interna', 'contenido' => $categoria->cotio_nota_contenido]];
+                        }
+                    }
+                }
+            @endphp
+            
+            @if(!empty($notasInternas))
+                <div class="alert alert-warning mt-3">
+                    <div class="d-flex align-items-start">
+                        <div class="me-2">
+                            <x-heroicon-o-information-circle style="width: 20px; height: 20px;" class="text-warning" />
+                        </div>
+                        <div class="flex-grow-1">
+                            <strong class="d-block mb-1">Notas Internas:</strong>
+                            @foreach($notasInternas as $nota)
+                                <p class="mb-2">{{ $nota['contenido'] ?? '' }}</p>
+                            @endforeach
+                        </div>
+                    </div>
+                </div>
+            @endif
 
             @if($instancia->herramientasLab->count() > 0)
             <div class="mt-3 pt-3 border-top">

@@ -97,23 +97,82 @@
         <div class="col-lg-8">
             <div class="card shadow-sm h-100">
                 <div class="card-header bg-white">
-                    <div class="d-flex justify-content-between align-items-center">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                         <h5 class="mb-0">Muestras Asignadas</h5>
-                        <div class="dropdown">
-                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="filterDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-                                <i class="fas fa-filter me-1"></i> Filtrar
+                        <div class="d-flex gap-2 flex-wrap">
+                            <!-- Filtro de Estado -->
+                            <div class="dropdown">
+                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="filterEstadoDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <i class="fas fa-filter me-1"></i> Estado
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="filterEstadoDropdown">
+                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'all', 'muestreador' => request('muestreador', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'zona' => request('zona', 'all')]) }}">Todos</a></li>
+                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'coordinado muestreo', 'muestreador' => request('muestreador', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'zona' => request('zona', 'all')]) }}">Pendientes</a></li>
+                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'en revision muestreo', 'muestreador' => request('muestreador', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'zona' => request('zona', 'all')]) }}">En proceso</a></li>
+                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'muestreado', 'muestreador' => request('muestreador', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'zona' => request('zona', 'all')]) }}">Finalizados</a></li>
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'proximos', 'muestreador' => request('muestreador', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'zona' => request('zona', 'all')]) }}">Próximos 3 días</a></li>
+                                </ul>
+                            </div>
+                            
+                            <!-- Filtro de Muestreador -->
+                            <div class="dropdown">
+                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="filterMuestreadorDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <i class="fas fa-user me-1"></i> Muestreador
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="filterMuestreadorDropdown">
+                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['muestreador' => 'all', 'estado' => request('estado', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'zona' => request('zona', 'all')]) }}">Todos</a></li>
+                                    @foreach($muestreadores as $muestreador)
+                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['muestreador' => $muestreador->usu_codigo, 'estado' => request('estado', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'zona' => request('zona', 'all')]) }}">{{ $muestreador->usu_descripcion }}</a></li>
+                                    @endforeach
+                                </ul>
+                            </div>
+                            
+                            <!-- Filtro de Vehículo -->
+                            <div class="dropdown">
+                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="filterVehiculoDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <i class="fas fa-car me-1"></i> Vehículo
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="filterVehiculoDropdown">
+                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['vehiculo' => 'all', 'estado' => request('estado', 'all'), 'muestreador' => request('muestreador', 'all'), 'zona' => request('zona', 'all')]) }}">Todos</a></li>
+                                    @foreach($vehiculosDisponibles as $vehiculo)
+                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['vehiculo' => $vehiculo->id, 'estado' => request('estado', 'all'), 'muestreador' => request('muestreador', 'all'), 'zona' => request('zona', 'all')]) }}">{{ $vehiculo->patente }} - {{ $vehiculo->marca }} {{ $vehiculo->modelo }}</a></li>
+                                    @endforeach
+                                </ul>
+                            </div>
+                            
+                            <!-- Filtro de Zona -->
+                            <div class="dropdown">
+                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="filterZonaDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <i class="fas fa-map-marker-alt me-1"></i> Zona
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="filterZonaDropdown">
+                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['zona' => 'all', 'estado' => request('estado', 'all'), 'muestreador' => request('muestreador', 'all'), 'vehiculo' => request('vehiculo', 'all')]) }}">Todas</a></li>
+                                    @foreach($zonasDisponibles as $zona)
+                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['zona' => $zona->zon_codigo, 'estado' => request('estado', 'all'), 'muestreador' => request('muestreador', 'all'), 'vehiculo' => request('vehiculo', 'all')]) }}">{{ $zona->zon_descripcion }}</a></li>
+                                    @endforeach
+                                </ul>
+                            </div>
+                            
+                            <!-- Botón para limpiar filtros -->
+                            @if(request('estado') != 'all' || request('muestreador') != 'all' || request('vehiculo') != 'all' || request('zona') != 'all')
+                            <a href="{{ route('dashboard.muestreo') }}" class="btn btn-sm btn-outline-danger">
+                                <i class="fas fa-times me-1"></i> Limpiar
+                            </a>
+                            @endif
+                            
+                            <!-- Botón para exportar -->
+                            <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#modalExportar">
+                                <i class="fas fa-file-excel me-1"></i> Exportar
                             </button>
-                            <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="filterDropdown">
-                                <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'all']) }}">Todos</a></li>
-                                <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'coordinado muestreo']) }}">Pendientes</a></li>
-                                <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'en revision muestreo']) }}">En proceso</a></li>
-                                <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'muestreado']) }}">Finalizados</a></li>
-                                <li><hr class="dropdown-divider"></li>
-                                <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'proximos']) }}">Próximos 3 días</a></li>
-                            </ul>
                         </div>
                     </div>
-                    <p class="text-muted small mb-0">Muestras asignadas a mi o a mi equipo</p>
+                    <p class="text-muted small mb-0">
+                        Muestras asignadas a mi o a mi equipo
+                        @if(isset($esDiaUno) && $esDiaUno)
+                            <span class="badge bg-info ms-2">Filtrado por mes actual (día 1)</span>
+                        @endif
+                    </p>
                 </div>
                 <div class="card-body p-0">
                     <div class="table-responsive">
@@ -135,18 +194,22 @@
                                             {{ $muestra->cotizacion->coti_num ?? 'N/A' }}
                                         </a>
                                     </td>
-                                    <td style="max-width: 200px;" title="{{ $muestra->cotio_descripcion }} - Muestra {{ $muestra->id ? '#' . str_pad($muestra->id, 8, '0', STR_PAD_LEFT) : null }}">
+                                    <td style="max-width: 200px;" title="{{ $muestra->cotio_descripcion }}">
                                         <a href="{{ route('muestras.ver', [
                                             'cotizacion' => $muestra->cotizacion->coti_num,
                                             'item' => $muestra->cotio_item,
                                             'instance' => $muestra->instance_number
                                         ]) }}" class="text-primary">
-                                            {{ $muestra->cotio_descripcion }} - Muestra {{ $muestra->id ? '#' . str_pad($muestra->id, 8, '0', STR_PAD_LEFT) : null }}
+                                            {{ $muestra->cotio_descripcion }}
                                         </a>
                                     </td>
                                     <td>
-                                        <span class="d-block">{{ $muestra->fecha_muestreo->format('d/m/Y') }}</span>
-                                        <small class="text-muted">{{ $muestra->fecha_muestreo->format('H:i') }}</small>
+                                        @if($muestra->fecha_muestreo)
+                                            <span class="d-block">{{ $muestra->fecha_muestreo->format('d/m/Y') }}</span>
+                                            <small class="text-muted">{{ $muestra->fecha_muestreo->format('H:i') }}</small>
+                                        @else
+                                            <span class="text-muted">Sin fecha</span>
+                                        @endif
                                     </td>
                                     <td>
                                         @if($muestra->responsablesMuestreo->count() > 0)
@@ -252,9 +315,9 @@
                         <div class="list-group-item border-0 px-0 py-2">
                             <div class="d-flex justify-content-between align-items-start mb-1">
                                 <span class="fw-bold">#{{ $muestra->cotizacion->coti_num ?? 'N/A' }}</span>
-                                <small class="text-muted">{{ $muestra->fecha_muestreo->format('d/m H:i') }}</small>
+                                <small class="text-muted">{{ $muestra->fecha_muestreo ? $muestra->fecha_muestreo->format('d/m H:i') : 'Sin fecha' }}</small>
                             </div>
-                            <p class="mb-1 small text-truncate">{{ $muestra->cotio_descripcion }} {{ $muestra->id ? '#' . str_pad($muestra->id, 8, '0', STR_PAD_LEFT) : null }}</p>
+                            <p class="mb-1 small text-truncate">{{ $muestra->cotio_descripcion }}</p>
                             <div class="d-flex justify-content-between align-items-center">
                                 <span class="badge bg-{{ $muestra->cotio_estado == 'coordinado muestreo' ? 'warning text-dark' : ($muestra->cotio_estado == 'en revision muestreo' ? 'info text-dark' : 'success') }} small">
                                     {{ Str::title(str_replace('_', ' ', $muestra->cotio_estado)) }}
@@ -337,6 +400,47 @@
     </div>
 </div>
 
+{{-- Modal para Exportar --}}
+<div class="modal fade" id="modalExportar" tabindex="-1" aria-labelledby="modalExportarLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalExportarLabel">
+                    <i class="fas fa-file-excel me-2"></i>Exportar Muestras a Excel
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="{{ route('dashboard.muestreo.exportar') }}" method="POST" id="formExportar">
+                @csrf
+                <div class="modal-body">
+                    <p class="text-muted mb-3">Seleccione el período para exportar las muestras:</p>
+                    
+                    <div class="mb-3">
+                        <label for="fecha_desde" class="form-label">Fecha Desde <span class="text-danger">*</span></label>
+                        <input type="date" class="form-control" id="fecha_desde" name="fecha_desde" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="fecha_hasta" class="form-label">Fecha Hasta <span class="text-danger">*</span></label>
+                        <input type="date" class="form-control" id="fecha_hasta" name="fecha_hasta" required>
+                    </div>
+                    
+                    <div class="alert alert-info mb-0">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <small>El archivo incluirá: N° Cotización, Nombre de la Muestra, Descripción, Responsables, Estado, Fechas de Inicio y Fin, Vehículo, Zona y Cliente.</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-download me-2"></i>Exportar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function() {
@@ -346,16 +450,55 @@
             return new bootstrap.Tooltip(tooltipTriggerEl);
         });
     
-        // Actualizar el texto del botón dropdown según el estado actual
+        // Actualizar el texto de los botones dropdown según los filtros actuales
         const currentEstado = '{{ $estadoFiltro }}';
-        const filterDropdown = document.getElementById('filterDropdown');
-        const filterOptions = document.querySelectorAll('.filter-option');
+        const currentMuestreador = '{{ $muestreadorFiltro }}';
+        const currentVehiculo = '{{ $vehiculoFiltro }}';
+        const currentZona = '{{ $zonaFiltro }}';
         
-        filterOptions.forEach(option => {
-            if (option.getAttribute('href').includes(`estado=${currentEstado}`)) {
-                filterDropdown.innerHTML = `<i class="fas fa-filter me-1"></i> ${option.textContent}`;
-            }
-        });
+        // Actualizar botón de Estado
+        const filterEstadoDropdown = document.getElementById('filterEstadoDropdown');
+        if (filterEstadoDropdown) {
+            const estadoOptions = filterEstadoDropdown.nextElementSibling.querySelectorAll('.filter-option');
+            estadoOptions.forEach(option => {
+                if (option.getAttribute('href').includes(`estado=${currentEstado}`)) {
+                    filterEstadoDropdown.innerHTML = `<i class="fas fa-filter me-1"></i> Estado: ${option.textContent}`;
+                }
+            });
+        }
+        
+        // Actualizar botón de Muestreador
+        const filterMuestreadorDropdown = document.getElementById('filterMuestreadorDropdown');
+        if (filterMuestreadorDropdown && currentMuestreador !== 'all') {
+            const muestreadorOptions = filterMuestreadorDropdown.nextElementSibling.querySelectorAll('.filter-option');
+            muestreadorOptions.forEach(option => {
+                if (option.getAttribute('href').includes(`muestreador=${currentMuestreador}`)) {
+                    filterMuestreadorDropdown.innerHTML = `<i class="fas fa-user me-1"></i> ${option.textContent}`;
+                }
+            });
+        }
+        
+        // Actualizar botón de Vehículo
+        const filterVehiculoDropdown = document.getElementById('filterVehiculoDropdown');
+        if (filterVehiculoDropdown && currentVehiculo !== 'all') {
+            const vehiculoOptions = filterVehiculoDropdown.nextElementSibling.querySelectorAll('.filter-option');
+            vehiculoOptions.forEach(option => {
+                if (option.getAttribute('href').includes(`vehiculo=${currentVehiculo}`)) {
+                    filterVehiculoDropdown.innerHTML = `<i class="fas fa-car me-1"></i> ${option.textContent.split(' - ')[0]}`;
+                }
+            });
+        }
+        
+        // Actualizar botón de Zona
+        const filterZonaDropdown = document.getElementById('filterZonaDropdown');
+        if (filterZonaDropdown && currentZona !== 'all') {
+            const zonaOptions = filterZonaDropdown.nextElementSibling.querySelectorAll('.filter-option');
+            zonaOptions.forEach(option => {
+                if (option.getAttribute('href').includes(`zona=${currentZona}`)) {
+                    filterZonaDropdown.innerHTML = `<i class="fas fa-map-marker-alt me-1"></i> ${option.textContent}`;
+                }
+            });
+        }
 
         // Verificar si el canvas existe
         const canvas = document.getElementById('estadoMuestrasChart');
@@ -427,6 +570,40 @@
             });
         } catch (error) {
             console.error('Error al crear el gráfico:', error);
+        }
+
+        // Validación del formulario de exportación
+        const formExportar = document.getElementById('formExportar');
+        if (formExportar) {
+            formExportar.addEventListener('submit', function(e) {
+                const fechaDesde = document.getElementById('fecha_desde').value;
+                const fechaHasta = document.getElementById('fecha_hasta').value;
+                
+                if (!fechaDesde || !fechaHasta) {
+                    e.preventDefault();
+                    alert('Por favor, complete ambas fechas.');
+                    return false;
+                }
+                
+                if (new Date(fechaDesde) > new Date(fechaHasta)) {
+                    e.preventDefault();
+                    alert('La fecha desde debe ser anterior o igual a la fecha hasta.');
+                    return false;
+                }
+            });
+        }
+
+        // Establecer valores por defecto en el modal (mes actual)
+        const modalExportar = document.getElementById('modalExportar');
+        if (modalExportar) {
+            modalExportar.addEventListener('show.bs.modal', function() {
+                const hoy = new Date();
+                const primerDiaMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+                const ultimoDiaMes = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0);
+                
+                document.getElementById('fecha_desde').value = primerDiaMes.toISOString().split('T')[0];
+                document.getElementById('fecha_hasta').value = ultimoDiaMes.toISOString().split('T')[0];
+            });
         }
     });
 </script>

@@ -13,7 +13,21 @@
         <x-heroicon-o-chevron-up id="chevron-{{ $cotizacion->coti_num }}" class="text-white" style="width: 20px; height: 20px;" />
     </div>
     <div id="info-{{ $cotizacion->coti_num }}" class="card-body" style="display: none;">
-        @if(!empty($cotizacion->coti_para))
+        @php
+            $empresaRelacionada = null;
+            if ($cotizacion->coti_cli_empresa) {
+                $empresaRelacionada = \App\Models\ClienteEmpresaRelacionada::find($cotizacion->coti_cli_empresa);
+            }
+        @endphp
+        @if($empresaRelacionada)
+            <div class="mb-2">
+                <strong>Para:</strong>
+                {{ $empresaRelacionada->razon_social }}
+                @if($empresaRelacionada->cuit)
+                    <small class="text-muted">(CUIT: {{ $empresaRelacionada->cuit }})</small>
+                @endif
+            </div>
+        @elseif(!empty($cotizacion->coti_para))
             <div class="mb-2">
                 <strong>Para:</strong>
                 {{ $cotizacion->coti_para }}

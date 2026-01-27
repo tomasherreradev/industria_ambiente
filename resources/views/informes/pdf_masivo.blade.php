@@ -176,7 +176,7 @@
         <div class="section">
             <div class="d-flex justify-content-between">
                 <h2 class="section-title">Reporte #{{ $index + 1 }} - {{ $muestra->cotio_descripcion ?? 'EFLUENTE LÍQUIDO' }}</h2>
-                <p style="margin-left: 450px; margin-top: -30px;">O.T.N: {{ $muestra->id ? '#' . str_pad($muestra->id, 8, '0', STR_PAD_LEFT) : null }}</p>
+                <p style="margin-left: 450px; margin-top: -30px;">O.T.N: #{{ $muestra->otn ?? 'N/A' }}</p>
             </div>
             <div class="info-grid">
                 <div class="info-item">

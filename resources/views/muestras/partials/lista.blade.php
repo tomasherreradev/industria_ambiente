@@ -90,19 +90,22 @@
                                 <a href="{{ url('/show/'.$coti->coti_num) }}" 
                                    class="btn btn-sm btn-outline-primary" 
                                    data-bs-toggle="tooltip" 
-                                   title="Gestionar muestras">
+                                   title="Gestionar muestras"
+                                   data-bs-placement="bottom">
                                    <x-heroicon-o-pencil style="width: 15px; height: 15px;" />
                                 </a>
                                 <a href="{{ url('/cotizaciones/'.$coti->coti_num) }}" 
                                    class="btn btn-sm btn-outline-secondary" 
                                    data-bs-toggle="tooltip" 
-                                   title="Ver detalles">
+                                   title="Ver detalles"
+                                   data-bs-placement="bottom">
                                     <x-heroicon-o-document-magnifying-glass style="width: 15px; height: 15px;" />
                                 </a>
                                 <a href="https://www.google.com/maps/search/?api=1&query={{ urlencode($coti->coti_direccioncli.', '.$coti->coti_localidad.', '.$coti->coti_partido) }}" 
                                    class="btn btn-sm btn-outline-info" 
                                    data-bs-toggle="tooltip" 
-                                   title="Ver en mapa">
+                                   title="Ver en mapa"
+                                   data-bs-placement="bottom">  
                                    <x-heroicon-o-map style="width: 15px; height: 15px;" />
                                 </a>
                             </div>

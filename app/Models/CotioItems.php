@@ -16,6 +16,7 @@ class CotioItems extends Model
         'id', // IMPORTANTE: la tabla legacy no tiene autoincrement; se asigna manualmente
         'cotio_descripcion',
         'es_muestra',
+        'agregable_a_comps',
         'limites_establecidos',
         'limite_cuantificacion',
         'metodo',
@@ -27,6 +28,7 @@ class CotioItems extends Model
 
     protected $casts = [
         'es_muestra' => 'boolean',
+        'agregable_a_comps' => 'boolean',
         'precio' => 'decimal:2',
         'limite_cuantificacion' => 'decimal:6'
     ];
@@ -77,11 +79,21 @@ class CotioItems extends Model
     }
 
     /**
-     * Relación con la matriz asociada.
+     * Relación con la matriz asociada (directa, para agrupadores).
      */
     public function matriz()
     {
         return $this->belongsTo(Matriz::class, 'matriz_codigo', 'matriz_codigo');
+    }
+
+    /**
+     * Relación many-to-many con matrices a través de la tabla pivote.
+     * Permite que componentes y agrupadores estén relacionados con múltiples matrices.
+     */
+    public function matrices()
+    {
+        return $this->belongsToMany(Matriz::class, 'cotio_items_matriz', 'cotio_item_id', 'matriz_codigo')
+            ->withTimestamps();
     }
 
     /**

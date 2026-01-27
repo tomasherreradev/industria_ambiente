@@ -6,9 +6,7 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1 class="mb-0">
             Detalle de Muestra
-            {{-- @if($instanceNumber)
-                <span class="fs-5 text-muted">(Muestra {{ $instancia->id ? '#' . str_pad($instancia->id, 8, '0', STR_PAD_LEFT) : null }})</span>
-            @endif --}}
+    
         </h1>
         <a href="{{ url()->previous() }}" class="btn btn-outline-secondary">
             <i class="fas fa-arrow-left me-1"></i> Volver
@@ -71,13 +69,20 @@
                 <div class="col-md-4">
                     <p><strong>Cotización:</strong> {{ $instancia->cotio_numcoti }}</p>
                     <p><strong>Identificación:</strong> {{ $instancia->cotio_identificacion ?? 'N/A' }}</p>
+                    {{-- @if($instancia->fecha_identificacion)
+                        <p><strong>Fecha Identificación:</strong> 
+                            {{ \Carbon\Carbon::parse($instancia->fecha_identificacion)->format('d/m/Y H:i') }}
+                        </p>
+                    @endif --}}
+                    <p><strong>N° Precinto:</strong> {{ $instancia->nro_precinto ?? 'N/A' }}</p>
+                    <p><strong>N° Cadena:</strong> {{ $instancia->nro_cadena ?? 'N/A' }}</p>
                 </div>
                 <div class="col-md-4">
                     <p><strong>Fecha Inicio:</strong> 
                         {{ $instancia->fecha_inicio_muestreo ? \Carbon\Carbon::parse($instancia->fecha_inicio_muestreo)->format('d/m/Y') : 'N/A' }}
                     </p>
                     <p><strong>Fecha Fin:</strong> 
-                        {{ $instancia->fecha_fin_muestreo ? \Carbon\Carbon::parse($instancia->fecha_fin_muestreo)->format('d/m/Y') : 'N/A' }}
+                        {{$instancia->fecha_identificacion ? $instancia->fecha_identificacion : $instancia->fecha_fin_muestreo ?? 'N/A'}}
                     </p>
                 </div>
                 @if(Auth::user()->rol != 'laboratorio')
@@ -99,6 +104,58 @@
                     @endif
                 </div>
             </div>
+            
+            @php
+                // Parsear notas internas desde la categoría (ensayo)
+                $notasInternas = [];
+                
+                // Obtener la categoría (ensayo) - intentar primero con la relación, luego directamente
+                $categoria = $instancia->muestra ?? null;
+                if (!$categoria) {
+                    // Si la relación no está cargada, obtenerla directamente
+                    $categoria = \App\Models\Cotio::where('cotio_numcoti', $instancia->cotio_numcoti)
+                        ->where('cotio_item', $instancia->cotio_item)
+                        ->where('cotio_subitem', 0)
+                        ->first();
+                }
+                
+                if ($categoria && !empty($categoria->cotio_nota_contenido)) {
+                    try {
+                        $notasParsed = json_decode($categoria->cotio_nota_contenido, true);
+                        if (is_array($notasParsed)) {
+                            $notasInternas = collect($notasParsed)->filter(function($nota) {
+                                return isset($nota['tipo']) && $nota['tipo'] === 'interna';
+                            })->values()->toArray();
+                        } else {
+                            // Formato antiguo: nota simple
+                            if (!empty($categoria->cotio_nota_tipo) && $categoria->cotio_nota_tipo === 'interna') {
+                                $notasInternas = [['tipo' => 'interna', 'contenido' => $categoria->cotio_nota_contenido]];
+                            }
+                        }
+                    } catch (\Exception $e) {
+                        // No es JSON, es formato antiguo
+                        if (!empty($categoria->cotio_nota_tipo) && $categoria->cotio_nota_tipo === 'interna') {
+                            $notasInternas = [['tipo' => 'interna', 'contenido' => $categoria->cotio_nota_contenido]];
+                        }
+                    }
+                }
+            @endphp
+            
+            @if(!empty($notasInternas))
+                <div class="alert alert-warning mt-3">
+                    <div class="d-flex align-items-start">
+                        <div class="me-2">
+                            <x-heroicon-o-information-circle style="width: 20px; height: 20px;" class="text-warning" />
+                        </div>
+                        <div class="flex-grow-1">
+                            <strong class="d-block mb-1">Notas Internas:</strong>
+                            @foreach($notasInternas as $nota)
+                                <p class="mb-2">{{ $nota['contenido'] ?? '' }}</p>
+                            @endforeach
+                        </div>
+                    </div>
+                </div>
+            @endif
 
             {{-- @dd($instancia->herramientas) --}}
 
@@ -325,6 +382,20 @@
                                 <input type="number" step="any" class="form-control" id="longitude-display" value="{{ $instancia->longitud ?? '' }}">
                             </div>
                             <small class="text-muted">Haz clic en el mapa para seleccionar la ubicación o edita los valores de latitud y longitud manualmente.</small>
+                        </div>
+                    
+                        <div class="mb-3">
+                            <label for="nro_precinto" class="form-label">N° Precinto</label>
+                            <input type="text" class="form-control" id="nro_precinto" 
+                                   name="nro_precinto" value="{{ $instancia->nro_precinto ?? '' }}"
+                                   placeholder="Ingrese el número de precinto">
+                        </div>
+                    
+                        <div class="mb-3">
+                            <label for="nro_cadena" class="form-label">N° Cadena</label>
+                            <input type="text" class="form-control" id="nro_cadena" 
+                                   name="nro_cadena" value="{{ $instancia->nro_cadena ?? '' }}"
+                                   placeholder="Ingrese el número de cadena">
                         </div>
                     
                         <div class="d-flex justify-content-end">

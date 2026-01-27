@@ -420,6 +420,12 @@ class InformeController extends Controller
             // Si la API devuelve success, redirigir al usuario a la URL de autorización
             $urlAutorizacion = $resultado['url_autorizacion'];
             
+            Log::info("🔗 Redirigiendo a URL de autorización", [
+                'url' => $urlAutorizacion,
+                'url_length' => strlen($urlAutorizacion),
+                'identificador_documento' => $resultado['identificador_documento'] ?? null
+            ]);
+            
             if ($urlAutorizacion) {
                 // Guardar información del documento para después de la firma
                 session([
@@ -433,7 +439,19 @@ class InformeController extends Controller
                     ]
                 ]);
                 
-                return redirect()->away($urlAutorizacion);
+                // Usar redirect()->away() para redirigir a URL externa
+                // Si esto no funciona, probar con header Location directo
+                try {
+                    return redirect()->away($urlAutorizacion);
+                } catch (\Exception $e) {
+                    Log::error("❌ Error en redirect()->away(), usando header Location directo", [
+                        'error' => $e->getMessage(),
+                        'url' => $urlAutorizacion
+                    ]);
+                    
+                    // Fallback: usar header Location directo
+                    return response('', 302)->header('Location', $urlAutorizacion);
+                }
             }
         }
         

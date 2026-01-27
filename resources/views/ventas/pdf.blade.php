@@ -84,6 +84,7 @@
             border-collapse: collapse;
             font-size: 8pt;
             margin-top: 5px;
+            table-layout: fixed;
         }
         .items-table th {
             background: #f2f5ff;
@@ -98,6 +99,10 @@
             border: 1px solid #d0d7eb;
             padding: 3px 5px;
             vertical-align: top;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            word-break: break-word;
+            max-width: 0;
         }
         .items-table tr:nth-child(even) td {
             background: #fafbff;
@@ -106,6 +111,9 @@
             font-weight: bold;
             margin-bottom: 2px;
             font-size: 8.5pt;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            word-break: break-word;
         }
         .component-inline {
             font-size: 7.5pt;
@@ -189,6 +197,30 @@
             font-size: 7.5pt;
             color: #666;
         }
+        .note-inline {
+            margin-top: 4px;
+            padding-top: 4px;
+            border-top: 1px dashed #d0d7eb;
+            font-size: 7.5pt;
+            color: #555;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            word-break: break-word;
+            max-width: 100%;
+        }
+        .note-label {
+            font-weight: bold;
+            color: #0d2b5f;
+            margin-right: 4px;
+        }
+        .note-text {
+            font-style: italic;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            word-break: break-word;
+            display: inline-block;
+            max-width: 100%;
+        }
     </style>
 </head>
 <body>
@@ -228,7 +260,10 @@
         <h2 class="section-title">Datos del Cliente</h2>
         <table class="info-grid">
             <tr>
-                @if(!empty($cotizacion->coti_para))
+                @if($tieneEmpresaRelacionada && $empresaRelacionada)
+                        <td class="label">Para</td>
+                        <td class="value">{{ $empresaRelacionada['razon_social'] }}</td>
+                @elseif(!empty($cotizacion->coti_para))
                         <td class="label">Para</td>
                         <td class="value">{{ $cotizacion->coti_para}}</td>
                 @else 
@@ -297,6 +332,28 @@
         </table>
         @endif
 
+        @if($cotizacion->coti_cadena_custodia || $cotizacion->coti_muestreo)
+        <h2 class="section-title">Características del Servicio</h2>
+        <table class="info-grid">
+            <tr>
+                @if($cotizacion->coti_cadena_custodia)
+                    <td class="label">Cadena de Custodia</td>
+                    <td class="value">Requerida</td>
+                @else
+                    <td class="label">Cadena de Custodia</td>
+                    <td class="value">No requerida</td>
+                @endif
+                @if($cotizacion->coti_muestreo)
+                    <td class="label">Servicio de Muestreo</td>
+                    <td class="value">Requerido</td>
+                @else
+                    <td class="label">Servicio de Muestreo</td>
+                    <td class="value">No requerido</td>
+                @endif
+            </tr>
+        </table>
+        @endif
+
         <h2 class="section-title">Detalle de Ensayos y Componentes</h2>
         <table class="items-table">
             <thead>
@@ -312,7 +369,7 @@
                 @forelse($items as $item)
                     <tr>
                         <td>#{{ $item['item'] }}</td>
-                        <td>
+                        <td style="word-wrap: break-word; overflow-wrap: break-word; word-break: break-word;">
                             <div class="descripcion-item">{{ $item['descripcion'] }}</div>
                             @if($item['componentes']->isNotEmpty())
                                 @foreach($item['componentes'] as $componente)
@@ -321,6 +378,14 @@
                                         @if($componente['metodo'])
                                             <span class="compact-text">[{{ $componente['metodo'] }}]</span>
                                         @endif
+                                    </div>
+                                @endforeach
+                            @endif
+                            @if(!empty($item['notas']))
+                                @foreach($item['notas'] as $nota)
+                                    <div class="note-inline">
+                                        <span class="note-label">Nota:</span>
+                                        <span class="note-text">{{ $nota['contenido'] ?? '' }}</span>
                                     </div>
                                 @endforeach
                             @endif
@@ -481,11 +546,6 @@
                 <li>Los trabajos se ejecutarán según la legislación vigente y las especificaciones particulares definidas en la cotización.</li>
             </ol>
         </div>
-
-        @if(trim((string) ($cotizacion->coti_notas ?? '')) !== '')
-            <h2 class="section-title">Observaciones adicionales</h2>
-            <p class="notes">{{ trim((string) $cotizacion->coti_notas) }}</p>
-        @endif
 
         <footer>
             Para confirmar la presente cotización comuníquese con su ejecutivo comercial o responda este correo. Industria y Ambiente S.A.

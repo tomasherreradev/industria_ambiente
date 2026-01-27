@@ -233,7 +233,7 @@
                                     @if($facturada) disabled @endif
                                 >
                                 <label class="sample-label" for="sample-{{ $instancia->id }}">
-                                    Muestra #{{ str_pad($instancia->id, 8, '0', STR_PAD_LEFT) }} (#{{$instancia->instance_number }})
+                                    Muestra (#{{$instancia->instance_number }})
                                     @if($facturada)
                                         <x-heroicon-o-check-circle style="width: 18px; height: 18px; color: green;" />
                                         <span class="badge bg-success">Facturada</span>
@@ -274,6 +274,43 @@
                                     @endif
                                 </div>
                             </div>
+                            
+                            @php
+                                // Parsear notas de facturación desde JSON
+                                $notasFacturacion = [];
+                                if (!empty($categoria->cotio_nota_contenido)) {
+                                    try {
+                                        $notasParsed = json_decode($categoria->cotio_nota_contenido, true);
+                                        if (is_array($notasParsed)) {
+                                            $notasFacturacion = collect($notasParsed)->filter(function($nota) {
+                                                return isset($nota['tipo']) && $nota['tipo'] === 'fact';
+                                            })->values()->toArray();
+                                        } else {
+                                            // Formato antiguo: nota simple
+                                            if (!empty($categoria->cotio_nota_tipo) && $categoria->cotio_nota_tipo === 'fact') {
+                                                $notasFacturacion = [['tipo' => 'fact', 'contenido' => $categoria->cotio_nota_contenido]];
+                                            }
+                                        }
+                                    } catch (\Exception $e) {
+                                        // No es JSON, es formato antiguo
+                                        if (!empty($categoria->cotio_nota_tipo) && $categoria->cotio_nota_tipo === 'fact') {
+                                            $notasFacturacion = [['tipo' => 'fact', 'contenido' => $categoria->cotio_nota_contenido]];
+                                        }
+                                    }
+                                }
+                            @endphp
+                            
+                            @if(!empty($notasFacturacion))
+                                <div class="alert alert-danger mt-3">
+                                    <strong>Notas de Facturación:</strong>
+                                    @foreach($notasFacturacion as $nota)
+                                        <div class="mt-2">
+                                            <span class="badge bg-danger me-2">Nota Fact.</span>
+                                            <span>{{ $nota['contenido'] ?? '' }}</span>
+                                        </div>
+                                    @endforeach
+                                </div>
+                            @endif
                             @if(isset($instancia->precio_bruto))
                                 <div class="alert alert-secondary py-2 px-3 mt-2 mb-0">
                                     <small class="text-muted d-block">Importe muestra</small>
@@ -373,8 +410,9 @@
     }
 
     function toggleAllTasks(checkbox, instanciaId) {
-        const taskCheckboxes = document.querySelectorAll(`.analysis-checkbox[data-instancia="${instanciaId}"]`);
+        const taskCheckboxes = document.querySelectorAll(`.analysis-checkbox[data-instancia="${instanciaId}"]:not(:disabled)`);
         taskCheckboxes.forEach(taskCheckbox => {
+            // Solo marcar/desmarcar análisis que NO están facturados (no disabled)
             taskCheckbox.checked = checkbox.checked;
         });
         updateFacturarButton();
@@ -383,10 +421,14 @@
 
     function checkSampleStatus(instanciaId) {
         const sampleCheckbox = document.getElementById(`sample-${instanciaId}`);
-        const taskCheckboxes = document.querySelectorAll(`.analysis-checkbox[data-instancia="${instanciaId}"]`);
+        // Solo considerar análisis NO facturados (no disabled)
+        const taskCheckboxes = document.querySelectorAll(`.analysis-checkbox[data-instancia="${instanciaId}"]:not(:disabled)`);
         const anyChecked = Array.from(taskCheckboxes).some(cb => cb.checked);
+        const allChecked = taskCheckboxes.length > 0 && Array.from(taskCheckboxes).every(cb => cb.checked);
 
-        sampleCheckbox.checked = anyChecked || Array.from(taskCheckboxes).every(cb => cb.checked);
+        // La muestra solo se marca automáticamente si TODOS los análisis disponibles están seleccionados
+        // Si hay análisis facturados, la muestra no se puede marcar automáticamente
+        sampleCheckbox.checked = allChecked;
 
         updateFacturarButton();
         updateHiddenInputs();
@@ -406,30 +448,41 @@
         form.querySelectorAll('input[name="muestras[]"], input[name="analisis[]"]').forEach(input => input.remove());
 
         const selectedMuestras = new Set();
+        const analisisDeMuestrasSeleccionadas = new Set();
         
         // Primero identificar qué muestras están completamente seleccionadas
         document.querySelectorAll('.sample-checkbox:checked:not(:disabled)').forEach(checkbox => {
             if (checkbox.dataset.instancia) {
                 const instanciaId = checkbox.dataset.instancia;
-                // Verificar si TODOS los análisis de esta muestra están seleccionados
-                const allAnalisis = document.querySelectorAll(`.analysis-checkbox[data-instancia="${instanciaId}"]:not(:disabled)`);
+                // Verificar si TODOS los análisis NO FACTURADOS de esta muestra están seleccionados
+                const allAnalisisDisponibles = document.querySelectorAll(`.analysis-checkbox[data-instancia="${instanciaId}"]:not(:disabled)`);
                 const selectedAnalisis = document.querySelectorAll(`.analysis-checkbox[data-instancia="${instanciaId}"]:checked:not(:disabled)`);
                 
                 // Solo agregar la muestra si:
                 // 1. El checkbox de muestra está marcado Y
-                // 2. TODOS los análisis están seleccionados (o no hay análisis)
-                if (allAnalisis.length === 0 || allAnalisis.length === selectedAnalisis.length) {
+                // 2. TODOS los análisis DISPONIBLES (no facturados) están seleccionados (o no hay análisis disponibles)
+                if (allAnalisisDisponibles.length === 0 || allAnalisisDisponibles.length === selectedAnalisis.length) {
                     selectedMuestras.add(instanciaId);
+                    
+                    // IMPORTANTE: Cuando se selecciona una muestra completa, también incluir TODOS sus análisis no facturados
+                    // para que se marquen como facturados en el backend
+                    allAnalisisDisponibles.forEach(analisisCheckbox => {
+                        if (analisisCheckbox.dataset.analisisId) {
+                            analisisDeMuestrasSeleccionadas.add(analisisCheckbox.dataset.analisisId);
+                        }
+                    });
                 }
             }
         });
 
         // Recopilar análisis seleccionados SOLO de muestras que NO están completamente seleccionadas
+        // Y que NO estén ya facturados
         document.querySelectorAll('.analysis-checkbox:checked:not(:disabled)').forEach(checkbox => {
             if (checkbox.dataset.analisisId && checkbox.dataset.instancia) {
                 const instanciaId = checkbox.dataset.instancia;
                 
                 // Si la muestra está completamente seleccionada, NO enviar los análisis individuales
+                // (ya se enviaron en el paso anterior)
                 if (!selectedMuestras.has(instanciaId)) {
                     const input = document.createElement('input');
                     input.type = 'hidden';
@@ -448,6 +501,15 @@
             input.value = instanciaId;
             form.appendChild(input);
         });
+        
+        // IMPORTANTE: Agregar todos los análisis de las muestras seleccionadas para que se marquen como facturados
+        analisisDeMuestrasSeleccionadas.forEach(analisisId => {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'analisis[]';
+            input.value = analisisId;
+            form.appendChild(input);
+        });
     }
 
     document.addEventListener('DOMContentLoaded', () => {
@@ -457,6 +519,14 @@
         document.querySelectorAll('.analysis-checkbox').forEach(checkbox => {
             checkbox.addEventListener('change', () => checkSampleStatus(checkbox.dataset.instancia));
         });
+        
+        // Verificar estado inicial de cada muestra
+        document.querySelectorAll('.sample-checkbox').forEach(checkbox => {
+            if (checkbox.dataset.instancia && !checkbox.disabled) {
+                checkSampleStatus(checkbox.dataset.instancia);
+            }
+        });
+        
         updateFacturarButton();
     });
 </script>

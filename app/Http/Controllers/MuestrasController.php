@@ -778,11 +778,47 @@ public function pasarDirectoAOT(Request $request)
         ->exists();
 
     if ($existeInstancia) {
-        // Solo actualizar todas las instancias existentes
-        CotioInstancia::where('cotio_numcoti', $cotio_numcoti)
+        // Actualizar todas las instancias existentes y copiar métodos desde Cotio
+        $instancias = CotioInstancia::where('cotio_numcoti', $cotio_numcoti)
             ->where('cotio_item', $cotio_item)
             ->where('instance_number', $instance_number)
-            ->update(['enable_ot' => true]);
+            ->get();
+        
+        // Obtener la instancia de la muestra para asignar número OT si no tiene
+        $instanciaMuestra = $instancias->firstWhere('cotio_subitem', 0);
+        $numeroOT = null;
+        
+        // Solo generar número OT si es una muestra y no tiene uno ya asignado
+        if ($instanciaMuestra && !$instanciaMuestra->otn) {
+            $numeroOT = CotioInstancia::generarNumeroOT();
+        }
+        
+        foreach ($instancias as $instancia) {
+            // Obtener datos de Cotio para copiar métodos
+            $cotio = Cotio::where('cotio_numcoti', $cotio_numcoti)
+                ->where('cotio_item', $cotio_item)
+                ->where('cotio_subitem', $instancia->cotio_subitem)
+                ->first();
+            
+            $updateData = ['enable_ot' => true];
+            
+            // Asignar número OT solo a la muestra (cotio_subitem = 0)
+            if ($instancia->cotio_subitem == 0 && $numeroOT) {
+                $updateData['otn'] = $numeroOT;
+            }
+            
+            // Copiar ambos métodos desde Cotio si están disponibles
+            if ($cotio) {
+                if ($cotio->cotio_codigometodo) {
+                    $updateData['cotio_codigometodo'] = $cotio->cotio_codigometodo;
+                }
+                if ($cotio->cotio_codigometodo_analisis) {
+                    $updateData['cotio_codigometodo_analisis'] = $cotio->cotio_codigometodo_analisis;
+                }
+            }
+            
+            $instancia->update($updateData);
+        }
 
         return response()->json([
             'success' => true,
@@ -790,27 +826,37 @@ public function pasarDirectoAOT(Request $request)
         ]);
     }
 
-    // 4. Crear nueva instancia para la muestra
+    // 4. Generar número OT para la muestra
+    $numeroOT = CotioInstancia::generarNumeroOT();
+    
+    // 5. Crear nueva instancia para la muestra (copiar ambos métodos desde Cotio)
     CotioInstancia::create([
         'cotio_numcoti' => $muestra->cotio_numcoti,
         'cotio_item' => $muestra->cotio_item,
         'cotio_subitem' => $muestra->cotio_subitem,
         'cotio_descripcion' => $muestra->cotio_descripcion,
+        'cotio_codigometodo' => $muestra->cotio_codigometodo, // Método de muestreo
+        'cotio_codigometodo_analisis' => $muestra->cotio_codigometodo_analisis, // Método de análisis
         'instance_number' => $instance_number,
         'cotio_estado' => null, 
-        'enable_ot' => true
+        'enable_ot' => true,
+        'otn' => $numeroOT // Asignar número OT solo a la muestra
     ]);
 
-    // 5. Crear nuevas instancias para cada análisis
+    // 6. Crear nuevas instancias para cada análisis (copiar ambos métodos desde Cotio)
+    // NOTA: Los análisis NO reciben número OT, solo las muestras
     foreach ($analisis as $a) {
         CotioInstancia::create([
             'cotio_numcoti' => $a->cotio_numcoti,
             'cotio_item' => $a->cotio_item,
             'cotio_subitem' => $a->cotio_subitem,
             'cotio_descripcion' => $a->cotio_descripcion,
+            'cotio_codigometodo' => $a->cotio_codigometodo, // Método de muestreo
+            'cotio_codigometodo_analisis' => $a->cotio_codigometodo_analisis, // Método de análisis
             'instance_number' => $instance_number,
             'cotio_estado' => null,
             'enable_ot' => true
+            // No se asigna otn a los análisis
         ]);
     }
 
@@ -1268,7 +1314,9 @@ public function asignacionMasiva(Request $request)
             return [
                 'descripcion' => $cotio?->cotio_descripcion,
                 'precio' => $cotio?->cotio_precio ? $cotio->cotio_precio : null,
-                'cotio_codigoum' => $cotio?->cotio_codigoum ? $cotio->cotio_codigoum : null
+                'cotio_codigoum' => $cotio?->cotio_codigoum ? $cotio->cotio_codigoum : null,
+                'cotio_codigometodo' => $cotio?->cotio_codigometodo,
+                'cotio_codigometodo_analisis' => $cotio?->cotio_codigometodo_analisis
             ];
         };
 
@@ -1321,9 +1369,11 @@ public function asignacionMasiva(Request $request)
                 'instance_number' => $instance
             ]);
 
+            // Obtener datos de cotio una sola vez
+            $cotioData = $getCotioData($item, $subitem);
+            
             // Solo modificar si es nueva instancia o fue selección manual
             if (!$instancia->exists || $itemData['isManual']) {
-                $cotioData = $getCotioData($item, $subitem);
                 if ($cotioData['descripcion'] && !$instancia->cotio_descripcion) {
                     $instancia->cotio_descripcion = $cotioData['descripcion'];
                 }
@@ -1333,12 +1383,20 @@ public function asignacionMasiva(Request $request)
                 if ($cotioData['cotio_codigoum'] !== null) {
                     $instancia->cotio_codigoum = $cotioData['cotio_codigoum'];
                 }
-
+                
                 $instancia->active_muestreo = $itemData['isManual'];
                 $instancia->fecha_muestreo = $itemData['isManual'] ? now() : null;
                 $instancia->coordinador_codigo = $userId;
                 $instancia->cotio_estado = 'coordinado muestreo';
                 $instancia->es_priori = $esPrioridad;
+            }
+            
+            // Copiar ambos métodos siempre desde Cotio (tanto para nuevas instancias como para actualizaciones)
+            if (isset($cotioData['cotio_codigometodo']) && $cotioData['cotio_codigometodo'] !== null) {
+                $instancia->cotio_codigometodo = $cotioData['cotio_codigometodo'];
+            }
+            if (isset($cotioData['cotio_codigometodo_analisis']) && $cotioData['cotio_codigometodo_analisis'] !== null) {
+                $instancia->cotio_codigometodo_analisis = $cotioData['cotio_codigometodo_analisis'];
             }
 
             // Actualizar campos comunes (solo para selecciones manuales)
@@ -1506,7 +1564,9 @@ protected function procesarAnalisisDeCategoria($cotioNumcoti, $item, $instance, 
         return [
             'descripcion' => $cotio?->cotio_descripcion,
             'precio' => $cotio?->cotio_precio ? $cotio->cotio_precio : null,
-            'cotio_codigoum' => $cotio?->cotio_codigoum ? $cotio->cotio_codigoum : null
+            'cotio_codigoum' => $cotio?->cotio_codigoum ? $cotio->cotio_codigoum : null,
+            'cotio_codigometodo' => $cotio?->cotio_codigometodo,
+            'cotio_codigometodo_analisis' => $cotio?->cotio_codigometodo_analisis
         ];
     };
 
@@ -1518,16 +1578,18 @@ protected function procesarAnalisisDeCategoria($cotioNumcoti, $item, $instance, 
             'instance_number' => $instance,
         ]);
 
+        // Obtener datos de cotio
+        $cotioData = $getCotioData($item, $analisis->cotio_subitem);
+        
         // Solo modificar si es nueva instancia
         if (!$instAn->exists) {
-            $cotioData = $getCotioData($item, $analisis->cotio_subitem);
             if ($cotioData['descripcion'] && !$instAn->cotio_descripcion) {
                 $instAn->cotio_descripcion = $cotioData['descripcion'];
             }
             if ($cotioData['precio'] !== null) {
                 $instAn->monto = $cotioData['precio'];
             }
-            if ($cotioData['cotio_codigoum'] !== null) {
+            if (isset($cotioData['cotio_codigoum']) && $cotioData['cotio_codigoum'] !== null) {
                 $instAn->cotio_codigoum = $cotioData['cotio_codigoum'];
             }
 
@@ -1539,43 +1601,52 @@ protected function procesarAnalisisDeCategoria($cotioNumcoti, $item, $instance, 
             $instAn->coordinador_codigo = $userId;
             $instAn->es_frecuente = $esFrecuente;
             $instAn->es_priori = $esPrioridad;
-            $instAn->save();
-            $updatedCount++;
+        }
+        
+        // Copiar ambos métodos siempre desde Cotio (tanto para nuevas instancias como para actualizaciones)
+        if (isset($cotioData['cotio_codigometodo']) && $cotioData['cotio_codigometodo'] !== null) {
+            $instAn->cotio_codigometodo = $cotioData['cotio_codigometodo'];
+        }
+        if (isset($cotioData['cotio_codigometodo_analisis']) && $cotioData['cotio_codigometodo_analisis'] !== null) {
+            $instAn->cotio_codigometodo_analisis = $cotioData['cotio_codigometodo_analisis'];
+        }
+        
+        $instAn->save();
+        $updatedCount++;
 
-            // Procesar variables seleccionadas para este análisis
-            $parametrosInstancia = collect(json_decode($request->parametros_seleccionados, true))
-                ->firstWhere(fn($p) => $p['item'] == $item && $p['subitem'] == $analisis->cotio_subitem && $p['instance'] == $instance);
+        // Procesar variables seleccionadas para este análisis
+        $parametrosInstancia = collect(json_decode($request->parametros_seleccionados, true))
+            ->firstWhere(fn($p) => $p['item'] == $item && $p['subitem'] == $analisis->cotio_subitem && $p['instance'] == $instance);
 
-            $selectedVariableIds = $parametrosInstancia['variables'] ?? [];
-            $mandatoryVariableIds = $mandatoryVariables[$instAn->cotio_descripcion] ?? [];
-            $allVariableIds = array_unique(array_merge($selectedVariableIds, $mandatoryVariableIds));
+        $selectedVariableIds = $parametrosInstancia['variables'] ?? [];
+        $mandatoryVariableIds = $mandatoryVariables[$instAn->cotio_descripcion] ?? [];
+        $allVariableIds = array_unique(array_merge($selectedVariableIds, $mandatoryVariableIds));
 
-            // Limpiar variables existentes
-            CotioValorVariable::where('cotio_instancia_id', $instAn->id)->delete();
+        // Limpiar variables existentes
+        CotioValorVariable::where('cotio_instancia_id', $instAn->id)->delete();
 
-            // Asignar variables en la tabla pivote
-            foreach ($allVariableIds as $variableId) {
-                $variableNombre = $variableNames[$variableId] ?? null;
-                if (!$variableNombre) continue;
+        // Asignar variables en la tabla pivote
+        foreach ($allVariableIds as $variableId) {
+            $variableNombre = $variableNames[$variableId] ?? null;
+            if (!$variableNombre) continue;
 
-                CotioValorVariable::create([
-                    'cotio_instancia_id' => $instAn->id,
-                    'variable' => $variableNombre,
-                    'valor' => null
-                ]);
-            }
+            CotioValorVariable::create([
+                'cotio_instancia_id' => $instAn->id,
+                'variable' => $variableNombre,
+                'valor' => null
+            ]);
+        }
 
-            // Asignar herramientas si se especifican
-            if (!empty($request->herramientas)) {
-                $this->actualizarHerramientas(
-                    $cotioNumcoti,
-                    $item,
-                    $analisis->cotio_subitem,
-                    $instance,
-                    $request->herramientas,
-                    $instAn->exists
-                );
-            }
+        // Asignar herramientas si se especifican
+        if (!empty($request->herramientas)) {
+            $this->actualizarHerramientas(
+                $cotioNumcoti,
+                $item,
+                $analisis->cotio_subitem,
+                $instance,
+                $request->herramientas,
+                $instAn->exists
+            );
         }
     }
 }
@@ -1755,8 +1826,14 @@ public function recoordinar(Request $request)
             throw new \Exception('La muestra no puede ser recoordinada. Se encuentra en órdenes de trabajo o su estado es avanzado.');
         }
 
+        // Obtener datos de Cotio para copiar métodos
+        $cotio = Cotio::where('cotio_numcoti', $validated['cotio_numcoti'])
+            ->where('cotio_item', $validated['cotio_item'])
+            ->where('cotio_subitem', $instancia->cotio_subitem)
+            ->first();
+        
         // Actualizar datos principales
-        $instancia->update([
+        $updateData = [
             'fecha_inicio_muestreo' => $validated['fecha_inicio_muestreo'],
             'fecha_fin_muestreo' => $validated['fecha_fin_muestreo'],
             'vehiculo_asignado' => $validated['vehiculo_asignado'],
@@ -1764,7 +1841,19 @@ public function recoordinar(Request $request)
             'cotio_estado' => 'coordinado muestreo',
             'coordinador_codigo' => Auth::user()->usu_codigo,
             'es_priori' => $validated['es_priori']
-        ]);
+        ];
+        
+        // Copiar ambos métodos desde Cotio si están disponibles
+        if ($cotio) {
+            if ($cotio->cotio_codigometodo) {
+                $updateData['cotio_codigometodo'] = $cotio->cotio_codigometodo;
+            }
+            if ($cotio->cotio_codigometodo_analisis) {
+                $updateData['cotio_codigometodo_analisis'] = $cotio->cotio_codigometodo_analisis;
+            }
+        }
+        
+        $instancia->update($updateData);
 
         Log::info('Instancia actualizada', $instancia->toArray());
         Log::info('es_priori después de actualizar:', ['es_priori' => $instancia->es_priori]);
@@ -1820,18 +1909,38 @@ public function recoordinar(Request $request)
             }
         }
 
-        // Actualizar análisis asociados
-        CotioInstancia::where([
-            'cotio_numcoti' => $validated['cotio_numcoti'],
-            'cotio_item' => $validated['cotio_item'],
-            'instance_number' => $validated['instance_number'],
-            ['cotio_subitem', '>', 0]
-        ])->update([
-            'cotio_estado' => 'coordinado muestreo',
-            'fecha_inicio_muestreo' => $validated['fecha_inicio_muestreo'],
-            'fecha_fin_muestreo' => $validated['fecha_fin_muestreo'],
-            'es_priori' => $validated['es_priori']
-        ]);
+        // Actualizar análisis asociados y copiar métodos desde Cotio
+        $analisisInstancias = CotioInstancia::where('cotio_numcoti', $validated['cotio_numcoti'])
+            ->where('cotio_item', $validated['cotio_item'])
+            ->where('instance_number', $validated['instance_number'])
+            ->where('cotio_subitem', '>', 0)
+            ->get();
+        
+        foreach ($analisisInstancias as $analisisInst) {
+            $cotioAnalisis = Cotio::where('cotio_numcoti', $validated['cotio_numcoti'])
+                ->where('cotio_item', $validated['cotio_item'])
+                ->where('cotio_subitem', $analisisInst->cotio_subitem)
+                ->first();
+            
+            $updateDataAnalisis = [
+                'cotio_estado' => 'coordinado muestreo',
+                'fecha_inicio_muestreo' => $validated['fecha_inicio_muestreo'],
+                'fecha_fin_muestreo' => $validated['fecha_fin_muestreo'],
+                'es_priori' => $validated['es_priori']
+            ];
+            
+            // Copiar ambos métodos desde Cotio si están disponibles
+            if ($cotioAnalisis) {
+                if ($cotioAnalisis->cotio_codigometodo) {
+                    $updateDataAnalisis['cotio_codigometodo'] = $cotioAnalisis->cotio_codigometodo;
+                }
+                if ($cotioAnalisis->cotio_codigometodo_analisis) {
+                    $updateDataAnalisis['cotio_codigometodo_analisis'] = $cotioAnalisis->cotio_codigometodo_analisis;
+                }
+            }
+            
+            $analisisInst->update($updateDataAnalisis);
+        }
 
         DB::commit();
 

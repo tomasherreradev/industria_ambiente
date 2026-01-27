@@ -11,6 +11,8 @@ use App\Models\Zona;
 use App\Models\CondicionPago;
 use App\Models\ListaPrecio;
 use App\Models\TipoCliente;
+use App\Models\ClienteEmpresaRelacionada;
+use App\Models\ClienteRazonSocialFacturacion;
 use Illuminate\Support\Facades\DB;
 
 class ClientesController extends Controller {
@@ -153,6 +155,11 @@ class ClientesController extends Controller {
             $cliente->cli_estado = $request->activo == '1';
             Log::info('Estado asignado:', ['estado' => $cliente->cli_estado]);
             
+            // Es Consultor
+            Log::info('Asignando es_consultor');
+            $cliente->es_consultor = $request->has('es_consultor') && $request->es_consultor == '1';
+            Log::info('Es consultor asignado:', ['es_consultor' => $cliente->es_consultor]);
+            
             // Fecha de alta
             Log::info('Asignando fecha de alta');
             $cliente->cli_fechaalta = $request->fecha_alta ?? now()->format('Y-m-d');
@@ -172,14 +179,14 @@ class ClientesController extends Controller {
             $cliente->cli_codigocrub = $request->rubro_codigo ? str_pad($request->rubro_codigo, 5, ' ', STR_PAD_RIGHT) : null;
             Log::info('Rubro asignado:', ['rubro' => $cliente->cli_codigocrub ? trim($cliente->cli_codigocrub) : null]);
             
-            // Carpeta
-            $cliente->cli_carpeta = $request->nro_carpeta;
+            // Carpeta (campo eliminado, mantener null)
+            $cliente->cli_carpeta = null;
             
-            // Documentación/Observaciones generales
-            $cliente->cli_obsgeneral = $request->documentacion;
+            // Documentación/Observaciones generales (campo eliminado)
+            // Nota: cli_obsgeneral se usa para el checkbox obs_general más adelante, no asignar aquí
             
-            // Zona comercial
-            $cliente->cli_zonacom = $request->zona_comercial;
+            // Zona comercial (campo eliminado, mantener null)
+            $cliente->cli_zonacom = null;
             
             // Promotor
             $cliente->cli_promotor = $request->promotor_codigo ? str_pad($request->promotor_codigo, 20, ' ', STR_PAD_RIGHT) : null;
@@ -216,18 +223,19 @@ class ClientesController extends Controller {
             $cliente->cli_telpago3 = $request->tel_pago3 ? str_pad($request->tel_pago3, 20, ' ', STR_PAD_RIGHT) : null;
             $cliente->cli_telpago4 = $request->tel_pago4 ? str_pad($request->tel_pago4, 20, ' ', STR_PAD_RIGHT) : null;
             
-            // Campos de horarios
-            $cliente->cli_horario1 = $request->horario1 ? str_pad($request->horario1, 10, ' ', STR_PAD_RIGHT) : null;
-            $cliente->cli_horario2 = $request->horario2 ? str_pad($request->horario2, 10, ' ', STR_PAD_RIGHT) : null;
+            // Campos de horarios (campos eliminados, mantener null)
+            $cliente->cli_horario1 = null;
+            $cliente->cli_horario2 = null;
             
-            // Campo fax
-            $cliente->cli_fax = $request->fax ? str_pad($request->fax, 30, ' ', STR_PAD_RIGHT) : null;
+            // Campo fax (campo eliminado, mantener null)
+            $cliente->cli_fax = null;
             
             // Campos de email y web
             $cliente->cli_email = $request->email ? str_pad($request->email, 30, ' ', STR_PAD_RIGHT) : null;
             $cliente->cli_email2 = $request->email2 ? str_pad($request->email2, 30, ' ', STR_PAD_RIGHT) : null;
             $cliente->cli_email3 = $request->email3 ? str_pad($request->email3, 30, ' ', STR_PAD_RIGHT) : null;
-            $cliente->cli_webpage = $request->webpage ? str_pad($request->webpage, 50, ' ', STR_PAD_RIGHT) : null;
+            // Página web (campo eliminado, mantener null)
+            $cliente->cli_webpage = null;
             
             // Campos adicionales
             $cliente->cli_generico = $request->generico ? $request->generico : 'N';
@@ -284,8 +292,8 @@ class ClientesController extends Controller {
                 ? floatval($request->sector_cromatografia_porcentaje)
                 : 0.00;
             
-            // Campo observaciones generales
-            $cliente->cli_obs = $request->documentacion ? $request->documentacion : null;
+            // Campo observaciones generales (campo documentacion eliminado, mantener null)
+            $cliente->cli_obs = null;
 
             // Campos de facturación
             Log::info('=== INICIANDO ASIGNACIÓN DE CAMPOS DE FACTURACIÓN ===');
@@ -306,25 +314,11 @@ class ClientesController extends Controller {
                 Log::info('No se proporcionó condición de pago');
             }
             
-            // Asignar cli_codigotcli desde tipo de cliente
-            Log::info('Asignando código de tipo de cliente desde tipo de cliente');
-            if ($request->tipo_cliente) {
-                $cliente->cli_codigotcli = str_pad($request->tipo_cliente, 5, ' ', STR_PAD_RIGHT);
-                Log::info('Código de tipo de cliente asignado:', ['codigo' => trim($cliente->cli_codigotcli)]);
-            } else {
-                $cliente->cli_codigotcli = null;
-                Log::info('No se proporcionó tipo de cliente, cli_codigotcli = null');
-            }
+            // Tipo de cliente (campo eliminado, mantener null)
+            $cliente->cli_codigotcli = null;
             
-            // Asignar cli_codigolp desde lista_precios
-            Log::info('Asignando lista de precios');
-            if ($request->lista_precios) {
-                $cliente->cli_codigolp = str_pad($request->lista_precios, 5, ' ', STR_PAD_RIGHT);
-                Log::info('Lista de precios asignada:', ['codigo' => trim($cliente->cli_codigolp)]);
-            } else {
-                $cliente->cli_codigolp = null;
-                Log::info('No se proporcionó lista de precios, cli_codigolp = null');
-            }
+            // Lista de precios (campo eliminado, mantener null)
+            $cliente->cli_codigolp = null;
             
             // Asignar número de precio
             Log::info('Asignando número de precio');
@@ -359,14 +353,6 @@ class ClientesController extends Controller {
             // Observaciones de facturación
             $cliente->cli_obs1 = $request->observaciones_facturacion;
 
-            // Campos de empresas relacionadas
-            $cliente->cli_rel_empresa_razon_social = $request->rel_empresa_razon_social ? str_pad($request->rel_empresa_razon_social, 255, ' ', STR_PAD_RIGHT) : null;
-            $cliente->cli_rel_empresa_cuit = $request->rel_empresa_cuit ? str_pad($request->rel_empresa_cuit, 13, ' ', STR_PAD_RIGHT) : null;
-            $cliente->cli_rel_empresa_direcciones = $request->rel_empresa_direcciones ? $request->rel_empresa_direcciones : null;
-            $cliente->cli_rel_empresa_localidad = $request->rel_empresa_localidad ? str_pad($request->rel_empresa_localidad, 50, ' ', STR_PAD_RIGHT) : null;
-            $cliente->cli_rel_empresa_partido = $request->rel_empresa_partido ? str_pad($request->rel_empresa_partido, 50, ' ', STR_PAD_RIGHT) : null;
-            $cliente->cli_rel_empresa_contacto = $request->rel_empresa_contacto ? str_pad($request->rel_empresa_contacto, 100, ' ', STR_PAD_RIGHT) : null;
-
             Log::info('=== PREPARANDO PARA GUARDAR CLIENTE ===');
             Log::info('Datos finales del cliente antes de save:', [
                 'cli_codigo' => "'" . $cliente->cli_codigo . "'",
@@ -395,6 +381,52 @@ class ClientesController extends Controller {
                     'cliente_data' => $cliente->toArray()
                 ]);
                 throw $e;
+            }
+
+            // Guardar empresas relacionadas (múltiples)
+            if ($request->has('empresas_relacionadas') && is_array($request->empresas_relacionadas)) {
+                foreach ($request->empresas_relacionadas as $empresaData) {
+                    if (!empty($empresaData['razon_social'])) {
+                        ClienteEmpresaRelacionada::create([
+                            'cli_codigo' => $cliente->cli_codigo,
+                            'razon_social' => trim($empresaData['razon_social']),
+                            'cuit' => !empty($empresaData['cuit']) ? trim($empresaData['cuit']) : null,
+                            'direcciones' => !empty($empresaData['direcciones']) ? trim($empresaData['direcciones']) : null,
+                            'localidad' => !empty($empresaData['localidad']) ? trim($empresaData['localidad']) : null,
+                            'partido' => !empty($empresaData['partido']) ? trim($empresaData['partido']) : null,
+                            'contacto' => !empty($empresaData['contacto']) ? trim($empresaData['contacto']) : null,
+                        ]);
+                    }
+                }
+            }
+
+            // Guardar razones sociales de facturación (múltiples)
+            if ($request->has('razones_sociales') && is_array($request->razones_sociales)) {
+                // Primero, verificar si hay alguna marcada como predeterminada
+                $hayPredeterminada = false;
+                foreach ($request->razones_sociales as $razonSocialData) {
+                    if (!empty($razonSocialData['es_predeterminada']) && $razonSocialData['es_predeterminada'] == '1') {
+                        $hayPredeterminada = true;
+                        break;
+                    }
+                }
+                
+                foreach ($request->razones_sociales as $razonSocialData) {
+                    if (!empty($razonSocialData['razon_social'])) {
+                        ClienteRazonSocialFacturacion::create([
+                            'cli_codigo' => $cliente->cli_codigo,
+                            'razon_social' => trim($razonSocialData['razon_social']),
+                            'cuit' => !empty($razonSocialData['cuit']) ? trim($razonSocialData['cuit']) : null,
+                            'direccion' => !empty($razonSocialData['direccion']) ? trim($razonSocialData['direccion']) : null,
+                            'condicion_iva' => !empty($razonSocialData['condicion_iva']) ? trim($razonSocialData['condicion_iva']) : null,
+                            'condicion_iva_desc' => !empty($razonSocialData['condicion_iva_desc']) ? trim($razonSocialData['condicion_iva_desc']) : null,
+                            'condicion_pago' => !empty($razonSocialData['condicion_pago']) ? trim($razonSocialData['condicion_pago']) : null,
+                            'condicion_pago_desc' => !empty($razonSocialData['condicion_pago_desc']) ? trim($razonSocialData['condicion_pago_desc']) : null,
+                            'tipo_factura' => !empty($razonSocialData['tipo_factura']) ? trim($razonSocialData['tipo_factura']) : null,
+                            'es_predeterminada' => !empty($razonSocialData['es_predeterminada']) && ($razonSocialData['es_predeterminada'] == '1' || $razonSocialData['es_predeterminada'] === 1 || $razonSocialData['es_predeterminada'] === true),
+                        ]);
+                    }
+                }
             }
 
             Log::info('Cliente creado exitosamente', ['codigo' => trim($cliente->cli_codigo)]);
@@ -460,7 +492,41 @@ class ClientesController extends Controller {
         // Cargar tipos de cliente
         $tiposCliente = TipoCliente::orderBy('tcli_descripcion')->get();
         
-        return View::make('clientes.edit', compact('cliente', 'condicionesIva', 'zonas', 'condicionesPago', 'listasPrecios', 'tiposCliente'));
+        // Cargar empresas relacionadas y preparar para JavaScript
+        $empresasRelacionadas = $cliente->empresasRelacionadas()->orderBy('razon_social')->get();
+        $empresasRelacionadasJson = $empresasRelacionadas->map(function($empresa) {
+            return [
+                'id' => $empresa->id,
+                'razon_social' => trim($empresa->razon_social),
+                'cuit' => trim($empresa->cuit ?? ''),
+                'direcciones' => trim($empresa->direcciones ?? ''),
+                'localidad' => trim($empresa->localidad ?? ''),
+                'partido' => trim($empresa->partido ?? ''),
+                'contacto' => trim($empresa->contacto ?? '')
+            ];
+        })->toArray();
+        
+        // Cargar razones sociales de facturación y preparar para JavaScript
+        $razonesSociales = ClienteRazonSocialFacturacion::where('cli_codigo', $cliente->cli_codigo)
+            ->orderBy('es_predeterminada', 'desc')
+            ->orderBy('razon_social')
+            ->get();
+        $razonesSocialesJson = $razonesSociales->map(function($razonSocial) {
+            return [
+                'id' => $razonSocial->id,
+                'razon_social' => trim($razonSocial->razon_social),
+                'cuit' => trim($razonSocial->cuit ?? ''),
+                'direccion' => trim($razonSocial->direccion ?? ''),
+                'condicion_iva' => trim($razonSocial->condicion_iva ?? ''),
+                'condicion_iva_desc' => trim($razonSocial->condicion_iva_desc ?? ''),
+                'condicion_pago' => trim($razonSocial->condicion_pago ?? ''),
+                'condicion_pago_desc' => trim($razonSocial->condicion_pago_desc ?? ''),
+                'tipo_factura' => trim($razonSocial->tipo_factura ?? ''),
+                'es_predeterminada' => $razonSocial->es_predeterminada ?? false
+            ];
+        })->toArray();
+        
+        return View::make('clientes.edit', compact('cliente', 'condicionesIva', 'zonas', 'condicionesPago', 'listasPrecios', 'tiposCliente', 'empresasRelacionadas', 'empresasRelacionadasJson', 'razonesSociales', 'razonesSocialesJson'));
     }
     
     public function update(Request $request, $id)
@@ -504,6 +570,9 @@ class ClientesController extends Controller {
             // Estado
             $cliente->cli_estado = $request->activo == '1';
             
+            // Es Consultor
+            $cliente->es_consultor = $request->has('es_consultor') && $request->es_consultor == '1';
+            
             // Fecha de alta
             $cliente->cli_fechaalta = $request->fecha_alta ?? $cliente->cli_fechaalta;
             
@@ -516,14 +585,15 @@ class ClientesController extends Controller {
             // Rubro
             $cliente->cli_codigocrub = $request->rubro_codigo ? str_pad($request->rubro_codigo, 5, ' ', STR_PAD_RIGHT) : null;
             
-            // Carpeta
-            $cliente->cli_carpeta = $request->nro_carpeta;
+            // Carpeta (campo eliminado, mantener null)
+            $cliente->cli_carpeta = null;
             
-            // Documentación/Observaciones generales
-            $cliente->cli_obsgeneral = $request->documentacion;
+            // Documentación/Observaciones generales (campo eliminado, mantener null)
+            // Nota: cli_obsgeneral también se usa para el checkbox obs_general, no lo toquemos aquí
+            // $cliente->cli_obsgeneral = null;
             
-            // Zona comercial
-            $cliente->cli_zonacom = $request->zona_comercial;
+            // Zona comercial (campo eliminado, mantener null)
+            $cliente->cli_zonacom = null;
             
             // Fecha de modificación
             if ($request->fecha_modif) {
@@ -533,12 +603,15 @@ class ClientesController extends Controller {
             // Campos de contacto
             $cliente->cli_telefono = $request->telefono ? str_pad($request->telefono, 30, ' ', STR_PAD_RIGHT) : null;
             $cliente->cli_telefono1 = $request->telefono1 ? str_pad($request->telefono1, 20, ' ', STR_PAD_RIGHT) : null;
-            $cliente->cli_horario1 = $request->horario1 ? str_pad($request->horario1, 10, ' ', STR_PAD_RIGHT) : null;
-            $cliente->cli_horario2 = $request->horario2 ? str_pad($request->horario2, 10, ' ', STR_PAD_RIGHT) : null;
-            $cliente->cli_fax = $request->fax ? str_pad($request->fax, 30, ' ', STR_PAD_RIGHT) : null;
+            // Horarios (campos eliminados, mantener null)
+            $cliente->cli_horario1 = null;
+            $cliente->cli_horario2 = null;
+            // Fax (campo eliminado, mantener null)
+            $cliente->cli_fax = null;
             $cliente->cli_email = $request->email ? str_pad($request->email, 30, ' ', STR_PAD_RIGHT) : null;
             $cliente->cli_email2 = $request->email2 ? str_pad($request->email2, 30, ' ', STR_PAD_RIGHT) : null;
-            $cliente->cli_webpage = $request->webpage ? str_pad($request->webpage, 50, ' ', STR_PAD_RIGHT) : null;
+            // Página web (campo eliminado, mantener null)
+            $cliente->cli_webpage = null;
 
             // Campos de facturación
             if ($request->condicion_iva_codigo) {
@@ -549,19 +622,11 @@ class ClientesController extends Controller {
                 $cliente->cli_codigopag = str_pad($request->condicion_pago, 5, ' ', STR_PAD_RIGHT);
             }
             
-            // Asignar cli_codigotcli desde tipo_cliente
-            if ($request->tipo_cliente) {
-                $cliente->cli_codigotcli = str_pad($request->tipo_cliente, 5, ' ', STR_PAD_RIGHT);
-            } else {
-                $cliente->cli_codigotcli = null;
-            }
+            // Tipo de cliente (campo eliminado, mantener null)
+            $cliente->cli_codigotcli = null;
             
-            // Asignar cli_codigolp desde lista_precios
-            if ($request->lista_precios) {
-                $cliente->cli_codigolp = str_pad($request->lista_precios, 5, ' ', STR_PAD_RIGHT);
-            } else {
-                $cliente->cli_codigolp = null;
-            }
+            // Lista de precios (campo eliminado, mantener null)
+            $cliente->cli_codigolp = null;
             
             // Asignar número de precio
             $cliente->cli_nroprecio = $request->nro_lp ? intval($request->nro_lp) : 1;
@@ -625,6 +690,60 @@ class ClientesController extends Controller {
                     'cliente_data' => $cliente->toArray()
                 ]);
                 throw $e;
+            }
+
+            // Guardar empresas relacionadas (múltiples)
+            // Primero eliminar las existentes
+            ClienteEmpresaRelacionada::where('cli_codigo', $cliente->cli_codigo)->delete();
+            
+            // Guardar las nuevas empresas relacionadas
+            if ($request->has('empresas_relacionadas') && is_array($request->empresas_relacionadas)) {
+                foreach ($request->empresas_relacionadas as $empresaData) {
+                    if (!empty($empresaData['razon_social'])) {
+                        ClienteEmpresaRelacionada::create([
+                            'cli_codigo' => $cliente->cli_codigo,
+                            'razon_social' => trim($empresaData['razon_social']),
+                            'cuit' => !empty($empresaData['cuit']) ? trim($empresaData['cuit']) : null,
+                            'direcciones' => !empty($empresaData['direcciones']) ? trim($empresaData['direcciones']) : null,
+                            'localidad' => !empty($empresaData['localidad']) ? trim($empresaData['localidad']) : null,
+                            'partido' => !empty($empresaData['partido']) ? trim($empresaData['partido']) : null,
+                            'contacto' => !empty($empresaData['contacto']) ? trim($empresaData['contacto']) : null,
+                        ]);
+                    }
+                }
+            }
+
+            // Guardar razones sociales de facturación (múltiples)
+            // Primero eliminar las existentes
+            ClienteRazonSocialFacturacion::where('cli_codigo', $cliente->cli_codigo)->delete();
+            
+            // Guardar las nuevas razones sociales
+            if ($request->has('razones_sociales') && is_array($request->razones_sociales)) {
+                // Primero, verificar si hay alguna marcada como predeterminada
+                $hayPredeterminada = false;
+                foreach ($request->razones_sociales as $razonSocialData) {
+                    if (!empty($razonSocialData['es_predeterminada']) && $razonSocialData['es_predeterminada'] == '1') {
+                        $hayPredeterminada = true;
+                        break;
+                    }
+                }
+                
+                foreach ($request->razones_sociales as $razonSocialData) {
+                    if (!empty($razonSocialData['razon_social'])) {
+                        ClienteRazonSocialFacturacion::create([
+                            'cli_codigo' => $cliente->cli_codigo,
+                            'razon_social' => trim($razonSocialData['razon_social']),
+                            'cuit' => !empty($razonSocialData['cuit']) ? trim($razonSocialData['cuit']) : null,
+                            'direccion' => !empty($razonSocialData['direccion']) ? trim($razonSocialData['direccion']) : null,
+                            'condicion_iva' => !empty($razonSocialData['condicion_iva']) ? trim($razonSocialData['condicion_iva']) : null,
+                            'condicion_iva_desc' => !empty($razonSocialData['condicion_iva_desc']) ? trim($razonSocialData['condicion_iva_desc']) : null,
+                            'condicion_pago' => !empty($razonSocialData['condicion_pago']) ? trim($razonSocialData['condicion_pago']) : null,
+                            'condicion_pago_desc' => !empty($razonSocialData['condicion_pago_desc']) ? trim($razonSocialData['condicion_pago_desc']) : null,
+                            'tipo_factura' => !empty($razonSocialData['tipo_factura']) ? trim($razonSocialData['tipo_factura']) : null,
+                            'es_predeterminada' => !empty($razonSocialData['es_predeterminada']) && ($razonSocialData['es_predeterminada'] == '1' || $razonSocialData['es_predeterminada'] === 1 || $razonSocialData['es_predeterminada'] === true),
+                        ]);
+                    }
+                }
             }
 
             return redirect()->route('clientes.index')

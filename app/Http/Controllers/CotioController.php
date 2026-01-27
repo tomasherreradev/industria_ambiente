@@ -83,7 +83,9 @@ public function pasarMuestreo(Request $request)
             $cotio = $allItems->get($key);
             return [
                 'descripcion' => $cotio?->cotio_descripcion,
-                'precio' => $cotio?->cotio_precio ? round($cotio->cotio_precio, 2) : null
+                'precio' => $cotio?->cotio_precio ? round($cotio->cotio_precio, 2) : null,
+                'cotio_codigometodo' => $cotio?->cotio_codigometodo,
+                'cotio_codigometodo_analisis' => $cotio?->cotio_codigometodo_analisis
             ];
         };
 
@@ -109,6 +111,14 @@ public function pasarMuestreo(Request $request)
                 }
                 if ($cotioData['precio'] !== null) {
                     $instancia->monto = $cotioData['precio'];
+                }
+                
+                // Copiar ambos métodos siempre desde Cotio
+                if (isset($cotioData['cotio_codigometodo']) && $cotioData['cotio_codigometodo'] !== null) {
+                    $instancia->cotio_codigometodo = $cotioData['cotio_codigometodo'];
+                }
+                if (isset($cotioData['cotio_codigometodo_analisis']) && $cotioData['cotio_codigometodo_analisis'] !== null) {
+                    $instancia->cotio_codigometodo_analisis = $cotioData['cotio_codigometodo_analisis'];
                 }
 
                 $instancia->active_muestreo = $activado;
@@ -148,6 +158,14 @@ public function pasarMuestreo(Request $request)
                         if ($cotioData['precio'] !== null) {
                             $analisisInst->monto = $cotioData['precio'];
                         }
+                        
+                        // Copiar ambos métodos siempre desde Cotio
+                        if (isset($cotioData['cotio_codigometodo']) && $cotioData['cotio_codigometodo'] !== null) {
+                            $analisisInst->cotio_codigometodo = $cotioData['cotio_codigometodo'];
+                        }
+                        if (isset($cotioData['cotio_codigometodo_analisis']) && $cotioData['cotio_codigometodo_analisis'] !== null) {
+                            $analisisInst->cotio_codigometodo_analisis = $cotioData['cotio_codigometodo_analisis'];
+                        }
 
                         $analisisInst->active_muestreo = $checked;
                         if ($checked) {
@@ -176,6 +194,14 @@ public function pasarMuestreo(Request $request)
                 }
                 if ($cotioData['precio'] !== null) {
                     $instAn->monto = $cotioData['precio'];
+                }
+                
+                // Copiar ambos métodos siempre desde Cotio
+                if (isset($cotioData['cotio_codigometodo']) && $cotioData['cotio_codigometodo'] !== null) {
+                    $instAn->cotio_codigometodo = $cotioData['cotio_codigometodo'];
+                }
+                if (isset($cotioData['cotio_codigometodo_analisis']) && $cotioData['cotio_codigometodo_analisis'] !== null) {
+                    $instAn->cotio_codigometodo_analisis = $cotioData['cotio_codigometodo_analisis'];
                 }
 
                 $instAn->active_muestreo = $activado;
@@ -288,6 +314,17 @@ public function asignarDetalles(Request $request)
             'instance_number' => $validated['instance']
         ]);
 
+        // Si es una nueva instancia, copiar métodos desde cotio
+        if (!$instanciaActual->exists) {
+            $muestra = Cotio::where('cotio_numcoti', $validated['cotio_numcoti'])
+                ->where('cotio_item', $validated['cotio_item'])
+                ->where('cotio_subitem', 0)
+                ->first();
+            if ($muestra) {
+                $instanciaActual->cotio_codigometodo = $muestra->cotio_codigometodo;
+            }
+        }
+
         $updateData = [];
         
         if ($request->has('vehiculo_asignado')) {
@@ -333,6 +370,17 @@ public function asignarDetalles(Request $request)
                     'cotio_subitem' => $subitem,
                     'instance_number' => $validated['instance']
                 ]);
+
+                // Si es una nueva instancia, copiar métodos desde cotio
+                if (!$instanciaAnalisis->exists) {
+                    $analisis = Cotio::where('cotio_numcoti', $validated['cotio_numcoti'])
+                        ->where('cotio_item', $item)
+                        ->where('cotio_subitem', $subitem)
+                        ->first();
+                    if ($analisis) {
+                        $instanciaAnalisis->cotio_codigometodo_analisis = $analisis->cotio_codigometodo_analisis;
+                    }
+                }
 
                 // Solo actualizar los campos que vienen en la solicitud
                 $updateAnalisisData = [];
@@ -543,6 +591,8 @@ public function asignarIdentificacionMuestra(Request $request)
             'cotio_identificacion' => 'nullable|string|max:255',
             'latitud' => 'nullable|numeric|between:-90,90',
             'longitud' => 'nullable|numeric|between:-180,180',
+            'nro_precinto' => 'nullable|string|max:100',
+            'nro_cadena' => 'nullable|string|max:100',
             'cotio_numcoti' => 'required',
             'cotio_item' => 'required',
             'instance_number' => 'required',
@@ -561,8 +611,17 @@ public function asignarIdentificacionMuestra(Request $request)
 
         $data = [
             'cotio_identificacion' => $request->cotio_identificacion,
+            'nro_precinto' => $request->nro_precinto,
+            'nro_cadena' => $request->nro_cadena,
             'cotio_estado' => 'en revision muestreo'
         ];
+
+        // Guardar automáticamente la fecha y hora cuando se actualiza la identificación
+        if ($request->filled('cotio_identificacion')) {
+            $data['fecha_identificacion'] = now();
+            // Actualizar fecha fin solo si se establece fecha_identificacion
+            $data['fecha_fin_muestreo'] = now();
+        }
 
         try {
             // Procesamiento de coordenadas
@@ -1624,9 +1683,8 @@ public function enableOt(Request $request)
     try {
         DB::beginTransaction();
         
-        // Buscar la instancia específica (usando first() ya que esperamos solo un registro)
-        $instancia = DB::table('cotio_instancias')
-            ->where('cotio_numcoti', $request->cotio_numcoti)
+        // Buscar la instancia específica usando el modelo Eloquent
+        $instancia = CotioInstancia::where('cotio_numcoti', $request->cotio_numcoti)
             ->where('cotio_item', $request->cotio_item)
             ->where('cotio_subitem', $request->cotio_subitem)
             ->where('instance_number', $request->instance)
@@ -1639,24 +1697,24 @@ public function enableOt(Request $request)
             ], 404);
         }
 
-        // Actualizar el registro
-        $result = DB::table('cotio_instancias')
-            ->where('cotio_numcoti', $request->cotio_numcoti)
-            ->where('cotio_item', $request->cotio_item)
-            ->where('cotio_subitem', $request->cotio_subitem)
-            ->where('instance_number', $request->instance)
-            ->update([
-                'enable_ot' => true,
-                'complete_muestreo' => true,
-                'cotio_estado_analisis' => null,
-                'es_priori' => $request->es_priori ?? false,
-            ]);
+        // Generar número OT solo si es una muestra (cotio_subitem = 0)
+        $instancia->enable_ot = true;
+        $instancia->complete_muestreo = true;
+        $instancia->cotio_estado_analisis = null;
+        $instancia->es_priori = $request->es_priori ?? false;
+
+        // Solo asignar número OT si es una muestra y no tiene uno ya asignado
+        if (($request->cotio_subitem == '0' || $request->cotio_subitem == 0) && !$instancia->otn) {
+            $instancia->otn = CotioInstancia::generarNumeroOT();
+        }
+
+        // Guardar la instancia
+        $result = $instancia->save();
         
         DB::commit();
         
-        if ($result === 1) {
+        if ($result) {
             return redirect()->back()->with('success', 'Instancia actualizada correctamente');
-
         } else {
             return redirect()->back()->with('error', 'No se pudo actualizar la instancia');
         }

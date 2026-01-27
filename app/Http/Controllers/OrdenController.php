@@ -934,6 +934,7 @@ public function showDetalle($ordenId)
         ->get();
 
     $agrupadas = [];
+    $metodosUnicos = collect();
 
     foreach ($categoriasHabilitadas as $categoria) {
         $item = $categoria->cotio_item;
@@ -950,11 +951,11 @@ public function showDetalle($ordenId)
 
         $tareasDeCategoria = $tareas->where('cotio_item', $item);
 
-        $instanciasConAnalisis = $instanciasMuestra->map(function($instanciaMuestra) use ($tareasDeCategoria, $cotizacion) {
-            $analisisParaInstancia = $tareasDeCategoria->map(function($tarea) use ($instanciaMuestra, $cotizacion) {
+        $instanciasConAnalisis = $instanciasMuestra->map(function($instanciaMuestra) use ($tareasDeCategoria, $cotizacion, &$metodosUnicos) {
+            $analisisParaInstancia = $tareasDeCategoria->map(function($tarea) use ($instanciaMuestra, $cotizacion, &$metodosUnicos) {
                 $tareaClonada = clone $tarea;
                 
-                $instanciaAnalisis = CotioInstancia::with('herramientas', 'responsablesAnalisis')
+                $instanciaAnalisis = CotioInstancia::with('herramientas', 'responsablesAnalisis', 'metodoAnalisis')
                     ->where([
                         'cotio_numcoti' => $cotizacion->coti_num,
                         'cotio_item' => $tarea->cotio_item,
@@ -965,6 +966,15 @@ public function showDetalle($ordenId)
 
                 if ($instanciaAnalisis) {
                     $tareaClonada->instancia = $instanciaAnalisis;
+                    
+                    // Recopilar métodos únicos
+                    $metodo = $instanciaAnalisis->getMetodoAnalisisConTrim();
+                    if ($metodo) {
+                        $metodosUnicos->push([
+                            'codigo' => trim($instanciaAnalisis->cotio_codigometodo_analisis ?? ''),
+                            'metodo' => $metodo
+                        ]);
+                    }
                 }
 
                 return $tareaClonada;
@@ -982,7 +992,14 @@ public function showDetalle($ordenId)
         ];
     }
 
-    return view('ordenes.show', compact('cotizacion', 'usuarios', 'agrupadas', 'inventario'));
+    // Obtener métodos únicos (sin duplicados)
+    $metodosUnicos = $metodosUnicos->unique(function ($item) {
+        return $item['codigo'];
+    })->map(function ($item) {
+        return $item['metodo'];
+    })->filter()->sortBy('metodo_descripcion')->values();
+
+    return view('ordenes.show', compact('cotizacion', 'usuarios', 'agrupadas', 'inventario', 'metodosUnicos'));
 }
 
 
@@ -1270,6 +1287,13 @@ public function asignarDetallesAnalisis(Request $request)
                     );
                 } else {
                     // Si no existe la instancia, la creamos
+                    // Obtener datos desde cotio para copiar métodos
+                    $cotioData = Cotio::where('cotio_numcoti', $request->cotio_numcoti)
+                        ->where('cotio_item', $tarea['item'])
+                        ->where('cotio_subitem', $tarea['subitem'])
+                        ->first();
+                    
+                    // Copiar ambos métodos siempre desde Cotio
                     $nuevaInstancia = CotioInstancia::create([
                         'cotio_numcoti' => $request->cotio_numcoti,
                         'cotio_item' => $tarea['item'],
@@ -1279,7 +1303,9 @@ public function asignarDetallesAnalisis(Request $request)
                         'fecha_inicio_ot' => $request->fecha_inicio_ot,
                         'fecha_fin_ot' => $request->fecha_fin_ot,
                         'vehiculo_asignado' => $request->vehiculo_asignado,
-                        'active_ot' => true
+                        'active_ot' => true,
+                        'cotio_codigometodo' => $cotioData->cotio_codigometodo ?? null,
+                        'cotio_codigometodo_analisis' => $cotioData->cotio_codigometodo_analisis ?? null
                     ]);
 
                     if ($request->filled('herramientas')) {
@@ -2285,7 +2311,7 @@ private function generarContenidoInforme($instancia, $analisis)
         }
     }
     $html .= '<p><strong>Fecha de Muestreo:</strong> ' . $fechaMuestreoFormateada . '</p>';
-    $html .= '<p><strong>ID de Muestra:</strong> #' . str_pad($instancia->id, 8, '0', STR_PAD_LEFT) . '</p>';
+    $html .= '<p><strong>O.T.N:</strong> #' . $instancia->otn ?? 'N/A' . '</p>';
     $html .= '</div>';
     $html .= '</div>';
     $html .= '</div>';
@@ -3403,5 +3429,131 @@ public function apiHerramientasInstancia($instanciaId)
         $instancia->observaciones_request_review = null;
         $instancia->save();
         return response()->json(['success' => true]);
+    }
+
+    public function finalizarAnalisisSeleccionados(Request $request)
+    {
+        try {
+            $request->validate([
+                'instancia_ids' => 'required|array',
+                'instancia_ids.*' => 'required|integer|exists:cotio_instancias,id'
+            ]);
+
+            $instanciaIds = $request->instancia_ids;
+
+            // Verificar que las instancias estén en OT y no estén ya finalizadas
+            // Solo trabajar con análisis (cotio_subitem > 0), no con muestras
+            $instancias = CotioInstancia::whereIn('id', $instanciaIds)
+                ->where('active_ot', true)
+                ->where('cotio_subitem', '>', 0) // Solo análisis, no muestras
+                ->where(function ($q) {
+                    $q->whereNull('cotio_estado_analisis')
+                    ->orWhere('cotio_estado_analisis', '!=', 'analizado');
+                })
+                ->get();
+
+            if ($instancias->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No hay análisis válidos para finalizar. Puede que ya estén finalizados o no estén en OT.'
+                ], 400);
+            }
+
+            // Actualizar estado a 'analizado'
+            $updatedCount = CotioInstancia::whereIn('id', $instancias->pluck('id'))
+                ->update(['cotio_estado_analisis' => 'analizado']);
+
+            return response()->json([
+                'success' => true,
+                'message' => "Se finalizaron correctamente {$updatedCount} análisis."
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error al finalizar análisis seleccionados: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al finalizar los análisis: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function asignarResponsablesAnalisisSeleccionados(Request $request)
+    {
+        try {
+            $request->validate([
+                'instancia_ids' => 'required|array',
+                'instancia_ids.*' => 'required|integer|exists:cotio_instancias,id',
+                'responsables_analisis' => 'required|array',
+                'responsables_analisis.*' => 'required|string|exists:usu,usu_codigo'
+            ]);
+
+            $instanciaIds = $request->instancia_ids;
+            $responsablesAnalisis = array_map('trim', $request->responsables_analisis);
+
+            // Verificar que las instancias sean análisis válidos (cotio_subitem > 0)
+            $instancias = CotioInstancia::whereIn('id', $instanciaIds)
+                ->where('active_ot', true)
+                ->where('cotio_subitem', '>', 0) // Solo análisis, no muestras
+                ->get();
+
+            if ($instancias->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No se encontraron análisis válidos para asignar responsables.'
+                ], 400);
+            }
+
+            // Buscar los códigos exactos en la base de datos
+            $usuariosExactos = User::whereIn('usu_codigo', $responsablesAnalisis)->get();
+            $codigosExactos = $usuariosExactos->pluck('usu_codigo')->toArray();
+
+            if (empty($codigosExactos)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No se encontraron responsables válidos.'
+                ], 400);
+            }
+
+            DB::beginTransaction();
+
+            $updatedCount = 0;
+            foreach ($instancias as $instancia) {
+                // Obtener responsables actuales
+                $responsablesActuales = $instancia->responsablesAnalisis()
+                    ->get()
+                    ->map(function($responsable) {
+                        return trim($responsable->usu_codigo);
+                    })
+                    ->toArray();
+
+                // Combinar responsables actuales con los nuevos (sin duplicados)
+                $todosLosResponsables = array_merge($responsablesActuales, $codigosExactos);
+                $responsablesFinales = array_unique(array_map('trim', $todosLosResponsables));
+
+                // Buscar códigos exactos para el sync
+                $codigosFinales = User::whereIn('usu_codigo', $responsablesFinales)
+                    ->pluck('usu_codigo')
+                    ->toArray();
+
+                // Sincronizar responsables
+                $instancia->responsablesAnalisis()->sync($codigosFinales);
+                $updatedCount++;
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => "Se asignaron correctamente los responsables a {$updatedCount} análisis."
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error al asignar responsables a análisis seleccionados: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al asignar responsables: ' . $e->getMessage()
+            ], 500);
+        }
     }
 }

@@ -4,7 +4,10 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\User;
+use App\Models\Clientes;
 use Illuminate\Support\Facades\Log;
+use Maatwebsite\Excel\Facades\Excel;
+use App\Exports\UsersExport;
 
 class UserController extends Controller
 {
@@ -36,6 +39,7 @@ class UserController extends Controller
     public function createUser()
     {
         $sectores = User::where('rol', 'sector')->get();
+        // $clientes = Clientes::where('cli_estado', true)->get();
         return view('users.create', compact('sectores'));
     }
 
@@ -203,6 +207,24 @@ class UserController extends Controller
                 'success' => false,
                 'message' => 'Error al obtener información del usuario: ' . $e->getMessage()
             ], 500);
+        }
+    }
+
+    public function exportar(Request $request)
+    {
+        try {
+            $rol = $request->get('rol');
+            
+            $nombreArchivo = 'usuarios_' . now()->format('Y_m_d_H_i') . '.xlsx';
+            
+            return Excel::download(
+                new UsersExport($rol),
+                $nombreArchivo
+            );
+            
+        } catch (\Exception $e) {
+            Log::error('Error al exportar usuarios: ' . $e->getMessage());
+            return back()->with('error', 'Error al exportar los usuarios: ' . $e->getMessage());
         }
     }
     

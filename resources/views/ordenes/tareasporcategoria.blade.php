@@ -47,7 +47,7 @@
             </form>
             
             <div class="d-flex justify-content-between align-items-center">
-                <h2 class="fw-bold mb-3">{{ $categoria->cotio_descripcion }} {{ $instanciaActual->id ? '#' . str_pad($instanciaActual->id, 8, '0', STR_PAD_LEFT) : null }} ({{ $instanciaActual->instance_number ?? ''}} / {{ $categoria->cotio_cantidad ?? ''}})</h2>
+                <h2 class="fw-bold mb-3">{{ $categoria->cotio_descripcion }} (#{{ $instanciaActual->instance_number ?? ''}} / {{ $categoria->cotio_cantidad ?? ''}})</h2>
                 <div class="d-flex gap-2">
                     <a class="btn btn-outline-primary"
                         href="https://www.google.com/maps/search/?api=1&query={{ $cotizacion->coti_direccioncli }}, {{ $cotizacion->coti_localidad }}, {{ $cotizacion->coti_partido }}">
@@ -156,6 +156,46 @@
                 </div>
             </div>
 
+            @php
+                // Parsear notas internas desde JSON
+                $notasInternas = [];
+                if (!empty($categoria->cotio_nota_contenido)) {
+                    try {
+                        $notasParsed = json_decode($categoria->cotio_nota_contenido, true);
+                        if (is_array($notasParsed)) {
+                            $notasInternas = collect($notasParsed)->filter(function($nota) {
+                                return isset($nota['tipo']) && $nota['tipo'] === 'interna';
+                            })->values()->toArray();
+                        } else {
+                            // Formato antiguo: nota simple
+                            if (!empty($categoria->cotio_nota_tipo) && $categoria->cotio_nota_tipo === 'interna') {
+                                $notasInternas = [['tipo' => 'interna', 'contenido' => $categoria->cotio_nota_contenido]];
+                            }
+                        }
+                    } catch (\Exception $e) {
+                        // No es JSON, es formato antiguo
+                        if (!empty($categoria->cotio_nota_tipo) && $categoria->cotio_nota_tipo === 'interna') {
+                            $notasInternas = [['tipo' => 'interna', 'contenido' => $categoria->cotio_nota_contenido]];
+                        }
+                    }
+                }
+            @endphp
+            
+            @if(!empty($notasInternas))
+                <div class="alert alert-warning mb-3">
+                    <div class="d-flex align-items-start">
+                        <div class="me-2">
+                            <x-heroicon-o-information-circle style="width: 20px; height: 20px;" class="text-warning" />
+                        </div>
+                        <div class="flex-grow-1">
+                            <strong class="d-block mb-1">Notas Internas:</strong>
+                            @foreach($notasInternas as $nota)
+                                <p class="mb-2">{{ $nota['contenido'] ?? '' }}</p>
+                            @endforeach
+                        </div>
+                    </div>
+                </div>
+            @endif
 
             @if($instanciaActual->cotio_identificacion)
                 <div class="alert alert-info">
@@ -372,7 +412,7 @@
         <div class="card shadow-sm">
             <div class="card-header bg-light d-flex justify-content-between align-items-center">
                 <h5 class="card-title mb-0">Análisis de la muestra</h5>
-                <div class="d-flex gap-2">
+                <div class="d-flex">
                     @php
                         $todosAnalizados = ($instanciaActual && $instanciaActual->cotio_estado_analisis === 'analizado')
                             && $tareas->every(function($t) {
@@ -380,28 +420,56 @@
                             });
                     @endphp
 
-                    @if(!$todosAnalizados && $instanciaActual->active_ot == true && $instanciaActual->enable_inform == false)
-                        <form class="p-2 mb-0" action="{{ route('ordenes.finalizar-todas', [
-                            'cotio_numcoti' => $categoria->cotio_numcoti,
-                            'cotio_item' => $categoria->cotio_item,
-                            'cotio_subitem' => $categoria->cotio_subitem,
-                            'instance_number' => $instanciaActual->instance_number
-                        ]) }}" method="POST">
-                            @csrf
-                            <button type="submit" class="btn btn-primary" onclick="this.disabled=true; this.form.submit();">
-                                <x-heroicon-o-check style="width: 20px; height: 20px;"/>
-                                Finalizar todos
-                            </button>
-                        </form>
-                    @else
-                        <button type="button" class="btn btn-outline-secondary p-2 mb-0" disabled>
-                            <x-heroicon-o-check style="width: 20px; height: 20px;"/>
-                            Todos finalizados
+
+                    @if($instanciaActual->active_ot)
+                    <div class="d-flex justify-content-between align-items-center my-1 pb-2 gap-2">
+                        <button 
+                            type="button" 
+                            class="btn btn-sm btn-outline-primary"
+                            onclick="seleccionarTodosAnalisis({{ $instanciaActual->id }}, {{ $categoria->cotio_item }}, {{ $instanciaActual->instance_number }}, {{ $instanciaActual->cotio_numcoti }})"
+                        >
+                            <i class="fas fa-check-square me-1"></i> Seleccionar todos
                         </button>
-                    @endif
+                        
+                        <!-- Menú de 3 puntitos (solo visible cuando hay análisis seleccionados) -->
+                        <div class="dropdown" id="menu-acciones-{{ $instanciaActual->id }}" style="display: none;">
+                            <button 
+                                class="btn btn-sm btn-outline-secondary dropdown-toggle" 
+                                type="button" 
+                                id="dropdownMenuButton{{ $instanciaActual->id }}" 
+                                data-bs-toggle="dropdown" 
+                                aria-expanded="false"
+                            >
+                                <i class="fas fa-ellipsis-v"></i>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="dropdownMenuButton{{ $instanciaActual->id }}">
+                                <li>
+                                    <a 
+                                        class="dropdown-item" 
+                                        href="#" 
+                                        onclick="finalizarAnalisisSeleccionados({{ $instanciaActual->id }}, {{ $categoria->cotio_item }}, {{ $instanciaActual->instance_number }}, {{ $instanciaActual->cotio_numcoti }}); return false;"
+                                    >
+                                        <i class="fas fa-check me-2"></i> Finalizar
+                                    </a>
+                                </li>
+                                <li>
+                                    <a 
+                                        class="dropdown-item" 
+                                        href="#" 
+                                        onclick="gestionarResponsablesAnalisisSeleccionados({{ $instanciaActual->id }}, {{ $categoria->cotio_item }}, {{ $instanciaActual->instance_number }}, {{ $instanciaActual->cotio_numcoti }}); return false;"
+                                    >
+                                        <i class="fas fa-users me-2"></i> Gestionar responsables
+                                    </a>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                @endif
+
                 </div>
             </div>
             <div class="card-body">
+
                 <div class="row row-cols-1 row-cols-md-2 g-3">
                     @foreach ($tareas as $tarea)
                         <div class="col">
@@ -410,13 +478,20 @@
                                     <!-- Card Header with Checkbox and Title -->
                                     <div class="d-flex justify-content-between align-items-center p-3" style="background-color: #A6C5E3; border-radius: 0.375rem 0.375rem 0 0;">
                                         <div class="form-check mb-0">
-                                            <input class="form-check-input tarea-checkbox" 
+                                            <input class="form-check-input tarea-checkbox tarea-checkbox-analisis" 
                                                 type="checkbox" 
                                                 name="tareas_seleccionadas[]" 
                                                 value="{{ $tarea->cotio_item }}_{{ $tarea->cotio_subitem }}"
                                                 id="tarea_{{ $tarea->cotio_item }}_{{ $tarea->cotio_subitem }}"
+                                                data-muestra-id="{{ $instanciaActual->id }}"
+                                                data-instancia-id="{{ $tarea->instancia->id ?? null }}"
+                                                data-item="{{ $tarea->cotio_item }}"
+                                                data-subitem="{{ $tarea->cotio_subitem }}"
+                                                data-instance="{{ $instanciaActual->instance_number }}"
+                                                data-numcoti="{{ $tarea->cotio_numcoti }}"
                                                 data-fecha-inicio="{{ $tarea->instancia && $tarea->instancia->fecha_inicio_ot ? $tarea->instancia->fecha_inicio_ot->format('Y-m-d\TH:i') : '' }}"
-                                                data-fecha-fin="{{ $tarea->instancia && $tarea->instancia->fecha_fin_ot ? $tarea->instancia->fecha_fin_ot->format('Y-m-d\TH:i') : '' }}">
+                                                data-fecha-fin="{{ $tarea->instancia && $tarea->instancia->fecha_fin_ot ? $tarea->instancia->fecha_fin_ot->format('Y-m-d\TH:i') : '' }}"
+                                                @disabled($instanciaActual->cotio_estado_analisis === 'analizado')>
                                             <label class="form-check-label" for="tarea_{{ $tarea->cotio_item }}_{{ $tarea->cotio_subitem }}">
                                                 <h5 class="card-title mb-0 d-flex align-items-center">
                                                     <x-heroicon-o-clipboard-document-list class="me-2" style="width: 1.25rem; height: 1.25rem;" />
@@ -1275,6 +1350,56 @@
     </div>
 </div>
 
+<!-- Modal para Gestionar Responsables de Análisis Seleccionados -->
+<div class="modal fade" id="gestionarResponsablesSeleccionadosModal" tabindex="-1" aria-labelledby="gestionarResponsablesSeleccionadosModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="gestionarResponsablesSeleccionadosModalLabel">
+                    <x-heroicon-o-users class="me-2" style="width: 1.25rem; height: 1.25rem;" />
+                    Gestionar Responsables de Análisis Seleccionados
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info mb-3">
+                    <i class="fas fa-info-circle me-2"></i>
+                    <span id="contadorAnalisisSeleccionados">0</span> análisis seleccionado(s)
+                </div>
+                
+                <form id="formGestionarResponsablesSeleccionados">
+                    @csrf
+                    <input type="hidden" id="instancias_ids_seleccionadas" name="instancia_ids">
+                    
+                    <div class="mb-3">
+                        <label for="responsables_seleccionados_multiple" class="form-label">
+                            <strong>Seleccionar responsables:</strong>
+                        </label>
+                        <select class="form-select" id="responsables_seleccionados_multiple" name="responsables_analisis[]" multiple style="min-height: 200px;">
+                            @foreach($usuariosAnalistas as $analista)
+                                <option value="{{ $analista->usu_codigo }}">{{ $analista->usu_descripcion }} ({{ $analista->usu_codigo }})</option>
+                            @endforeach
+                        </select>
+                        <div class="form-text">
+                            <x-heroicon-o-information-circle class="me-1" style="width: 0.875rem; height: 0.875rem;" />
+                            Seleccione uno o más responsables para asignar a todos los análisis seleccionados. Use Ctrl+Click para seleccionar múltiples.
+                        </div>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-success flex-fill">
+                            <i class="fas fa-save me-2"></i> Guardar Responsables
+                        </button>
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                            <i class="fas fa-times me-2"></i> Cancelar
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const estadoModal = document.getElementById('estadoModal');
@@ -1326,17 +1451,30 @@ document.addEventListener('DOMContentLoaded', function() {
         const form = document.getElementById('estadoForm');
         const formData = new FormData(form);
         
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || 
+                         document.querySelector('input[name="_token"]')?.value ||
+                         '{{ csrf_token() }}';
+        
         try {
             const response = await fetch('{{ route("ordenes.actualizar-estado") }}', {
                 method: 'POST',
                 body: formData,
                 headers: {
-                    'X-CSRF-TOKEN': '{{ csrf_token() }}',
-                    'Accept': 'application/json'
-                }
+                    'X-CSRF-TOKEN': csrfToken,
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                credentials: 'same-origin'
             });
             
-            const data = await response.json();
+            const contentType = response.headers.get('content-type');
+            let data;
+            if (contentType && contentType.includes('application/json')) {
+                data = await response.json();
+            } else {
+                const text = await response.text();
+                throw new Error(`Error ${response.status}: ${text || response.statusText}`);
+            }
             
             if (data.success) {
                 Swal.fire({
@@ -1360,7 +1498,7 @@ document.addEventListener('DOMContentLoaded', function() {
             Swal.fire({
                 icon: 'error',
                 title: 'Error',
-                text: 'Ocurrió un error al actualizar el estado',
+                text: error.message || 'Ocurrió un error al actualizar el estado. Verifique sus permisos.',
                 confirmButtonColor: '#3085d6',
             });
         }
@@ -1403,17 +1541,32 @@ document.getElementById('asignarForm').addEventListener('submit', async function
             tareas_seleccionadas: tareasSeleccionadas
         };
 
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || 
+                         document.querySelector('input[name="_token"]')?.value ||
+                         '{{ csrf_token() }}';
+        
         try {
             const response = await fetch("{{ route('asignar.detalles-analisis') }}", {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': "{{ csrf_token() }}"
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': csrfToken,
+                    'X-Requested-With': 'XMLHttpRequest'
                 },
+                credentials: 'same-origin',
                 body: JSON.stringify(formData)
             });
 
-            const data = await response.json();
+            const contentType = response.headers.get('content-type');
+            let data;
+            if (contentType && contentType.includes('application/json')) {
+                data = await response.json();
+            } else {
+                const text = await response.text();
+                throw new Error(`Error ${response.status}: ${text || response.statusText}`);
+            }
+            
             if (response.ok) {
                 Swal.fire({
                     icon: 'success',
@@ -1437,7 +1590,7 @@ document.getElementById('asignarForm').addEventListener('submit', async function
             Swal.fire({
                 icon: 'error',
                 title: 'Error',
-                text: "Error al asignar detalles. Ver consola para más información.",
+                text: err.message || "Error al asignar detalles. Verifique sus permisos.",
                 confirmButtonColor: '#3085d6',
             });
         }
@@ -1448,32 +1601,58 @@ document.getElementById('asignarForm').addEventListener('submit', async function
 function removerResponsable(event, instanciaId, usuarioCodigo) {
         event.preventDefault();
         
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || 
+                         document.querySelector('input[name="_token"]')?.value ||
+                         '{{ csrf_token() }}';
+        
         const url = '/muestras/remover-responsable';
         
         fetch(url, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': csrfToken,
+                'X-Requested-With': 'XMLHttpRequest'
             },
+            credentials: 'same-origin',
             body: JSON.stringify({
                 instancia_id: instanciaId,
                 usuario_codigo: usuarioCodigo
             })
         })
-        .then(response => response.json())
+        .then(response => {
+            const contentType = response.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+                return response.json();
+            } else {
+                return response.text().then(text => {
+                    throw new Error(`Error ${response.status}: ${text || response.statusText}`);
+                });
+            }
+        })
         .then(data => {
             if (data.success) {
                 location.reload();
             } else {
-                alert(data.message);
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error',
+                    text: data.message || 'Error al remover responsable',
+                    confirmButtonColor: '#3085d6'
+                });
             }
         })
         .catch(error => {
             console.error('Error al remover responsable:', error);
-            alert('Error al remover responsable');
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: error.message || 'Error al remover responsable. Verifique sus permisos.',
+                confirmButtonColor: '#3085d6'
+            });
         });
-}   
+    }
 
 
 
@@ -1524,17 +1703,32 @@ async function enviarFrecuencia() {
     
     data.es_frecuente = data.es_frecuente === '1';
 
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || 
+                     document.querySelector('input[name="_token"]')?.value ||
+                     '{{ csrf_token() }}';
+
     try {
         const response = await fetch("{{ route('asignar.frecuencia') }}", {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': "{{ csrf_token() }}"
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': csrfToken,
+                'X-Requested-With': 'XMLHttpRequest'
             },
+            credentials: 'same-origin',
             body: JSON.stringify(data)
         });
 
-        const result = await response.json();
+        const contentType = response.headers.get('content-type');
+        let result;
+        if (contentType && contentType.includes('application/json')) {
+            result = await response.json();
+        } else {
+            const text = await response.text();
+            throw new Error(`Error ${response.status}: ${text || response.statusText}`);
+        }
+        
         if (response.ok) {
             Swal.fire({
                 icon: 'success',
@@ -1557,7 +1751,7 @@ async function enviarFrecuencia() {
         Swal.fire({
             icon: 'error',
             title: 'Error',
-            text: "Error al procesar la solicitud.",
+            text: err.message || "Error al procesar la solicitud. Verifique sus permisos.",
             confirmButtonColor: '#3085d6',
         });
     }
@@ -1579,17 +1773,31 @@ async function enviarFechas() {
         cotio_subitem: cotio_subitem,
     };
 
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || 
+                     document.querySelector('input[name="_token"]')?.value ||
+                     '{{ csrf_token() }}';
+
     try {
         const response = await fetch("{{ route('asignar.fechas') }}", {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': "{{ csrf_token() }}"
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': csrfToken,
+                'X-Requested-With': 'XMLHttpRequest'
             },
+            credentials: 'same-origin',
             body: JSON.stringify(data)
         });
 
-        const result = await response.json();
+        const contentType = response.headers.get('content-type');
+        let result;
+        if (contentType && contentType.includes('application/json')) {
+            result = await response.json();
+        } else {
+            const text = await response.text();
+            throw new Error(`Error ${response.status}: ${text || response.statusText}`);
+        }
 
         if (response.ok) {
             Swal.fire({
@@ -1613,7 +1821,7 @@ async function enviarFechas() {
         Swal.fire({
             icon: 'error',
             title: 'Error',
-            text: "Error al procesar la solicitud.",
+            text: err.message || "Error al procesar la solicitud. Verifique sus permisos.",
             confirmButtonColor: '#3085d6',
         });
     }
@@ -1871,20 +2079,41 @@ document.addEventListener('DOMContentLoaded', function() {
     
     console.log('URL de envío:', url);
     
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || 
+                     document.querySelector('input[name="_token"]')?.value ||
+                     '{{ csrf_token() }}';
+    
     fetch(url, {
         method: 'POST', // Usar POST porque Laravel maneja PUT internamente
         body: formData,
         headers: {
-            'X-CSRF-TOKEN': '{{ csrf_token() }}',
-            'Accept': 'application/json'
-        }
+            'X-CSRF-TOKEN': csrfToken,
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        credentials: 'same-origin'
     })
     .then(response => {
         console.log('Respuesta recibida:', response);
+        const contentType = response.headers.get('content-type');
         if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+            if (contentType && contentType.includes('application/json')) {
+                return response.json().then(errorData => {
+                    throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+                });
+            } else {
+                return response.text().then(text => {
+                    throw new Error(`HTTP error! status: ${response.status}: ${text || response.statusText}`);
+                });
+            }
         }
-        return response.json();
+        if (contentType && contentType.includes('application/json')) {
+            return response.json();
+        } else {
+            return response.text().then(text => {
+                throw new Error(`Respuesta inesperada: ${text || response.statusText}`);
+            });
+        }
     })
     .then(data => {
         console.log('Datos de respuesta:', data);
@@ -1960,19 +2189,32 @@ window.eliminarResponsableTodasTareas = function(usuCodigo) {
             // Construir la URL
             const url = '{{ route("ordenes.remover-responsable", ["ordenId" => $cotizacion->coti_num]) }}';
             
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || 
+                             document.querySelector('input[name="_token"]')?.value ||
+                             '{{ csrf_token() }}';
+            
             console.log('Enviando petición a:', url);
             
             fetch(url, {
                 method: 'POST',
                 body: formData,
                 headers: {
-                    'X-CSRF-TOKEN': '{{ csrf_token() }}',
-                    'Accept': 'application/json'
-                }
+                    'X-CSRF-TOKEN': csrfToken,
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                credentials: 'same-origin'
             })
             .then(response => {
                 console.log('Respuesta recibida:', response);
-                return response.json();
+                const contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    return response.json();
+                } else {
+                    return response.text().then(text => {
+                        throw new Error(`Error ${response.status}: ${text || response.statusText}`);
+                    });
+                }
             })
             .then(data => {
                 console.log('Datos de respuesta:', data);
@@ -2047,17 +2289,31 @@ window.requestReview = async function(instanciaId) {
 
         const observaciones = result.value || '';
 
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || 
+                         document.querySelector('input[name="_token"]')?.value ||
+                         '{{ csrf_token() }}';
+
         const response = await fetch('/ordenes/' + instanciaId + '/request-review', {
             method: 'POST',
             headers: {
-                'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                'X-CSRF-TOKEN': csrfToken,
                 'Accept': 'application/json',
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
             },
+            credentials: 'same-origin',
             body: JSON.stringify({ observaciones })
         });
 
-        const data = await response.json();
+        const contentType = response.headers.get('content-type');
+        let data;
+        if (contentType && contentType.includes('application/json')) {
+            data = await response.json();
+        } else {
+            const text = await response.text();
+            throw new Error(`Error ${response.status}: ${text || response.statusText}`);
+        }
+        
         if (response.ok && data.success) {
             await Swal.fire({
                 icon: 'success',
@@ -2091,13 +2347,29 @@ async function requestReviewCancel(instanciaId) {
         cancelButtonText: 'No, no cancelar'
     }).then(async (result) => {
         if (result.isConfirmed) {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || 
+                             document.querySelector('input[name="_token"]')?.value ||
+                             '{{ csrf_token() }}';
+            
             const response = await fetch('/ordenes/' + instanciaId + '/request-review-cancel', {
                 method: 'POST',
                 headers: {
-                    'X-CSRF-TOKEN': '{{ csrf_token() }}',
-                    'Accept': 'application/json'
-                }
+                    'X-CSRF-TOKEN': csrfToken,
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                credentials: 'same-origin'
             });
+            
+            const contentType = response.headers.get('content-type');
+            let data;
+            if (contentType && contentType.includes('application/json')) {
+                data = await response.json();
+            } else {
+                const text = await response.text();
+                throw new Error(`Error ${response.status}: ${text || response.statusText}`);
+            }
+            
             if (response.ok) {
                 Swal.fire({
                     icon: 'success',
@@ -2111,7 +2383,7 @@ async function requestReviewCancel(instanciaId) {
                 Swal.fire({
                     icon: 'error',
                     title: 'Error',
-                    text: 'Error al cancelar la revisión de resultados'
+                    text: data.message || 'Error al cancelar la revisión de resultados'
                 });
             }
         }
@@ -2133,22 +2405,36 @@ async function verInformePreliminar(instanciaId) {
             }
         });
 
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || 
+                         document.querySelector('input[name="_token"]')?.value ||
+                         '{{ csrf_token() }}';
+
         const response = await fetch(`/ordenes/${instanciaId}/informe-preliminar`, {
             method: 'GET',
             headers: {
-                'X-CSRF-TOKEN': '{{ csrf_token() }}',
-                'Accept': 'application/json'
-            }
+                'X-CSRF-TOKEN': csrfToken,
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            credentials: 'same-origin'
         });
 
+        const contentType = response.headers.get('content-type');
         if (response.ok) {
-            const data = await response.json();
+            let data;
+            if (contentType && contentType.includes('application/json')) {
+                data = await response.json();
+            } else {
+                const text = await response.text();
+                throw new Error(`Respuesta inesperada: ${text || response.statusText}`);
+            }
             
             // Cerrar loading y mostrar informe en modal
             Swal.close();
             mostrarModalInforme(data.informe, instanciaId);
         } else {
-            throw new Error('Error al cargar el informe');
+            const text = await response.text();
+            throw new Error(`Error ${response.status}: ${text || response.statusText}`);
         }
     } catch (error) {
         console.error('Error:', error);
@@ -2217,16 +2503,29 @@ async function aprobarInforme(instanciaId) {
             }
         });
 
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || 
+                         document.querySelector('input[name="_token"]')?.value ||
+                         '{{ csrf_token() }}';
+
         const response = await fetch(`/ordenes/${instanciaId}/aprobar-informe`, {
             method: 'POST',
             headers: {
-                'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                'X-CSRF-TOKEN': csrfToken,
                 'Accept': 'application/json',
-                'Content-Type': 'application/json'
-            }
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            credentials: 'same-origin'
         });
 
-        const data = await response.json();
+        const contentType = response.headers.get('content-type');
+        let data;
+        if (contentType && contentType.includes('application/json')) {
+            data = await response.json();
+        } else {
+            const text = await response.text();
+            throw new Error(`Error ${response.status}: ${text || response.statusText}`);
+        }
 
         if (response.ok && data.success) {
             Swal.fire({
@@ -2314,8 +2613,29 @@ document.addEventListener('DOMContentLoaded', function() {
             modalInputs.innerHTML = '<div class="text-center text-muted py-4"><span class="spinner-border spinner-border-sm"></span> Cargando herramientas...</div>';
 
             // Cargar herramientas actuales por AJAX
-            fetch('/api/instancias/' + instanciaId + '/herramientas')
-                .then(response => response.json())
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || 
+                             document.querySelector('input[name="_token"]')?.value ||
+                             '{{ csrf_token() }}';
+            
+            fetch('/api/instancias/' + instanciaId + '/herramientas', {
+                method: 'GET',
+                headers: {
+                    'X-CSRF-TOKEN': csrfToken,
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                credentials: 'same-origin'
+            })
+                .then(response => {
+                    const contentType = response.headers.get('content-type');
+                    if (contentType && contentType.includes('application/json')) {
+                        return response.json();
+                    } else {
+                        return response.text().then(text => {
+                            throw new Error(`Error ${response.status}: ${text || response.statusText}`);
+                        });
+                    }
+                })
                 .then(data => {
                     let html = '';
                     html += `<label for='herramientasSelect' class='form-label'>Herramientas disponibles</label>`;
@@ -2338,8 +2658,9 @@ document.addEventListener('DOMContentLoaded', function() {
                         allowClear: true
                     });
                 })
-                .catch(() => {
-                    modalInputs.innerHTML = '<div class="text-danger">Error al cargar herramientas.</div>';
+                .catch(error => {
+                    console.error('Error:', error);
+                    modalInputs.innerHTML = '<div class="text-danger">Error al cargar herramientas. Verifique sus permisos.</div>';
                 });
         });
 
@@ -2354,15 +2675,30 @@ document.addEventListener('DOMContentLoaded', function() {
             formData.delete('herramientas[]');
             herramientas.forEach(id => formData.append('herramientas[]', id));
 
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || 
+                             form.querySelector('[name=_token]')?.value ||
+                             '{{ csrf_token() }}';
+            
             fetch(action, {
                 method: 'POST',
                 headers: {
-                    'X-CSRF-TOKEN': form.querySelector('[name=_token]').value,
+                    'X-CSRF-TOKEN': csrfToken,
                     'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
                 },
+                credentials: 'same-origin',
                 body: formData
             })
-            .then(response => response.json())
+            .then(response => {
+                const contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    return response.json();
+                } else {
+                    return response.text().then(text => {
+                        throw new Error(`Error ${response.status}: ${text || response.statusText}`);
+                    });
+                }
+            })
             .then(data => {
                 if (data.success) {
                     Swal.fire({
@@ -2381,11 +2717,12 @@ document.addEventListener('DOMContentLoaded', function() {
                     });
                 }
             })
-            .catch(() => {
+            .catch(error => {
+                console.error('Error:', error);
                 Swal.fire({
                     icon: 'error',
                     title: 'Error',
-                    text: 'Error al guardar.'
+                    text: error.message || 'Error al guardar. Verifique sus permisos.'
                 });
             });
         });
@@ -2514,20 +2851,35 @@ document.addEventListener('DOMContentLoaded', function() {
         form.appendChild(hiddenFields);
         
         // Cargar responsables actuales
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || 
+                         document.querySelector('input[name="_token"]')?.value ||
+                         '{{ csrf_token() }}';
+        
         fetch(`/api/get-responsables-analisis`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Accept': 'application/json',
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                'X-CSRF-TOKEN': csrfToken,
+                'X-Requested-With': 'XMLHttpRequest'
             },
+            credentials: 'same-origin',
             body: JSON.stringify({
                 cotio_numcoti: cotioNumcoti,
                 cotio_item: cotioItem,
                 instance_number: instance
             })
         })
-        .then(response => response.json())
+        .then(response => {
+            const contentType = response.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+                return response.json();
+            } else {
+                return response.text().then(text => {
+                    throw new Error(`Error ${response.status}: ${text || response.statusText}`);
+                });
+            }
+        })
         .then(data => {
             if (data.success) {
                 // Guardar los responsables iniciales para poder comparar después
@@ -2585,15 +2937,30 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || 
+                         document.querySelector('input[name="_token"]')?.value ||
+                         '{{ csrf_token() }}';
+        
         fetch(form.action, {
             method: 'POST',
             body: formData,
             headers: {
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-                'Accept': 'application/json'
+                'X-CSRF-TOKEN': csrfToken,
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            credentials: 'same-origin'
+        })
+        .then(response => {
+            const contentType = response.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+                return response.json();
+            } else {
+                return response.text().then(text => {
+                    throw new Error(`Error ${response.status}: ${text || response.statusText}`);
+                });
             }
         })
-        .then(response => response.json())
         .then(data => {
             console.log('Respuesta del servidor:', data);
             if (data.success) {
@@ -2621,7 +2988,7 @@ document.addEventListener('DOMContentLoaded', function() {
             Swal.fire({
                 icon: 'error',
                 title: 'Error',
-                text: 'Error al guardar.'
+                text: error.message || 'Error al guardar. Verifique sus permisos.'
             });
         });
     });
@@ -2640,13 +3007,19 @@ function quitarResponsable(responsableCodigo, cotioNumcoti, cotioItem, cotioSubi
         cancelButtonText: 'Cancelar'
     }).then((result) => {
         if (result.isConfirmed) {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || 
+                             document.querySelector('input[name="_token"]')?.value ||
+                             '{{ csrf_token() }}';
+            
             fetch(`/ordenes/${cotioNumcoti}/quitar-responsable`, {
-                method: 'DELETE',
+                method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Accept': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                    'X-CSRF-TOKEN': csrfToken,
+                    'X-Requested-With': 'XMLHttpRequest'
                 },
+                credentials: 'same-origin',
                 body: JSON.stringify({
                     cotio_item: cotioItem,
                     cotio_subitem: cotioSubitem,
@@ -2654,7 +3027,16 @@ function quitarResponsable(responsableCodigo, cotioNumcoti, cotioItem, cotioSubi
                     responsable_codigo: responsableCodigo
                 })
             })
-            .then(response => response.json())
+            .then(response => {
+                const contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    return response.json();
+                } else {
+                    return response.text().then(text => {
+                        throw new Error(`Error ${response.status}: ${text || response.statusText}`);
+                    });
+                }
+            })
             .then(data => {
                 if (data.success) {
                     Swal.fire({
@@ -2680,7 +3062,7 @@ function quitarResponsable(responsableCodigo, cotioNumcoti, cotioItem, cotioSubi
                 Swal.fire({
                     icon: 'error',
                     title: 'Error',
-                    text: 'Error al quitar el responsable'
+                    text: error.message || 'Error al quitar el responsable. Verifique sus permisos.'
                 });
             });
         }
@@ -2737,15 +3119,30 @@ document.addEventListener('DOMContentLoaded', function() {
             formData.append('responsables_analisis[]', responsable);
         });
         
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || 
+                         document.querySelector('input[name="_token"]')?.value ||
+                         '{{ csrf_token() }}';
+        
         fetch(agregarResponsablesForm.action, {
             method: 'POST',
             body: formData,
             headers: {
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-                'Accept': 'application/json'
+                'X-CSRF-TOKEN': csrfToken,
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            credentials: 'same-origin'
+        })
+        .then(response => {
+            const contentType = response.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+                return response.json();
+            } else {
+                return response.text().then(text => {
+                    throw new Error(`Error ${response.status}: ${text || response.statusText}`);
+                });
             }
         })
-        .then(response => response.json())
         .then(data => {
             if (data.success) {
                 Swal.fire({
@@ -2772,7 +3169,7 @@ document.addEventListener('DOMContentLoaded', function() {
             Swal.fire({
                 icon: 'error',
                 title: 'Error',
-                text: 'Error al agregar responsables'
+                text: error.message || 'Error al agregar responsables. Verifique sus permisos.'
             });
         });
     });
@@ -2785,13 +3182,19 @@ function cargarResponsablesActuales(cotioNumcoti, cotioItem, cotioSubitem, insta
     // Mostrar loading
     responsablesActualesList.innerHTML = '<div class="text-center"><div class="spinner-border spinner-border-sm" role="status"></div> Cargando...</div>';
     
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || 
+                     document.querySelector('input[name="_token"]')?.value ||
+                     '{{ csrf_token() }}';
+    
     fetch('/api/get-responsables-analisis', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
-            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+            'X-CSRF-TOKEN': csrfToken,
+            'X-Requested-With': 'XMLHttpRequest'
         },
+        credentials: 'same-origin',
         body: JSON.stringify({
             cotio_numcoti: cotioNumcoti,
             cotio_item: cotioItem,
@@ -2799,14 +3202,39 @@ function cargarResponsablesActuales(cotioNumcoti, cotioItem, cotioSubitem, insta
             instance_number: instanceNumber
         })
     })
-    .then(response => response.json())
+    .then(response => {
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            return response.json();
+        } else {
+            return response.text().then(text => {
+                throw new Error(`Error ${response.status}: ${text || response.statusText}`);
+            });
+        }
+    })
     .then(data => {
         if (data.success && data.responsables) {
             if (data.responsables.length > 0) {
                 // Obtener información completa de los responsables
                 Promise.all(data.responsables.map(codigo => 
-                    fetch(`/api/usuario/${codigo}`)
-                        .then(response => response.ok ? response.json() : null)
+                    fetch(`/api/usuario/${codigo}`, {
+                        method: 'GET',
+                        headers: {
+                            'X-CSRF-TOKEN': csrfToken,
+                            'Accept': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                        credentials: 'same-origin'
+                    })
+                        .then(response => {
+                            if (response.ok) {
+                                const contentType = response.headers.get('content-type');
+                                if (contentType && contentType.includes('application/json')) {
+                                    return response.json();
+                                }
+                            }
+                            return null;
+                        })
                         .catch(() => null)
                 ))
                 .then(responsablesInfo => {
@@ -2841,9 +3269,302 @@ function cargarResponsablesActuales(cotioNumcoti, cotioItem, cotioSubitem, insta
     })
     .catch(error => {
         console.error('Error cargando responsables:', error);
-        responsablesActualesList.innerHTML = '<div class="text-danger text-center">Error al cargar responsables</div>';
+        responsablesActualesList.innerHTML = '<div class="text-danger text-center">Error al cargar responsables. Verifique sus permisos.</div>';
     });
 }
+
+// Función para seleccionar todos los análisis de una muestra
+function seleccionarTodosAnalisis(muestraId, item, instance, numcoti) {
+    const checkboxes = document.querySelectorAll(
+        `.tarea-checkbox-analisis[data-muestra-id="${muestraId}"][data-item="${item}"][data-instance="${instance}"][data-numcoti="${numcoti}"]:not(:disabled)`
+    );
+    
+    if (checkboxes.length === 0) {
+        Swal.fire({
+            title: 'Sin análisis',
+            text: 'No hay análisis disponibles para seleccionar',
+            icon: 'info'
+        });
+        return;
+    }
+    
+    const todosSeleccionados = Array.from(checkboxes).every(cb => cb.checked);
+    
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = !todosSeleccionados;
+    });
+    
+    actualizarMenuAcciones(muestraId);
+}
+
+// Función para actualizar la visibilidad del menú de acciones
+function actualizarMenuAcciones(muestraId) {
+    const checkboxes = document.querySelectorAll(
+        `.tarea-checkbox-analisis[data-muestra-id="${muestraId}"]:not(:disabled)`
+    );
+    
+    const seleccionados = Array.from(checkboxes).filter(cb => cb.checked);
+    const menuAcciones = document.getElementById(`menu-acciones-${muestraId}`);
+    
+    if (menuAcciones) {
+        menuAcciones.style.display = seleccionados.length > 0 ? 'block' : 'none';
+    }
+}
+
+// Función para finalizar análisis seleccionados
+function finalizarAnalisisSeleccionados(muestraId, item, instance, numcoti) {
+    const checkboxes = document.querySelectorAll(
+        `.tarea-checkbox-analisis[data-muestra-id="${muestraId}"][data-item="${item}"][data-instance="${instance}"][data-numcoti="${numcoti}"]:checked:not(:disabled)`
+    );
+    
+    if (checkboxes.length === 0) {
+        Swal.fire({
+            title: 'Sin selección',
+            text: 'No hay análisis seleccionados para finalizar',
+            icon: 'warning'
+        });
+        return;
+    }
+
+    const instanciaIds = Array.from(checkboxes)
+        .map(cb => cb.dataset.instanciaId)
+        .filter(id => id && id !== 'null' && id !== '');
+
+    if (instanciaIds.length === 0) {
+        Swal.fire({
+            title: 'Error',
+            text: 'No se encontraron instancias válidas para finalizar',
+            icon: 'error'
+        });
+        return;
+    }
+
+    Swal.fire({
+        title: '¿Estás seguro?',
+        text: `¿Deseas finalizar ${instanciaIds.length} análisis seleccionado(s)?`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Sí, finalizar',
+        cancelButtonText: 'Cancelar'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            Swal.fire({
+                title: 'Finalizando...',
+                allowOutsideClick: false,
+                didOpen: () => {
+                    Swal.showLoading();
+                }
+            });
+
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || 
+                             document.querySelector('input[name="_token"]')?.value ||
+                             '{{ csrf_token() }}';
+            
+            fetch('/ordenes/finalizar-analisis-seleccionados', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': csrfToken,
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                credentials: 'same-origin',
+                body: JSON.stringify({
+                    instancia_ids: instanciaIds
+                })
+            })
+            .then(response => {
+                const contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    return response.json();
+                } else {
+                    return response.text().then(text => {
+                        throw new Error(`Error ${response.status}: ${text || response.statusText}`);
+                    });
+                }
+            })
+            .then(data => {
+                Swal.close();
+                if (data.success) {
+                    Swal.fire({
+                        title: '¡Éxito!',
+                        text: data.message,
+                        icon: 'success'
+                    }).then(() => {
+                        window.location.reload();
+                    });
+                } else {
+                    Swal.fire({
+                        title: 'Error',
+                        text: data.message || 'Error al finalizar los análisis',
+                        icon: 'error'
+                    });
+                }
+            })
+            .catch(error => {
+                Swal.close();
+                console.error('Error:', error);
+                Swal.fire({
+                    title: 'Error',
+                    text: error.message || 'Ocurrió un error al finalizar los análisis. Verifique sus permisos.',
+                    icon: 'error'
+                });
+            });
+        }
+    });
+}
+
+// Función para gestionar responsables de análisis seleccionados
+function gestionarResponsablesAnalisisSeleccionados(muestraId, item, instance, numcoti) {
+    const checkboxes = document.querySelectorAll(
+        `.tarea-checkbox-analisis[data-muestra-id="${muestraId}"][data-item="${item}"][data-instance="${instance}"][data-numcoti="${numcoti}"]:checked:not(:disabled)`
+    );
+
+    if (checkboxes.length === 0) {
+        Swal.fire({
+            title: 'Sin selección',
+            text: 'No hay análisis seleccionados para gestionar responsables',
+            icon: 'warning'
+        });
+        return;
+    }
+
+    const instanciaIds = Array.from(checkboxes)
+        .map(cb => cb.dataset.instanciaId)
+        .filter(id => id && id !== 'null' && id !== '');
+
+    if (instanciaIds.length === 0) {
+        Swal.fire({
+            title: 'Error',
+            text: 'No se encontraron instancias válidas para gestionar responsables',
+            icon: 'error'
+        });
+        return;
+    }
+
+    // Actualizar contador en el modal
+    document.getElementById('contadorAnalisisSeleccionados').textContent = instanciaIds.length;
+    
+    // Guardar los IDs de instancias en el campo oculto
+    document.getElementById('instancias_ids_seleccionadas').value = JSON.stringify(instanciaIds);
+    
+    // Limpiar selección previa del select
+    document.getElementById('responsables_seleccionados_multiple').selectedIndex = -1;
+    
+    // Mostrar el modal
+    const modal = new bootstrap.Modal(document.getElementById('gestionarResponsablesSeleccionadosModal'));
+    modal.show();
+}
+
+// Manejar el envío del formulario de responsables seleccionados
+document.addEventListener('DOMContentLoaded', function() {
+    const formGestionarResponsables = document.getElementById('formGestionarResponsablesSeleccionados');
+    
+    if (formGestionarResponsables) {
+        formGestionarResponsables.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const instanciaIdsJson = document.getElementById('instancias_ids_seleccionadas').value;
+            const instanciaIds = JSON.parse(instanciaIdsJson);
+            
+            const responsablesSeleccionados = Array.from(document.getElementById('responsables_seleccionados_multiple').selectedOptions)
+                .map(option => option.value);
+            
+            if (responsablesSeleccionados.length === 0) {
+                Swal.fire({
+                    title: 'Sin selección',
+                    text: 'Por favor, seleccione al menos un responsable',
+                    icon: 'warning'
+                });
+                return;
+            }
+            
+            Swal.fire({
+                title: 'Asignando responsables...',
+                allowOutsideClick: false,
+                didOpen: () => {
+                    Swal.showLoading();
+                }
+            });
+            
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || 
+                             document.querySelector('input[name="_token"]')?.value ||
+                             '{{ csrf_token() }}';
+            
+            fetch('/ordenes/asignar-responsables-analisis-seleccionados', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': csrfToken,
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                credentials: 'same-origin',
+                body: JSON.stringify({
+                    instancia_ids: instanciaIds,
+                    responsables_analisis: responsablesSeleccionados
+                })
+            })
+            .then(response => {
+                const contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    return response.json();
+                } else {
+                    return response.text().then(text => {
+                        throw new Error(`Error ${response.status}: ${text || response.statusText}`);
+                    });
+                }
+            })
+            .then(data => {
+                Swal.close();
+                if (data.success) {
+                    Swal.fire({
+                        title: '¡Éxito!',
+                        text: data.message,
+                        icon: 'success'
+                    }).then(() => {
+                        // Cerrar el modal
+                        const modal = bootstrap.Modal.getInstance(document.getElementById('gestionarResponsablesSeleccionadosModal'));
+                        modal.hide();
+                        // Recargar la página para mostrar los cambios
+                        window.location.reload();
+                    });
+                } else {
+                    Swal.fire({
+                        title: 'Error',
+                        text: data.message || 'Error al asignar los responsables',
+                        icon: 'error'
+                    });
+                }
+            })
+            .catch(error => {
+                Swal.close();
+                console.error('Error:', error);
+                Swal.fire({
+                    title: 'Error',
+                    text: error.message || 'Ocurrió un error al asignar los responsables. Verifique sus permisos.',
+                    icon: 'error'
+                });
+            });
+        });
+    }
+});
+
+// Event listeners para checkboxes de análisis
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.tarea-checkbox-analisis').forEach(checkbox => {
+        checkbox.addEventListener('change', function() {
+            const muestraId = this.dataset.muestraId;
+            actualizarMenuAcciones(muestraId);
+        });
+    });
+
+    // Inicializar visibilidad del menú para cada muestra
+    document.querySelectorAll('[id^="menu-acciones-"]').forEach(menu => {
+        const muestraId = menu.id.replace('menu-acciones-', '');
+        actualizarMenuAcciones(muestraId);
+    });
+});
 
 </script>
 

@@ -19,6 +19,7 @@ class Coti extends Model
     protected $fillable = [
         'coti_num',
         'coti_para',
+        'coti_cli_empresa',
         'coti_descripcion',
         'coti_codigocli',
         'coti_fechaalta',
@@ -63,7 +64,9 @@ class Coti extends Model
         'coti_sector_laboratorio_observaciones',
         'coti_sector_higiene_observaciones',
         'coti_sector_microbiologia_observaciones',
-        'coti_sector_cromatografia_observaciones'
+        'coti_sector_cromatografia_observaciones',
+        'coti_cadena_custodia',
+        'coti_muestreo'
     ];
 
     protected $casts = [
@@ -76,7 +79,9 @@ class Coti extends Model
         'coti_sector_laboratorio_pct' => 'decimal:2',
         'coti_sector_higiene_pct' => 'decimal:2',
         'coti_sector_microbiologia_pct' => 'decimal:2',
-        'coti_sector_cromatografia_pct' => 'decimal:2'
+        'coti_sector_cromatografia_pct' => 'decimal:2',
+        'coti_cadena_custodia' => 'boolean',
+        'coti_muestreo' => 'boolean'
     ]; 
 
     /**

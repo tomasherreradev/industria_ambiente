@@ -34,7 +34,7 @@ class FirmaDigitalService
                 "Personas" => [
                     [
                         "CodigoUnicoIdentificacion" => $cuil ?? '20000000019', // CUIL de prueba oficial
-                        "CuitOrganizacion" => '',
+                        "CuitOrganizacion" => $cuitOrg ?? '',
                         "OrdenFirma" => 1,
                         "CuadroVisibleFirma_X"     => 595 - 200 - 20, // margen derecho de 20 = 375
                         "CuadroVisibleFirma_Y"     => 20, // margen superior de 20 = 20
@@ -52,7 +52,9 @@ class FirmaDigitalService
                         "NroSerieCertificado" => "",
                         "PinEncriptado" => ""
                     ]
-                ]
+                ],
+                "Origen" => "",
+                "UserIdCreador" => 8
             ];
             
             $token = $this->generarTokenAuth('WebApi_industriayambiente', 'GrtLx92mQ');
@@ -93,10 +95,56 @@ class FirmaDigitalService
                 // Verificar el código de resultado de la API
                 if (isset($responseData['CodigoResultado']) && $responseData['CodigoResultado'] == 1) {
                     Log::info("🔗 Documento enviado correctamente para firma");
+                    
+                    // Obtener la URL de autorización de la respuesta
+                    $urlAutorizacionRelativa = $responseData['Datos']['Autorizaciones'][0]['URLAutorizacion'] ?? null;
+                    
+                    // CRÍTICO: Construir la URL completa porque redirect()->away() necesita una URL absoluta
+                    // Si la URL es relativa (empieza con /), Laravel la interpreta como ruta local
+                    $urlAutorizacion = $urlAutorizacionRelativa;
+                    if ($urlAutorizacion && !preg_match('/^https?:\/\//', $urlAutorizacion)) {
+                        // Es una URL relativa, construir la URL completa
+                        // IMPORTANTE: Según los logs antiguos, la URL de autorización apunta a un dominio diferente
+                        // al de la API. La API está en test.firmador.alpha2000.com.ar pero la interfaz web
+                        // de autorización está en Test.WebFirmador.digilogix.com.ar
+                        // Probamos primero con el dominio de la interfaz web
+                        $baseUrlWeb = 'https://Test.WebFirmador.digilogix.com.ar';
+                        $baseUrlApi = 'https://test.firmador.alpha2000.com.ar';
+                        
+                        // Si la URL relativa comienza con /, es absoluta desde la raíz del dominio
+                        if (strpos($urlAutorizacion, '/') === 0) {
+                            // En los logs antiguos había un doble slash: //FirmaDigital/...
+                            // Construir la URL con el dominio de la interfaz web
+                            // Nota: Los logs antiguos mostraban: https://Test.WebFirmador.digilogix.com.ar//FirmaDigital/...
+                            // IMPORTANTE: Si la ruta /FirmaDigital/AutorizacionFirmaDocumento no funciona,
+                            // podría necesitar un path base como /WebUtilsWebApi o similar
+                            $urlAutorizacion = rtrim($baseUrlWeb, '/') . $urlAutorizacion;
+                            
+                            Log::info("🔗 URL de autorización construida con dominio WebFirmador", [
+                                'url_relativa' => $urlAutorizacionRelativa,
+                                'url_completa' => $urlAutorizacion,
+                                'dominio_usado' => $baseUrlWeb,
+                                'nota' => 'Si esta URL da 404, podría necesitar path base adicional o la estructura cambió'
+                            ]);
+                        } else {
+                            // URL relativa sin / inicial
+                            $urlAutorizacion = rtrim($baseUrlWeb, '/') . '/' . ltrim($urlAutorizacion, '/');
+                            
+                            Log::info("🔗 URL de autorización construida (relativa)", [
+                                'url_relativa' => $urlAutorizacionRelativa,
+                                'url_completa' => $urlAutorizacion
+                            ]);
+                        }
+                    } else if ($urlAutorizacion) {
+                        Log::info("🔗 URL de autorización ya es completa", [
+                            'url' => $urlAutorizacion
+                        ]);
+                    }
+                    
                     return [
                         'success' => true,
                         'data' => $responseData,
-                        'url_autorizacion' => $responseData['Datos']['Autorizaciones'][0]['URLAutorizacion'] ?? null,
+                        'url_autorizacion' => $urlAutorizacion,
                         'identificador_documento' => $responseData['Datos']['IdentificadorDocumento'] ?? null
                     ];
                 } else {

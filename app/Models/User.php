@@ -17,13 +17,13 @@ class User extends Authenticatable
     ];
 
     protected $fillable = [
-        'usu_codigo', 'usu_descripcion', 'usu_clave', 'usu_nivel', 'usu_estado', 'sector_codigo', 'rol'
+        'usu_codigo', 'usu_descripcion', 'usu_clave', 'usu_nivel', 'usu_estado', 'sector_codigo', 'rol', 'dni', 'email', 'departamento'
     ];
 
-    public function getAuthPassword()
-    {
-        return $this->usu_clave;
-    }
+    // public function getAuthPassword()
+    // {
+    //     return $this->usu_clave;
+    // }
 
     public function tareas()
     {

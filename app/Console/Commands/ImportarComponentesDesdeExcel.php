@@ -80,6 +80,7 @@ class ImportarComponentesDesdeExcel extends Command
         $cacheMetodos = [];
         $cacheMetodosMuestreo = [];
         $cacheAgrupadores = []; // Cache de agrupadores por nombre
+        $cacheComponentes = []; // Cache de componentes por características únicas
         
         // Variable única para el ID incremental de cotio_items (agrupadores y componentes)
         $lastId = null;
@@ -267,12 +268,14 @@ class ImportarComponentesDesdeExcel extends Command
                     if ($dryRun) {
                         $agrupadorId = $this->nextNumericId('cotio_items');
                         if ($iteracion <= 10) {
-                            $this->line("[Dry-run] Agrupador ID=$agrupadorId: $agrupadorNombre");
+                            $this->line("[Dry-run] Agrupador ID=$agrupadorId: $agrupadorNombre | Matriz=$codigoMatriz");
                         }
                     } else {
                         // Usar cache para evitar consultas repetidas
                         if (isset($cacheAgrupadores[$agrupadorNombre])) {
                             $agrupadorId = $cacheAgrupadores[$agrupadorNombre];
+                            
+                            // La matriz ya se guardó en la tabla pivote, no es necesario actualizar matriz_codigo
                         } else {
                             $agrupador = CotioItems::where('cotio_descripcion', $agrupadorNombre)
                                 ->where('es_muestra', true)
@@ -289,17 +292,19 @@ class ImportarComponentesDesdeExcel extends Command
                                 $agrupador = CotioItems::create([
                                     'id'                => $lastId,
                                     'cotio_descripcion' => $agrupadorNombre,
-                                    'es_muestra'        => true
+                                    'es_muestra'        => true,
+                                    'matriz_codigo'     => null // Ya no se guarda aquí, se usa tabla pivote
                                 ]);
 
                                 $agrupadorId = $agrupador->id;
                                 $creadosAgrupadores++;
                                 
                                 if ($creadosAgrupadores <= 10) {
-                                    Log::info("⚡ Agrupador creado: ID=$agrupadorId ($agrupadorNombre)");
+                                    Log::info("⚡ Agrupador creado: ID=$agrupadorId ($agrupadorNombre) con matriz $codigoMatriz");
                                 }
                             } else {
                                 $agrupadorId = $agrupador->id;
+                                // La matriz se guarda en la tabla pivote, no es necesario actualizar matriz_codigo
                             }
                             $cacheAgrupadores[$agrupadorNombre] = $agrupadorId;
                         }
@@ -312,33 +317,62 @@ class ImportarComponentesDesdeExcel extends Command
                 |--------------------------------------------------------------------------
                 */
 
+                // Crear clave única para el componente basada en sus características
+                $componenteKey = $this->crearClaveComponente(
+                    $parametro,
+                    $limite,
+                    $unidad,
+                    $codigoMetodo,
+                    $codigoMetodoMuestreo,
+                    $precio,
+                    $limiteCuantificacion
+                );
+
                 if ($dryRun) {
                     $id = $this->nextNumericId('cotio_items');
                     if ($iteracion <= 10) {
-                        $this->line("[Dry-run] Componente ID=$id: $parametro | Matriz=$codigoMatriz | MétodoMuestreo=$codigoMetodoMuestreo | Método=$codigoMetodo | Agrupador=$agrupadorId");
+                        $this->line("[Dry-run] Componente ID=$id: $parametro | MétodoMuestreo=$codigoMetodoMuestreo | Método=$codigoMetodo | Agrupador=$agrupadorId");
                     }
                 } else {
-                    // Usar el contador global de IDs
-                    if ($lastId === null) {
-                        $lastId = $this->nextNumericId('cotio_items');
-                    } else {
-                        $lastId++;
-                    }
+                    $componenteId = null;
                     
-                    $componente = CotioItems::create([
-                        'id'                    => $lastId,
-                        'cotio_descripcion'     => $parametro,
-                        'es_muestra'            => false,
-                        'limites_establecidos'  => $limite,
-                        'limite_cuantificacion' => $limiteCuantificacion ? floatval($limiteCuantificacion) : null,
-                        'metodo'                => $codigoMetodo,
-                        'metodo_muestreo'       => $codigoMetodoMuestreo,
-                        'matriz_codigo'         => $codigoMatriz,
-                        'unidad_medida'         => $unidad,
-                        'precio'                => floatval($precio ?: 0)
-                    ]);
+                    // Verificar si ya existe un componente con las mismas características
+                    if (isset($cacheComponentes[$componenteKey])) {
+                        // Reutilizar componente existente
+                        $componenteId = $cacheComponentes[$componenteKey];
+                        if ($iteracion <= 10) {
+                            Log::info("♻️ Componente reutilizado ID=$componenteId: $parametro");
+                        }
+                    } else {
+                        // Crear nuevo componente
+                        // Usar el contador global de IDs
+                        if ($lastId === null) {
+                            $lastId = $this->nextNumericId('cotio_items');
+                        } else {
+                            $lastId++;
+                        }
+                        
+                        $componente = CotioItems::create([
+                            'id'                    => $lastId,
+                            'cotio_descripcion'     => $parametro,
+                            'es_muestra'            => false,
+                            'limites_establecidos'  => $limite,
+                            'limite_cuantificacion' => $limiteCuantificacion ? floatval($limiteCuantificacion) : null,
+                            'metodo'                => $codigoMetodo,
+                            'metodo_muestreo'       => $codigoMetodoMuestreo,
+                            'matriz_codigo'         => null, // Los componentes NO tienen matriz
+                            'unidad_medida'         => $unidad,
+                            'precio'                => floatval($precio ?: 0)
+                        ]);
 
-                    $creadosComponentes++;
+                        $componenteId = $lastId;
+                        $cacheComponentes[$componenteKey] = $componenteId;
+                        $creadosComponentes++;
+                        
+                        if ($creadosComponentes <= 10) {
+                            Log::info("⚡ Componente creado: ID=$componenteId ($parametro)");
+                        }
+                    }
 
                     /*
                     |--------------------------------------------------------------------------
@@ -346,17 +380,17 @@ class ImportarComponentesDesdeExcel extends Command
                     |--------------------------------------------------------------------------
                     */
                     
-                    if ($agrupadorId) {
+                    if ($agrupadorId && $componenteId) {
                         // Verificar si la relación ya existe
                         $relacionExiste = DB::table('cotio_item_component')
                             ->where('agrupador_id', $agrupadorId)
-                            ->where('componente_id', $lastId)
+                            ->where('componente_id', $componenteId)
                             ->exists();
 
                         if (!$relacionExiste) {
                             DB::table('cotio_item_component')->insert([
                                 'agrupador_id'  => $agrupadorId,
-                                'componente_id' => $lastId,
+                                'componente_id' => $componenteId,
                                 'created_at'    => now(),
                                 'updated_at'    => now()
                             ]);
@@ -364,8 +398,62 @@ class ImportarComponentesDesdeExcel extends Command
                         }
                     }
 
+                    /*
+                    |--------------------------------------------------------------------------
+                    | 7) RELACIÓN AGRUPADOR-MATRIZ (tabla pivote)
+                    |--------------------------------------------------------------------------
+                    */
+                    
+                    if ($agrupadorId && $codigoMatriz) {
+                        // Limpiar código de matriz (trim para eliminar espacios)
+                        $codigoMatrizLimpio = trim($codigoMatriz);
+                        
+                        // Verificar si la relación agrupador-matriz ya existe
+                        $relacionMatrizExiste = DB::table('cotio_items_matriz')
+                            ->where('cotio_item_id', $agrupadorId)
+                            ->where('matriz_codigo', $codigoMatrizLimpio)
+                            ->exists();
+
+                        if (!$relacionMatrizExiste) {
+                            DB::table('cotio_items_matriz')->insert([
+                                'cotio_item_id' => $agrupadorId,
+                                'matriz_codigo' => $codigoMatrizLimpio,
+                                'created_at'    => now(),
+                                'updated_at'    => now()
+                            ]);
+                        }
+                    }
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | 8) RELACIÓN COMPONENTE-MATRIZ (tabla pivote)
+                    |--------------------------------------------------------------------------
+                    | El componente se relaciona con la misma matriz que el agrupador
+                    | al que pertenece. Esto permite filtrar componentes por matriz.
+                    */
+                    
+                    if ($componenteId && $codigoMatriz) {
+                        // Limpiar código de matriz (trim para eliminar espacios)
+                        $codigoMatrizLimpio = trim($codigoMatriz);
+                        
+                        // Verificar si la relación componente-matriz ya existe
+                        $relacionComponenteMatrizExiste = DB::table('cotio_items_matriz')
+                            ->where('cotio_item_id', $componenteId)
+                            ->where('matriz_codigo', $codigoMatrizLimpio)
+                            ->exists();
+
+                        if (!$relacionComponenteMatrizExiste) {
+                            DB::table('cotio_items_matriz')->insert([
+                                'cotio_item_id' => $componenteId,
+                                'matriz_codigo' => $codigoMatrizLimpio,
+                                'created_at'    => now(),
+                                'updated_at'    => now()
+                            ]);
+                        }
+                    }
+
                     if ($creadosComponentes % 100 == 0) {
-                        $this->info("Componentes insertados: $creadosComponentes");
+                        $this->info("Componentes procesados: $creadosComponentes");
                     }
                 }
 
@@ -463,5 +551,35 @@ class ImportarComponentesDesdeExcel extends Command
 
         $next = $maxNum + 1;
         return $prefix . str_pad($next, $pad, '0', STR_PAD_LEFT);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | CREAR CLAVE ÚNICA PARA COMPONENTE
+    |--------------------------------------------------------------------------
+    | Crea una clave única basada en las características del componente
+    | para evitar duplicados
+    */
+    private function crearClaveComponente($descripcion, $limite, $unidad, $metodo, $metodoMuestreo, $precio, $limiteCuantificacion)
+    {
+        // Normalizar valores para la clave
+        $descripcionNormalizada = strtolower(trim($descripcion ?? ''));
+        $limiteNormalizado = trim($limite ?? '');
+        $unidadNormalizada = strtolower(trim($unidad ?? ''));
+        $metodoNormalizado = trim($metodo ?? '');
+        $metodoMuestreoNormalizado = trim($metodoMuestreo ?? '');
+        $precioNormalizado = number_format(floatval($precio ?: 0), 2, '.', '');
+        $limiteCuantificacionNormalizado = $limiteCuantificacion ? number_format(floatval($limiteCuantificacion), 6, '.', '') : '';
+
+        // Crear clave única concatenando todas las características
+        return md5(implode('|', [
+            $descripcionNormalizada,
+            $limiteNormalizado,
+            $unidadNormalizada,
+            $metodoNormalizado,
+            $metodoMuestreoNormalizado,
+            $precioNormalizado,
+            $limiteCuantificacionNormalizado
+        ]));
     }
 }

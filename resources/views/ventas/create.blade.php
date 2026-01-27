@@ -75,7 +75,7 @@
                                     <input type="hidden" id="cliente_telefono_hidden" name="cliente_telefono">
                                     <input type="hidden" id="cliente_correo_hidden">
                                     <input type="hidden" id="cliente_sector_hidden">
-                                    <input type="hidden" id="cliente_descuento_hidden" value="{{ old('cliente_descuento_hidden', '0.00') }}" data-descuento-global="{{ old('cliente_descuento_global', '0.00') }}" data-descuento-sector="{{ old('cliente_descuento_sector', '0.00') }}" data-sector-etiqueta="{{ trim((string) old('coti_sector', '')) }}">
+                                    <input type="hidden" id="cliente_descuento_hidden" value="{{ old('cliente_descuento_hidden', '0.00') }}" data-descuento-global="{{ old('cliente_descuento_global', '0.00') }}">
                                     
                                     <!-- Campos hidden para ensayos y componentes -->
                                     <input type="hidden" id="ensayos_data" name="ensayos_data">
@@ -99,8 +99,14 @@
 
                                 <div class="col-md-2">
                                     <label for="Para" class="form-label fw-semibold mb-1 text-dark">Para:</label>
-                                    <input type="text" class="form-control form-control-sm" id="coti_para" name="coti_para" 
-                                           value="{{ old('coti_para') }}">
+                                    <div id="coti_para_wrapper">
+                                        <input type="text" class="form-control form-control-sm" id="coti_para" name="coti_para" 
+                                               value="{{ old('coti_para') }}" placeholder="Empresa relacionada...">
+                                        <select class="form-control form-control-sm d-none" id="coti_para_select" name="coti_para">
+                                            <option value="">Seleccionar empresa relacionada...</option>
+                                        </select>
+                                        <input type="hidden" id="coti_cli_empresa" name="coti_cli_empresa" value="{{ old('coti_cli_empresa') }}">
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -144,14 +150,12 @@
                                         </div>
                                         <div class="col-md-2">
                                             <label class="form-label">&nbsp;</label>
-                                            <button type="button" class="btn btn-outline-primary w-100">Clonar</button>
+                                            <button type="button" class="btn btn-outline-primary w-100" data-bs-toggle="modal" data-bs-target="#modalClonarCotizacion">
+                                                <x-heroicon-o-document-duplicate style="width: 16px; height: 16px;" class="me-1" />
+                                                Clonar
+                                            </button>
                                         </div>
-                                        <div class="col-md-2 d-flex align-items-end">
-                                            <div class="form-check">
-                                                <input class="form-check-input" type="checkbox" id="abierta" name="abierta" {{ old('abierta') ? 'checked' : '' }}>
-                                                <label class="form-check-label" for="abierta">Abierta</label>
-                                            </div>
-                                        </div>
+                           
                                         <div class="col-md-2">
                                             <label for="fecha_alta" class="form-label">Alta:</label>
                                             <input type="date" class="form-control" id="fecha_alta" name="coti_fechaalta" 
@@ -186,18 +190,6 @@
                                     <!-- Segunda fila -->
                                     <div class="row mb-4">
                                         <div class="col-md-2">
-                                            <label for="matriz" class="form-label">Matriz:</label>
-                                            <select class="form-select" id="matriz" name="coti_codigomatriz">
-                                                <option value="">Seleccionar matriz...</option>
-                                                @foreach($matrices as $matriz)
-                                                    <option value="{{ $matriz->matriz_codigo }}" 
-                                                            {{ old('coti_codigomatriz') == $matriz->matriz_codigo ? 'selected' : '' }}>
-                                                        {{ trim($matriz->matriz_codigo) }} - {{ trim($matriz->matriz_descripcion) }}
-                                                    </option>
-                                                @endforeach
-                                            </select>
-                                        </div>
-                                        <div class="col-md-2">
                                             <label for="estado" class="form-label">Estado:</label>
                                             <select class="form-select" id="estado" name="coti_estado">
                                                 <option value="En Espera" selected>En Espera</option>
@@ -205,6 +197,22 @@
                                                 <option value="Rechazado">Rechazado</option>
                                                 <option value="En Proceso">En Proceso</option>
                                             </select>
+                                        </div>
+                                        <div class="col-md-2 d-flex align-items-end">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="cadena_custodia" name="coti_cadena_custodia" value="1" {{ old('coti_cadena_custodia') ? 'checked' : '' }}>
+                                                <label class="form-check-label" for="cadena_custodia">
+                                                    Cadena de Custodia
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-2 d-flex align-items-end">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="muestreo" name="coti_muestreo" value="1" {{ old('coti_muestreo') ? 'checked' : '' }}>
+                                                <label class="form-check-label" for="muestreo">
+                                                    Muestreo
+                                                </label>
+                                            </div>
                                         </div>
                                     </div>
 
@@ -262,84 +270,6 @@
                                                 </div>
                                             </div>
 
-                                            <!-- Tabla de sectores -->
-                                            <div class="mb-3">
-                                                <label class="form-label">Descuentos por Sector</label>
-                                                <div class="table-responsive">
-                                                    <table class="table table-sm table-bordered">
-                                                        <thead class="table-light">
-                                                            <tr>
-                                                                <th>Sector</th>
-                                                                <th>Porcentaje</th>
-                                                                <th>Contacto</th>
-                                                                <th>Observaciones</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody>
-                                                            <tr>
-                                                                <td>LABORATORIO</td>
-                                                                <td>
-                                                                    <input type="number" step="0.01" class="form-control form-control-sm" 
-                                                                           name="sector_laboratorio_porcentaje" value="{{ old('sector_laboratorio_porcentaje', '0.00') }}">
-                                                                </td>
-                                                                <td>
-                                                                    <input type="text" class="form-control form-control-sm" 
-                                                                           name="sector_laboratorio_contacto" value="{{ old('sector_laboratorio_contacto') }}">
-                                                                </td>
-                                                                <td>
-                                                                    <input type="text" class="form-control form-control-sm" 
-                                                                           name="sector_laboratorio_observaciones" value="{{ old('sector_laboratorio_observaciones') }}">
-                                                                </td>
-                                                            </tr>
-                                                            <tr>
-                                                                <td>HIGIENE Y SEGURIDAD</td>
-                                                                <td>
-                                                                    <input type="number" step="0.01" class="form-control form-control-sm" 
-                                                                           name="sector_higiene_porcentaje" value="{{ old('sector_higiene_porcentaje', '0.00') }}">
-                                                                </td>
-                                                                <td>
-                                                                    <input type="text" class="form-control form-control-sm" 
-                                                                           name="sector_higiene_contacto" value="{{ old('sector_higiene_contacto') }}">
-                                                                </td>
-                                                                <td>
-                                                                    <input type="text" class="form-control form-control-sm" 
-                                                                           name="sector_higiene_observaciones" value="{{ old('sector_higiene_observaciones') }}">
-                                                                </td>
-                                                            </tr>
-                                                            <tr>
-                                                                <td>MICROBIOLOGÍA</td>
-                                                                <td>
-                                                                    <input type="number" step="0.01" class="form-control form-control-sm" 
-                                                                           name="sector_microbiologia_porcentaje" value="{{ old('sector_microbiologia_porcentaje', '0.00') }}">
-                                                                </td>
-                                                                <td>
-                                                                    <input type="text" class="form-control form-control-sm" 
-                                                                           name="sector_microbiologia_contacto" value="{{ old('sector_microbiologia_contacto') }}">
-                                                                </td>
-                                                                <td>
-                                                                    <input type="text" class="form-control form-control-sm" 
-                                                                           name="sector_microbiologia_observaciones" value="{{ old('sector_microbiologia_observaciones') }}">
-                                                                </td>
-                                                            </tr>
-                                                            <tr>
-                                                                <td>CROMATOGRAFÍA</td>
-                                                                <td>
-                                                                    <input type="number" step="0.01" class="form-control form-control-sm" 
-                                                                           name="sector_cromatografia_porcentaje" value="{{ old('sector_cromatografia_porcentaje', '0.00') }}">
-                                                                </td>
-                                                                <td>
-                                                                    <input type="text" class="form-control form-control-sm" 
-                                                                           name="sector_cromatografia_contacto" value="{{ old('sector_cromatografia_contacto') }}">
-                                                                </td>
-                                                                <td>
-                                                                    <input type="text" class="form-control form-control-sm" 
-                                                                           name="sector_cromatografia_observaciones" value="{{ old('sector_cromatografia_observaciones') }}">
-                                                                </td>
-                                                            </tr>
-                                                        </tbody>
-                                                    </table>
-                                                </div>
-                                            </div>
                                         </div>
                                     </div>
 
@@ -388,13 +318,6 @@
                                                             <td colspan="7" class="text-end text-muted">Descuento global cliente (<span id="descuentoGlobalPorcentaje">0.00%</span>):</td>
                                                             <td class="text-danger fw-semibold">
                                                                 -<span id="descuentoGlobalMonto">0.00</span>
-                                                            </td>
-                                                            <td></td>
-                                                        </tr>
-                                                        <tr>
-                                                            <td colspan="7" class="text-end text-muted">Descuento sector (<span id="descuentoSectorEtiqueta">-</span>, <span id="descuentoSectorPorcentaje">0.00%</span>):</td>
-                                                            <td class="text-danger fw-semibold">
-                                                                -<span id="descuentoSectorMonto">0.00</span>
                                                             </td>
                                                             <td></td>
                                                         </tr>
@@ -588,36 +511,19 @@
                     </div>
 
 
-                    <!-- Notas -->
-                    <div class="row">
-                        <div class="col-md-4">
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="nota_tipo" id="nota_imprimible" value="imprimible" checked>
-                                <label class="form-check-label" for="nota_imprimible">Nota Imprimible</label>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="nota_tipo" id="nota_interna" value="interna">
-                                <label class="form-check-label" for="nota_interna">Nota Interna</label>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="nota_tipo" id="nota_fact" value="fact">
-                                <label class="form-check-label" for="nota_fact">Nota Fact.</label>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="row mt-3">
+                    <!-- Sección de Notas Múltiples -->
+                    <div class="row mb-3">
                         <div class="col-md-12">
-                            <button type="button" class="btn btn-sm btn-outline-secondary mb-2">Insertar Nota Predefinida</button>
-                            <div class="form-check mb-2">
-                                <input class="form-check-input" type="checkbox" id="predeterminar">
-                                <label class="form-check-label" for="predeterminar">Predeterminar</label>
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <label class="form-label mb-0 fw-semibold">Notas:</label>
+                                <button type="button" class="btn btn-sm btn-outline-primary" id="btnAgregarNotaEnsayo">
+                                    <x-heroicon-o-plus style="width: 14px; height: 14px;" class="me-1" />
+                                    Agregar Nota
+                                </button>
                             </div>
-                            <textarea class="form-control" rows="4" placeholder="Comprende el análisis puntual de calidad de aire exterior en sitios sobre a definir en función de los vientos predominantes para la determinación de MP TOTAL (EPA O 2 1) o MP10 (EPA O 2 3)."></textarea>
+                            <div id="notasEnsayoContainer">
+                                <!-- Las notas se agregarán dinámicamente aquí -->
+                            </div>
                         </div>
                     </div>
                 </form>
@@ -700,10 +606,6 @@
                             <input type="number" step="0.01" class="form-control" placeholder="0.00" readonly>
                             <small class="text-muted">Última Cotización</small>
                         </div>
-                        <div class="col-md-4">
-                            <input type="number" step="0.01" class="form-control" placeholder="0.00" readonly>
-                            <small class="text-muted">Última Factura</small>
-                        </div>
                     </div>
 
                     <div class="row mb-3">
@@ -717,7 +619,7 @@
                         </div> --}}
                     </div>
 
-                    <!-- Notas -->
+                    {{-- Notas para componentes - COMENTADO
                     <div class="row">
                         <div class="col-md-4">
                             <div class="form-check">
@@ -746,9 +648,10 @@
                                 <input class="form-check-input" type="checkbox" id="comp_predeterminar">
                                 <label class="form-check-label" for="comp_predeterminar">Predeterminar</label>
                             </div>
-                            <textarea class="form-control" rows="4" placeholder="Descripción del componente..."></textarea>
+                            <textarea class="form-control" id="componente_nota_contenido" name="componente_nota_contenido" rows="4" placeholder="Descripción del componente..."></textarea>
                         </div>
                     </div>
+                    --}}
                 </form>
             </div>
             <div class="modal-footer">
@@ -759,7 +662,145 @@
     </div>
 </div>
 
+<!-- Modal Editar Componente -->
+<div class="modal fade" id="modalEditarComponente" tabindex="-1" aria-labelledby="modalEditarComponenteLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title" id="modalEditarComponenteLabel">Editar Componente</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="formEditarComponente">
+                    <input type="hidden" id="edit_componente_item_id">
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-12">
+                            <label for="edit_componente_analisis" class="form-label">Análisis <span class="text-danger">*</span></label>
+                            <select class="form-select" id="edit_componente_analisis" name="edit_componente_analisis" required>
+                                <option value="">Seleccionar análisis...</option>
+                            </select>
+                            <small class="text-muted">Seleccione el análisis que desea asignar a este componente</small>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label for="edit_componente_precio" class="form-label">Precio:</label>
+                            <input type="number" step="0.01" class="form-control" id="edit_componente_precio" name="edit_componente_precio" value="0.00" min="0">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="edit_componente_unidad" class="form-label">Unidad de Medida:</label>
+                            <input type="text" class="form-control" id="edit_componente_unidad" name="edit_componente_unidad" placeholder="U.M.">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="edit_componente_metodo" class="form-label">Método de Análisis:</label>
+                            <select class="form-select" id="edit_componente_metodo" name="edit_componente_metodo">
+                                <option value="">Seleccionar método...</option>
+                            </select>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="btnGuardarComponenteEditado">Guardar Cambios</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 @include('ventas.partials.cotizacion-styles')
+
+<!-- Modal Clonar Cotización -->
+<div class="modal fade" id="modalClonarCotizacion" tabindex="-1" aria-labelledby="modalClonarCotizacionLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="modalClonarCotizacionLabel">
+                    <x-heroicon-o-document-duplicate style="width: 20px; height: 20px;" class="me-2" />
+                    Clonar Cotización
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Filtros de búsqueda -->
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h6 class="card-title mb-3">Filtros de Búsqueda</h6>
+                        <div class="row g-3">
+                            <div class="col-md-3">
+                                <label for="filtro_numero" class="form-label">Número de Cotización</label>
+                                <input type="text" class="form-control form-control-sm" id="filtro_numero" placeholder="Ej: 123">
+                            </div>
+                            <div class="col-md-3">
+                                <label for="filtro_descripcion" class="form-label">Descripción</label>
+                                <input type="text" class="form-control form-control-sm" id="filtro_descripcion" placeholder="Buscar por descripción...">
+                            </div>
+                            <div class="col-md-3">
+                                <label for="filtro_cliente" class="form-label">Cliente</label>
+                                <input type="text" class="form-control form-control-sm" id="filtro_cliente" placeholder="Nombre o código...">
+                            </div>
+                            <div class="col-md-3">
+                                <label for="filtro_estado" class="form-label">Estado</label>
+                                <select class="form-select form-select-sm" id="filtro_estado">
+                                    <option value="">Todos</option>
+                                    <option value="En Espera">En Espera</option>
+                                    <option value="Aprobado">Aprobado</option>
+                                    <option value="Rechazado">Rechazado</option>
+                                    <option value="En Proceso">En Proceso</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="filtro_fecha_desde" class="form-label">Fecha Desde</label>
+                                <input type="date" class="form-control form-control-sm" id="filtro_fecha_desde">
+                            </div>
+                            <div class="col-md-3">
+                                <label for="filtro_fecha_hasta" class="form-label">Fecha Hasta</label>
+                                <input type="date" class="form-control form-control-sm" id="filtro_fecha_hasta">
+                            </div>
+                            <div class="col-md-6 d-flex align-items-end">
+                                <button type="button" class="btn btn-primary btn-sm me-2" id="btnBuscarCotizaciones">
+                                    Buscar
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnLimpiarFiltros">
+                                    <x-heroicon-o-arrow-path style="width: 16px; height: 16px;" class="me-1" />
+                                    Limpiar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tabla de resultados -->
+                <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                    <table class="table table-sm table-hover">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th style="width: 100px;">Número</th>
+                                <th>Descripción</th>
+                                <th>Cliente</th>
+                                <th style="width: 120px;">Estado</th>
+                                <th style="width: 120px;">Fecha Alta</th>
+                                <th style="width: 100px;">Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tablaCotizaciones">
+                            <tr>
+                                <td colspan="6" class="text-center text-muted">
+                                    <em>Ingrese criterios de búsqueda y haga clic en "Buscar"</em>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <script>
     @php
@@ -774,7 +815,487 @@
 </script>
 
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 
 @include('ventas.partials.cotizacion-scripts')
+
+<script>
+// Funcionalidad de clonación de cotizaciones
+(function() {
+    'use strict';
+    
+    // Esperar a que el DOM esté listo
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initClonacion);
+    } else {
+        initClonacion();
+    }
+    
+    function initClonacion() {
+        function agregarEventListeners() {
+            // Agregar event listeners directamente a los botones
+            const btnBuscar = document.getElementById('btnBuscarCotizaciones');
+            const btnLimpiar = document.getElementById('btnLimpiarFiltros');
+            
+            if (btnBuscar && !btnBuscar.dataset.listenerAdded) {
+                btnBuscar.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    buscarCotizaciones();
+                });
+                btnBuscar.dataset.listenerAdded = 'true';
+            }
+            
+            if (btnLimpiar && !btnLimpiar.dataset.listenerAdded) {
+                btnLimpiar.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    limpiarFiltros();
+                });
+                btnLimpiar.dataset.listenerAdded = 'true';
+            }
+
+            // Permitir búsqueda con Enter en los campos de filtro
+            const filtroNumero = document.getElementById('filtro_numero');
+            const filtroDescripcion = document.getElementById('filtro_descripcion');
+            const filtroCliente = document.getElementById('filtro_cliente');
+            
+            [filtroNumero, filtroDescripcion, filtroCliente].forEach(input => {
+                if (input && !input.dataset.listenerAdded) {
+                    input.addEventListener('keypress', function(e) {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            buscarCotizaciones();
+                        }
+                    });
+                    input.dataset.listenerAdded = 'true';
+                }
+            });
+        }
+        
+        // Agregar listeners inmediatamente si los elementos existen
+        agregarEventListeners();
+        
+        // También agregar cuando el modal se muestre
+        const modalClonar = document.getElementById('modalClonarCotizacion');
+        if (modalClonar) {
+            modalClonar.addEventListener('shown.bs.modal', function() {
+                agregarEventListeners();
+            });
+        }
+
+    async function buscarCotizaciones() {
+        const btnBuscar = document.getElementById('btnBuscarCotizaciones');
+        const tablaCotizaciones = document.getElementById('tablaCotizaciones');
+        
+        if (!btnBuscar || !tablaCotizaciones) {
+            console.error('Elementos no encontrados');
+            return;
+        }
+
+        const filtros = {
+            numero: document.getElementById('filtro_numero')?.value || '',
+            descripcion: document.getElementById('filtro_descripcion')?.value || '',
+            cliente: document.getElementById('filtro_cliente')?.value || '',
+            estado: document.getElementById('filtro_estado')?.value || '',
+            fecha_desde: document.getElementById('filtro_fecha_desde')?.value || '',
+            fecha_hasta: document.getElementById('filtro_fecha_hasta')?.value || '',
+        };
+
+        // Validar que haya al menos un filtro
+        const tieneFiltros = Object.values(filtros).some(v => v.trim() !== '');
+        if (!tieneFiltros) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Filtros requeridos',
+                text: 'Por favor ingrese al menos un criterio de búsqueda'
+            });
+            return;
+        }
+
+        const originalHtml = btnBuscar.innerHTML;
+        try {
+            btnBuscar.disabled = true;
+            btnBuscar.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Buscando...';
+
+            const params = new URLSearchParams();
+            Object.entries(filtros).forEach(([key, value]) => {
+                if (value) params.append(key, value);
+            });
+
+            const response = await fetch(`{{ route('ventas.buscar-para-clonar') }}?${params.toString()}`);
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Error al buscar cotizaciones');
+            }
+
+            mostrarResultados(data.cotizaciones || []);
+        } catch (error) {
+            console.error('Error buscando cotizaciones:', error);
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: error.message || 'Error al buscar cotizaciones'
+            });
+        } finally {
+            if (btnBuscar) {
+                btnBuscar.disabled = false;
+                btnBuscar.innerHTML = originalHtml;
+            }
+        }
+    }
+
+    function mostrarResultados(cotizaciones) {
+        const tablaCotizaciones = document.getElementById('tablaCotizaciones');
+        if (!tablaCotizaciones) return;
+
+        if (cotizaciones.length === 0) {
+            tablaCotizaciones.innerHTML = `
+                <tr>
+                    <td colspan="6" class="text-center text-muted">
+                        <em>No se encontraron cotizaciones con los criterios especificados</em>
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        tablaCotizaciones.innerHTML = cotizaciones.map(cot => {
+            const estadoBadge = {
+                'En Espera': 'warning',
+                'Aprobado': 'success',
+                'Rechazado': 'danger',
+                'En Proceso': 'info'
+            }[cot.coti_estado] || 'secondary';
+
+            return `
+                <tr>
+                    <td><strong>${cot.coti_num}</strong></td>
+                    <td>${cot.coti_descripcion || '-'}</td>
+                    <td>${cot.cliente_nombre || cot.coti_codigocli || '-'}</td>
+                    <td><span class="badge bg-${estadoBadge}">${cot.coti_estado || '-'}</span></td>
+                    <td>${cot.coti_fechaalta || '-'}</td>
+                    <td>
+                        <button class="btn btn-sm btn-primary" onclick="clonarCotizacion(${cot.coti_num})">
+                            Clonar
+                        </button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    function limpiarFiltros() {
+        const filtroNumero = document.getElementById('filtro_numero');
+        const filtroDescripcion = document.getElementById('filtro_descripcion');
+        const filtroCliente = document.getElementById('filtro_cliente');
+        const filtroEstado = document.getElementById('filtro_estado');
+        const filtroFechaDesde = document.getElementById('filtro_fecha_desde');
+        const filtroFechaHasta = document.getElementById('filtro_fecha_hasta');
+        const tablaCotizaciones = document.getElementById('tablaCotizaciones');
+
+        if (filtroNumero) filtroNumero.value = '';
+        if (filtroDescripcion) filtroDescripcion.value = '';
+        if (filtroCliente) filtroCliente.value = '';
+        if (filtroEstado) filtroEstado.value = '';
+        if (filtroFechaDesde) filtroFechaDesde.value = '';
+        if (filtroFechaHasta) filtroFechaHasta.value = '';
+        
+        if (tablaCotizaciones) {
+            tablaCotizaciones.innerHTML = `
+                <tr>
+                    <td colspan="6" class="text-center text-muted">
+                        <em>Ingrese criterios de búsqueda y haga clic en "Buscar"</em>
+                    </td>
+                </tr>
+            `;
+        }
+    }
+
+    // Función global para clonar
+    window.clonarCotizacion = async function(cotiNum) {
+        try {
+            Swal.fire({
+                title: 'Cargando cotización...',
+                allowOutsideClick: false,
+                didOpen: () => Swal.showLoading()
+            });
+
+            const url = '{{ route("ventas.obtener-para-clonar", ["cotiNum" => "__COTI_NUM__"]) }}'.replace('__COTI_NUM__', cotiNum);
+            const response = await fetch(url);
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Error al obtener cotización');
+            }
+
+            // Cerrar modal
+            const modalClonar = document.getElementById('modalClonarCotizacion');
+            if (modalClonar) {
+                const modal = bootstrap.Modal.getInstance(modalClonar);
+                if (modal) modal.hide();
+            }
+
+            // Rellenar formulario
+            rellenarFormulario(data);
+
+            Swal.fire({
+                icon: 'success',
+                title: '¡Cotización clonada!',
+                text: 'Los datos de la cotización han sido cargados. Revise y ajuste según sea necesario.',
+                timer: 2000,
+                showConfirmButton: false
+            });
+        } catch (error) {
+            console.error('Error clonando cotización:', error);
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: error.message || 'Error al clonar la cotización'
+            });
+        }
+    };
+
+    function rellenarFormulario(data) {
+        const { cotizacion, ensayos, componentes } = data;
+
+        // Rellenar campos básicos
+        if (cotizacion.coti_codigocli) {
+            document.getElementById('cliente_codigo').value = cotizacion.coti_codigocli;
+            // Disparar evento para cargar datos del cliente
+            const evento = new Event('input', { bubbles: true });
+            document.getElementById('cliente_codigo').dispatchEvent(evento);
+        }
+
+        if (cotizacion.coti_descripcion) {
+            document.getElementById('descripcion').value = cotizacion.coti_descripcion;
+        }
+
+        if (cotizacion.coti_fechaalta) {
+            document.getElementById('fecha_alta').value = cotizacion.coti_fechaalta;
+        }
+
+        if (cotizacion.coti_fechafin) {
+            document.getElementById('fecha_venc').value = cotizacion.coti_fechafin;
+        }
+
+        if (cotizacion.coti_estado) {
+            const estadoSelect = document.getElementById('estado');
+            if (estadoSelect) {
+                estadoSelect.value = cotizacion.coti_estado;
+            }
+        }
+
+        if (cotizacion.coti_codigosuc) {
+            document.getElementById('sucursal').value = cotizacion.coti_codigosuc;
+        }
+
+        if (cotizacion.coti_para) {
+            document.getElementById('coti_para').value = cotizacion.coti_para;
+        }
+
+        if (cotizacion.coti_contacto) {
+            document.getElementById('contacto').value = cotizacion.coti_contacto;
+        }
+
+        if (cotizacion.coti_mail1) {
+            document.getElementById('correo').value = cotizacion.coti_mail1;
+        }
+
+        if (cotizacion.coti_telefono) {
+            document.getElementById('telefono').value = cotizacion.coti_telefono;
+        }
+
+        if (cotizacion.coti_sector) {
+            const sectorSelect = document.getElementById('sector');
+            if (sectorSelect) {
+                sectorSelect.value = cotizacion.coti_sector;
+            }
+        }
+
+        if (cotizacion.coti_notas) {
+            document.getElementById('comentario').value = cotizacion.coti_notas;
+        }
+
+        if (cotizacion.descuento) {
+            document.getElementById('descuento').value = cotizacion.descuento;
+        }
+
+        if (cotizacion.coti_cadena_custodia) {
+            document.getElementById('cadena_custodia').checked = true;
+        }
+
+        if (cotizacion.coti_muestreo) {
+            document.getElementById('muestreo').checked = true;
+        }
+
+        // Campos de gestión
+        if (cotizacion.coti_responsable) {
+            document.getElementById('responsable').value = cotizacion.coti_responsable;
+        }
+
+        if (cotizacion.coti_fechaaprobado) {
+            document.getElementById('fecha_aprobado').value = cotizacion.coti_fechaaprobado;
+        }
+
+        if (cotizacion.coti_aprobo) {
+            document.getElementById('aprobo').value = cotizacion.coti_aprobo;
+        }
+
+        if (cotizacion.coti_fechaencurso) {
+            document.getElementById('fecha_en_curso').value = cotizacion.coti_fechaencurso;
+        }
+
+        if (cotizacion.coti_fechaaltatecnica) {
+            document.getElementById('fecha_alta_tecnica').value = cotizacion.coti_fechaaltatecnica;
+        }
+
+        // Campos de empresa
+        if (cotizacion.coti_empresa) {
+            document.getElementById('empresa_nombre').value = cotizacion.coti_empresa;
+        }
+
+        if (cotizacion.coti_establecimiento) {
+            document.getElementById('establecimiento').value = cotizacion.coti_establecimiento;
+        }
+
+        if (cotizacion.coti_direccioncli) {
+            document.getElementById('direccion_cliente').value = cotizacion.coti_direccioncli;
+        }
+
+        if (cotizacion.coti_localidad) {
+            document.getElementById('localidad_cliente').value = cotizacion.coti_localidad;
+        }
+
+        if (cotizacion.coti_partido) {
+            document.getElementById('partido').value = cotizacion.coti_partido;
+        }
+
+        if (cotizacion.coti_cuit) {
+            document.getElementById('cuit_cliente').value = cotizacion.coti_cuit;
+        }
+
+        if (cotizacion.coti_codigopostal) {
+            document.getElementById('codigo_postal_cliente').value = cotizacion.coti_codigopostal;
+        }
+
+        // Guardar datos de ensayos y componentes en sessionStorage para que se carguen después
+        if (ensayos && ensayos.length > 0) {
+            sessionStorage.setItem('ensayosParaClonar', JSON.stringify(ensayos));
+        }
+        if (componentes && componentes.length > 0) {
+            sessionStorage.setItem('componentesParaClonar', JSON.stringify(componentes));
+        }
+
+        // Esperar un momento para que el script de cotización esté listo
+        setTimeout(() => {
+            cargarEnsayosYComponentesDesdeClonacion();
+        }, 500);
+    }
+
+    function cargarEnsayosYComponentesDesdeClonacion() {
+        const ensayosData = sessionStorage.getItem('ensayosParaClonar');
+        const componentesData = sessionStorage.getItem('componentesParaClonar');
+
+        if (!ensayosData && !componentesData) return;
+
+        // Limpiar sessionStorage
+        if (ensayosData) sessionStorage.removeItem('ensayosParaClonar');
+        if (componentesData) sessionStorage.removeItem('componentesParaClonar');
+
+        try {
+            const ensayos = ensayosData ? JSON.parse(ensayosData) : [];
+            const componentes = componentesData ? JSON.parse(componentesData) : [];
+
+            // Intentar acceder al state del script de cotización
+            if (window.cotizacionScripts && window.cotizacionScripts.state) {
+                const state = window.cotizacionScripts.state;
+                
+                // Calcular el contador inicial basado en los ensayos existentes
+                const maxItemEnsayo = Math.max(
+                    ...state.ensayos.map(e => e.item || 0),
+                    ...ensayos.map(e => e.item || 0),
+                    0
+                );
+                
+                // Agregar ensayos al state
+                ensayos.forEach(ensayo => {
+                    const ensayoNormalizado = {
+                        item: ensayo.item,
+                        muestra_id: ensayo.muestra_id || null,
+                        descripcion: ensayo.descripcion,
+                        codigo: ensayo.codigo || '',
+                        cantidad: ensayo.cantidad || 1,
+                        precio: null,
+                        total: null,
+                        tipo: 'ensayo',
+                        componentes_sugeridos: [],
+                        nota_tipo: ensayo.notas && ensayo.notas.length > 0 ? ensayo.notas[0].tipo : null,
+                        nota_contenido: ensayo.notas && ensayo.notas.length > 0 ? ensayo.notas[0].contenido : null,
+                    };
+                    state.ensayos.push(ensayoNormalizado);
+                });
+
+                // Actualizar el contador para que los componentes tengan items únicos
+                // Los componentes deben tener items mayores que el máximo item de ensayo
+                let contadorComponente = maxItemEnsayo;
+
+                // Agregar componentes al state con items únicos
+                componentes.forEach(componente => {
+                    contadorComponente++;
+                    const componenteNormalizado = {
+                        item: contadorComponente, // Item único para el componente
+                        subitem: componente.subitem,
+                        ensayo_asociado: componente.ensayo_asociado, // El item del ensayo al que pertenece
+                        descripcion: componente.analisis && componente.analisis.length > 0 ? componente.analisis[0] : '',
+                        codigo: componente.codigo || '',
+                        precio: componente.precio || 0.00,
+                        cantidad: 1,
+                        total: componente.precio || 0.00,
+                        tipo: 'componente',
+                    };
+                    state.componentes.push(componenteNormalizado);
+                });
+                
+                // Actualizar el contador global para futuros items
+                state.contador = Math.max(state.contador || 0, contadorComponente);
+
+                // Renderizar tabla y actualizar totales
+                if (window.cotizacionScripts.renderTabla) {
+                    window.cotizacionScripts.renderTabla();
+                }
+                if (window.cotizacionScripts.actualizarTotalGeneral) {
+                    window.cotizacionScripts.actualizarTotalGeneral();
+                }
+            } else {
+                // Si no está disponible, recargar la página con los datos en los campos hidden
+                const ensayosHidden = document.getElementById('ensayos_data');
+                const componentesHidden = document.getElementById('componentes_data');
+                
+                if (ensayosHidden && ensayos.length > 0) {
+                    ensayosHidden.value = JSON.stringify(ensayos);
+                }
+                if (componentesHidden && componentes.length > 0) {
+                    componentesHidden.value = JSON.stringify(componentes);
+                }
+
+                Swal.fire({
+                    icon: 'info',
+                    title: 'Recargando...',
+                    text: 'La página se recargará para cargar los ensayos y componentes',
+                    timer: 1500,
+                    showConfirmButton: false
+                }).then(() => {
+                    window.location.reload();
+                });
+            }
+        } catch (error) {
+            console.error('Error cargando ensayos y componentes:', error);
+        }
+    }
+    
+    } // Cierre de initClonacion
+
+})();
+</script>
 @endsection
 

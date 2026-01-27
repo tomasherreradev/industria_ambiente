@@ -18,11 +18,31 @@
     border: none;
     border-radius: 10px;
     box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    transition: transform 0.2s;
+    transition: transform 0.2s, box-shadow 0.2s;
+    cursor: pointer;
 }
 
 .stats-card:hover {
     transform: translateY(-5px);
+    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+}
+
+.stats-card.active {
+    border: 2px solid #0d6efd;
+    box-shadow: 0 4px 15px rgba(13, 110, 253, 0.3);
+    background: linear-gradient(135deg, rgba(13, 110, 253, 0.05) 0%, rgba(13, 110, 253, 0.1) 100%);
+}
+
+.stats-card-monto {
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    transition: transform 0.2s, box-shadow 0.2s;
+    cursor: default;
+}
+
+.stats-card-monto:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
 }
 
 .stats-icon {
@@ -121,8 +141,10 @@ $rechazadas = \App\Models\Ventas::where('coti_estado', 'LIKE', 'R%')->count();
 
     <!-- Estadísticas -->
     <div class="row mb-4">
-        <div class="col-lg-3 col-md-6 mb-3">
-            <div class="card stats-card">
+        <div class="col-lg-2 col-md-4 col-sm-6 mb-3">
+            <div class="card stats-card {{ !request('estado') ? 'active' : '' }}" 
+                 onclick="filtrarPorEstado('')" 
+                 data-estado="">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
@@ -136,8 +158,10 @@ $rechazadas = \App\Models\Ventas::where('coti_estado', 'LIKE', 'R%')->count();
                 </div>
             </div>
         </div>
-        <div class="col-lg-3 col-md-6 mb-3">
-            <div class="card stats-card">
+        <div class="col-lg-2 col-md-4 col-sm-6 mb-3">
+            <div class="card stats-card {{ request('estado') == 'E' ? 'active' : '' }}" 
+                 onclick="filtrarPorEstado('E')" 
+                 data-estado="E">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
@@ -151,8 +175,10 @@ $rechazadas = \App\Models\Ventas::where('coti_estado', 'LIKE', 'R%')->count();
                 </div>
             </div>
         </div>
-        <div class="col-lg-3 col-md-6 mb-3">
-            <div class="card stats-card">
+        <div class="col-lg-2 col-md-4 col-sm-6 mb-3">
+            <div class="card stats-card {{ request('estado') == 'A' ? 'active' : '' }}" 
+                 onclick="filtrarPorEstado('A')" 
+                 data-estado="A">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
@@ -167,8 +193,10 @@ $rechazadas = \App\Models\Ventas::where('coti_estado', 'LIKE', 'R%')->count();
             </div>
         </div>
 
-        <div class="col-lg-3 col-md-6 mb-3">
-            <div class="card stats-card">
+        <div class="col-lg-2 col-md-4 col-sm-6 mb-3">
+            <div class="card stats-card {{ request('estado') == 'R' ? 'active' : '' }}" 
+                 onclick="filtrarPorEstado('R')" 
+                 data-estado="R">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
@@ -177,6 +205,23 @@ $rechazadas = \App\Models\Ventas::where('coti_estado', 'LIKE', 'R%')->count();
                         </div>
                         <div class="stats-icon text-danger">
                             <i class="fas fa-times-circle"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tarjeta de Monto (no clickeable) -->
+        <div class="col-lg-4 col-md-8 col-sm-12 mb-3">
+            <div class="card stats-card-monto bg-white text-info">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="mb-2 opacity-75">Monto Total</h6>
+                            <h2 class="mb-0 fw-bold" style="font-size: 26px;">${{ number_format($montoMostrar, 2, ',', '.') }}</h2>
+                        </div>
+                        <div class="stats-icon" style="opacity: 0.3;">
+                            <i class="fas fa-dollar-sign" style="font-size: 3rem;"></i>
                         </div>
                     </div>
                 </div>
@@ -329,6 +374,40 @@ $rechazadas = \App\Models\Ventas::where('coti_estado', 'LIKE', 'R%')->count();
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
 <script>
+// Función para filtrar por estado desde las tarjetas de estadísticas
+function filtrarPorEstado(estado) {
+    const url = new URL(window.location.href);
+    const baseUrl = url.origin + url.pathname;
+    
+    // Construir parámetros de consulta manteniendo otros filtros
+    const params = new URLSearchParams();
+    
+    // Mantener filtros existentes (excepto estado)
+    if (url.searchParams.get('cliente')) {
+        params.set('cliente', url.searchParams.get('cliente'));
+    }
+    if (url.searchParams.get('fecha_desde')) {
+        params.set('fecha_desde', url.searchParams.get('fecha_desde'));
+    }
+    if (url.searchParams.get('fecha_hasta')) {
+        params.set('fecha_hasta', url.searchParams.get('fecha_hasta'));
+    }
+    if (url.searchParams.get('search')) {
+        params.set('search', url.searchParams.get('search'));
+    }
+    
+    // Agregar o quitar el filtro de estado
+    if (estado) {
+        params.set('estado', estado);
+    }
+    
+    // Construir URL final
+    const finalUrl = params.toString() ? `${baseUrl}?${params.toString()}` : baseUrl;
+    
+    // Redirigir
+    window.location.href = finalUrl;
+}
+
 // Función para limpiar filtros
 function limpiarFiltros() {
     window.location.href = '{{ route("ventas.index") }}';

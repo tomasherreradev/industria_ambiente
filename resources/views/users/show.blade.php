@@ -6,7 +6,6 @@
 @section('content')
 <div class="container py-4">
     <h1 class="mb-4">Editando: {{ $usuario->usu_descripcion }}</h1>
-
     <div class="row">
         <div class="col-md-8">
             @if(session('success'))
@@ -39,7 +38,7 @@
                             <select name="sector_codigo" id="sector_codigo" class="form-select">
                                 <option value="">Sin sector</option>
                                 @foreach($sectores as $sector)
-                                    <option value="{{ $sector->usu_codigo }}" {{ $sector->usu_codigo == $usuario->sector_codigo ? 'selected' : '' }}>
+                                    <option value="{{ $sector->usu_codigo }}" {{ trim($sector->usu_codigo) == trim($usuario->sector_codigo ?? '') ? 'selected' : '' }}>
                                         {{ $sector->usu_descripcion }}
                                     </option>
                                 @endforeach
@@ -50,10 +49,14 @@
                             <label for="rol" class="form-label">Rol</label>
                             <select name="rol" id="rol" class="form-select">
                                 <option value="">Sin rol</option>
-                                <option value="analista" {{ $usuario->rol === 'laboratorio' ? 'selected' : '' }}>Analista</option>
+                                <option value="laboratorio" {{ $usuario->rol === 'laboratorio' ? 'selected' : '' }}>Analista</option>
                                 <option value="muestreador" {{ $usuario->rol === 'muestreador' ? 'selected' : '' }}>Muestreador</option>
                                 <option value="coordinador_lab" {{ $usuario->rol === 'coordinador_lab' ? 'selected' : '' }}>Coordinador Laboratorio</option>
                                 <option value="coordinador_muestreo" {{ $usuario->rol === 'coordinador_muestreo' ? 'selected' : '' }}>Coordinador Muestreo</option>
+                                <option value="facturador" {{ $usuario->rol === 'facturador' ? 'selected' : '' }}>Facturador</option>
+                                <option value="ventas" {{ $usuario->rol === 'ventas' ? 'selected' : '' }}>Vendedor</option>
+                                <option value="firmador" {{ $usuario->rol === 'firmador' ? 'selected' : '' }}>Firmador</option>
+                                <option value="cliente" {{ $usuario->rol === 'cliente' ? 'selected' : '' }}>Usuario Cliente</option>
                             </select>
                         </div>
 
@@ -76,7 +79,7 @@
 
         function toggleSector() {
             const rol = rolSelect.value;
-            const habilitar = rol === 'analista' || rol === 'coordinador_lab';
+            const habilitar = rol === 'laboratorio' || rol === 'coordinador_lab';
 
             sectorSelect.disabled = !habilitar;
             if (!habilitar) {

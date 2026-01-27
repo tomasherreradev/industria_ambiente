@@ -23,6 +23,12 @@ class Kernel extends ConsoleKernel
                 ->dailyAt('08:00')
                 ->appendOutputTo(storage_path('logs/muestras.log'))
                 ->description('Verificar muestras a punto de vencer');
+
+        // Verificar muestras en muestreo sin responsables asignados cada 2 horas
+        $schedule->command('app:verificar-muestras-sin-responsables')
+                ->everyTwoHours()
+                ->appendOutputTo(storage_path('logs/muestras-sin-responsables.log'))
+                ->description('Verificar muestras en muestreo sin responsables asignados');
     }
 
     /**

@@ -49,12 +49,31 @@ public function index(Request $request)
 
     $facturas = $query->paginate(20);
 
+    // Obtener estadísticas base
+    $totalFacturas = Factura::count();
+    $montoTotalFacturas = Factura::sum('monto_total');
+    $facturasPendientes = CotioInstancia::where('facturado', false)->where('enable_inform', true)->where('cotio_subitem', 0)->count();
+    $facturasFacturadas = CotioInstancia::where('facturado', true)->where('enable_inform', true)->where('cotio_subitem', 0)->count();
+    
+    // Calcular monto de pendientes usando el mismo método que en facturar
+    $montoPendientes = $this->calcularMontoPendientes();
+    
+    // Determinar monto a mostrar según el filtro tipo
+    $tipoFiltro = $request->get('tipo_filtro', 'total'); // 'total', 'pendientes'
+    $montoMostrar = $montoTotalFacturas; // Por defecto mostrar total de facturas
+    
+    if ($tipoFiltro == 'pendientes') {
+        $montoMostrar = $montoPendientes;
+    }
+
     // Obtener estadísticas
     $estadisticas = [
-        'total_facturas' => Factura::count(),
-        'monto_total' => Factura::sum('monto_total'),
-        'facturas_pendientes' => CotioInstancia::where('facturado', false)->where('enable_inform', true)->count(),
-        'facturas_facturadas' => CotioInstancia::where('facturado', true)->where('enable_inform', true)->count(),
+        'total_facturas' => $totalFacturas,
+        'monto_total' => $montoMostrar,
+        'monto_total_facturas' => $montoTotalFacturas,
+        'monto_pendientes' => $montoPendientes,
+        'facturas_pendientes' => $facturasPendientes,
+        'facturas_facturadas' => $facturasFacturadas,
     ];
 
 
@@ -150,9 +169,61 @@ public function facturar($coti_num)
                     
                     if ($instancia && $tarea) {
                         $precioBrutoMuestra = $muestrasTarifario[$item]['precio_unitario'] ?? 0.0;
-                        $precioNetoMuestra = $this->aplicarDescuento($precioBrutoMuestra, $descuentoFactor);
+                        
+                        // IMPORTANTE: Restar el precio de los análisis ya facturados de esta muestra
+                        // No filtrar por enable_inform porque los análisis facturados pueden tener enable_inform = false
+                        $analisisYaFacturados = CotioInstancia::where('cotio_numcoti', $cotizacion->coti_num)
+                            ->where('cotio_item', $item)
+                            ->where('instance_number', $instanceNumber)
+                            ->where('cotio_subitem', '>', 0)
+                            ->where('facturado', true)
+                            ->get();
+                        
+                        $precioAnalisisYaFacturados = 0.0;
+                        foreach ($analisisYaFacturados as $analisisFacturado) {
+                            // Obtener el precio del análisis desde el tarifario
+                            // El tarifario tiene estructura: $analisisTarifario[$cotio_item][$cotio_subitem]['precio']
+                            $precioAnalisis = $analisisTarifario[$analisisFacturado->cotio_item][$analisisFacturado->cotio_subitem]['precio'] ?? 0.0;
+                            
+                            // Si no se encuentra en el tarifario, intentar calcularlo desde la tarea
+                            if ($precioAnalisis == 0.0) {
+                                $tareaAnalisis = $tareas->where('cotio_item', $analisisFacturado->cotio_item)
+                                    ->where('cotio_subitem', $analisisFacturado->cotio_subitem)
+                                    ->first();
+                                if ($tareaAnalisis) {
+                                    $precioAnalisis = $this->calcularImporteDesdeTarea($tareaAnalisis);
+                                }
+                            }
+                            
+                            $precioAnalisisYaFacturados += $precioAnalisis;
+                            
+                            Log::info('Análisis ya facturado encontrado para ajuste de precio de muestra', [
+                                'analisis_id' => $analisisFacturado->id,
+                                'cotio_item' => $analisisFacturado->cotio_item,
+                                'cotio_subitem' => $analisisFacturado->cotio_subitem,
+                                'precio_analisis' => $precioAnalisis,
+                                'precio_acumulado' => $precioAnalisisYaFacturados,
+                                'tarifario_disponible' => isset($analisisTarifario[$analisisFacturado->cotio_item][$analisisFacturado->cotio_subitem])
+                            ]);
+                        }
+                        
+                        // El precio de la muestra debe ser el total menos los análisis ya facturados
+                        $precioBrutoMuestraAjustado = max(0.0, $precioBrutoMuestra - $precioAnalisisYaFacturados);
+                        $precioNetoMuestra = $this->aplicarDescuento($precioBrutoMuestraAjustado, $descuentoFactor);
 
-                        $instancia->precio_bruto = $precioBrutoMuestra;
+                        Log::info('Cálculo de precio de muestra ajustado', [
+                            'muestra_id' => $instancia->id,
+                            'cotio_item' => $item,
+                            'instance_number' => $instanceNumber,
+                            'precio_bruto_original' => $precioBrutoMuestra,
+                            'precio_analisis_ya_facturados' => $precioAnalisisYaFacturados,
+                            'cantidad_analisis_facturados' => $analisisYaFacturados->count(),
+                            'precio_bruto_ajustado' => $precioBrutoMuestraAjustado,
+                            'precio_neto_ajustado' => $precioNetoMuestra,
+                            'descuento_factor' => $descuentoFactor
+                        ]);
+
+                        $instancia->precio_bruto = $precioBrutoMuestraAjustado;
                         $instancia->precio_neto = $precioNetoMuestra;
 
                         $analisisMuestra = $this->getAnalisisForMuestra($tareas, $item, $instanceNumber, $todasInstancias);
@@ -208,7 +279,13 @@ protected function getOrCreateInstancia($numcoti, $item, $subitem, $instance, $i
         return $instanciasExistentes[$item][$subitem][$instance]->first();
     }
 
-    return new CotioInstancia([
+    // Obtener datos de Cotio para copiar métodos
+    $cotio = Cotio::where('cotio_numcoti', $numcoti)
+        ->where('cotio_item', $item)
+        ->where('cotio_subitem', $subitem)
+        ->first();
+
+    $instanciaData = [
         'cotio_numcoti' => $numcoti,
         'cotio_item' => $item,
         'cotio_subitem' => $subitem,
@@ -216,7 +293,19 @@ protected function getOrCreateInstancia($numcoti, $item, $subitem, $instance, $i
         'responsable_muestreo' => null,
         'fecha_muestreo' => null,
         'enable_inform' => true,
-    ]);
+    ];
+
+    // Copiar ambos métodos desde Cotio si están disponibles
+    if ($cotio) {
+        if ($cotio->cotio_codigometodo) {
+            $instanciaData['cotio_codigometodo'] = $cotio->cotio_codigometodo;
+        }
+        if ($cotio->cotio_codigometodo_analisis) {
+            $instanciaData['cotio_codigometodo_analisis'] = $cotio->cotio_codigometodo_analisis;
+        }
+    }
+
+    return new CotioInstancia($instanciaData);
 }
 
 protected function getAnalisisForMuestra($tareas, $item, $instance, $todasInstancias)
@@ -280,13 +369,15 @@ public function generarFacturaArca(Request $request, $coti_num)
         $muestrasSeleccionadas = $request->input('muestras', []);
         $analisisSeleccionados = $request->input('analisis', []);
 
-        // Cargar instancias de muestras
+        // Cargar instancias de muestras (solo las que NO están facturadas)
         $muestras = CotioInstancia::whereIn('id', $muestrasSeleccionadas)
+                    ->where('facturado', false) // Solo muestras no facturadas
                     ->with(['cotizacion', 'responsablesAnalisis'])
                     ->get();
 
-        // Cargar instancias de análisis
+        // Cargar instancias de análisis (solo los que NO están facturados)
         $analisis = CotioInstancia::whereIn('id', $analisisSeleccionados)
+                    ->where('facturado', false) // Solo análisis no facturados
                     ->with(['cotizacion'])
                     ->get();
 
@@ -341,20 +432,21 @@ public function generarFacturaArca(Request $request, $coti_num)
         foreach ($muestras as $muestra) {
             $key = $muestra->cotio_item . '|' . $muestra->instance_number;
             
-            // Si hay análisis seleccionados de esta muestra, verificar si TODOS están seleccionados
+            // Si hay análisis seleccionados de esta muestra, verificar si TODOS los NO FACTURADOS están seleccionados
             if (isset($analisisSeleccionadosPorMuestra[$key])) {
-                // Obtener todos los análisis de esta muestra
-                $todosAnalisisMuestra = CotioInstancia::where('cotio_numcoti', $cotizacion->coti_num)
+                // Obtener todos los análisis NO FACTURADOS de esta muestra
+                $todosAnalisisMuestraDisponibles = CotioInstancia::where('cotio_numcoti', $cotizacion->coti_num)
                     ->where('cotio_item', $muestra->cotio_item)
                     ->where('instance_number', $muestra->instance_number)
                     ->where('cotio_subitem', '>', 0)
                     ->where('enable_inform', true)
+                    ->where('facturado', false) // Solo contar los NO facturados
                     ->count();
                 
                 $analisisSeleccionadosCount = count($analisisSeleccionadosPorMuestra[$key]);
                 
-                // Si no todos los análisis están seleccionados, NO facturar la muestra
-                if ($todosAnalisisMuestra > 0 && $analisisSeleccionadosCount < $todosAnalisisMuestra) {
+                // Si no todos los análisis DISPONIBLES están seleccionados, NO facturar la muestra
+                if ($todosAnalisisMuestraDisponibles > 0 && $analisisSeleccionadosCount < $todosAnalisisMuestraDisponibles) {
                     continue; // Saltar esta muestra, solo se facturarán los análisis individuales
                 }
             }
@@ -372,7 +464,33 @@ public function generarFacturaArca(Request $request, $coti_num)
                 }
             }
             
-            $precio = $this->aplicarDescuento($precioBase, $descuentoFactor);
+            // IMPORTANTE: Si hay análisis ya facturados de esta muestra, restar sus precios del total
+            // No filtrar por enable_inform porque los análisis facturados pueden tener enable_inform = false
+            $analisisYaFacturados = CotioInstancia::where('cotio_numcoti', $cotizacion->coti_num)
+                ->where('cotio_item', $muestra->cotio_item)
+                ->where('instance_number', $muestra->instance_number)
+                ->where('cotio_subitem', '>', 0)
+                ->where('facturado', true)
+                ->get();
+            
+            $precioAnalisisYaFacturados = 0.0;
+            foreach ($analisisYaFacturados as $analisisFacturado) {
+                $precioAnalisis = $analisisTarifario[$analisisFacturado->cotio_item][$analisisFacturado->cotio_subitem]['precio'] ?? 0.0;
+                $precioAnalisisYaFacturados += $precioAnalisis;
+            }
+            
+            // El precio de la muestra debe ser el total menos los análisis ya facturados
+            $precioBaseAjustado = max(0.0, $precioBase - $precioAnalisisYaFacturados);
+            
+            Log::info('Ajuste de precio de muestra por análisis ya facturados', [
+                'muestra_id' => $muestra->id,
+                'precio_base_original' => $precioBase,
+                'precio_analisis_ya_facturados' => $precioAnalisisYaFacturados,
+                'precio_base_ajustado' => $precioBaseAjustado,
+                'cantidad_analisis_ya_facturados' => $analisisYaFacturados->count()
+            ]);
+            
+            $precio = $this->aplicarDescuento($precioBaseAjustado, $descuentoFactor);
 
             Log::info('Facturando muestra individual', [
                 'cotio_item' => $muestra->cotio_item,
@@ -391,14 +509,16 @@ public function generarFacturaArca(Request $request, $coti_num)
                 'precio_unitario' => $precio,
                 'subtotal' => $precio,
                 'instancia_id' => $muestra->id,
-                'precio_unitario_bruto' => $precioBase,
-                'subtotal_bruto' => $precioBase,
+                'precio_unitario_bruto' => $precioBaseAjustado,
+                'subtotal_bruto' => $precioBaseAjustado,
                 'descuento_porcentaje' => $descuentoPorcentaje,
                 'descuento_global_porcentaje' => $descuentoGlobalPorcentaje,
                 'descuento_sector_porcentaje' => $descuentoSectorPorcentaje,
-                'descuento_monto_item' => round($precioBase - $precio, 2),
+                'descuento_monto_item' => round($precioBaseAjustado - $precio, 2),
+                'precio_original' => $precioBase,
+                'precio_analisis_ya_facturados' => $precioAnalisisYaFacturados,
             ];
-            $montoTotalBruto += $precioBase;
+            $montoTotalBruto += $precioBaseAjustado;
             $montoTotal += $precio;
         }
 
@@ -603,6 +723,12 @@ private function guardarFacturacion($data)
         // (no si solo se seleccionaron algunos análisis)
         $muestrasIds = $data['muestras_ids'] ?? [];
         if (!empty($muestrasIds)) {
+            // Obtener las muestras para conocer sus datos
+            $muestrasFacturadas = CotioInstancia::whereIn('id', $muestrasIds)
+                ->where('cotio_subitem', 0) // Solo muestras, no análisis
+                ->get();
+
+            // Marcar las muestras como facturadas
             CotioInstancia::whereIn('id', $muestrasIds)
                 ->where('cotio_subitem', 0) // Solo muestras, no análisis
                 ->update(['facturado' => true]);
@@ -611,6 +737,23 @@ private function guardarFacturacion($data)
                 'factura_id' => $factura->id,
                 'muestras_ids' => $muestrasIds
             ]);
+
+            // IMPORTANTE: Cuando se factura una muestra completa, también marcar TODOS sus análisis como facturados
+            foreach ($muestrasFacturadas as $muestra) {
+                $analisisDeMuestra = CotioInstancia::where('cotio_numcoti', $muestra->cotio_numcoti)
+                    ->where('cotio_item', $muestra->cotio_item)
+                    ->where('instance_number', $muestra->instance_number)
+                    ->where('cotio_subitem', '>', 0) // Solo análisis, no la muestra
+                    ->where('enable_inform', true)
+                    ->update(['facturado' => true]);
+
+                Log::info('Análisis de muestra marcados como facturados (muestra completa facturada):', [
+                    'muestra_id' => $muestra->id,
+                    'cotio_item' => $muestra->cotio_item,
+                    'instance_number' => $muestra->instance_number,
+                    'analisis_marcados' => $analisisDeMuestra
+                ]);
+            }
         }
 
         // Verificar muestras que tienen análisis facturados y marcar muestra como facturada
@@ -1037,25 +1180,131 @@ private function integrarConArca($clienteData, $items, $montoTotal, $cotizacion)
         }
 
         $wsfe = $afip->ElectronicBilling;
-        $result = $wsfe->CreateNextVoucher($facturaData);
-
-        if (isset($result['CAE'], $result['voucher_number'], $result['CAEFchVto'])) {
+        
+        // Paso 1: Obtener el último comprobante autorizado para conocer el número y la fecha
+        try {
+            $ultimoNumero = $wsfe->GetLastVoucher($facturaData['PtoVta'], $facturaData['CbteTipo']);
+            $proximoNumero = $ultimoNumero + 1;
+            
+            Log::info('Último comprobante autorizado', [
+                'PtoVta' => $facturaData['PtoVta'],
+                'CbteTipo' => $facturaData['CbteTipo'],
+                'ultimo_numero' => $ultimoNumero,
+                'proximo_numero' => $proximoNumero
+            ]);
+            
+            // Paso 2: Obtener información del último comprobante para conocer su fecha
+            $fechaUltimoComprobante = null;
+            if ($ultimoNumero > 0) {
+                try {
+                    $infoUltimoComprobante = $wsfe->GetVoucherInfo($ultimoNumero, $facturaData['PtoVta'], $facturaData['CbteTipo']);
+                    if ($infoUltimoComprobante && isset($infoUltimoComprobante->CbteFch)) {
+                        $fechaUltimoComprobante = $infoUltimoComprobante->CbteFch;
+                        Log::info('Fecha del último comprobante obtenida', [
+                            'fecha_ultimo' => $fechaUltimoComprobante,
+                            'fecha_actual_intentada' => $facturaData['CbteFch']
+                        ]);
+                    }
+                } catch (\Exception $e) {
+                    Log::warning('No se pudo obtener información del último comprobante: ' . $e->getMessage());
+                }
+            }
+            
+            // Paso 3: Ajustar la fecha si es necesario
+            // La fecha debe ser igual o posterior a la del último comprobante
+            $fechaActual = $facturaData['CbteFch'];
+            if ($fechaUltimoComprobante && $fechaUltimoComprobante > $fechaActual) {
+                // Si la fecha del último comprobante es posterior, usar esa fecha o una posterior
+                $facturaData['CbteFch'] = $fechaUltimoComprobante;
+                Log::warning('Fecha ajustada para cumplir con requisitos de AFIP', [
+                    'fecha_anterior' => $fechaActual,
+                    'fecha_ajustada' => $facturaData['CbteFch'],
+                    'fecha_ultimo_comprobante' => $fechaUltimoComprobante
+                ]);
+            }
+            
+            // Paso 4: Establecer el número del comprobante explícitamente
+            $facturaData['CbteDesde'] = $proximoNumero;
+            $facturaData['CbteHasta'] = $proximoNumero;
+            
+            Log::info('Datos del comprobante a generar', [
+                'PtoVta' => $facturaData['PtoVta'],
+                'CbteTipo' => $facturaData['CbteTipo'],
+                'CbteDesde' => $facturaData['CbteDesde'],
+                'CbteHasta' => $facturaData['CbteHasta'],
+                'CbteFch' => $facturaData['CbteFch'],
+                'ImpTotal' => $facturaData['ImpTotal']
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Error al obtener último comprobante autorizado', [
+                'mensaje' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            // Si no se puede obtener el último comprobante, intentar con CreateNextVoucher como fallback
+            Log::info('Intentando con CreateNextVoucher como fallback');
+            try {
+                $result = $wsfe->CreateNextVoucher($facturaData);
+                
+                if (isset($result['CAE'], $result['voucher_number'], $result['CAEFchVto'])) {
+                    return [
+                        'success' => true,
+                        'numero_factura' => sprintf('%04d-%08d', $facturaData['PtoVta'], $result['voucher_number']),
+                        'cae' => $result['CAE'],
+                        'fecha_vencimiento' => $result['CAEFchVto'],
+                    ];
+                }
+            } catch (\Exception $e2) {
+                Log::error('Error también con CreateNextVoucher: ' . $e2->getMessage());
+            }
+            
             return [
-                'success' => true,
-                'numero_factura' => sprintf('%04d-%08d', $facturaData['PtoVta'], $result['voucher_number']),
-                'cae' => $result['CAE'],
-                'fecha_vencimiento' => $result['CAEFchVto'],
+                'success' => false,
+                'error' => 'Error al obtener último comprobante autorizado: ' . $e->getMessage(),
+                'detalle' => 'No se pudo consultar el último comprobante autorizado en AFIP.'
             ];
         }
-
-        Log::error('Error al generar factura en AFIP: ' . json_encode($result));
-
-        return [
-            'success' => false,
-            'error' => isset($result['Errors'])
-                ? 'Error AFIP: ' . json_encode($result['Errors'])
-                : 'Error al generar factura: Respuesta incompleta.',
-        ];
+        
+        // Paso 5: Crear el comprobante con los parámetros correctos
+        try {
+            $result = $wsfe->CreateVoucher($facturaData);
+            
+            if (isset($result['CAE'])) {
+                return [
+                    'success' => true,
+                    'numero_factura' => sprintf('%04d-%08d', $facturaData['PtoVta'], $proximoNumero),
+                    'cae' => $result['CAE'],
+                    'fecha_vencimiento' => $result['CAEFchVto'] ?? null,
+                ];
+            }
+            
+            Log::error('Error al generar factura en AFIP: Respuesta incompleta', [
+                'resultado' => $result
+            ]);
+            
+            return [
+                'success' => false,
+                'error' => isset($result['Errors'])
+                    ? 'Error AFIP: ' . json_encode($result['Errors'], JSON_UNESCAPED_UNICODE)
+                    : 'Error al generar factura: Respuesta incompleta.',
+            ];
+            
+        } catch (\Exception $e) {
+            Log::error('Excepción al llamar CreateVoucher', [
+                'mensaje' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'codigo_error' => $e->getCode(),
+                'proximo_numero' => $proximoNumero,
+                'fecha_usada' => $facturaData['CbteFch']
+            ]);
+            
+            return [
+                'success' => false,
+                'error' => 'Error al generar factura: ' . $e->getMessage(),
+                'detalle' => 'Verificar que el punto de venta y tipo de comprobante sean correctos, y que la fecha sea válida.'
+            ];
+        }
 
     } catch (\Exception $e) {
         Log::error('Error en integración ARCA: ' . $e->getMessage());
@@ -1371,6 +1620,72 @@ private function urlPdfValida($url)
         return strpos($headers[0], '200') !== false;
     } catch (\Exception $e) {
         return false;
+    }
+}
+
+/**
+ * Calcular el monto total de las muestras pendientes de facturar
+ * Usa el mismo método que en facturar para calcular precios con descuentos
+ */
+private function calcularMontoPendientes(): float
+{
+    try {
+        // Obtener todas las muestras pendientes agrupadas por cotización
+        $muestrasPendientes = CotioInstancia::with(['cotizacion'])
+            ->where('facturado', false)
+            ->where('enable_inform', true)
+            ->where('cotio_subitem', 0)
+            ->get()
+            ->groupBy('cotio_numcoti');
+
+        $montoTotal = 0.0;
+
+        foreach ($muestrasPendientes as $cotiNum => $muestras) {
+            try {
+                $cotizacion = $muestras->first()->cotizacion;
+                
+                if (!$cotizacion) {
+                    continue;
+                }
+
+                // Calcular resumen financiero para esta cotización (una sola vez)
+                $tareas = $cotizacion->tareas;
+                $resumenFinanciero = $this->construirResumenFinanciero($cotizacion, $tareas);
+                $muestrasTarifario = $resumenFinanciero['muestras'];
+                $descuentoFactor = $resumenFinanciero['descuento_factor'];
+
+                // Calcular monto para cada muestra de esta cotización
+                foreach ($muestras as $muestra) {
+                    $item = $muestra->cotio_item;
+                    
+                    // Obtener precio unitario del tarifario
+                    $precioBase = $muestrasTarifario[$item]['precio_unitario'] ?? 0.0;
+                    
+                    // Verificar que no se esté usando el subtotal en lugar del precio unitario
+                    if (isset($muestrasTarifario[$item]['subtotal'])) {
+                        $subtotal = $muestrasTarifario[$item]['subtotal'];
+                        $cantidad = $muestrasTarifario[$item]['cantidad'] ?? 1;
+                        // Si el precio base parece ser el subtotal, calcular el unitario
+                        if ($precioBase > 0 && $cantidad > 1 && abs($precioBase - $subtotal) < 0.01) {
+                            $precioBase = $subtotal / $cantidad;
+                        }
+                    }
+                    
+                    // Aplicar descuento
+                    $precioConDescuento = $this->aplicarDescuento($precioBase, $descuentoFactor);
+                    
+                    $montoTotal += $precioConDescuento;
+                }
+            } catch (\Exception $e) {
+                Log::warning('Error al calcular monto para cotización ' . $cotiNum . ': ' . $e->getMessage());
+                continue;
+            }
+        }
+
+        return round($montoTotal, 2);
+    } catch (\Exception $e) {
+        Log::error('Error al calcular monto de pendientes: ' . $e->getMessage());
+        return 0.0;
     }
 }
 

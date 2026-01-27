@@ -5,9 +5,14 @@ namespace App\Http\Controllers;
 use App\Models\LeyNormativa;
 use App\Models\Variable;
 use App\Models\CotioItems;
+use App\Exports\LeyesNormativasTemplateExport;
+use App\Imports\LeyesNormativasImport;
 use Illuminate\Http\Request;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Maatwebsite\Excel\Facades\Excel;
 
 class LeyNormativaController extends Controller
 {
@@ -40,8 +45,12 @@ class LeyNormativaController extends Controller
 
         $normativas = $query->orderBy('grupo')->orderBy('codigo')->paginate(15);
         $grupos = LeyNormativa::getGruposUnicos();
+        
+        // Obtener última fecha de importación y asegurar que sea Carbon
+        $ultimaImportacionRaw = Cache::get('leyes_normativas_ultima_importacion');
+        $ultimaImportacion = $ultimaImportacionRaw ? Carbon::parse($ultimaImportacionRaw) : null;
 
-        return view('leyes-normativas.index', compact('normativas', 'grupos'));
+        return view('leyes-normativas.index', compact('normativas', 'grupos', 'ultimaImportacion'));
     }
 
     /**
@@ -262,5 +271,58 @@ class LeyNormativaController extends Controller
 
         return redirect()->route('leyes-normativas.index')
                         ->with('success', 'Ley/Normativa eliminada exitosamente.');
+    }
+
+    /**
+     * Exportar plantilla Excel para importación masiva
+     */
+    public function exportTemplate()
+    {
+        return Excel::download(new LeyesNormativasTemplateExport(), 'plantilla_importacion_leyes_normativas.xlsx');
+    }
+
+    /**
+     * Mostrar formulario de importación
+     */
+    public function showImport()
+    {
+        return view('leyes-normativas.import');
+    }
+
+    /**
+     * Procesar importación de archivo Excel
+     */
+    public function import(Request $request)
+    {
+        $request->validate([
+            'archivo' => 'required|mimes:xlsx,xls|max:10240' // Máximo 10MB
+        ]);
+
+        try {
+            $import = new LeyesNormativasImport();
+            Excel::import($import, $request->file('archivo'));
+
+            // Guardar la fecha de la última importación
+            Cache::forever('leyes_normativas_ultima_importacion', now());
+
+            $mensaje = 'Importación completada. ';
+            $mensaje .= "Leyes creadas: {$import->getLeyesCreadas()}, ";
+            $mensaje .= "Variables asociadas: {$import->getVariablesAsociadas()}, ";
+            $mensaje .= "Filas procesadas: {$import->getSuccessCount()}";
+
+            $errores = $import->getErrors();
+            if (!empty($errores)) {
+                $mensaje .= ". Errores: " . count($errores);
+                return redirect()->route('leyes-normativas.index')
+                    ->with('warning', $mensaje)
+                    ->with('import_errors', $errores);
+            }
+
+            return redirect()->route('leyes-normativas.index')
+                ->with('success', $mensaje);
+        } catch (\Exception $e) {
+            return redirect()->route('leyes-normativas.index')
+                ->with('error', 'Error al importar: ' . $e->getMessage());
+        }
     }
 }

@@ -80,7 +80,19 @@
                             <dd class="col-sm-7"><strong>#{{ $factura->cotizacion->coti_num }}</strong></dd>
 
                             <dt class="col-sm-5">Empresa:</dt>
-                            <dd class="col-sm-7">{{ $factura->cotizacion->coti_empresa ?? 'N/A' }}</dd>
+                            <dd class="col-sm-7">
+                                @php
+                                    $empresaRelacionadaFact = null;
+                                    if ($factura->cotizacion->coti_cli_empresa) {
+                                        $empresaRelacionadaFact = \App\Models\ClienteEmpresaRelacionada::find($factura->cotizacion->coti_cli_empresa);
+                                    }
+                                @endphp
+                                @if($empresaRelacionadaFact)
+                                    {{ $empresaRelacionadaFact->razon_social }}
+                                @else
+                                    {{ $factura->cotizacion->coti_empresa ?? 'N/A' }}
+                                @endif
+                            </dd>
 
                             <dt class="col-sm-5">CUIT:</dt>
                             <dd class="col-sm-7">{{ $factura->cotizacion->coti_cuit ?? 'N/A' }}</dd>

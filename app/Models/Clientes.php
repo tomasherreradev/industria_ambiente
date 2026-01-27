@@ -117,6 +117,7 @@ class Clientes extends Model
         'cli_rel_empresa_localidad',
         'cli_rel_empresa_partido',
         'cli_rel_empresa_contacto',
+        'es_consultor',
     ];
 
     protected $casts = [
@@ -132,7 +133,8 @@ class Clientes extends Model
         'cli_sector_higiene_pct' => 'decimal:2',
         'cli_sector_microbiologia_pct' => 'decimal:2',
         'cli_sector_cromatografia_pct' => 'decimal:2',
-        'cli_montomax' => 'decimal:2'
+        'cli_montomax' => 'decimal:2',
+        'es_consultor' => 'boolean',
     ];
 
     // Relaciones
@@ -154,6 +156,16 @@ class Clientes extends Model
     public function tipoCliente()
     {
         return $this->belongsTo(TipoCliente::class, 'cli_codigotcli', 'tcli_codigo');
+    }
+
+    public function empresasRelacionadas()
+    {
+        return $this->hasMany(ClienteEmpresaRelacionada::class, 'cli_codigo', 'cli_codigo');
+    }
+
+    public function razonesSocialesFacturacion()
+    {
+        return $this->hasMany(ClienteRazonSocialFacturacion::class, 'cli_codigo', 'cli_codigo');
     }
 
     // Métodos auxiliares

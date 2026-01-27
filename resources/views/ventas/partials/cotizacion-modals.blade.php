@@ -63,35 +63,19 @@
                         </div>
                     </div>
 
-                    <div class="row">
-                        <div class="col-md-4">
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="nota_tipo" id="nota_imprimible" value="imprimible" checked>
-                                <label class="form-check-label" for="nota_imprimible">Nota Imprimible</label>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="nota_tipo" id="nota_interna" value="interna">
-                                <label class="form-check-label" for="nota_interna">Nota Interna</label>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="nota_tipo" id="nota_fact" value="fact">
-                                <label class="form-check-label" for="nota_fact">Nota Fact.</label>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="row mt-3">
+                    <!-- Sección de Notas Múltiples -->
+                    <div class="row mb-3">
                         <div class="col-md-12">
-                            <button type="button" class="btn btn-sm btn-outline-secondary mb-2">Insertar Nota Predefinida</button>
-                            <div class="form-check mb-2">
-                                <input class="form-check-input" type="checkbox" id="predeterminar">
-                                <label class="form-check-label" for="predeterminar">Predeterminar</label>
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <label class="form-label mb-0 fw-semibold">Notas:</label>
+                                <button type="button" class="btn btn-sm btn-outline-primary" id="btnAgregarNotaEnsayo">
+                                    <x-heroicon-o-plus style="width: 14px; height: 14px;" class="me-1" />
+                                    Agregar Nota
+                                </button>
                             </div>
-                            <textarea class="form-control" rows="4" placeholder="Comprende el análisis puntual de calidad de aire exterior en sitios sobre a definir en función de los vientos predominantes para la determinación de MP TOTAL (EPA O 2 1) o MP10 (EPA O 2 3)."></textarea>
+                            <div id="notasEnsayoContainer">
+                                <!-- Las notas se agregarán dinámicamente aquí -->
+                            </div>
                         </div>
                     </div>
                 </form>
@@ -127,6 +111,7 @@
                         </div>
                         <div class="col-md-6">
                             <label for="componente_analisis" class="form-label">Seleccionar Análisis <span class="text-danger">*</span></label>
+                            
                             <select class="form-select" id="componente_analisis" name="componente_analisis[]" multiple required>
                                 <option disabled value="">Seleccionar análisis...</option>
                             </select>
@@ -175,10 +160,6 @@
                             <input type="number" step="0.01" class="form-control" placeholder="0.00" readonly>
                             <small class="text-muted">Última Cotización</small>
                         </div>
-                        <div class="col-md-4">
-                            <input type="number" step="0.01" class="form-control" placeholder="0.00" readonly>
-                            <small class="text-muted">Última Factura</small>
-                        </div>
                     </div>
 
                     <div class="row mb-3">
@@ -189,6 +170,7 @@
                         </div>
                     </div>
 
+                    {{-- Notas para componentes - COMENTADO
                     <div class="row">
                         <div class="col-md-4">
                             <div class="form-check">
@@ -217,9 +199,10 @@
                                 <input class="form-check-input" type="checkbox" id="comp_predeterminar">
                                 <label class="form-check-label" for="comp_predeterminar">Predeterminar</label>
                             </div>
-                            <textarea class="form-control" rows="4" placeholder="Descripción del componente..."></textarea>
+                            <textarea class="form-control" id="componente_nota_contenido" name="componente_nota_contenido" rows="4" placeholder="Descripción del componente..."></textarea>
                         </div>
                     </div>
+                    --}}
                 </form>
             </div>
             <div class="modal-footer">
@@ -253,19 +236,6 @@
                     </div>
 
                     <div class="row mb-3">
-                        <div class="col-md-6">
-                            <label for="edit_componente_codigo" class="form-label">Código:</label>
-                            <input type="text" class="form-control" id="edit_componente_codigo" name="edit_componente_codigo" readonly>
-                        </div>
-                        <div class="col-md-6">
-                            <label for="edit_componente_matriz" class="form-label">Matriz:</label>
-                            <select class="form-select" id="edit_componente_matriz" name="edit_componente_matriz">
-                                <option value="">Seleccionar matriz...</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="row mb-3">
                         <div class="col-md-4">
                             <label for="edit_componente_precio" class="form-label">Precio:</label>
                             <input type="number" step="0.01" class="form-control" id="edit_componente_precio" name="edit_componente_precio" value="0.00" min="0">
@@ -281,24 +251,79 @@
                             </select>
                         </div>
                     </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="btnGuardarComponenteEditado">Guardar Cambios</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Editar Ensayo -->
+<div class="modal fade" id="modalEditarEnsayo" tabindex="-1" aria-labelledby="modalEditarEnsayoLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title" id="modalEditarEnsayoLabel">Editar Ensayo</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="formEditarEnsayo">
+                    <input type="hidden" id="edit_ensayo_item_id">
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-12">
+                            <label for="edit_ensayo_muestra" class="form-label">Seleccionar Muestra/Ensayo <span class="text-danger">*</span></label>
+                            <select class="form-select" id="edit_ensayo_muestra" name="edit_ensayo_muestra" required>
+                                <option value="">Seleccionar muestra...</option>
+                            </select>
+                            <small class="text-muted">Seleccione el tipo de muestra que desea analizar</small>
+                        </div>
+                    </div>
 
                     <div class="row mb-3">
                         <div class="col-md-6">
-                            <label for="edit_componente_ley" class="form-label">Ley/Normativa:</label>
-                            <select class="form-select" id="edit_componente_ley" name="edit_componente_ley">
+                            <label for="edit_ensayo_codigo" class="form-label">Código:</label>
+                            <input type="text" class="form-control" id="edit_ensayo_codigo" name="edit_ensayo_codigo" 
+                                   placeholder="Se generará automáticamente" readonly>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="edit_ensayo_cantidad" class="form-label">Cantidad:</label>
+                            <input type="number" class="form-control" id="edit_ensayo_cantidad" name="edit_ensayo_cantidad" value="1" min="1" step="1">
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="edit_ensayo_ley_normativa" class="form-label">Ley/Normativa:</label>
+                            <select class="form-select" id="edit_ensayo_ley_normativa" name="edit_ensayo_ley_normativa">
                                 <option value="">Seleccionar normativa...</option>
                             </select>
                         </div>
-                        <div class="col-md-6">
-                            <label for="edit_componente_cantidad" class="form-label">Cantidad:</label>
-                            <input type="number" class="form-control" id="edit_componente_cantidad" name="edit_componente_cantidad" value="1" min="1" step="1">
+                    </div>
+
+                    <!-- Sección de Notas Múltiples -->
+                    <div class="row mb-3">
+                        <div class="col-md-12">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <label class="form-label mb-0 fw-semibold">Notas:</label>
+                                <button type="button" class="btn btn-sm btn-outline-primary" id="btnAgregarNotaEditEnsayo">
+                                    <x-heroicon-o-plus style="width: 14px; height: 14px;" class="me-1" />
+                                    Agregar Nota
+                                </button>
+                            </div>
+                            <div id="notasEditEnsayoContainer">
+                                <!-- Las notas se agregarán dinámicamente aquí -->
+                            </div>
                         </div>
                     </div>
                 </form>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                <button type="button" class="btn btn-primary" id="btnGuardarComponenteEditado">Guardar Cambios</button>
+                <button type="button" class="btn btn-primary" id="btnGuardarEnsayoEditado">Guardar Cambios</button>
             </div>
         </div>
     </div>

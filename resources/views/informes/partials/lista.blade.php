@@ -54,7 +54,7 @@
                                                             @foreach($informeData['muestras'] as $muestra)
                                                                 <tr>
                                                                     <td>{{ $muestra->cotio_identificacion }}</td>
-                                                                    <td>{{ $muestra->cotio_descripcion }} {{ $muestra->id ? '#' . str_pad($muestra->id, 8, '0', STR_PAD_LEFT) : null }} (#{{ $muestra->instance_number }})</td>
+                                                                    <td>{{ $muestra->cotio_descripcion }} (#{{ $muestra->instance_number }})</td>
                                                                     <td>{{ $muestra->identificador_documento_firma ? $muestra->identificador_documento_firma : 'N/A' }}</td>
                                                                     <td class="text-center">
                                                                         <div class="btn-group" role="group">

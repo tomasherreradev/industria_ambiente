@@ -52,6 +52,24 @@
                 </div>
 
                 <div class="mb-3">
+                    <label for="matrices" class="form-label">Matrices</label>
+                    <select name="matrices[]" id="matrices" class="form-select select2-multiple" multiple data-placeholder="Selecciona las matrices">
+                        @php
+                            $matricesSeleccionadas = old('matrices', $item->matrices->pluck('matriz_codigo')->toArray());
+                        @endphp
+                        @foreach($matrices as $matriz)
+                            <option value="{{ $matriz->matriz_codigo }}" {{ in_array($matriz->matriz_codigo, $matricesSeleccionadas) ? 'selected' : '' }}>
+                                {{ $matriz->matriz_codigo }} - {{ $matriz->matriz_descripcion }}
+                            </option>
+                        @endforeach
+                    </select>
+                    <small class="text-muted">Puedes seleccionar múltiples matrices para este ítem.</small>
+                    @error('matrices')
+                        <div class="text-danger small mt-1">{{ $message }}</div>
+                    @enderror
+                </div>
+
+                <div class="mb-3">
                     <label for="unidad_medida" class="form-label">Unidad de medida</label>
                     <input type="text" name="unidad_medida" id="unidad_medima" value="{{ old('unidad_medida', $item->unidad_medida) }}" class="form-control @error('unidad_medida') is-invalid @enderror" placeholder="Ej: mg/L, µg/L, etc">
                     @error('unidad_medida')
@@ -61,7 +79,8 @@
 
                 <div class="mb-3">
                     <label for="precio" class="form-label">Precio</label>
-                    <input type="number" name="precio" id="precio" value="{{ old('precio', $item->precio) }}" class="form-control @error('precio') is-invalid @enderror" placeholder="Ej: 5000">
+                    <input type="number" name="precio" id="precio" value="{{ old('precio', $item->precio ? number_format($item->precio, 2, '.', '') : '') }}" step="0.01" min="0" class="form-control @error('precio') is-invalid @enderror" placeholder="Ej: 5000 o 5000.50">
+                    <small class="text-muted">Puedes ingresar valores con o sin decimales. Se guardará con 2 decimales.</small>
                     @error('precio')
                         <div class="invalid-feedback">{{ $message }}</div>
                     @enderror
@@ -69,6 +88,12 @@
                 <div class="form-check form-switch mb-3">
                     <input class="form-check-input" type="checkbox" role="switch" id="es_muestra" name="es_muestra" value="1" {{ old('es_muestra', $item->es_muestra) ? 'checked' : '' }}>
                     <label class="form-check-label" for="es_muestra">Es agrupador</label>
+                </div>
+
+                <div class="form-check form-switch mb-3 {{ old('es_muestra', $item->es_muestra) ? '' : 'd-none' }}" id="agregable_a_comps_wrapper">
+                    <input class="form-check-input" type="checkbox" role="switch" id="agregable_a_comps" name="agregable_a_comps" value="1" {{ old('agregable_a_comps', $item->agregable_a_comps) ? 'checked' : '' }}>
+                    <label class="form-check-label" for="agregable_a_comps">Agregable como componente</label>
+                    <small class="text-muted d-block">Si está marcado, este agrupador podrá ser agregado como componente en las cotizaciones, trayendo consigo sus componentes asociados.</small>
                 </div>
 
                 <div class="mb-3 {{ old('es_muestra', $item->es_muestra) ? '' : 'd-none' }}" id="componentes_wrapper">
@@ -125,6 +150,7 @@
                                 data-precio="{{ number_format($componente->precio ?? 0, 2, '.', '') }}"
                                 data-matriz="{{ $matrizDisplay }}"
                                 data-metodo="{{ $metodoDisplay }}"
+                                data-limites_establecidos="{{ $componente->limites_establecidos ?? 'Sin límites' }}"
                                 data-unidad="{{ $componente->unidad_medida ?? 's/u' }}"
                                 {{ in_array($componente->id, old('componentes', $item->componentesAsociados->pluck('id')->toArray())) ? 'selected' : '' }}>
                                 {{ $componente->cotio_descripcion }}
@@ -203,13 +229,15 @@
             const matriz = $option.data('matriz') || 'Sin matriz';
             const metodo = $option.data('metodo') || 'Sin método';
             const unidad = $option.data('unidad') || 's/u';
+            const limites = $option.data('limites_establecidos') || 'Sin límites';
             const descripcion = option.text;
 
             return $(
                 '<div class="componente-option-item">' +
                     '<div class="fw-semibold mb-1">' + descripcion + '</div>' +
                     '<div class="d-flex flex-wrap gap-3 small text-muted">' +
-                        '<span><strong>Precio:</strong> $' + parseFloat(precio).toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + '</span>' +
+                        '<span><strong>Límites:</strong> ' + limites + '</span>' +
+                        '<span><strong>U. Med:</strong> ' + unidad + '</span>' +
                         '<span><strong>Método:</strong> ' + metodo + '</span>' +
                     '</div>' +
                 '</div>'
@@ -241,12 +269,31 @@
             });
         }
 
+        // Inicializar select2 para matrices
+        const selectMatrices = $('#matrices');
+        if (selectMatrices.length) {
+            selectMatrices.select2({
+                width: '100%',
+                placeholder: selectMatrices.data('placeholder') || 'Selecciona las matrices'
+            });
+        }
+
+        const agregableWrapper = document.getElementById('agregable_a_comps_wrapper');
+
         function toggleComponentes() {
             if (!wrapper) return;
-            if (agrupadorCheck && agrupadorCheck.checked) {
+            const isAgrupador = agrupadorCheck && agrupadorCheck.checked;
+            
+            if (isAgrupador) {
                 wrapper.classList.remove('d-none');
+                if (agregableWrapper) {
+                    agregableWrapper.classList.remove('d-none');
+                }
             } else {
                 wrapper.classList.add('d-none');
+                if (agregableWrapper) {
+                    agregableWrapper.classList.add('d-none');
+                }
                 if (select.length) {
                     select.val(null).trigger('change');
                 }

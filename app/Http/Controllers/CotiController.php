@@ -14,6 +14,7 @@ use App\Models\Provincia;
 use App\Models\Localidad;
 use App\Models\CotioInstancia;
 use App\Models\Clientes;
+use App\Models\ClienteRazonSocialFacturacion;
 use App\Models\Divis;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -412,9 +413,18 @@ public function showTareas(Request $request)
 
         // Asignar análisis a sus instancias correspondientes
         foreach ($todosAnalisis as $analisis) {
-            $grupoKey = $analisis->cotio_numcoti . '_' . $analisis->cotio_item . '_' . $analisis->cotio_subitem;
-            $isHermana = $muestrasPorGrupo[$grupoKey]->count() > 1;
-            $key = $isHermana ? $grupoKey : $analisis->cotio_numcoti . '_' . $analisis->instance_number . '_' . $analisis->cotio_item;
+            // Los análisis tienen cotio_subitem > 0, pero las muestras tienen cotio_subitem = 0
+            // Por lo tanto, necesitamos buscar la muestra correspondiente usando cotio_subitem = 0
+            $muestraKey = $analisis->cotio_numcoti . '_' . $analisis->cotio_item . '_0';
+            
+            // Verificar si existe la muestra correspondiente en $muestrasPorGrupo
+            if (!$muestrasPorGrupo->has($muestraKey)) {
+                // Si no hay muestra correspondiente, saltar este análisis
+                continue;
+            }
+            
+            $isHermana = $muestrasPorGrupo[$muestraKey]->count() > 1;
+            $key = $isHermana ? $muestraKey : $analisis->cotio_numcoti . '_' . $analisis->instance_number . '_' . $analisis->cotio_item;
 
             if ($tareasAgrupadas->has($key)) {
                 $instancia = $tareasAgrupadas[$key]['instancias']
@@ -633,8 +643,113 @@ public function showTareas(Request $request)
 
 
 
-    public function showDetalle($cotizacion) {
-        // Obtener la cotización con sus tareas ordenadas
+    public function showDetalle($cotizacion, Request $request) {
+        // Verificar si se solicita una versión específica
+        $versionSolicitada = $request->get('version');
+        $cotizacionModel = Coti::with(['cliente'])->findOrFail($cotizacion);
+        
+        $tareas = collect();
+        
+        if ($versionSolicitada && $versionSolicitada != $cotizacionModel->coti_version) {
+            // Cargar versión histórica
+            $versionHistorica = \App\Models\CotiVersion::where('coti_num', $cotizacion)
+                ->where('version', $versionSolicitada)
+                ->first();
+            
+            if ($versionHistorica) {
+                // Obtener datos de la versión histórica
+                // IMPORTANTE: coti_data y cotio_data pueden venir como string JSON o como array
+                $cotiDataRaw = $versionHistorica->coti_data;
+                $cotioDataRaw = $versionHistorica->cotio_data;
+                
+                // Decodificar coti_data si es string
+                if (is_string($cotiDataRaw)) {
+                    $cotiData = json_decode($cotiDataRaw, true);
+                    if (json_last_error() !== JSON_ERROR_NONE) {
+                        Log::error('Error decodificando coti_data en showDetalle', [
+                            'coti_num' => $cotizacion,
+                            'version' => $versionSolicitada,
+                            'json_error' => json_last_error_msg()
+                        ]);
+                        $cotiData = [];
+                    }
+                } else {
+                    $cotiData = $cotiDataRaw ?? [];
+                }
+                
+                // Decodificar cotio_data si es string
+                if (is_string($cotioDataRaw)) {
+                    $cotioData = json_decode($cotioDataRaw, true);
+                    if (json_last_error() !== JSON_ERROR_NONE) {
+                        Log::error('Error decodificando cotio_data en showDetalle', [
+                            'coti_num' => $cotizacion,
+                            'version' => $versionSolicitada,
+                            'json_error' => json_last_error_msg()
+                        ]);
+                        $cotioData = [];
+                    }
+                } else {
+                    $cotioData = $cotioDataRaw ?? [];
+                }
+                
+                // Asegurar que cotioData sea un array
+                if (!is_array($cotioData)) {
+                    $cotioData = [];
+                }
+                
+                // Crear una instancia temporal de Coti con los datos de la versión
+                $cotizacion = new Coti();
+                $cotizacion->fill($cotiData);
+                $cotizacion->coti_num = $cotizacionModel->coti_num; // Mantener el número original
+                
+                // Asegurar que el sector tenga el formato correcto (4 caracteres con padding)
+                // Si es null, mantenerlo como null explícitamente
+                if ($cotizacion->coti_sector !== null && trim($cotizacion->coti_sector) !== '') {
+                    $cotizacion->coti_sector = str_pad(trim($cotizacion->coti_sector), 4, ' ', STR_PAD_RIGHT);
+                } else {
+                    $cotizacion->coti_sector = null;
+                }
+                
+                // Cargar la relación cliente si existe
+                if (isset($cotiData['coti_codigocli']) && $cotiData['coti_codigocli']) {
+                    $cliente = \App\Models\Clientes::where('cli_codigo', trim($cotiData['coti_codigocli']))->first();
+                    if ($cliente) {
+                        $cotizacion->setRelation('cliente', $cliente);
+                    }
+                }
+                
+                // Log para debugging
+                Log::info('Cargando versión histórica en showDetalle', [
+                    'coti_num' => $cotizacion,
+                    'version_solicitada' => $versionSolicitada,
+                    'cotio_data_count' => count($cotioData),
+                    'cotio_data_sample' => count($cotioData) > 0 
+                        ? array_slice($cotioData, 0, 2) 
+                        : []
+                ]);
+                
+                // Limpiar la colección de tareas antes de cargar los items de la versión
+                $tareas = collect();
+                
+                // Cargar items de la versión histórica
+                foreach ($cotioData as $itemData) {
+                    $cotio = new \App\Models\Cotio();
+                    $cotio->fill($itemData);
+                    $tareas->push($cotio);
+                }
+                
+                Log::info('Items cargados en showDetalle', [
+                    'tareas_count' => $tareas->count(),
+                    'ensayos_count' => $tareas->where('cotio_subitem', 0)->count(),
+                    'componentes_count' => $tareas->where('cotio_subitem', '>', 0)->count()
+                ]);
+            } else {
+                // Si no se encuentra la versión, usar la actual
+                $cotizacion = $cotizacionModel;
+                $tareas = $cotizacion->tareas;
+            }
+        } else {
+            // Cargar versión actual
         $cotizacion = Coti::with([
             'tareas' => function($query) {
                 $query->orderBy('cotio_item')
@@ -645,6 +760,7 @@ public function showTareas(Request $request)
     
         // Obtener todas las tareas de la cotización
         $tareas = $cotizacion->tareas;
+        }
     
         // Cargar instancias existentes con sus relaciones
         $instanciasExistentes = CotioInstancia::where('cotio_numcoti', $cotizacion->coti_num)
@@ -717,13 +833,33 @@ public function showTareas(Request $request)
         $descuentoTotalCliente = $descuentoGlobalCliente + $descuentoSectorCliente;
         $sectorEtiqueta = $this->obtenerEtiquetaSector($sectorCodigoNormalizado) ?? $cotizacion->coti_sector ?? $sectorCodigoNormalizado;
 
+        // Obtener empresa relacionada si existe
+        $empresaRelacionada = null;
+        if ($cotizacion->coti_cli_empresa) {
+            $empresa = \App\Models\ClienteEmpresaRelacionada::find($cotizacion->coti_cli_empresa);
+            if ($empresa) {
+                $empresaRelacionada = $empresa;
+            }
+        }
+
+        // Obtener razón social de facturación predeterminada si existe
+        $razonSocialPredeterminada = null;
+        if ($cliente) {
+            $razonSocialPredeterminada = ClienteRazonSocialFacturacion::where('cli_codigo', $cliente->cli_codigo)
+                ->where('es_predeterminada', true)
+                ->first();
+        }
+
         return view('cotizaciones.showDetalle', compact(
             'cotizacion',
+            'tareas', // IMPORTANTE: Pasar $tareas a la vista para que use los items correctos de la versión
             'agrupadas',
             'descuentoGlobalCliente',
             'descuentoSectorCliente',
             'descuentoTotalCliente',
-            'sectorEtiqueta'
+            'sectorEtiqueta',
+            'empresaRelacionada',
+            'razonSocialPredeterminada'
         ));
     }
 
@@ -734,13 +870,31 @@ public function showTareas(Request $request)
             return $instanciasExistentes[$item][$subitem][$instanceNumber]->first();
         }
     
-        return new CotioInstancia([
+        // Obtener datos de Cotio para copiar métodos
+        $cotio = Cotio::where('cotio_numcoti', $numcoti)
+            ->where('cotio_item', $item)
+            ->where('cotio_subitem', $subitem)
+            ->first();
+
+        $instanciaData = [
             'cotio_numcoti' => $numcoti,
             'cotio_item' => $item,
             'cotio_subitem' => $subitem,
             'instance_number' => $instanceNumber,
             'active_muestreo' => true
-        ]);
+        ];
+
+        // Copiar ambos métodos desde Cotio si están disponibles
+        if ($cotio) {
+            if ($cotio->cotio_codigometodo) {
+                $instanciaData['cotio_codigometodo'] = $cotio->cotio_codigometodo;
+            }
+            if ($cotio->cotio_codigometodo_analisis) {
+                $instanciaData['cotio_codigometodo_analisis'] = $cotio->cotio_codigometodo_analisis;
+            }
+        }
+
+        return new CotioInstancia($instanciaData);
     }
     
     // Método auxiliar para obtener análisis asociados a una muestra (similar al del método show)

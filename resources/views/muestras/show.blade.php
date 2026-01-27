@@ -34,13 +34,18 @@
                                 No hay muestras registradas para esta cotización.
                             </div>
                         @else
+                            @php
+                                $mostradoTecnicoCampo = false;
+                                $mostradoViaticos = false;
+                            @endphp
+                            
                             @foreach($agrupadas as $item)
                                 @php
                                     $categoria = $item['categoria'];
                                     $descripcion = $categoria->cotio_descripcion;
                                 @endphp
                                 
-                                @if($descripcion === 'TRABAJO TECNICO EN CAMPO')
+                                @if($descripcion === 'TRABAJO TECNICO EN CAMPO' && !$mostradoTecnicoCampo)
                                     <div class="mb-4">
                                         <div class="card shadow-sm mi-tarjeta h-100">
                                             <p class="card-header text-white d-flex justify-content-start align-items-center gap-2 flex-wrap bg-primary">
@@ -49,7 +54,8 @@
                                             </p>
                                         </div>
                                     </div>
-                                @elseif($descripcion === 'VIATICOS')
+                                    @php $mostradoTecnicoCampo = true; @endphp
+                                @elseif($descripcion === 'VIATICOS' && !$mostradoViaticos)
                                     <div class="mb-4">
                                         <div class="card shadow-sm mi-tarjeta h-100">
                                             <p class="card-header text-white d-flex justify-content-start align-items-center gap-2 flex-wrap bg-primary">
@@ -58,6 +64,7 @@
                                             </p>
                                         </div>
                                     </div>
+                                    @php $mostradoViaticos = true; @endphp
                                 @endif
                             @endforeach
                     
@@ -185,7 +192,7 @@
                                                         <p class="mb-0 badge bg-{{ $badgeClass }} ms-2">
                                                             {{ ucfirst($instancia->cotio_estado) }}
                                                         </p>
-                                                        @if($instancia->cotio_estado == 'suspension' || ($instancia->cotio_estado == 'coordinado muestreo' && $instancia->enable_ot == false))
+                                                        @if($instancia->cotio_estado == 'coordinado muestreo' && $instancia->enable_ot == false)
                                                             <button type="button" class="btn btn-sm btn-outline-warning" 
                                                                     data-bs-toggle="modal" 
                                                                     data-bs-target="#recoordinarModal"
@@ -196,10 +203,23 @@
                                                                 Recoordinar
                                                             </button>
                                                         @endif
+                                                        {{-- DEBUG: Rol usuario: "{{ Auth::user()->rol }}", Estado instancia: "{{ $instancia->cotio_estado }}" --}}
+                                                        @php
+                                                            $userRol = trim(Auth::user()->rol ?? '');
+                                                            $instanciaEstado = trim($instancia->cotio_estado ?? '');
+                                                            $mostrarSuspender = ($userRol == 'coordinador_muestreo' && $instanciaEstado == 'coordinado muestreo');
+                                                        @endphp
+                                                        @if($mostrarSuspender)
+                                                            <button type="button" class="btn btn-sm btn-warning" 
+                                                                    data-bs-toggle="modal" 
+                                                                    data-bs-target="#suspenderModal{{ $instancia->id }}">
+                                                                <i class="fas fa-pause me-1"></i> Suspender
+                                                            </button>
+                                                        @endif
                                                     </div>
                                                 </div>
 
-                                                @if(!$requiereMuestreo && !$instancia->enable_ot)
+                                                @if(!$requiereMuestreo && !$instancia->enable_ot && (empty($instancia->cotio_estado) || $instancia->cotio_estado == 'pendiente'))
                                                 <button 
                                                     type="button" 
                                                     onclick="pasarDirectoAOT({{ $instancia }})" 
@@ -208,9 +228,9 @@
                                                     data-bs-placement="bottom"
                                                     title="Enviar esta muestra directamente a una Orden de Trabajo (OT)"
                                                 >
-                                                    Pasar a OT
+                                                    Pasar a Laboratorio
                                                 </button>
-                                                @elseif(!$requiereMuestreo && !$instancia->active_ot)
+                                                @elseif(!$requiereMuestreo && $instancia->enable_ot)
                                                     <button 
                                                         type="button" 
                                                         onclick="quitarDirectoAOT({{ $instancia }})" 
@@ -583,6 +603,80 @@
 
 
 
+
+<!-- Modal para suspender muestra -->
+@foreach($agrupadas as $item)
+    @php
+        $instancia = $item['instancia'];
+        $categoria = $item['categoria'];
+    @endphp
+    @if(trim($instancia->cotio_estado ?? '') == 'coordinado muestreo' && trim(Auth::user()->rol ?? '') == 'coordinador_muestreo')
+    <div class="modal fade" id="suspenderModal{{ $instancia->id }}" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Suspender Muestra</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>¿Estás seguro de suspender esta muestra?</p>
+                    <form id="suspenderForm{{ $instancia->id }}" method="POST" action="{{ route('asignar.suspension-muestra', [
+                        'cotio_numcoti' => $instancia->cotio_numcoti,
+                        'cotio_item' => $instancia->cotio_item,
+                        'instance_number' => $instancia->instance_number
+                    ]) }}">
+                        @csrf
+                        
+                        <div class="mb-3">
+                            <label for="observacion{{ $instancia->id }}" class="form-label">Observación de suspensión</label>
+                            <input type="text" class="form-control" id="observacion{{ $instancia->id }}" 
+                                   name="cotio_observaciones_suspension" 
+                                   placeholder="Ingrese la razón de la suspensión" required>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-danger" form="suspenderForm{{ $instancia->id }}">Suspender</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    @endif
+@endforeach
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    @foreach($agrupadas as $item)
+        @php
+            $instancia = $item['instancia'];
+        @endphp
+        @if(!empty($instancia) && $instancia->cotio_estado == 'coordinado muestreo')
+        const form{{ $instancia->id }} = document.getElementById('suspenderForm{{ $instancia->id }}');
+        const textarea{{ $instancia->id }} = document.getElementById('observacion{{ $instancia->id }}');
+        
+        if (form{{ $instancia->id }}) {
+            form{{ $instancia->id }}.addEventListener('submit', function(event) {
+                if (!textarea{{ $instancia->id }}.value.trim()) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    textarea{{ $instancia->id }}.classList.add('is-invalid');
+                } else {
+                    textarea{{ $instancia->id }}.classList.remove('is-invalid');
+                }
+                
+                form{{ $instancia->id }}.classList.add('was-validated');
+            });
+            
+            document.getElementById('suspenderModal{{ $instancia->id }}').addEventListener('hidden.bs.modal', function() {
+                form{{ $instancia->id }}.classList.remove('was-validated');
+                textarea{{ $instancia->id }}.classList.remove('is-invalid');
+            });
+        }
+        @endif
+    @endforeach
+});
+</script>
 
 @endsection
 
@@ -1036,7 +1130,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     body: JSON.stringify({
                         instancia_id: instanciaId,
                         user_codigo: userCodigo,
-                        todos: todos
+                        todos: todos ? 'true' : 'false'
                     })
                 })
                 .then(response => response.json())
@@ -1087,25 +1181,18 @@ document.addEventListener('DOMContentLoaded', function() {
     handleCheckboxState();
 
     $('#asignacionMasivaModal').on('show.bs.modal', function() {
-        const now = new Date();
-        let defaultStartDate = new Date();
-        
-        if (now.getDay() === 0) defaultStartDate.setDate(now.getDate() + 1);
-        else if (now.getDay() === 6) defaultStartDate.setDate(now.getDate() + 2);
-        
         // Solo establecer valores por defecto si los campos están vacíos
         const fechaInicioInput = document.getElementById('fecha_inicio_muestreo');
         const fechaFinInput = document.getElementById('fecha_fin_muestreo');
         
-        if (!fechaInicioInput.value) {
-            defaultStartDate.setHours(8, 0, 0, 0);
-            fechaInicioInput.value = formatDateTimeForInput(defaultStartDate);
-        }
-        
-        if (!fechaFinInput.value) {
-            let defaultEndDate = new Date(defaultStartDate);
-            defaultEndDate.setHours(18, 0, 0, 0);
-            fechaFinInput.value = formatDateTimeForInput(defaultEndDate);
+        if (!fechaInicioInput.value && !fechaFinInput.value) {
+            const now = new Date();
+            now.setHours(8, 0, 0, 0);
+            fechaInicioInput.value = formatDateTimeForInput(now);
+            
+            const endDate = new Date(now);
+            endDate.setHours(18, 0, 0, 0);
+            fechaFinInput.value = formatDateTimeForInput(endDate);
         }
     });
 
@@ -1113,49 +1200,53 @@ document.addEventListener('DOMContentLoaded', function() {
         return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}T${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
     }
 
+    // Función para ajustar la fecha de fin cuando se cambia la fecha de inicio
     document.getElementById('fecha_inicio_muestreo').addEventListener('change', function() {
         const startDateInput = this;
         const endDateInput = document.getElementById('fecha_fin_muestreo');
-        const startDate = new Date(startDateInput.value);
         
-        // Solo validar si hay una fecha de fin y es anterior a la de inicio
-        if (endDateInput.value) {
-            const endDate = new Date(endDateInput.value);
-            if (endDate <= startDate) {
-                Swal.fire({
-                    title: 'Fecha inválida',
-                    text: 'La fecha de fin debe ser posterior a la fecha de inicio',
-                    icon: 'warning'
-                });
+        if (startDateInput.value) {
+            const startDate = new Date(startDateInput.value);
+            
+            // Ajustar la fecha de fin al mismo día con hora 18:00
+            const endDate = new Date(startDate);
+            endDate.setHours(18, 0, 0, 0);
+            
+            // Solo actualizar si la fecha de fin no está establecida o si es anterior a la nueva fecha de inicio
+            if (!endDateInput.value) {
+                endDateInput.value = formatDateTimeForInput(endDate);
+            } else {
+                const currentEndDate = new Date(endDateInput.value);
+                // Si la fecha de fin actual es anterior o igual a la nueva fecha de inicio, ajustarla
+                if (currentEndDate <= startDate) {
+                    endDateInput.value = formatDateTimeForInput(endDate);
+                }
             }
         }
     });
 
+    // Función para ajustar la fecha de inicio cuando se cambia la fecha de fin
     document.getElementById('fecha_fin_muestreo').addEventListener('change', function() {
         const endDateInput = this;
         const startDateInput = document.getElementById('fecha_inicio_muestreo');
         
-        if (!startDateInput.value) {
-            Swal.fire({
-                title: 'Fecha requerida',
-                text: 'Primero debe seleccionar una fecha de inicio',
-                icon: 'warning'
-            });
-            endDateInput.value = '';
-            return;
-        }
-        
-        const startDate = new Date(startDateInput.value);
-        const endDate = new Date(endDateInput.value);
-        
-        if (endDate <= startDate) {
-            Swal.fire({
-                title: 'Fecha inválida',
-                text: 'La fecha de fin debe ser posterior a la fecha de inicio',
-                icon: 'error'
-            });
-            endDateInput.value = '';
-            return;
+        if (endDateInput.value) {
+            const endDate = new Date(endDateInput.value);
+            
+            // Ajustar la fecha de inicio al mismo día con hora 8:00
+            const startDate = new Date(endDate);
+            startDate.setHours(8, 0, 0, 0);
+            
+            // Solo actualizar si la fecha de inicio no está establecida o si es posterior a la nueva fecha de fin
+            if (!startDateInput.value) {
+                startDateInput.value = formatDateTimeForInput(startDate);
+            } else {
+                const currentStartDate = new Date(startDateInput.value);
+                // Si la fecha de inicio actual es posterior a la nueva fecha de fin, ajustarla
+                if (currentStartDate >= endDate) {
+                    startDateInput.value = formatDateTimeForInput(startDate);
+                }
+            }
         }
     });
 
@@ -1183,6 +1274,8 @@ document.addEventListener('DOMContentLoaded', function() {
             });
             return;
         }
+
+        // Validación: la fecha de fin debe ser posterior a la de inicio (permitir sábados y domingos)
 
         // let missingMandatory = false;
         // Object.entries(mandatoryVariables).forEach(([tipoMuestra, variableIds]) => {
@@ -1389,6 +1482,55 @@ document.addEventListener('DOMContentLoaded', function() {
                     variablesContainer.appendChild(categoryDiv);
                 });
             });
+    });
+
+    // Ajustar fechas automáticamente en el modal de recoordinación
+    $(document).on('change', '#recoordinarModal #fecha_inicio_muestreo', function() {
+        const startDateInput = this;
+        const endDateInput = document.getElementById('fecha_fin_muestreo');
+        
+        if (startDateInput.value) {
+            const startDate = new Date(startDateInput.value);
+            
+            // Ajustar la fecha de fin al mismo día con hora 18:00
+            const endDate = new Date(startDate);
+            endDate.setHours(18, 0, 0, 0);
+            
+            // Solo actualizar si la fecha de fin no está establecida o si es anterior a la nueva fecha de inicio
+            if (!endDateInput.value) {
+                endDateInput.value = formatDateTimeForInput(endDate);
+            } else {
+                const currentEndDate = new Date(endDateInput.value);
+                // Si la fecha de fin actual es anterior o igual a la nueva fecha de inicio, ajustarla
+                if (currentEndDate <= startDate) {
+                    endDateInput.value = formatDateTimeForInput(endDate);
+                }
+            }
+        }
+    });
+
+    $(document).on('change', '#recoordinarModal #fecha_fin_muestreo', function() {
+        const endDateInput = this;
+        const startDateInput = document.getElementById('fecha_inicio_muestreo');
+        
+        if (endDateInput.value) {
+            const endDate = new Date(endDateInput.value);
+            
+            // Ajustar la fecha de inicio al mismo día con hora 8:00
+            const startDate = new Date(endDate);
+            startDate.setHours(8, 0, 0, 0);
+            
+            // Solo actualizar si la fecha de inicio no está establecida o si es posterior a la nueva fecha de fin
+            if (!startDateInput.value) {
+                startDateInput.value = formatDateTimeForInput(startDate);
+            } else {
+                const currentStartDate = new Date(startDateInput.value);
+                // Si la fecha de inicio actual es posterior a la nueva fecha de fin, ajustarla
+                if (currentStartDate >= endDate) {
+                    startDateInput.value = formatDateTimeForInput(startDate);
+                }
+            }
+        }
     });
 
     // Manejar el envío del formulario

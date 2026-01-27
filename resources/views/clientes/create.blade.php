@@ -90,7 +90,7 @@
                             <li class="nav-item" role="presentation">
                                 <button class="nav-link disabled" type="button">Actividades</button>
                             </li>
-                            <li class="nav-item" role="presentation">
+                            <li class="nav-item" role="presentation" id="empresas-relacionadas-tab-item" style="display: none;">
                                 <button class="nav-link" id="empresas-relacionadas-tab" data-bs-toggle="tab" 
                                         data-bs-target="#empresas-relacionadas" type="button" role="tab">
                                     Empresas Relacionadas
@@ -129,6 +129,16 @@
                                                             {{ old('activo') == '0' ? 'checked' : '' }}>
                                                         <label class="form-check-label" for="estado_activo_no">Inactivo</label>
                                                     </div>
+                                                </div>
+                                            </div>
+
+                                            <div class="mb-3">
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="checkbox" id="es_consultor" name="es_consultor" value="1"
+                                                        {{ old('es_consultor') ? 'checked' : '' }}>
+                                                    <label class="form-check-label" for="es_consultor">
+                                                        Es Consultor
+                                                    </label>
                                                 </div>
                                             </div>
 
@@ -214,16 +224,6 @@
                                                 </div>
                                             </div>
 
-                                            <div class="mb-3">
-                                                <label for="nro_carpeta" class="form-label">Nro.Carpeta</label>
-                                                <input type="text" class="form-control" id="nro_carpeta" name="nro_carpeta" 
-                                                       value="{{ old('nro_carpeta') }}">
-                                            </div>
-
-                                            <div class="mb-3">
-                                                <label for="documentacion" class="form-label">Documentación</label>
-                                                <textarea class="form-control" id="documentacion" name="documentacion" rows="4">{{ old('documentacion') }}</textarea>
-                                            </div>
                                         </div>
 
                                         <!-- Columna derecha -->
@@ -244,11 +244,6 @@
                                                 </div>
                                             </div>
 
-                                            <div class="mb-3">
-                                                <label for="zona_comercial" class="form-label">Zona Comercial</label>
-                                                <input type="text" class="form-control" id="zona_comercial" name="zona_comercial" 
-                                                       value="{{ old('zona_comercial') }}">
-                                            </div>
 
                                             {{-- <div class="row">
                                                 <div class="col-md-12">
@@ -299,28 +294,6 @@
                                                        value="{{ old('telefono1') }}" maxlength="20">
                                             </div>
 
-                                            <div class="row">
-                                                <div class="col-md-6">
-                                                    <div class="mb-3">
-                                                        <label for="horario1" class="form-label">Horario 1</label>
-                                                        <input type="text" class="form-control" id="horario1" name="horario1" 
-                                                               value="{{ old('horario1') }}" maxlength="10" placeholder="Ej: 09:00-18:00">
-                                                    </div>
-                                                </div>
-                                                <div class="col-md-6">
-                                                    <div class="mb-3">
-                                                        <label for="horario2" class="form-label">Horario 2</label>
-                                                        <input type="text" class="form-control" id="horario2" name="horario2" 
-                                                               value="{{ old('horario2') }}" maxlength="10" placeholder="Ej: 09:00-18:00">
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <div class="mb-3">
-                                                <label for="fax" class="form-label">Fax</label>
-                                                <input type="text" class="form-control" id="fax" name="fax" 
-                                                       value="{{ old('fax') }}" maxlength="30">
-                                            </div>
                                         </div>
 
                                         <!-- Columna derecha -->
@@ -337,11 +310,6 @@
                                                        value="{{ old('email2') }}" maxlength="30">
                                             </div>
 
-                                            <div class="mb-3">
-                                                <label for="webpage" class="form-label">Página Web</label>
-                                                <input type="url" class="form-control" id="webpage" name="webpage" 
-                                                       value="{{ old('webpage') }}" maxlength="50" placeholder="Ej: https://www.ejemplo.com">
-                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -386,35 +354,6 @@
                                                 </select>
                                             </div>
 
-                                            <div class="mb-3">
-                                                <label for="lista_precios" class="form-label">Lista de Precios</label>
-                                                <select class="form-select" id="lista_precios" name="lista_precios">
-                                                    <option value="">Seleccionar lista de precios...</option>
-                                                    @foreach($listasPrecios as $lista)
-                                                        <option value="{{ $lista->lp_codigo }}" 
-                                                                {{ old('lista_precios') == $lista->lp_codigo ? 'selected' : '' }}>
-                                                            {{ trim($lista->lp_codigo) }} - {{ trim($lista->lp_descripcion) }}
-                                                        </option>
-                                                    @endforeach
-                                                </select>
-                                            </div>
-
-                                            <div class="row">
-                                                <div class="col-md-12">
-                                                    <div class="mb-3">
-                                                        <label for="tipo_cliente" class="form-label">Tipo Cliente</label>
-                                                        <select class="form-select" id="tipo_cliente" name="tipo_cliente">
-                                                            <option value="">Seleccionar tipo de cliente...</option>
-                                                            @foreach($tiposCliente as $tipo)
-                                                                <option value="{{ $tipo->tcli_codigo }}" 
-                                                                        {{ old('tipo_cliente') == $tipo->tcli_codigo ? 'selected' : '' }}>
-                                                                    {{ trim($tipo->tcli_codigo) }} - {{ trim($tipo->tcli_descripcion) }}
-                                                                </option>
-                                                            @endforeach
-                                                        </select>
-                                                    </div>
-                                                </div>
-                                            </div>
 
                                             {{-- <div class="row">
                                                 <div class="col-md-6">
@@ -465,7 +404,41 @@
                                             <div class="mb-3">
                                                 <label for="observaciones_facturacion" class="form-label">Observaciones</label>
                                                 <textarea class="form-control" id="observaciones_facturacion" name="observaciones_facturacion" 
-                                                          rows="25">{{ old('observaciones_facturacion') }}</textarea>
+                                                          rows="10">{{ old('observaciones_facturacion') }}</textarea>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Sección de Razones Sociales de Facturación -->
+                                    <div class="row mt-4">
+                                        <div class="col-12">
+                                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                                <h6 class="mb-0">Razones Sociales de Facturación</h6>
+                                                <button type="button" class="btn btn-sm btn-primary" onclick="agregarRazonSocialFacturacion()">
+                                                    <x-heroicon-o-plus style="width: 16px; height: 16px;" class="me-1" />
+                                                    Agregar Razón Social
+                                                </button>
+                                            </div>
+
+                                            <!-- Tabla de razones sociales de facturación -->
+                                            <div class="table-responsive">
+                                                <table class="table table-bordered table-sm" id="tablaRazonesSocialesFacturacion">
+                                                    <thead class="table-light">
+                                                        <tr>
+                                                            <th style="width: 20%;">Razón Social</th>
+                                                            <th style="width: 12%;">CUIT</th>
+                                                            <th style="width: 15%;">Dirección</th>
+                                                            <th style="width: 12%;">Cond. IVA</th>
+                                                            <th style="width: 12%;">Cond. Pago</th>
+                                                            <th style="width: 10%;">Tipo Fact.</th>
+                                                            <th style="width: 7%;">Predet.</th>
+                                                            <th style="width: 10%;">Acciones</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody id="tbodyRazonesSocialesFacturacion">
+                                                        <!-- Las razones sociales se agregarán dinámicamente aquí -->
+                                                    </tbody>
+                                                </table>
                                             </div>
                                         </div>
                                     </div>
@@ -475,48 +448,32 @@
                             <!-- Solapa Empresas Relacionadas -->
                             <div class="tab-pane fade" id="empresas-relacionadas" role="tabpanel">
                                 <div class="p-4">
-                                    <div class="row">
-                                        <!-- Columna izquierda -->
-                                        <div class="col-md-6">
-                                            <div class="mb-3">
-                                                <label for="rel_empresa_razon_social" class="form-label">Razón Social</label>
-                                                <input type="text" class="form-control" id="rel_empresa_razon_social" name="rel_empresa_razon_social" 
-                                                       value="{{ old('rel_empresa_razon_social') }}" maxlength="255">
-                                            </div>
+                                    <div class="d-flex justify-content-between align-items-center mb-3">
+                                        <h6 class="mb-0">Empresas Relacionadas</h6>
+                                        <button type="button" class="btn btn-sm btn-primary" onclick="agregarEmpresaRelacionada()">
+                                            <x-heroicon-o-plus style="width: 16px; height: 16px;" class="me-1" />
+                                            Agregar Empresa
+                                        </button>
+                                    </div>
 
-                                            <div class="mb-3">
-                                                <label for="rel_empresa_cuit" class="form-label">CUIT</label>
-                                                <input type="text" class="form-control" id="rel_empresa_cuit" name="rel_empresa_cuit" 
-                                                       value="{{ old('rel_empresa_cuit') }}" maxlength="13">
-                                            </div>
-
-                                            <div class="mb-3">
-                                                <label for="rel_empresa_direcciones" class="form-label">Direcciones</label>
-                                                <textarea class="form-control" id="rel_empresa_direcciones" name="rel_empresa_direcciones" 
-                                                          rows="3">{{ old('rel_empresa_direcciones') }}</textarea>
-                                            </div>
-                                        </div>
-
-                                        <!-- Columna derecha -->
-                                        <div class="col-md-6">
-                                            <div class="mb-3">
-                                                <label for="rel_empresa_localidad" class="form-label">Localidad</label>
-                                                <input type="text" class="form-control" id="rel_empresa_localidad" name="rel_empresa_localidad" 
-                                                       value="{{ old('rel_empresa_localidad') }}" maxlength="50">
-                                            </div>
-
-                                            <div class="mb-3">
-                                                <label for="rel_empresa_partido" class="form-label">Partido</label>
-                                                <input type="text" class="form-control" id="rel_empresa_partido" name="rel_empresa_partido" 
-                                                       value="{{ old('rel_empresa_partido') }}" maxlength="50">
-                                            </div>
-
-                                            <div class="mb-3">
-                                                <label for="rel_empresa_contacto" class="form-label">Contacto</label>
-                                                <input type="text" class="form-control" id="rel_empresa_contacto" name="rel_empresa_contacto" 
-                                                       value="{{ old('rel_empresa_contacto') }}" maxlength="100">
-                                            </div>
-                                        </div>
+                                    <!-- Tabla de empresas relacionadas -->
+                                    <div class="table-responsive">
+                                        <table class="table table-bordered table-sm" id="tablaEmpresasRelacionadas">
+                                            <thead class="table-light">
+                                                <tr>
+                                                    <th style="width: 25%;">Razón Social</th>
+                                                    <th style="width: 12%;">CUIT</th>
+                                                    <th style="width: 20%;">Direcciones</th>
+                                                    <th style="width: 12%;">Localidad</th>
+                                                    <th style="width: 12%;">Partido</th>
+                                                    <th style="width: 12%;">Contacto</th>
+                                                    <th style="width: 7%;">Acciones</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="tbodyEmpresasRelacionadas">
+                                                <!-- Las empresas se agregarán dinámicamente aquí -->
+                                            </tbody>
+                                        </table>
                                     </div>
                                 </div>
                             </div>
@@ -544,6 +501,132 @@
                             </div>
                         </div>
                     </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para agregar/editar empresa relacionada (fuera del formulario y card para que siempre esté disponible) -->
+    <div class="modal fade" id="modalEmpresaRelacionada" tabindex="-1" aria-labelledby="modalEmpresaRelacionadaLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="modalEmpresaRelacionadaLabel">Agregar Empresa Relacionada</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="formEmpresaRelacionada">
+                        <input type="hidden" id="empresa_relacionada_index" value="">
+                        <div class="row">
+                            <div class="col-md-12 mb-3">
+                                <label for="empresa_rel_razon_social" class="form-label">Razón Social <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="empresa_rel_razon_social" maxlength="255" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="empresa_rel_cuit" class="form-label">CUIT</label>
+                                <input type="text" class="form-control" id="empresa_rel_cuit" maxlength="13">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="empresa_rel_contacto" class="form-label">Contacto</label>
+                                <input type="text" class="form-control" id="empresa_rel_contacto" maxlength="100">
+                            </div>
+                            <div class="col-md-12 mb-3">
+                                <label for="empresa_rel_direcciones" class="form-label">Direcciones</label>
+                                <textarea class="form-control" id="empresa_rel_direcciones" rows="3"></textarea>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="empresa_rel_localidad" class="form-label">Localidad</label>
+                                <input type="text" class="form-control" id="empresa_rel_localidad" maxlength="50">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="empresa_rel_partido" class="form-label">Partido</label>
+                                <input type="text" class="form-control" id="empresa_rel_partido" maxlength="50">
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-primary" onclick="guardarEmpresaRelacionada()">Guardar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para agregar/editar razón social de facturación -->
+    <div class="modal fade" id="modalRazonSocialFacturacion" tabindex="-1" aria-labelledby="modalRazonSocialFacturacionLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="modalRazonSocialFacturacionLabel">Agregar Razón Social de Facturación</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="formRazonSocialFacturacion">
+                        <input type="hidden" id="razon_social_facturacion_index" value="">
+                        <div class="row">
+                            <div class="col-md-12 mb-3">
+                                <label for="rsf_razon_social" class="form-label">Razón Social <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="rsf_razon_social" maxlength="255" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="rsf_cuit" class="form-label">CUIT</label>
+                                <input type="text" class="form-control" id="rsf_cuit" maxlength="13">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="rsf_tipo_factura" class="form-label">Tipo de Factura</label>
+                                <select class="form-select" id="rsf_tipo_factura">
+                                    <option value="">Seleccionar...</option>
+                                    <option value="A">A</option>
+                                    <option value="B">B</option>
+                                    <option value="C">C</option>
+                                    <option value="Contra Informe">Contra Informe</option>
+                                </select>
+                            </div>
+                            <div class="col-md-12 mb-3">
+                                <label for="rsf_direccion" class="form-label">Dirección</label>
+                                <textarea class="form-control" id="rsf_direccion" rows="2"></textarea>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="rsf_condicion_iva" class="form-label">Condición de I.V.A.</label>
+                                <select class="form-select" id="rsf_condicion_iva">
+                                    <option value="">Seleccionar condición de IVA...</option>
+                                    @foreach($condicionesIva as $condicion)
+                                        <option value="{{ $condicion->civa_codigo }}" 
+                                                data-descripcion="{{ trim($condicion->civa_descripcion) }}">
+                                            {{ trim($condicion->civa_codigo) }} - {{ trim($condicion->civa_descripcion) }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                                <input type="hidden" id="rsf_condicion_iva_desc" value="">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="rsf_condicion_pago" class="form-label">Condición de Pago</label>
+                                <select class="form-select" id="rsf_condicion_pago">
+                                    <option value="">Seleccionar condición de pago...</option>
+                                    @foreach($condicionesPago as $condicion)
+                                        <option value="{{ $condicion->pag_codigo }}" 
+                                                data-descripcion="{{ trim($condicion->pag_descripcion) }}">
+                                            {{ trim($condicion->pag_codigo) }} - {{ trim($condicion->pag_descripcion) }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                                <input type="hidden" id="rsf_condicion_pago_desc" value="">
+                            </div>
+                            <div class="col-md-12 mb-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="rsf_es_predeterminada" value="1">
+                                    <label class="form-check-label" for="rsf_es_predeterminada">
+                                        Marcar como predeterminada
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-primary" onclick="guardarRazonSocialFacturacion()">Guardar</button>
                 </div>
             </div>
         </div>
@@ -764,6 +847,472 @@
                 this.style.borderColor = '#ced4da';
             });
         });
+
+        // Manejar checkbox de consultor
+        const esConsultorCheck = document.getElementById('es_consultor');
+        const empresasRelacionadasTabItem = document.getElementById('empresas-relacionadas-tab-item');
+        
+        function toggleEmpresasRelacionadasTab() {
+            if (esConsultorCheck && empresasRelacionadasTabItem) {
+                if (esConsultorCheck.checked) {
+                    empresasRelacionadasTabItem.style.display = '';
+                } else {
+                    empresasRelacionadasTabItem.style.display = 'none';
+                    // Si el tab está activo, cambiar a General
+                    const empresasTab = document.getElementById('empresas-relacionadas-tab');
+                    if (empresasTab && empresasTab.classList.contains('active')) {
+                        const generalTab = document.getElementById('general-tab');
+                        if (generalTab) {
+                            generalTab.click();
+                        }
+                    }
+                }
+            }
+        }
+        
+        if (esConsultorCheck) {
+            esConsultorCheck.addEventListener('change', toggleEmpresasRelacionadasTab);
+            // Ejecutar al cargar para establecer el estado inicial
+            toggleEmpresasRelacionadasTab();
+        }
+    });
+
+    // Gestión de empresas relacionadas
+    let empresasRelacionadas = [];
+    let empresaEditandoIndex = -1;
+
+    // Gestión de razones sociales de facturación
+    let razonesSocialesFacturacion = [];
+    let razonSocialEditandoIndex = -1;
+
+    // Hacer las funciones globales para que puedan ser llamadas desde onclick
+    window.agregarEmpresaRelacionada = function() {
+        empresaEditandoIndex = -1;
+        
+        // Esperar un momento para asegurar que el DOM esté listo
+        setTimeout(function() {
+            const modalLabel = document.getElementById('modalEmpresaRelacionadaLabel');
+            const form = document.getElementById('formEmpresaRelacionada');
+            const indexInput = document.getElementById('empresa_relacionada_index');
+            const modalElement = document.getElementById('modalEmpresaRelacionada');
+            
+            if (!modalLabel || !form || !indexInput || !modalElement) {
+                console.error('Elementos del modal no encontrados:', {
+                    modalLabel: !!modalLabel,
+                    form: !!form,
+                    indexInput: !!indexInput,
+                    modalElement: !!modalElement
+                });
+                console.log('Buscando modal en el DOM...');
+                console.log('Modal encontrado:', document.querySelector('#modalEmpresaRelacionada'));
+                return;
+            }
+            
+            modalLabel.textContent = 'Agregar Empresa Relacionada';
+            form.reset();
+            indexInput.value = '';
+            
+            const modal = new bootstrap.Modal(modalElement);
+            modal.show();
+        }, 100);
+    }
+
+    window.editarEmpresaRelacionada = function(index) {
+        empresaEditandoIndex = index;
+        const empresa = empresasRelacionadas[index];
+        
+        const modalLabel = document.getElementById('modalEmpresaRelacionadaLabel');
+        const razonSocial = document.getElementById('empresa_rel_razon_social');
+        const cuit = document.getElementById('empresa_rel_cuit');
+        const direcciones = document.getElementById('empresa_rel_direcciones');
+        const localidad = document.getElementById('empresa_rel_localidad');
+        const partido = document.getElementById('empresa_rel_partido');
+        const contacto = document.getElementById('empresa_rel_contacto');
+        const indexInput = document.getElementById('empresa_relacionada_index');
+        const modalElement = document.getElementById('modalEmpresaRelacionada');
+        
+        if (!modalLabel || !razonSocial || !cuit || !direcciones || !localidad || !partido || !contacto || !indexInput || !modalElement) {
+            console.error('Elementos del modal no encontrados');
+            return;
+        }
+        
+        modalLabel.textContent = 'Editar Empresa Relacionada';
+        razonSocial.value = empresa.razon_social || '';
+        cuit.value = empresa.cuit || '';
+        direcciones.value = empresa.direcciones || '';
+        localidad.value = empresa.localidad || '';
+        partido.value = empresa.partido || '';
+        contacto.value = empresa.contacto || '';
+        indexInput.value = index;
+        
+        const modal = new bootstrap.Modal(modalElement);
+        modal.show();
+    }
+
+    window.eliminarEmpresaRelacionada = function(index) {
+        Swal.fire({
+            title: '¿Estás seguro?',
+            text: 'Esta acción no se puede deshacer',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#dc3545',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: 'Sí, eliminar',
+            cancelButtonText: 'Cancelar'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                empresasRelacionadas.splice(index, 1);
+                renderizarTablaEmpresas();
+            }
+        });
+    }
+
+    window.guardarEmpresaRelacionada = function() {
+        const form = document.getElementById('formEmpresaRelacionada');
+        const razonSocial = document.getElementById('empresa_rel_razon_social');
+        const cuit = document.getElementById('empresa_rel_cuit');
+        const direcciones = document.getElementById('empresa_rel_direcciones');
+        const localidad = document.getElementById('empresa_rel_localidad');
+        const partido = document.getElementById('empresa_rel_partido');
+        const contacto = document.getElementById('empresa_rel_contacto');
+        const modalElement = document.getElementById('modalEmpresaRelacionada');
+        
+        if (!form || !razonSocial || !cuit || !direcciones || !localidad || !partido || !contacto || !modalElement) {
+            console.error('Elementos del formulario no encontrados');
+            return;
+        }
+        
+        if (!form.checkValidity()) {
+            form.reportValidity();
+            return;
+        }
+
+        const empresa = {
+            razon_social: razonSocial.value.trim(),
+            cuit: cuit.value.trim(),
+            direcciones: direcciones.value.trim(),
+            localidad: localidad.value.trim(),
+            partido: partido.value.trim(),
+            contacto: contacto.value.trim()
+        };
+
+        if (empresaEditandoIndex >= 0) {
+            empresasRelacionadas[empresaEditandoIndex] = empresa;
+        } else {
+            empresasRelacionadas.push(empresa);
+        }
+
+        renderizarTablaEmpresas();
+        const modal = bootstrap.Modal.getInstance(modalElement);
+        if (modal) {
+            modal.hide();
+        }
+    }
+
+    window.renderizarTablaEmpresas = function() {
+        const tbody = document.getElementById('tbodyEmpresasRelacionadas');
+        tbody.innerHTML = '';
+
+        if (empresasRelacionadas.length === 0) {
+            const row = document.createElement('tr');
+            row.innerHTML = '<td colspan="7" class="text-center text-muted">No hay empresas relacionadas agregadas</td>';
+            tbody.appendChild(row);
+        } else {
+            empresasRelacionadas.forEach((empresa, index) => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${escapeHtml(empresa.razon_social || '-')}</td>
+                    <td>${escapeHtml(empresa.cuit || '-')}</td>
+                    <td><small>${escapeHtml(empresa.direcciones || '-')}</small></td>
+                    <td>${escapeHtml(empresa.localidad || '-')}</td>
+                    <td>${escapeHtml(empresa.partido || '-')}</td>
+                    <td>${escapeHtml(empresa.contacto || '-')}</td>
+                    <td>
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="editarEmpresaRelacionada(${index})" title="Editar">
+                            <x-heroicon-o-pencil style="width: 14px; height: 14px;" />
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="eliminarEmpresaRelacionada(${index})" title="Eliminar">
+                            <x-heroicon-o-trash style="width: 14px; height: 14px;" />
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        // Actualizar campos hidden para el envío del formulario
+        actualizarCamposHiddenEmpresas();
+    }
+
+    window.actualizarCamposHiddenEmpresas = function() {
+        // Eliminar campos hidden anteriores
+        document.querySelectorAll('input[name^="empresas_relacionadas"]').forEach(input => input.remove());
+
+        // Crear campos hidden para cada empresa
+        empresasRelacionadas.forEach((empresa, index) => {
+            Object.keys(empresa).forEach(key => {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = `empresas_relacionadas[${index}][${key}]`;
+                input.value = empresa[key] || '';
+                document.getElementById('clienteForm').appendChild(input);
+            });
+        });
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // Actualizar campos hidden antes de enviar el formulario
+    document.getElementById('clienteForm').addEventListener('submit', function() {
+        actualizarCamposHiddenEmpresas();
+        actualizarCamposHiddenRazonesSociales();
+    });
+
+    // ========== FUNCIONES PARA RAZONES SOCIALES DE FACTURACIÓN ==========
+    window.agregarRazonSocialFacturacion = function() {
+        razonSocialEditandoIndex = -1;
+        
+        setTimeout(function() {
+            const modalLabel = document.getElementById('modalRazonSocialFacturacionLabel');
+            const form = document.getElementById('formRazonSocialFacturacion');
+            const indexInput = document.getElementById('razon_social_facturacion_index');
+            const modalElement = document.getElementById('modalRazonSocialFacturacion');
+            
+            if (!modalLabel || !form || !indexInput || !modalElement) {
+                console.error('Elementos del modal de razón social no encontrados');
+                return;
+            }
+            
+            modalLabel.textContent = 'Agregar Razón Social de Facturación';
+            form.reset();
+            indexInput.value = '';
+            document.getElementById('rsf_condicion_iva_desc').value = '';
+            document.getElementById('rsf_condicion_pago_desc').value = '';
+            
+            const modal = new bootstrap.Modal(modalElement);
+            modal.show();
+        }, 100);
+    }
+
+    window.editarRazonSocialFacturacion = function(index) {
+        razonSocialEditandoIndex = index;
+        const razonSocial = razonesSocialesFacturacion[index];
+        
+        const modalLabel = document.getElementById('modalRazonSocialFacturacionLabel');
+        const razonSocialInput = document.getElementById('rsf_razon_social');
+        const cuit = document.getElementById('rsf_cuit');
+        const direccion = document.getElementById('rsf_direccion');
+        const condicionIva = document.getElementById('rsf_condicion_iva');
+        const condicionIvaDesc = document.getElementById('rsf_condicion_iva_desc');
+        const condicionPago = document.getElementById('rsf_condicion_pago');
+        const condicionPagoDesc = document.getElementById('rsf_condicion_pago_desc');
+        const tipoFactura = document.getElementById('rsf_tipo_factura');
+        const esPredeterminada = document.getElementById('rsf_es_predeterminada');
+        const indexInput = document.getElementById('razon_social_facturacion_index');
+        const modalElement = document.getElementById('modalRazonSocialFacturacion');
+        
+        if (!modalLabel || !razonSocialInput || !cuit || !direccion || !condicionIva || !condicionPago || !tipoFactura || !esPredeterminada || !indexInput || !modalElement) {
+            console.error('Elementos del modal de razón social no encontrados');
+            return;
+        }
+        
+        modalLabel.textContent = 'Editar Razón Social de Facturación';
+        razonSocialInput.value = razonSocial.razon_social || '';
+        cuit.value = razonSocial.cuit || '';
+        direccion.value = razonSocial.direccion || '';
+        condicionIva.value = razonSocial.condicion_iva || '';
+        condicionIvaDesc.value = razonSocial.condicion_iva_desc || '';
+        condicionPago.value = razonSocial.condicion_pago || '';
+        condicionPagoDesc.value = razonSocial.condicion_pago_desc || '';
+        tipoFactura.value = razonSocial.tipo_factura || '';
+        // Convertir explícitamente a booleano para el checkbox
+        esPredeterminada.checked = razonSocial.es_predeterminada === true || razonSocial.es_predeterminada === 1 || razonSocial.es_predeterminada === '1';
+        indexInput.value = index;
+        
+        // Actualizar descripciones de los selectores
+        if (condicionIva.value) {
+            const ivaOption = condicionIva.options[condicionIva.selectedIndex];
+            if (ivaOption) {
+                condicionIvaDesc.value = ivaOption.getAttribute('data-descripcion') || '';
+            }
+        }
+        if (condicionPago.value) {
+            const pagoOption = condicionPago.options[condicionPago.selectedIndex];
+            if (pagoOption) {
+                condicionPagoDesc.value = pagoOption.getAttribute('data-descripcion') || '';
+            }
+        }
+        
+        const modal = new bootstrap.Modal(modalElement);
+        modal.show();
+    }
+
+    window.eliminarRazonSocialFacturacion = function(index) {
+        Swal.fire({
+            title: '¿Estás seguro?',
+            text: 'Esta acción no se puede deshacer',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#dc3545',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: 'Sí, eliminar',
+            cancelButtonText: 'Cancelar'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                razonesSocialesFacturacion.splice(index, 1);
+                renderizarTablaRazonesSocialesFacturacion();
+            }
+        });
+    }
+
+    window.guardarRazonSocialFacturacion = function() {
+        const form = document.getElementById('formRazonSocialFacturacion');
+        const razonSocialInput = document.getElementById('rsf_razon_social');
+        const cuit = document.getElementById('rsf_cuit');
+        const direccion = document.getElementById('rsf_direccion');
+        const condicionIva = document.getElementById('rsf_condicion_iva');
+        const condicionIvaDesc = document.getElementById('rsf_condicion_iva_desc');
+        const condicionPago = document.getElementById('rsf_condicion_pago');
+        const condicionPagoDesc = document.getElementById('rsf_condicion_pago_desc');
+        const tipoFactura = document.getElementById('rsf_tipo_factura');
+        const esPredeterminada = document.getElementById('rsf_es_predeterminada');
+        const modalElement = document.getElementById('modalRazonSocialFacturacion');
+        
+        if (!form || !razonSocialInput || !cuit || !direccion || !condicionIva || !condicionPago || !tipoFactura || !esPredeterminada || !modalElement) {
+            console.error('Elementos del formulario de razón social no encontrados');
+            return;
+        }
+        
+        if (!form.checkValidity()) {
+            form.reportValidity();
+            return;
+        }
+
+        // Si se marca como predeterminada, desmarcar las demás
+        if (esPredeterminada.checked) {
+            razonesSocialesFacturacion.forEach(rs => {
+                rs.es_predeterminada = false;
+            });
+        }
+
+        const razonSocial = {
+            razon_social: razonSocialInput.value.trim(),
+            cuit: cuit.value.trim(),
+            direccion: direccion.value.trim(),
+            condicion_iva: condicionIva.value.trim(),
+            condicion_iva_desc: condicionIvaDesc.value.trim(),
+            condicion_pago: condicionPago.value.trim(),
+            condicion_pago_desc: condicionPagoDesc.value.trim(),
+            tipo_factura: tipoFactura.value.trim(),
+            es_predeterminada: esPredeterminada.checked
+        };
+
+        if (razonSocialEditandoIndex >= 0) {
+            razonesSocialesFacturacion[razonSocialEditandoIndex] = razonSocial;
+        } else {
+            razonesSocialesFacturacion.push(razonSocial);
+        }
+
+        renderizarTablaRazonesSocialesFacturacion();
+        const modal = bootstrap.Modal.getInstance(modalElement);
+        if (modal) {
+            modal.hide();
+        }
+    }
+
+    window.renderizarTablaRazonesSocialesFacturacion = function() {
+        const tbody = document.getElementById('tbodyRazonesSocialesFacturacion');
+        tbody.innerHTML = '';
+
+        if (razonesSocialesFacturacion.length === 0) {
+            const row = document.createElement('tr');
+            row.innerHTML = '<td colspan="8" class="text-center text-muted">No hay razones sociales de facturación agregadas</td>';
+            tbody.appendChild(row);
+        } else {
+            razonesSocialesFacturacion.forEach((razonSocial, index) => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${escapeHtml(razonSocial.razon_social || '-')}</td>
+                    <td>${escapeHtml(razonSocial.cuit || '-')}</td>
+                    <td><small>${escapeHtml(razonSocial.direccion || '-')}</small></td>
+                    <td><small>${escapeHtml(razonSocial.condicion_iva || '-')}${razonSocial.condicion_iva_desc ? '<br>' + escapeHtml(razonSocial.condicion_iva_desc) : ''}</small></td>
+                    <td><small>${escapeHtml(razonSocial.condicion_pago || '-')}${razonSocial.condicion_pago_desc ? '<br>' + escapeHtml(razonSocial.condicion_pago_desc) : ''}</small></td>
+                    <td>${escapeHtml(razonSocial.tipo_factura || '-')}</td>
+                    <td class="text-center">${razonSocial.es_predeterminada ? '<span class="badge bg-success">Sí</span>' : '<span class="badge bg-secondary">No</span>'}</td>
+                    <td>
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="editarRazonSocialFacturacion(${index})" title="Editar">
+                            <x-heroicon-o-pencil style="width: 14px; height: 14px;" />
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="eliminarRazonSocialFacturacion(${index})" title="Eliminar">
+                            <x-heroicon-o-trash style="width: 14px; height: 14px;" />
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        // Actualizar campos hidden para el envío del formulario
+        actualizarCamposHiddenRazonesSociales();
+    }
+
+    window.actualizarCamposHiddenRazonesSociales = function() {
+        // Eliminar campos hidden anteriores
+        document.querySelectorAll('input[name^="razones_sociales"]').forEach(input => input.remove());
+
+        // Crear campos hidden para cada razón social
+        razonesSocialesFacturacion.forEach((razonSocial, index) => {
+            Object.keys(razonSocial).forEach(key => {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = `razones_sociales[${index}][${key}]`;
+                // Convertir booleanos a '1' o '0' para es_predeterminada
+                if (key === 'es_predeterminada') {
+                    input.value = razonSocial[key] === true || razonSocial[key] === 1 || razonSocial[key] === '1' ? '1' : '0';
+                } else {
+                    input.value = razonSocial[key] || '';
+                }
+                document.getElementById('clienteForm').appendChild(input);
+            });
+        });
+    }
+
+    // Manejar cambios en los selectores del modal de razón social
+    document.addEventListener('DOMContentLoaded', function() {
+        const rsfCondicionIva = document.getElementById('rsf_condicion_iva');
+        const rsfCondicionIvaDesc = document.getElementById('rsf_condicion_iva_desc');
+        
+        if (rsfCondicionIva && rsfCondicionIvaDesc) {
+            rsfCondicionIva.addEventListener('change', function() {
+                const selectedOption = this.options[this.selectedIndex];
+                if (selectedOption.value) {
+                    rsfCondicionIvaDesc.value = selectedOption.getAttribute('data-descripcion') || '';
+                } else {
+                    rsfCondicionIvaDesc.value = '';
+                }
+            });
+        }
+
+        const rsfCondicionPago = document.getElementById('rsf_condicion_pago');
+        const rsfCondicionPagoDesc = document.getElementById('rsf_condicion_pago_desc');
+        
+        if (rsfCondicionPago && rsfCondicionPagoDesc) {
+            rsfCondicionPago.addEventListener('change', function() {
+                const selectedOption = this.options[this.selectedIndex];
+                if (selectedOption.value) {
+                    rsfCondicionPagoDesc.value = selectedOption.getAttribute('data-descripcion') || '';
+                } else {
+                    rsfCondicionPagoDesc.value = '';
+                }
+            });
+        }
+
+        // Inicializar tabla de razones sociales
+        renderizarTablaRazonesSocialesFacturacion();
     });
 </script>
 

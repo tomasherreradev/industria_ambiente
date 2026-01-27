@@ -15,6 +15,9 @@
 
         <div class="d-flex gap-2 align-items-center">
             <a href="{{ route('users.createUser') }}" class="btn btn-primary">Nuevo Usuario</a>
+            {{-- <a href="{{ route('users.exportar', request()->only('rol')) }}" class="btn btn-success">
+                <i class="bi bi-download"></i> Exportar Excel
+            </a> --}}
 
             <!-- Formulario para filtros -->
             <form action="{{ url('/users') }}" method="GET" class="d-flex gap-2" style="margin-bottom: 0px;">

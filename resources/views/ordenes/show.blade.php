@@ -47,8 +47,12 @@
                                 No hay muestras registradas para esta cotización.
                             </div>
                         @else
+                            @php
+                                $mostradoTecnicoCampo = false;
+                            @endphp
+                            
                             @foreach($agrupadas as $grupo)
-                                @if($grupo['categoria']->cotio_descripcion === 'TRABAJO TECNICO EN CAMPO')
+                                @if($grupo['categoria']->cotio_descripcion === 'TRABAJO TECNICO EN CAMPO' && !$mostradoTecnicoCampo)
                                     <div class="mb-4">
                                         <div class="card shadow-sm mi-tarjeta h-100">
                                             <p class="card-header text-white d-flex justify-content-between align-items-center flex-wrap bg-primary mb-0">
@@ -56,6 +60,7 @@
                                             </p>
                                         </div>
                                     </div>
+                                    @php $mostradoTecnicoCampo = true; @endphp
                                 @endif
                             @endforeach
 
@@ -139,7 +144,7 @@
                                                     >
                                                         <div class="d-flex align-items-center gap-2">
                                                             <h6 class="mb-1 fw-bold">
-                                                                {{ $categoria->cotio_descripcion }} {{ $muestra->id ? '#' . str_pad($muestra->id, 8, '0', STR_PAD_LEFT) : null }}
+                                                                {{ $categoria->cotio_descripcion }} (#{{ $muestra->otn ? $muestra->otn : $muestra->instance_number ?? 'N/A' }})
                                                                 <small class="fw-normal">(Instancia {{ $muestra->instance_number }} / {{ $categoria->cotio_cantidad ?? '-' }})</small>
                                                             </h6>
                                                             @if($muestra->active_ot)
@@ -230,6 +235,31 @@
                                             </div>
                                         </div>
                                         <div class="card-body">
+                                            @if(isset($metodosUnicos) && $metodosUnicos->isNotEmpty())
+                                                <div class="mb-3 d-flex align-items-center gap-2 flex-wrap">
+                                                    <label for="select-metodo-{{ $instancia['muestra']->id }}" class="form-label mb-0 small">Seleccionar por método:</label>
+                                                    <select 
+                                                        id="select-metodo-{{ $instancia['muestra']->id }}" 
+                                                        class="form-select form-select-sm" 
+                                                        style="max-width: 300px;"
+                                                        onchange="seleccionarPorMetodo(this, '{{ $instancia['muestra']->id }}')"
+                                                    >
+                                                        <option value="">-- Seleccionar método --</option>
+                                                        @foreach($metodosUnicos as $metodo)
+                                                            <option value="{{ trim($metodo->metodo_codigo) }}">
+                                                                {{ $metodo->metodo_descripcion }} ({{ trim($metodo->metodo_codigo) }})
+                                                            </option>
+                                                        @endforeach
+                                                    </select>
+                                                    <button 
+                                                        type="button" 
+                                                        class="btn btn-sm btn-outline-secondary"
+                                                        onclick="deseleccionarTodos('{{ $instancia['muestra']->id }}')"
+                                                    >
+                                                        <i class="fas fa-times me-1"></i> Deseleccionar todos
+                                                    </button>
+                                                </div>
+                                            @endif
                                             @foreach($instancia['analisis'] as $tarea)
                                                 <div class="mb-2 p-2 border rounded @if($tarea->modulo_origen == 'muestreo') bg-light @endif">
                                                     <div class="d-flex justify-content-between align-items-center">
@@ -243,6 +273,8 @@
                                                                 @php
                                                                     $instanciaActiva = $tarea->instancia && $tarea->instancia->active_ot;
                                                                     $tieneResultado = optional($tarea->instancia)->resultado !== null;
+                                                                    $metodoAnalisis = $tarea->instancia ? $tarea->instancia->getMetodoAnalisisConTrim() : null;
+                                                                    $metodoCodigo = $tarea->instancia && $tarea->instancia->cotio_codigometodo_analisis ? trim($tarea->instancia->cotio_codigometodo_analisis) : '';
                                                                 @endphp
                                                                 <input
                                                                     type="checkbox"
@@ -255,11 +287,12 @@
                                                                     data-instance="{{ $instancia['muestra']->instance_number }}"
                                                                     data-numcoti="{{ $tarea->cotio_numcoti }}"
                                                                     data-descripcion="{{ $tarea->cotio_descripcion }}"
+                                                                    data-metodo="{{ $metodoCodigo }}"
                                                                     @checked($tarea->instancia->active_ot ?? false)
                                                                     data-user-toggled="false"
                                                                     @disabled($instanciaActiva)
                                                                 />
-                                                                {{ $tarea->cotio_descripcion }}
+                                                                {{ $tarea->cotio_descripcion }} {{ $metodoAnalisis ? ' - ' . $metodoAnalisis->metodo_descripcion : '' }}
                                                             @endif
                                                         </div>
                                                         <div>
@@ -480,6 +513,107 @@
         btnAsignacionMasiva.disabled = checkboxesAnalisis.length === 0;
     }
 
+    /**
+     * Seleccionar todos los análisis que usen un método específico
+     */
+    function seleccionarPorMetodo(selectElement, muestraId) {
+        const metodoCodigo = selectElement.value;
+        
+        if (!metodoCodigo) {
+            return;
+        }
+
+        // Buscar todos los checkboxes de análisis en esta muestra que tengan el método seleccionado
+        const cardBody = selectElement.closest('.card-body');
+        if (!cardBody) return;
+
+        const checkboxes = cardBody.querySelectorAll('.tarea-checkbox:not(:disabled)');
+        let seleccionados = 0;
+
+        checkboxes.forEach(checkbox => {
+            const checkboxMetodo = checkbox.getAttribute('data-metodo');
+            if (checkboxMetodo && trim(checkboxMetodo) === trim(metodoCodigo)) {
+                if (!checkbox.checked) {
+                    checkbox.checked = true;
+                    checkbox.setAttribute('data-user-toggled', 'true');
+                    // Llamar a toggleTarea para actualizar las selecciones
+                    toggleTarea(checkbox);
+                    seleccionados++;
+                }
+            }
+        });
+
+        // Resetear el select
+        selectElement.value = '';
+
+        // Mostrar mensaje
+        if (seleccionados > 0) {
+            Swal.fire({
+                icon: 'success',
+                title: 'Análisis seleccionados',
+                text: `Se seleccionaron ${seleccionados} análisis con el método elegido`,
+                timer: 2000,
+                showConfirmButton: false
+            });
+        } else {
+            Swal.fire({
+                icon: 'info',
+                title: 'Sin resultados',
+                text: 'No se encontraron análisis con ese método en esta muestra o ya estaban seleccionados',
+                timer: 2000,
+                showConfirmButton: false
+            });
+        }
+
+        // Actualizar el botón de asignación masiva
+        actualizarBotonAsignacionMasiva();
+    }
+
+    /**
+     * Deseleccionar todos los análisis de una muestra
+     */
+    function deseleccionarTodos(muestraId) {
+        // Buscar el card-body correspondiente
+        const selectElement = document.getElementById('select-metodo-' + muestraId);
+        if (!selectElement) return;
+
+        const cardBody = selectElement.closest('.card-body');
+        if (!cardBody) return;
+
+        const checkboxes = cardBody.querySelectorAll('.tarea-checkbox:not(:disabled)');
+        let deseleccionados = 0;
+
+        checkboxes.forEach(checkbox => {
+            if (checkbox.checked) {
+                checkbox.checked = false;
+                checkbox.setAttribute('data-user-toggled', 'false');
+                // Llamar a toggleTarea para actualizar las selecciones
+                toggleTarea(checkbox);
+                deseleccionados++;
+            }
+        });
+
+        // Actualizar el botón de asignación masiva
+        actualizarBotonAsignacionMasiva();
+
+        if (deseleccionados > 0) {
+            Swal.fire({
+                icon: 'success',
+                title: 'Análisis deseleccionados',
+                text: `Se deseleccionaron ${deseleccionados} análisis`,
+                timer: 1500,
+                showConfirmButton: false
+            });
+        }
+    }
+
+    /**
+     * Función auxiliar para hacer trim (compatible con espacios)
+     */
+    function trim(str) {
+        return str ? str.toString().trim() : '';
+    }
+
     function toggleMuestras(id) {
         const content = document.getElementById(id);
         if (content) {
@@ -514,7 +648,7 @@
                 body: JSON.stringify({
                     instancia_id: parseInt(instanciaId),
                     user_codigo: userCodigo,
-                    todos: todos
+                    todos: todos ? 'true' : 'false'
                 })
             })
             .then(response => response.json())
@@ -909,14 +1043,19 @@
             return;
         }
 
-        const now = new Date();
-        const defaultStart = new Date(now);
-        defaultStart.setHours(8, 0, 0, 0);
-        const defaultEnd = new Date(defaultStart);
-        defaultEnd.setHours(18, 0, 0, 0);
-
-        document.getElementById('fecha_inicio_ot').value = formatDateTimeForInput(defaultStart);
-        document.getElementById('fecha_fin_ot').value = formatDateTimeForInput(defaultEnd);
+        // Solo establecer valores por defecto si los campos están vacíos
+        const fechaInicioInput = document.getElementById('fecha_inicio_ot');
+        const fechaFinInput = document.getElementById('fecha_fin_ot');
+        
+        if (!fechaInicioInput.value && !fechaFinInput.value) {
+            const now = new Date();
+            now.setHours(8, 0, 0, 0);
+            fechaInicioInput.value = formatDateTimeForInput(now);
+            
+            const endDate = new Date(now);
+            endDate.setHours(18, 0, 0, 0);
+            fechaFinInput.value = formatDateTimeForInput(endDate);
+        }
 
         const modal = new bootstrap.Modal(document.getElementById('modalAsignacionMasiva'));
         modal.show();
@@ -939,23 +1078,7 @@
             return false;
         }
 
-        if (fechaInicio && (fechaInicio.getDay() === 0 || fechaInicio.getDay() === 6)) {
-            Swal.fire({
-                title: 'Error',
-                text: 'No se pueden seleccionar sábados o domingos como fecha de inicio',
-                icon: 'error'
-            });
-            return false;
-        }
-
-        if (fechaFin && (fechaFin.getDay() === 0 || fechaFin.getDay() === 6)) {
-            Swal.fire({
-                title: 'Error',
-                text: 'No se pueden seleccionar sábados o domingos como fecha de fin',
-                icon: 'error'
-            });
-            return false;
-        }
+        // Permitir sábados y domingos - eliminada la validación que los bloqueaba
 
         return true;
     }
@@ -1061,9 +1184,56 @@
             checkbox.addEventListener('change', () => toggleInstancia(checkbox));
         });
 
-        // Date validation in real-time
-        document.getElementById('fecha_inicio_ot').addEventListener('change', validarFechas);
-        document.getElementById('fecha_fin_ot').addEventListener('change', validarFechas);
+        // Ajustar fechas automáticamente cuando se selecciona una
+        document.getElementById('fecha_inicio_ot').addEventListener('change', function() {
+            const startDateInput = this;
+            const endDateInput = document.getElementById('fecha_fin_ot');
+            
+            if (startDateInput.value) {
+                const startDate = new Date(startDateInput.value);
+                
+                // Ajustar la fecha de fin al mismo día con hora 18:00
+                const endDate = new Date(startDate);
+                endDate.setHours(18, 0, 0, 0);
+                
+                // Solo actualizar si la fecha de fin no está establecida o si es anterior a la nueva fecha de inicio
+                if (!endDateInput.value) {
+                    endDateInput.value = formatDateTimeForInput(endDate);
+                } else {
+                    const currentEndDate = new Date(endDateInput.value);
+                    // Si la fecha de fin actual es anterior o igual a la nueva fecha de inicio, ajustarla
+                    if (currentEndDate <= startDate) {
+                        endDateInput.value = formatDateTimeForInput(endDate);
+                    }
+                }
+            }
+            validarFechas();
+        });
+
+        document.getElementById('fecha_fin_ot').addEventListener('change', function() {
+            const endDateInput = this;
+            const startDateInput = document.getElementById('fecha_inicio_ot');
+            
+            if (endDateInput.value) {
+                const endDate = new Date(endDateInput.value);
+                
+                // Ajustar la fecha de inicio al mismo día con hora 8:00
+                const startDate = new Date(endDate);
+                startDate.setHours(8, 0, 0, 0);
+                
+                // Solo actualizar si la fecha de inicio no está establecida o si es posterior a la nueva fecha de fin
+                if (!startDateInput.value) {
+                    startDateInput.value = formatDateTimeForInput(startDate);
+                } else {
+                    const currentStartDate = new Date(startDateInput.value);
+                    // Si la fecha de inicio actual es posterior a la nueva fecha de fin, ajustarla
+                    if (currentStartDate >= endDate) {
+                        startDateInput.value = formatDateTimeForInput(startDate);
+                    }
+                }
+            }
+            validarFechas();
+        });
 
         // Inicializar estado de checkboxes auxiliares para todas las instancias
         document.querySelectorAll('.checkbox-auxiliar').forEach(checkboxAuxiliar => {

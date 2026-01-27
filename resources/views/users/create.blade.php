@@ -23,8 +23,22 @@
                 <option value="coordinador_lab">Coordinador Laboratorio</option>
                 <option value="coordinador_muestreo">Coordinador Muestreo</option>
                 <option value="facturador">Facturador</option>
+                <option value="ventas">Vendedor</option>
+                <option value="firmador">Firmador</option>
+                <option value="cliente">Usuario Cliente</option>
             </select>
         </div>
+
+        {{-- <div class="mb-3">
+            <label for="cli_listado" class="form-label">Perteneciente a:</label>
+            
+            <checkbox name="cli_listado" id="cli_listado" class="form-control">
+                <checkbox value="">Selecciona uno o varios clientes</checkbox>
+                @foreach($clientes as $cliente)
+                    <checkbox value="{{ $cliente->cli_codigo }}">{{ $cliente->cli_razonsocial }}</checkbox>
+                @endforeach
+            </checkbox>
+        </div> --}}
 
         <div class="mb-3">
             <label for="sector_codigo" class="form-label">Sector</label>

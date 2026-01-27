@@ -3,10 +3,25 @@
 @section('content')
 <div class="container py-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2>Leyes y Normativas</h2>
-        <a href="{{ route('leyes-normativas.create') }}" class="btn btn-primary">
-            <i class="fas fa-plus"></i> Nueva Normativa
-        </a>
+        <div>
+            <h2>Leyes y Normativas</h2>
+            @if($ultimaImportacion)
+                <small class="text-muted">
+                    <i class="fas fa-clock"></i> Última importación: {{ $ultimaImportacion->format('d/m/Y H:i') }}
+                </small>
+            @endif
+        </div>
+        <div class="btn-group">
+            <a href="{{ route('leyes-normativas.export.template') }}" class="btn btn-outline-success">
+                <i class="fas fa-download"></i> Descargar Plantilla
+            </a>
+            <a href="{{ route('leyes-normativas.import') }}" class="btn btn-outline-primary">
+                <i class="fas fa-upload"></i> Importar 
+            </a>
+            <a href="{{ route('leyes-normativas.create') }}" class="btn btn-primary">
+                <i class="fas fa-plus"></i> Nueva Normativa
+            </a>
+        </div>
     </div>
 
     @if(session('success'))
@@ -19,6 +34,25 @@
     @if(session('error'))
         <div class="alert alert-danger alert-dismissible fade show" role="alert">
             {{ session('error') }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    @endif
+
+    @if(session('warning'))
+        <div class="alert alert-warning alert-dismissible fade show" role="alert">
+            {{ session('warning') }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    @endif
+
+    @if(session('import_errors'))
+        <div class="alert alert-warning alert-dismissible fade show" role="alert">
+            <strong>Errores durante la importación:</strong>
+            <ul class="mb-0 mt-2">
+                @foreach(session('import_errors') as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
+            </ul>
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>
     @endif

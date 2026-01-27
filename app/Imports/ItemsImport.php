@@ -209,7 +209,7 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
                         $parametroNombre,
                         $metodoCodigo,
                         $metodoMuestreoCodigo,
-                        $matrizCodigo,
+                        null, // No guardar matriz_codigo directamente
                         $unidadMedida,
                         $limitesEstablecidos,
                         $limiteCuantificacion,
@@ -219,6 +219,11 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
                     
                     if (!$componente) {
                         continue; // Error ya registrado
+                    }
+                    
+                    // 7.1. Asociar matriz al componente en tabla pivote si existe
+                    if ($componente && $matrizCodigo) {
+                        $this->asociarMatrizAItem($componente->id, $matrizCodigo);
                     }
                     
                     // 8. Asociar componente al agrupador si existe
@@ -231,6 +236,11 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
                                 'agrupador_id' => $agrupadorId
                             ]);
                         }
+                    }
+                    
+                    // 8.1. Asociar matriz al agrupador en tabla pivote si existe
+                    if ($agrupadorId && $matrizCodigo) {
+                        $this->asociarMatrizAItem($agrupadorId, $matrizCodigo);
                     }
                     
                     $this->successCount++;
@@ -388,6 +398,7 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
                     }
 
                     // Procesar matriz_codigo - restaurar ceros a la izquierda si es necesario
+                    // NOTA: Ya no se guarda en matriz_codigo, solo se usa para asociar en tabla pivote
                     $matrizCodigo = null;
                     if (isset($row['matriz_codigo']) && !empty($row['matriz_codigo'])) {
                         $matrizValue = $row['matriz_codigo'];
@@ -496,17 +507,23 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
                     $item = CotioItems::where('cotio_descripcion', $descripcion)->first();
                     
                     if ($item) {
-                        // Actualizar el item existente
+                        // Actualizar el item existente (sin matriz_codigo)
                         $item->update([
                             'es_muestra' => $esMuestra,
                             'limites_establecidos' => $limitesEstablecidos,
                             'limite_cuantificacion' => $limiteCuantificacion,
                             'metodo' => $metodoCodigo,
                             'metodo_muestreo' => $metodoMuestreoCodigo,
-                            'matriz_codigo' => $matrizCodigo,
+                            'matriz_codigo' => null, // Ya no se guarda aquí
                             'unidad_medida' => $unidadMedida,
                             'precio' => !empty($row['precio']) ? (float) $row['precio'] : null,
                         ]);
+                        
+                        // Sincronizar matrices en tabla pivote
+                        if ($matrizCodigo) {
+                            $this->asociarMatrizAItem($item->id, $matrizCodigo);
+                        }
+                        
                         Log::debug('ItemsImport: Item actualizado', ['item_id' => $item->id, 'descripcion' => $descripcion]);
                     } else {
                         // Crear nuevo item con ID secuencial usando insert para poder especificar el ID
@@ -518,7 +535,7 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
                             'limite_cuantificacion' => $limiteCuantificacion,
                             'metodo' => $metodoCodigo,
                             'metodo_muestreo' => $metodoMuestreoCodigo,
-                            'matriz_codigo' => $matrizCodigo,
+                            'matriz_codigo' => null, // Ya no se guarda aquí
                             'unidad_medida' => $unidadMedida,
                             'precio' => !empty($row['precio']) ? (float) $row['precio'] : null,
                         ];
@@ -527,6 +544,11 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
                         
                         // Obtener el item creado
                         $item = CotioItems::find($this->nextId);
+                        
+                        // Asociar matriz en tabla pivote si existe
+                        if ($matrizCodigo) {
+                            $this->asociarMatrizAItem($item->id, $matrizCodigo);
+                        }
                         
                         Log::debug('ItemsImport: Nuevo item creado', ['item_id' => $this->nextId, 'descripcion' => $descripcion]);
                         
@@ -779,6 +801,37 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
     }
 
     /**
+     * Asociar matriz a un item en la tabla pivote
+     */
+    protected function asociarMatrizAItem($itemId, $matrizCodigo)
+    {
+        if (empty($matrizCodigo) || empty($itemId)) {
+            return;
+        }
+        
+        $matrizCodigo = trim($matrizCodigo);
+        
+        // Verificar si la relación ya existe
+        $existe = DB::table('cotio_items_matriz')
+            ->where('cotio_item_id', $itemId)
+            ->where('matriz_codigo', $matrizCodigo)
+            ->exists();
+        
+        if (!$existe) {
+            DB::table('cotio_items_matriz')->insert([
+                'cotio_item_id' => $itemId,
+                'matriz_codigo' => $matrizCodigo,
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+            Log::debug('ItemsImport: Matriz asociada a item', [
+                'item_id' => $itemId,
+                'matriz_codigo' => $matrizCodigo
+            ]);
+        }
+    }
+
+    /**
      * Buscar o crear componente (es_muestra = false) por descripción
      */
     protected function findOrCreateComponente($nombre, $metodoCodigo, $metodoMuestreoCodigo, $matrizCodigo, $unidadMedida, $limitesEstablecidos, $limiteCuantificacion, $precio, $rowNumber)
@@ -802,16 +855,22 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
             ->first();
 
         if ($componente) {
-            // Actualizar componente existente
+            // Actualizar componente existente (sin matriz_codigo)
             $componente->update([
                 'metodo' => $metodoCodigo,
                 'metodo_muestreo' => $metodoMuestreoCodigo,
-                'matriz_codigo' => $matrizCodigo,
+                'matriz_codigo' => null, // Ya no se guarda aquí
                 'unidad_medida' => $unidadMedida,
                 'limites_establecidos' => $limitesEstablecidos,
                 'limite_cuantificacion' => $limiteCuantificacion,
                 'precio' => $precio
             ]);
+            
+            // Asociar matriz en tabla pivote si existe
+            if ($matrizCodigo) {
+                $this->asociarMatrizAItem($componente->id, $matrizCodigo);
+            }
+            
             Log::debug("ItemsImport: Componente actualizado: ID {$componente->id} - {$nombre}");
         } else {
             // Crear nuevo componente
@@ -821,12 +880,18 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
                 'es_muestra' => false,
                 'metodo' => $metodoCodigo,
                 'metodo_muestreo' => $metodoMuestreoCodigo,
-                'matriz_codigo' => $matrizCodigo,
+                'matriz_codigo' => null, // Ya no se guarda aquí
                 'unidad_medida' => $unidadMedida,
                 'limites_establecidos' => $limitesEstablecidos,
                 'limite_cuantificacion' => $limiteCuantificacion,
                 'precio' => $precio
             ]);
+            
+            // Asociar matriz en tabla pivote si existe
+            if ($matrizCodigo) {
+                $this->asociarMatrizAItem($componente->id, $matrizCodigo);
+            }
+            
             Log::info("ItemsImport: Componente creado: ID {$componente->id} - {$nombre}");
         }
 

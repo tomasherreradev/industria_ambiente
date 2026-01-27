@@ -159,7 +159,7 @@
                 <span class="info-label">N° de Cotización:</span>
                 <span class="info-value">#{{ $muestra->cotio_numcoti }}</span>
                 <span style="margin-left: 300px;" class="info-label">O.T.N:</span>
-                <span class="info-value">{{ $muestra->id ? '#' . str_pad($muestra->id, 8, '0', STR_PAD_LEFT) : null }}</span>
+                <span class="info-value">{{ $muestra->otn ?? 'N/A' }}</span>
             </div>
             <div class="info-item">
                 <span class="info-label">Muestra:</span>
@@ -167,7 +167,19 @@
             </div>
             <div class="info-item">
                 <span class="info-label">Cliente:</span>
-                <span class="info-value">{{ $muestra->cotizacion->coti_empresa }}</span>
+                <span class="info-value">
+                    @php
+                        $empresaRelacionadaInfo = null;
+                        if ($muestra->cotizacion->coti_cli_empresa) {
+                            $empresaRelacionadaInfo = \App\Models\ClienteEmpresaRelacionada::find($muestra->cotizacion->coti_cli_empresa);
+                        }
+                    @endphp
+                    @if($empresaRelacionadaInfo)
+                        {{ $empresaRelacionadaInfo->razon_social }}
+                    @else
+                        {{ $muestra->cotizacion->coti_empresa }}
+                    @endif
+                </span>
             </div>
             <div class="info-item">
                 <span class="info-label">Establecimiento:</span>

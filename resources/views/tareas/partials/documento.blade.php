@@ -114,7 +114,7 @@
                             </td>
                             <td class="d-none d-md-table-cell">
                                 {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }}
-                                <div class="small text-muted">Muestra {{ $instanciaMuestra->id ? '#' . str_pad($instanciaMuestra->id, 8, '0', STR_PAD_LEFT) : null }}</div>
+                                <div class="small text-muted">Muestra #{{ $instanciaMuestra->instance_number }}</div>
                             </td>
                             <td class="d-none d-md-table-cell text-nowrap">
                                 @if($instanciaMuestra->fecha_fin_muestreo ?? false)

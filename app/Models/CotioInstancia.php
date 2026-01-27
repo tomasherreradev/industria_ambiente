@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Storage;
 use App\Models\InstanciaResponsableMuestreo;
 use App\Models\InstanciaResponsableAnalisis;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 
 class CotioInstancia extends Model
@@ -21,6 +22,8 @@ class CotioInstancia extends Model
         'cotio_item', 
         'cotio_subitem', 
         'cotio_descripcion',
+        'cotio_codigometodo',
+        'cotio_codigometodo_analisis',
         'instance_number',
         'fecha_muestreo', 
         'observaciones',
@@ -38,7 +41,8 @@ class CotioInstancia extends Model
         'fecha_inicio_ot', 
         'fecha_fin_ot', 
         'cotio_estado', 
-        'cotio_identificacion', 
+        'cotio_identificacion',
+        'fecha_identificacion',
         'volumen_muestra',
         'vehiculo_asignado',
         'cotio_observaciones_suspension',
@@ -46,6 +50,8 @@ class CotioInstancia extends Model
         'active_ot',
         'latitud',
         'longitud',
+        'nro_precinto',
+        'nro_cadena',
         'coordinador_codigo',
         'enable_inform',
         'enable_ot',
@@ -77,6 +83,9 @@ class CotioInstancia extends Model
         'identificador_documento_firma',
         'fecha_firma',
         'image_resultado_final',
+        'cotio_codigometodo',
+        'cotio_codigometodo_analisis',
+        'otn',
     ];
 
     protected $casts = [
@@ -88,6 +97,7 @@ class CotioInstancia extends Model
         'fecha_inicio_ot' => 'datetime', 
         'fecha_fin_ot' => 'datetime',
         'fecha_carga_ot' => 'datetime',
+        'fecha_identificacion' => 'datetime',
         'enable_ot' => 'boolean',
         'es_priori' => 'boolean',
         'aprobado_informe' => 'boolean',
@@ -276,6 +286,81 @@ class CotioInstancia extends Model
         return $this->belongsTo(Coti::class, 'cotio_numcoti', 'coti_num');
     }
 
+    /**
+     * Genera el siguiente número OT correlativo
+     * Solo para muestras (cotio_subitem = 0)
+     * 
+     * @return string Número OT en formato '0000000001', '0000000002', etc.
+     */
+    public static function generarNumeroOT()
+    {
+        // Obtener el último número OT asignado (solo para muestras)
+        $ultimoOT = self::where('cotio_subitem', 0)
+            ->whereNotNull('otn')
+            ->orderBy('otn', 'desc')
+            ->value('otn');
 
+        if ($ultimoOT) {
+            // Convertir a entero, incrementar y formatear
+            $siguienteNumero = (int) $ultimoOT + 1;
+        } else {
+            // Si no hay ningún OT, empezar desde 1
+            $siguienteNumero = 1;
+        }
+
+        // Formatear con ceros a la izquierda (10 dígitos)
+        return str_pad($siguienteNumero, 10, '0', STR_PAD_LEFT);
+    }
+
+
+    public function metodoAnalisis()
+    {
+        return $this->belongsTo(Metodo::class, 'cotio_codigometodo_analisis', 'metodo_codigo');
+    }
+
+    public function metodoMuestreo()
+    {
+        return $this->belongsTo(Metodo::class, 'cotio_codigometodo', 'metodo_codigo');
+    }
+
+    /**
+     * Obtener el método de análisis con trim automático
+     * Este método se usa cuando la relación normal no funciona debido a espacios
+     */
+    public function getMetodoAnalisisConTrim()
+    {
+        // Primero intentar con la relación normal
+        $metodo = $this->metodoAnalisis;
+        
+        // Si no se encontró y hay código, buscar con trim
+        if (!$metodo && !empty($this->cotio_codigometodo_analisis)) {
+            $codigo = trim($this->cotio_codigometodo_analisis);
+            if (!empty($codigo)) {
+                $metodo = Metodo::whereRaw('TRIM(metodo_codigo) = ?', [$codigo])->first();
+            }
+        }
+        
+        return $metodo;
+    }
+
+    /**
+     * Obtener el método de muestreo con trim automático
+     * Este método se usa cuando la relación normal no funciona debido a espacios
+     */
+    public function getMetodoMuestreoConTrim()
+    {
+        // Primero intentar con la relación normal
+        $metodo = $this->metodoMuestreo;
+        
+        // Si no se encontró y hay código, buscar con trim
+        if (!$metodo && !empty($this->cotio_codigometodo)) {
+            $codigo = trim($this->cotio_codigometodo);
+            if (!empty($codigo)) {
+                $metodo = Metodo::whereRaw('TRIM(metodo_codigo) = ?', [$codigo])->first();
+            }
+        }
+        
+        return $metodo;
+    }
 
 }

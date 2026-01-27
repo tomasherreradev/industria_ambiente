@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\VariableRequerida;
 use App\Models\Cotio;
+use App\Models\CotioItems;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -41,7 +42,11 @@ class VariableRequeridaController extends Controller
      */
     public function create()
     {
-        $cotioDescripciones = Cotio::select('cotio_descripcion')->distinct()->pluck('cotio_descripcion');
+        $cotioDescripciones = CotioItems::select('cotio_descripcion')
+            ->whereNotNull('cotio_descripcion')
+            ->distinct()
+            ->orderBy('cotio_descripcion')
+            ->pluck('cotio_descripcion');
         return view('variables-requeridas.create', compact('cotioDescripciones'));
     }
 
@@ -90,7 +95,12 @@ class VariableRequeridaController extends Controller
      */
     public function edit(VariableRequerida $variableRequerida)
     {
-        $cotioDescripciones = Cotio::select('cotio_descripcion')->distinct()->pluck('cotio_descripcion');
+        $cotioDescripciones = CotioItems::select('cotio_descripcion')
+            ->where('es_muestra', true)
+            ->whereNotNull('cotio_descripcion')
+            ->distinct()
+            ->orderBy('cotio_descripcion')
+            ->pluck('cotio_descripcion');
         
         return view('variables-requeridas.edit', compact('variableRequerida', 'cotioDescripciones'));
     }

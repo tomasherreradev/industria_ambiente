@@ -20,31 +20,31 @@
 
     <!-- Estadísticas -->
     <div class="row mb-4">
-        <div class="col-md-3">
-            <div class="card text-white bg-primary">
+        <div class="col-md-4">
+            <div class="card text-white bg-primary stats-card-facturacion {{ !request('tipo_filtro') || request('tipo_filtro') == 'total' ? 'active' : '' }}" 
+                 onclick="filtrarPorTipo('total')" 
+                 style="cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;" 
+                 onmouseover="this.style.transform='translateY(-5px)'; this.style.boxShadow='0 4px 15px rgba(0,0,0,0.2)'"
+                 onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 10px rgba(0,0,0,0.1)'">
                 <div class="card-body">
                     <h5 class="card-title">Total Facturas</h5>
                     <h3 class="card-text">{{ $estadisticas['total_facturas'] }}</h3>
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
-            <div class="card text-white bg-success">
-                <div class="card-body">
-                    <h5 class="card-title">Facturadas</h5>
-                    <h3 class="card-text">{{ $estadisticas['facturas_facturadas'] }}</h3>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card text-white bg-warning">
+        <div class="col-md-4">
+            <div class="card text-white bg-warning stats-card-facturacion {{ request('tipo_filtro') == 'pendientes' ? 'active' : '' }}" 
+                 onclick="filtrarPorTipo('pendientes')" 
+                 style="cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;" 
+                 onmouseover="this.style.transform='translateY(-5px)'; this.style.boxShadow='0 4px 15px rgba(0,0,0,0.2)'"
+                 onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 10px rgba(0,0,0,0.1)'">
                 <div class="card-body">
                     <h5 class="card-title">Pendientes</h5>
                     <h3 class="card-text">{{ $estadisticas['facturas_pendientes'] }}</h3>
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-4">
             <div class="card text-white bg-info">
                 <div class="card-body">
                     <h5 class="card-title">Monto Total</h5>
@@ -60,39 +60,42 @@
             <h5 class="mb-0">Filtros</h5>
         </div>
         <div class="card-body">
-            <form method="GET" action="{{ route('facturacion.index') }}">
-                <div class="row">
-                    <div class="col-md-3">
-                        <label for="estado" class="form-label">Estado</label>
-                        <select name="estado" id="estado" class="form-select">
-                            <option value="">Todos</option>
-                            <option value="pendiente" {{ $request->estado == 'pendiente' ? 'selected' : '' }}>Pendiente</option>
-                            <option value="aprobada" {{ $request->estado == 'aprobada' ? 'selected' : '' }}>Aprobada</option>
-                            <option value="rechazada" {{ $request->estado == 'rechazada' ? 'selected' : '' }}>Rechazada</option>
-                            <option value="anulada" {{ $request->estado == 'anulada' ? 'selected' : '' }}>Anulada</option>
-                        </select>
+                <form method="GET" action="{{ route('facturacion.index') }}" id="filterFormFacturacion">
+                    @if(request('tipo_filtro'))
+                        <input type="hidden" name="tipo_filtro" value="{{ request('tipo_filtro') }}">
+                    @endif
+                    <div class="row">
+                        <div class="col-md-3">
+                            <label for="estado" class="form-label">Estado</label>
+                            <select name="estado" id="estado" class="form-select">
+                                <option value="">Todos</option>
+                                <option value="pendiente" {{ $request->estado == 'pendiente' ? 'selected' : '' }}>Pendiente</option>
+                                <option value="aprobada" {{ $request->estado == 'aprobada' ? 'selected' : '' }}>Aprobada</option>
+                                <option value="rechazada" {{ $request->estado == 'rechazada' ? 'selected' : '' }}>Rechazada</option>
+                                <option value="anulada" {{ $request->estado == 'anulada' ? 'selected' : '' }}>Anulada</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label for="cotizacion" class="form-label">Cotización</label>
+                            <input type="number" name="cotizacion" id="cotizacion" class="form-control" 
+                                   value="{{ $request->cotizacion }}" placeholder="Núm. Cotización">
+                        </div>
+                        <div class="col-md-3">
+                            <label for="fecha_desde" class="form-label">Fecha Desde</label>
+                            <input type="date" name="fecha_desde" id="fecha_desde" class="form-control" 
+                                   value="{{ $request->fecha_desde }}">
+                        </div>
+                        <div class="col-md-3">
+                            <label for="fecha_hasta" class="form-label">Fecha Hasta</label>
+                            <input type="date" name="fecha_hasta" id="fecha_hasta" class="form-control" 
+                                   value="{{ $request->fecha_hasta }}">
+                        </div>
+                        <div class="col-md-1">
+                            <label class="form-label">&nbsp;</label>
+                            <button type="submit" class="btn btn-primary d-block w-100">Filtrar</button>
+                        </div>
                     </div>
-                    <div class="col-md-2">
-                        <label for="cotizacion" class="form-label">Cotización</label>
-                        <input type="number" name="cotizacion" id="cotizacion" class="form-control" 
-                               value="{{ $request->cotizacion }}" placeholder="Núm. Cotización">
-                    </div>
-                    <div class="col-md-3">
-                        <label for="fecha_desde" class="form-label">Fecha Desde</label>
-                        <input type="date" name="fecha_desde" id="fecha_desde" class="form-control" 
-                               value="{{ $request->fecha_desde }}">
-                    </div>
-                    <div class="col-md-3">
-                        <label for="fecha_hasta" class="form-label">Fecha Hasta</label>
-                        <input type="date" name="fecha_hasta" id="fecha_hasta" class="form-control" 
-                               value="{{ $request->fecha_hasta }}">
-                    </div>
-                    <div class="col-md-1">
-                        <label class="form-label">&nbsp;</label>
-                        <button type="submit" class="btn btn-primary d-block w-100">Filtrar</button>
-                    </div>
-                </div>
-            </form>
+                </form>
         </div>
     </div>
 
@@ -144,7 +147,7 @@
                                                             @foreach($informeData['muestras'] as $muestra)
                                                                 <tr>
                                                                     <td>{{ $muestra->cotio_identificacion }}</td>
-                                                                    <td>{{ $muestra->cotio_descripcion }} {{ $muestra->id ? '#' . str_pad($muestra->id, 8, '0', STR_PAD_LEFT) : null }} (#{{ $muestra->instance_number }})
+                                                                    <td>{{ $muestra->cotio_descripcion }} (#{{ $muestra->instance_number }})
                                                                         @if($muestra->facturado)
                                                                             <x-heroicon-o-check-circle style="width: 18px; height: 18px; color: green;" />
                                                                             <span class="badge bg-success">Facturada</span>
@@ -295,10 +298,49 @@
         font-size: 0.9rem;
         padding: 0.5em 1em;
     }
+    .stats-card-facturacion.active {
+        border: 2px solid #fff;
+        box-shadow: 0 4px 15px rgba(255, 255, 255, 0.3);
+    }
 </style>
 
 
 <script>
+// Función para filtrar por tipo (total o pendientes)
+function filtrarPorTipo(tipo) {
+    const url = new URL(window.location.href);
+    const baseUrl = url.origin + url.pathname;
+    
+    // Construir parámetros de consulta manteniendo otros filtros
+    const params = new URLSearchParams();
+    
+    // Mantener filtros existentes
+    if (url.searchParams.get('estado')) {
+        params.set('estado', url.searchParams.get('estado'));
+    }
+    if (url.searchParams.get('cotizacion')) {
+        params.set('cotizacion', url.searchParams.get('cotizacion'));
+    }
+    if (url.searchParams.get('fecha_desde')) {
+        params.set('fecha_desde', url.searchParams.get('fecha_desde'));
+    }
+    if (url.searchParams.get('fecha_hasta')) {
+        params.set('fecha_hasta', url.searchParams.get('fecha_hasta'));
+    }
+    
+    // Agregar o quitar el filtro de tipo
+    if (tipo && tipo !== 'total') {
+        params.set('tipo_filtro', tipo);
+    }
+    // Si es 'total', no agregamos el parámetro (o lo quitamos si existe)
+    
+    // Construir URL final
+    const finalUrl = params.toString() ? `${baseUrl}?${params.toString()}` : baseUrl;
+    
+    // Redirigir
+    window.location.href = finalUrl;
+}
+
 // Manejar descarga de PDFs con loading
 document.querySelectorAll('.descargar-pdf').forEach(link => {
     link.addEventListener('click', function(e) {

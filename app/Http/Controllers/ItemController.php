@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\CotioItems;
 use App\Models\Metodo;
+use App\Models\Matriz;
 use App\Models\CotioItemPrecioHistorial;
 use App\Imports\ItemsImport;
 use App\Exports\ItemsTemplateExport;
@@ -23,6 +24,7 @@ class ItemController extends Controller
     {
         $search = $request->input('q');
         $tipo = $request->input('tipo');
+        $matrizCodigo = $request->input('matriz');
         $query = CotioItems::query();
 
         if ($search) {
@@ -37,9 +39,25 @@ class ItemController extends Controller
             }
         }
 
-        $items = $query->orderBy('cotio_descripcion', 'asc')->paginate(15)->withQueryString();
+        // Filtrar por matriz usando la tabla pivote
+        if ($matrizCodigo !== null && $matrizCodigo !== '') {
+            $query->whereExists(function($q) use ($matrizCodigo) {
+                $q->select(DB::raw(1))
+                  ->from('cotio_items_matriz')
+                  ->whereColumn('cotio_items_matriz.cotio_item_id', 'cotio_items.id')
+                  ->where('cotio_items_matriz.matriz_codigo', $matrizCodigo);
+            });
+        }
 
-        return view('items.index', compact('items', 'search', 'tipo'));
+        $items = $query->with(['agrupadores', 'componentesAsociados', 'matrices', 'metodoAnalitico', 'metodoMuestreo'])
+            ->orderBy('cotio_descripcion', 'asc')
+            ->paginate(15)
+            ->withQueryString();
+
+        // Cargar matrices para el filtro
+        $matrices = Matriz::orderBy('matriz_descripcion')->get();
+
+        return view('items.index', compact('items', 'search', 'tipo', 'matrizCodigo', 'matrices'));
     }
 
     /**
@@ -48,11 +66,12 @@ class ItemController extends Controller
     public function create()
     {
         $metodos = Metodo::orderBy('metodo_codigo')->get();
+        $matrices = Matriz::orderBy('matriz_descripcion')->get();
         $componentes = CotioItems::componentes()
-            ->with(['matriz', 'metodoAnalitico', 'metodoMuestreo'])
+            ->with(['matrices', 'metodoAnalitico', 'metodoMuestreo'])
             ->orderBy('cotio_descripcion')
             ->get();
-        return view('items.create', compact('metodos', 'componentes'));
+        return view('items.create', compact('metodos', 'matrices', 'componentes'));
     }
 
     /**
@@ -66,9 +85,11 @@ class ItemController extends Controller
             'limites_establecidos' => ['nullable', 'string', 'max:255'],
             'metodo' => ['nullable', 'string', 'exists:metodo,metodo_codigo'],
             'unidad_medida' => ['nullable', 'string', 'max:255'],
-            'precio' => ['nullable', 'decimal:2'],
+            'precio' => ['nullable'],
             'componentes' => ['array'],
             'componentes.*' => ['integer', 'exists:cotio_items,id'],
+            'matrices' => ['array'],
+            'matrices.*' => ['string', 'exists:matriz,matriz_codigo'],
         ]);
 
         $componentesSeleccionados = collect($validated['componentes'] ?? [])->filter();
@@ -98,12 +119,34 @@ class ItemController extends Controller
             $item->id       = $nextId;
             $item->cotio_descripcion     = $validated['cotio_descripcion'];
             $item->es_muestra            = (bool)($validated['es_muestra'] ?? false);
+            $item->agregable_a_comps     = (bool)($validated['agregable_a_comps'] ?? false);
             $item->limites_establecidos  = $validated['limites_establecidos'] ?? null;
             $item->metodo                = $validated['metodo'] ?? null;
             $item->unidad_medida         = $validated['unidad_medida'] ?? null;
-            $item->precio                = $validated['precio'] ?? null;
+            // Asegurar que el precio tenga 2 decimales
+            $item->precio                = $validated['precio'] !== null ? round((float)$validated['precio'], 2) : null;
 
             $item->save();
+
+            // Guardar matrices en tabla pivote
+            $matricesSeleccionadas = collect($validated['matrices'] ?? [])->filter()->unique();
+            if ($matricesSeleccionadas->isNotEmpty()) {
+                $matricesData = $matricesSeleccionadas->map(function($matrizCodigo) {
+                    return [
+                        'cotio_item_id' => null, // Se asignará después
+                        'matriz_codigo' => trim($matrizCodigo),
+                        'created_at' => now(),
+                        'updated_at' => now()
+                    ];
+                })->toArray();
+                
+                // Asignar el ID del item a cada registro
+                foreach ($matricesData as &$matrizData) {
+                    $matrizData['cotio_item_id'] = $item->id;
+                }
+                
+                DB::table('cotio_items_matriz')->insert($matricesData);
+            }
 
             if ($item->es_muestra && $componentesSeleccionados->isNotEmpty()) {
                 $item->componentesAsociados()->sync($componentesSeleccionados->toArray());
@@ -126,14 +169,15 @@ class ItemController extends Controller
      */
     public function edit(CotioItems $cotio_items)
     {
-        $item = $cotio_items->load('componentesAsociados');
+        $item = $cotio_items->load(['componentesAsociados', 'matrices']);
         $metodos = Metodo::orderBy('metodo_codigo')->get();
+        $matrices = Matriz::orderBy('matriz_descripcion')->get();
         $componentes = CotioItems::componentes()
             ->where('id', '!=', $item->id)
-            ->with(['matriz', 'metodoAnalitico', 'metodoMuestreo'])
+            ->with(['matrices', 'metodoAnalitico', 'metodoMuestreo'])
             ->orderBy('cotio_descripcion')
             ->get();
-        return view('items.edit', compact('item', 'metodos', 'componentes'));
+        return view('items.edit', compact('item', 'metodos', 'matrices', 'componentes'));
     }
 
     /**
@@ -146,12 +190,15 @@ class ItemController extends Controller
         $validated = $request->validate([
             'cotio_descripcion' => ['required', 'string', 'max:255'],
             'es_muestra' => ['nullable', 'boolean'],
+            'agregable_a_comps' => ['nullable', 'boolean'],
             'limites_establecidos' => ['nullable', 'string', 'max:255'],
             'metodo' => ['nullable', 'string', 'exists:metodo,metodo_codigo'],
             'unidad_medida' => ['nullable', 'string', 'max:255'],
             'precio' => ['nullable', 'decimal:2'],
             'componentes' => ['array'],
             'componentes.*' => ['integer', 'exists:cotio_items,id'],
+            'matrices' => ['array'],
+            'matrices.*' => ['string', 'exists:matriz,matriz_codigo'],
         ]);
 
         $componentesSeleccionados = collect($validated['componentes'] ?? [])->map(fn ($id) => (int) $id)->filter()->reject(fn ($id) => $id === $item->id)->unique();
@@ -171,11 +218,30 @@ class ItemController extends Controller
         $item->update([
             'cotio_descripcion' => $validated['cotio_descripcion'],
             'es_muestra' => (bool)($validated['es_muestra'] ?? false),
+            'agregable_a_comps' => (bool)($validated['agregable_a_comps'] ?? false),
             'limites_establecidos' => $validated['limites_establecidos'] ?? null,
             'metodo' => $validated['metodo'] ?? null,
             'unidad_medida' => $validated['unidad_medida'] ?? null,
-            'precio' => $validated['precio'] ?? null,
+            // Asegurar que el precio tenga 2 decimales
+            'precio' => $validated['precio'] !== null ? round((float)$validated['precio'], 2) : null,
         ]);
+
+        // Sincronizar matrices en tabla pivote
+        $matricesSeleccionadas = collect($validated['matrices'] ?? [])->filter()->unique();
+        $matricesData = $matricesSeleccionadas->map(function($matrizCodigo) use ($item) {
+            return [
+                'cotio_item_id' => $item->id,
+                'matriz_codigo' => trim($matrizCodigo),
+                'created_at' => now(),
+                'updated_at' => now()
+            ];
+        })->toArray();
+        
+        // Eliminar relaciones existentes y crear nuevas
+        DB::table('cotio_items_matriz')->where('cotio_item_id', $item->id)->delete();
+        if (!empty($matricesData)) {
+            DB::table('cotio_items_matriz')->insert($matricesData);
+        }
 
         if ($item->es_muestra) {
             $item->componentesAsociados()->sync($componentesSeleccionados->toArray());

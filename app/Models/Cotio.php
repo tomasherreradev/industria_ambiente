@@ -24,13 +24,17 @@ class Cotio extends Model
         'cotio_item',
         'cotio_subitem',
         'cotio_descripcion',
+        'cotio_cantidad',
         'cotio_precio',
+        'cotio_codigoprod',
         'cotio_codigoum',
         'cotio_codigometodo',
         'cotio_codigometodo_analisis',
         'limite_deteccion',
         'limite_cuantificacion',
-        'ley_aplicacion'
+        'ley_aplicacion',
+        'cotio_nota_tipo',
+        'cotio_nota_contenido'
     ];
     
     protected $casts = [
@@ -56,17 +60,37 @@ class Cotio extends Model
 
     public function createInstance($instanceNumber)
     {
-        return $this->instancias()->create([
+        $data = [
             'instance_number' => $instanceNumber,
             'responsable_muestreo' => Auth::user()->usu_codigo
-        ]);
+        ];
+        
+        // Copiar ambos métodos siempre desde Cotio
+        if ($this->cotio_codigometodo) {
+            $data['cotio_codigometodo'] = $this->cotio_codigometodo;
+        }
+        if ($this->cotio_codigometodo_analisis) {
+            $data['cotio_codigometodo_analisis'] = $this->cotio_codigometodo_analisis;
+        }
+        
+        return $this->instancias()->create($data);
     }
 
     public function getOrCreateInstance($instanceNumber)
     {
+        $defaults = ['responsable_muestreo' => Auth::user()->usu_codigo];
+        
+        // Copiar ambos métodos siempre desde Cotio
+        if ($this->cotio_codigometodo) {
+            $defaults['cotio_codigometodo'] = $this->cotio_codigometodo;
+        }
+        if ($this->cotio_codigometodo_analisis) {
+            $defaults['cotio_codigometodo_analisis'] = $this->cotio_codigometodo_analisis;
+        }
+        
         return $this->instancias()->firstOrCreate(
             ['instance_number' => $instanceNumber],
-            ['responsable_muestreo' => Auth::user()->usu_codigo]
+            $defaults
         );
     }
 

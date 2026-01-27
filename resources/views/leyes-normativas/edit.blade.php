@@ -257,7 +257,7 @@ function addVariableRow(variable = null) {
     variableDiv.innerHTML = `
         <div class="row">
             <div class="col-md-5">
-                <label class="form-label">Variable (Cotio Item) <span class="text-danger">*</span></label>
+                <label class="form-label">Determinación <span class="text-danger">*</span></label>
                 <select class="form-select variable-select" name="variables[${variableCounter}][cotio_item_id]" required>
                     <option value="">Seleccionar variable...</option>
                     ${availableCotioItems.map(item => {

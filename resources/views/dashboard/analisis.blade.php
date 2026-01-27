@@ -90,26 +90,6 @@
             </a>
         </div>
 
-        {{-- <div class="col-xl-3 col-md-6">
-            <a href="{{ request()->fullUrlWithQuery(['estado' => 'suspendido']) }}" class="text-decoration-none">
-                <div class="card bg-danger bg-gradient text-white h-100">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <h5 class="card-title text-uppercase small">Suspensos</h5>
-                                <p class="card-text display-6 fw-bold">{{ $suspendidos }}</p>
-                            </div>
-                            <div class="bg-white bg-opacity-25 p-3 rounded-circle" style="width: 50px; height: 50px; display: flex; align-items: center; justify-content: center;">
-                                <x-heroicon-o-exclamation-circle style="width: 20px; height: 20px;"/>
-                            </div>
-                        </div>
-                        <div class="mt-2">
-                            <span class="small">Suspensos</span>
-                        </div>
-                    </div>
-                </div>
-            </a>
-        </div> --}}
     </div>
 
     {{-- Contenido principal --}}
@@ -118,23 +98,62 @@
         <div class="col-lg-8">
             <div class="card shadow-sm h-100">
                 <div class="card-header bg-white">
-                    <div class="d-flex justify-content-between align-items-center">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                         <h5 class="mb-0">Análisis Asignados</h5>
-                        <div class="dropdown">
-                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="filterDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-                                <i class="fas fa-filter me-1"></i> Filtrar
+                        <div class="d-flex gap-2 flex-wrap">
+                            <!-- Filtro de Estado -->
+                            <div class="dropdown">
+                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="filterDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <i class="fas fa-filter me-1"></i> Filtrar
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="filterDropdown">
+                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'all', 'metodo' => request()->get('metodo', '')]) }}">Todos</a></li>
+                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'coordinado analisis', 'metodo' => request()->get('metodo', '')]) }}">Pendientes de análisis</a></li>
+                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'en revision analisis', 'metodo' => request()->get('metodo', '')]) }}">Pendientes de revisión</a></li>
+                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'analizado', 'metodo' => request()->get('metodo', '')]) }}">Finalizados</a></li>
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'proximos', 'metodo' => request()->get('metodo', '')]) }}">Próximos 3 días</a></li>
+                                </ul>
+                            </div>
+                            
+                            <!-- Filtro de Método de Análisis -->
+                            <div class="dropdown">
+                                <button class="btn btn-sm btn-outline-primary dropdown-toggle" type="button" id="metodoFilterDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <i class="fas fa-flask me-1"></i> 
+                                    @if(request()->get('metodo'))
+                                        Método: {{ $metodosDisponibles->firstWhere('metodo_codigo', request()->get('metodo'))->metodo_descripcion ?? 'Seleccionado' }}
+                                    @else
+                                        Método
+                                    @endif
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="metodoFilterDropdown">
+                                    <li><a class="dropdown-item metodo-filter-option" href="{{ request()->fullUrlWithQuery(['metodo' => '', 'estado' => request()->get('estado', 'all')]) }}">
+                                        <i class="fas fa-times me-2 text-muted"></i> Todos los métodos
+                                    </a></li>
+                                    <li><hr class="dropdown-divider"></li>
+                                    @foreach($metodosDisponibles as $metodo)
+                                        <li>
+                                            <a class="dropdown-item metodo-filter-option {{ request()->get('metodo') == $metodo->metodo_codigo ? 'active' : '' }}" 
+                                               href="{{ request()->fullUrlWithQuery(['metodo' => $metodo->metodo_codigo, 'estado' => request()->get('estado', 'all')]) }}">
+                                                {{ $metodo->metodo_descripcion ?? $metodo->metodo_codigo }}
+                                            </a>
+                                        </li>
+                                    @endforeach
+                                </ul>
+                            </div>
+                            
+                            <!-- Botón para exportar -->
+                            <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#modalExportar">
+                                <i class="fas fa-file-excel me-1"></i> Exportar
                             </button>
-                            <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="filterDropdown">
-                                <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'all']) }}">Todos</a></li>
-                                <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'coordinado analisis']) }}">Pendientes de análisis</a></li>
-                                <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'en revision analisis']) }}">Pendientes de revisión</a></li>
-                                <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'analizado']) }}">Finalizados</a></li>
-                                <li><hr class="dropdown-divider"></li>
-                                <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'proximos']) }}">Próximos 3 días</a></li>
-                            </ul>
                         </div>
                     </div>
-                    <p class="text-muted small mb-0">Análisis asignados a mi o a mi equipo</p>
+                    <p class="text-muted small mb-0">
+                        Análisis asignados a mi o a mi equipo
+                        @if(isset($esDiaUno) && $esDiaUno)
+                            <span class="badge bg-info ms-2">Filtrado por mes actual (día 1)</span>
+                        @endif
+                    </p>
                 </div>
                 <div class="card-body p-0">
                     <div class="accordion p-2" id="analisisAccordion">
@@ -162,7 +181,7 @@
                                             <div>
                                                 <strong>Muestra: </strong>
                                                 @if($muestra)
-                                                        {{ $muestra->cotio_descripcion ?? 'N/A' }} {{ $muestra->id ? '#' . str_pad($muestra->id, 8, '0', STR_PAD_LEFT) : null }}
+                                                        {{ $muestra->cotio_descripcion ?? 'N/A' }} (#{{ $muestra->otn ? $muestra->otn : $muestra->instance_number ?? 'N/A' }})
                                                         <span class="text-muted small">
                                                             <strong>Cotización:</strong> <a href="{{ route('cotizaciones.ver-detalle', $muestra->cotio_numcoti) }}" class="text-muted">{{ $muestra->cotio_numcoti ?? 'N/A' }}</a>
                                                         </span>
@@ -250,7 +269,7 @@
                                                             </a>
                                                             </td>   
                                                             <td style="max-width: 150px;" title="{{ $item->cotio_descripcion }}">
-                                                                {{ $item->cotio_descripcion ?? 'N/A' }} {{ $item->id ? '#' . str_pad($item->id, 8, '0', STR_PAD_LEFT) : null }}
+                                                                {{ $item->cotio_descripcion ?? 'N/A' }} 
                                                             </td>
                                                             <td>
                                                                 @if($item->fecha_fin_ot)
@@ -341,7 +360,7 @@
                                                 'item' => $muestra->cotio_item,
                                                 'instance' => $muestra->instance_number
                                             ]) }}" class="text-primary">
-                                                {{ $muestra->cotio_descripcion ?? 'N/A' }} {{ $muestra->id ? '#' . str_pad($muestra->id, 8, '0', STR_PAD_LEFT) : null }}
+                                                {{ $muestra->cotio_descripcion ?? 'N/A' }}
                                             </a>
                                         @else
                                             'N/A'
@@ -445,6 +464,47 @@
     </div>
 </div>
 
+{{-- Modal para Exportar --}}
+<div class="modal fade" id="modalExportar" tabindex="-1" aria-labelledby="modalExportarLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalExportarLabel">
+                    <i class="fas fa-file-excel me-2"></i>Exportar Análisis a Excel
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="{{ route('dashboard.analisis.exportar') }}" method="POST" id="formExportar">
+                @csrf
+                <div class="modal-body">
+                    <p class="text-muted mb-3">Seleccione el período para exportar los análisis:</p>
+                    
+                    <div class="mb-3">
+                        <label for="fecha_desde" class="form-label">Fecha Desde <span class="text-danger">*</span></label>
+                        <input type="date" class="form-control" id="fecha_desde" name="fecha_desde" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="fecha_hasta" class="form-label">Fecha Hasta <span class="text-danger">*</span></label>
+                        <input type="date" class="form-control" id="fecha_hasta" name="fecha_hasta" required>
+                    </div>
+                    
+                    <div class="alert alert-info mb-0">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <small>El archivo incluirá: N° Cotización, Muestra, Descripción, Estado, Fechas de Inicio y Fin OT, Responsables de Análisis y Cliente.</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-download me-2"></i>Exportar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function() {
@@ -499,6 +559,50 @@
                 filterDropdown.innerHTML = `<i class="fas fa-filter me-1"></i> ${option.textContent}`;
             }
         });
+
+        // Actualizar el texto del botón dropdown de método según el método actual
+        const currentMetodo = '{{ $metodoFiltro }}';
+        const metodoFilterDropdown = document.getElementById('metodoFilterDropdown');
+        if (metodoFilterDropdown && currentMetodo) {
+            const metodoSeleccionado = document.querySelector(`.metodo-filter-option[href*="metodo=${currentMetodo}"]`);
+            if (metodoSeleccionado) {
+                metodoFilterDropdown.innerHTML = `<i class="fas fa-flask me-1"></i> Método: ${metodoSeleccionado.textContent.trim()}`;
+            }
+        }
+
+        // Validación del formulario de exportación
+        const formExportar = document.getElementById('formExportar');
+        if (formExportar) {
+            formExportar.addEventListener('submit', function(e) {
+                const fechaDesde = document.getElementById('fecha_desde').value;
+                const fechaHasta = document.getElementById('fecha_hasta').value;
+                
+                if (!fechaDesde || !fechaHasta) {
+                    e.preventDefault();
+                    alert('Por favor, complete ambas fechas.');
+                    return false;
+                }
+                
+                if (new Date(fechaDesde) > new Date(fechaHasta)) {
+                    e.preventDefault();
+                    alert('La fecha desde debe ser anterior o igual a la fecha hasta.');
+                    return false;
+                }
+            });
+        }
+
+        // Establecer valores por defecto en el modal (mes actual)
+        const modalExportar = document.getElementById('modalExportar');
+        if (modalExportar) {
+            modalExportar.addEventListener('show.bs.modal', function() {
+                const hoy = new Date();
+                const primerDiaMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+                const ultimoDiaMes = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0);
+                
+                document.getElementById('fecha_desde').value = primerDiaMes.toISOString().split('T')[0];
+                document.getElementById('fecha_hasta').value = ultimoDiaMes.toISOString().split('T')[0];
+            });
+        }
     });
 </script>
 @endsection
