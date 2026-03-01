@@ -21,6 +21,22 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
     protected $leyesCreadas = 0;
     protected $variablesAsociadas = 0;
 
+    /** Activar para ver logs detallados en storage/logs/laravel.log */
+    protected $debug = true;
+
+    /** Si se llegó a procesar alguna fila (se llamó collection() y había filas válidas o no) */
+    public $sheetProcessed = false;
+
+    /**
+     * Log de debug (solo si $this->debug está activo)
+     */
+    protected function debug(string $message, array $context = []): void
+    {
+        if ($this->debug) {
+            Log::debug('[LeyesNormativasImport] ' . $message, $context);
+        }
+    }
+
     /**
      * Procesa la colección de filas del Excel
      * 
@@ -28,8 +44,12 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
      */
     public function collection(Collection $rows)
     {
+        $this->sheetProcessed = true;
         Log::info('LeyesNormativasImport: Iniciando procesamiento', ['total_filas' => $rows->count()]);
-        
+        $this->debug('Cabeceras detectadas en la primera fila', [
+            'keys' => $rows->isNotEmpty() ? array_keys($rows->first()->toArray()) : []
+        ]);
+
         if ($rows->isEmpty()) {
             Log::warning('LeyesNormativasImport: No se encontraron filas para procesar');
             $this->errors[] = 'No se encontraron filas para procesar';
@@ -45,6 +65,8 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
             foreach ($rows as $index => $row) {
                 $rowNumber = $index + 2; // +2 porque el índice empieza en 0 y hay encabezado
                 
+                $this->debug("Procesando fila {$rowNumber}", ['row_raw' => $row->toArray()]);
+                
                 // Obtener valores de la fila
                 $analito = $this->getRowValue($row, ['analito_cotio_descripcion', 'analito', 'cotio_descripcion']);
                 $matriz = $this->getRowValue($row, ['matriz_opcional', 'matriz']);
@@ -53,16 +75,27 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
                 $unidadMedida = $this->getRowValue($row, ['unidad_de_medida', 'unidad_medida', 'unidad']);
                 $valorLimite = $this->getRowValue($row, ['valor_límite', 'valor_limite', 'valor']);
                 
+                $this->debug("Fila {$rowNumber} - Valores extraídos", [
+                    'analito' => $analito,
+                    'matriz' => $matriz,
+                    'metodo' => $metodo,
+                    'nombre_ley' => $nombreLey,
+                    'unidad_medida' => $unidadMedida,
+                    'valor_limite' => $valorLimite,
+                ]);
+                
                 // Validar campos requeridos
                 if (empty($analito)) {
                     $this->errors[] = "Fila {$rowNumber}: El analito (cotio_descripcion) es requerido";
                     $this->errorCount++;
+                    $this->debug("Fila {$rowNumber} SKIP: analito vacío");
                     continue;
                 }
                 
                 if (empty($nombreLey)) {
                     $this->errors[] = "Fila {$rowNumber}: El nombre de la ley es requerido";
                     $this->errorCount++;
+                    $this->debug("Fila {$rowNumber} SKIP: nombre de ley vacío");
                     continue;
                 }
                 
@@ -85,8 +118,14 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
                 ];
             }
             
+            $this->debug('Agrupación por ley', [
+                'leyes' => array_keys($leyesData),
+                'total_variables_por_ley' => array_map('count', $leyesData),
+            ]);
+            
             // Procesar cada ley
             foreach ($leyesData as $nombreLey => $variablesData) {
+                $this->debug("Procesando ley: {$nombreLey}", ['variables_count' => count($variablesData)]);
                 try {
                     // Buscar o crear la ley normativa
                     $leyNormativa = $this->findOrCreateLeyNormativa($nombreLey);
@@ -94,8 +133,11 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
                     if (!$leyNormativa) {
                         $this->errors[] = "No se pudo crear o encontrar la ley: {$nombreLey}";
                         $this->errorCount++;
+                        $this->debug("Ley no encontrada/creada: {$nombreLey}");
                         continue;
                     }
+                    
+                    $this->debug("Ley usada: id={$leyNormativa->id} codigo={$leyNormativa->codigo}");
                     
                     // Procesar cada variable de esta ley
                     foreach ($variablesData as $varData) {
@@ -106,8 +148,10 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
                             $this->errorCount++;
                             Log::error('LeyesNormativasImport: Error procesando variable', [
                                 'fila' => $varData['row_number'],
+                                'varData' => $varData,
                                 'error' => $e->getMessage()
                             ]);
+                            $this->debug("Error en variable", ['varData' => $varData, 'error' => $e->getMessage()]);
                         }
                     }
                     
@@ -119,6 +163,7 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
                         'ley' => $nombreLey,
                         'error' => $e->getMessage()
                     ]);
+                    $this->debug("Error en ley", ['ley' => $nombreLey, 'error' => $e->getMessage()]);
                 }
             }
             
@@ -203,6 +248,8 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
         $unidadMedida = $varData['unidad_medida'];
         $valorLimite = $varData['valor_limite'];
         
+        $this->debug("processVariable: analito={$analito} aplicar_a_todos=" . ($aplicarATodos ? '1' : '0') . " matriz=" . ($matriz ?? 'null') . " metodo=" . ($metodo ?? 'null'));
+        
         // Buscar cotio_items que coincidan (case-insensitive, con trim)
         $analitoTrimmed = trim($analito);
         $query = CotioItems::where(DB::raw('TRIM(cotio_descripcion)'), 'ILIKE', $analitoTrimmed)
@@ -213,6 +260,7 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
             if ($matriz) {
                 // Buscar matriz normalizada en la base de datos
                 $matrizCodigo = $this->findMatrizCode($matriz);
+                $this->debug("findMatrizCode('{$matriz}') => " . ($matrizCodigo ?? 'null'));
                 if ($matrizCodigo) {
                     $query->where('matriz_codigo', $matrizCodigo);
                 } else {
@@ -224,6 +272,7 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
             if ($metodo) {
                 // Buscar método normalizado en la base de datos
                 $metodoCodigo = $this->findMetodoCode($metodo);
+                $this->debug("findMetodoCode('{$metodo}') => " . ($metodoCodigo ?? 'null'));
                 if ($metodoCodigo) {
                     $query->where('metodo', $metodoCodigo);
                 } else {
@@ -233,6 +282,10 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
             }
         }
         
+        $sql = $query->toSql();
+        $bindings = $query->getBindings();
+        $this->debug("Query CotioItems", ['sql' => $sql, 'bindings' => $bindings]);
+        
         $cotioItems = $query->get();
         
         if ($cotioItems->isEmpty()) {
@@ -240,11 +293,15 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
             if ($matriz) $filtros[] = "matriz: {$matriz}";
             if ($metodo) $filtros[] = "método: {$metodo}";
             $filtrosStr = !empty($filtros) ? ' (' . implode(', ', $filtros) . ')' : '';
-            
+            $this->debug("Cero cotio_items para analito '{$analito}'{$filtrosStr}");
             throw new \Exception("No se encontraron cotio_items con descripción '{$analito}'{$filtrosStr}");
         }
         
         Log::info("LeyesNormativasImport: Encontrados " . $cotioItems->count() . " cotio_items para '{$analito}'");
+        $this->debug("CotioItems encontrados: " . $cotioItems->count(), [
+            'ids' => $cotioItems->pluck('id')->toArray(),
+            'descripciones' => $cotioItems->pluck('cotio_descripcion')->toArray(),
+        ]);
         
         // Para cada cotio_item encontrado, crear o actualizar variable y asociarla a la ley
         foreach ($cotioItems as $cotioItem) {
@@ -262,7 +319,9 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
                     'activo' => true
                 ]);
                 
-                Log::debug("LeyesNormativasImport: Variable creada: ID {$variable->id} para cotio_item {$cotioItem->id}");
+                $this->debug("Variable creada: id={$variable->id} cotio_item_id={$cotioItem->id}");
+            } else {
+                $this->debug("Variable existente: id={$variable->id} cotio_item_id={$cotioItem->id}");
             }
             
             // Verificar si ya está asociada a esta ley
@@ -278,7 +337,7 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
                 ]);
                 
                 $this->variablesAsociadas++;
-                Log::debug("LeyesNormativasImport: Variable {$variable->id} asociada a ley {$leyNormativa->codigo}");
+                $this->debug("Variable {$variable->id} asociada a ley {$leyNormativa->codigo} (valor_limite={$valorLimite})");
             } else {
                 // Actualizar valores si ya existe
                 $leyNormativa->variables()->updateExistingPivot($variable->id, [
@@ -286,7 +345,7 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
                     'unidad_medida' => $unidadMedida ?? $cotioItem->unidad_medida,
                 ]);
                 
-                Log::debug("LeyesNormativasImport: Variable {$variable->id} actualizada en ley {$leyNormativa->codigo}");
+                $this->debug("Variable {$variable->id} pivot actualizado en ley {$leyNormativa->codigo}");
             }
         }
     }
@@ -305,6 +364,7 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
         // Primero buscar por código exacto
         $matriz = DB::table('matriz')->where('matriz_codigo', $value)->first();
         if ($matriz) {
+            $this->debug("findMatrizCode: encontrado por codigo exacto", ['value' => $value, 'codigo' => $matriz->matriz_codigo]);
             return $matriz->matriz_codigo;
         }
         
@@ -317,6 +377,7 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
                 $codigoPadded = str_pad($numero, $length, '0', STR_PAD_LEFT);
                 $matriz = DB::table('matriz')->where('matriz_codigo', $codigoPadded)->first();
                 if ($matriz) {
+                    $this->debug("findMatrizCode: encontrado por padding", ['value' => $value, 'codigo' => $matriz->matriz_codigo]);
                     return $matriz->matriz_codigo;
                 }
             }
@@ -327,9 +388,11 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
             ->where('matriz_descripcion', 'ILIKE', $value)
             ->first();
         if ($matriz) {
+            $this->debug("findMatrizCode: encontrado por descripcion", ['value' => $value, 'codigo' => $matriz->matriz_codigo]);
             return $matriz->matriz_codigo;
         }
         
+        $this->debug("findMatrizCode: no encontrado", ['value' => $value]);
         return null;
     }
 
@@ -347,6 +410,7 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
         // Primero buscar por código exacto
         $metodo = DB::table('metodo')->where('metodo_codigo', $value)->first();
         if ($metodo) {
+            $this->debug("findMetodoCode: encontrado por codigo exacto", ['value' => $value, 'codigo' => $metodo->metodo_codigo]);
             return $metodo->metodo_codigo;
         }
         
@@ -359,6 +423,7 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
                 $codigoPadded = str_pad($numero, $length, '0', STR_PAD_LEFT);
                 $metodo = DB::table('metodo')->where('metodo_codigo', $codigoPadded)->first();
                 if ($metodo) {
+                    $this->debug("findMetodoCode: encontrado por padding", ['value' => $value, 'codigo' => $metodo->metodo_codigo]);
                     return $metodo->metodo_codigo;
                 }
             }
@@ -369,9 +434,11 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
             ->where('metodo_descripcion', 'ILIKE', $value)
             ->first();
         if ($metodo) {
+            $this->debug("findMetodoCode: encontrado por descripcion", ['value' => $value, 'codigo' => $metodo->metodo_codigo]);
             return $metodo->metodo_codigo;
         }
         
+        $this->debug("findMetodoCode: no encontrado", ['value' => $value]);
         return null;
     }
 
@@ -437,6 +504,16 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
     public function getVariablesAsociadas()
     {
         return $this->variablesAsociadas;
+    }
+
+    /**
+     * Activar o desactivar logs de depuración (por defecto true).
+     * Los logs se escriben en storage/logs/laravel.log
+     */
+    public function setDebug(bool $debug): self
+    {
+        $this->debug = $debug;
+        return $this;
     }
 }
 

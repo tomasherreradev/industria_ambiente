@@ -28,6 +28,9 @@ use App\Models\CotiVersion;
 
 class VentasController extends Controller {
     
+    /** Longitud máxima de cotio_descripcion en la tabla cotio (varchar 60) */
+    private const COTIO_DESCRIPCION_MAX_LENGTH = 60;
+
     /**
      * Helper para truncar y padear strings correctamente
      */
@@ -37,6 +40,17 @@ class VentasController extends Controller {
             return null;
         }
         return str_pad(substr($value, 0, $length), $length, $padChar, STR_PAD_RIGHT);
+    }
+
+    /**
+     * Trunca la descripción para cotio_descripcion (varchar 60) respetando UTF-8.
+     */
+    private function truncateCotioDescripcion(?string $descripcion): string
+    {
+        if ($descripcion === null || $descripcion === '') {
+            return '';
+        }
+        return mb_substr(trim($descripcion), 0, self::COTIO_DESCRIPCION_MAX_LENGTH);
     }
 
     private function sanitizeNullableString($value, $length = null)
@@ -408,6 +422,15 @@ class VentasController extends Controller {
     {
         try {
             Log::info('=== INICIO CREACIÓN DE COTIZACIÓN ===');
+            $ensayosRaw = $request->input('ensayos_data');
+            $componentesRaw = $request->input('componentes_data');
+            Log::info('Store ventas - payload items/componentes', [
+                'tiene_ensayos_data' => $request->has('ensayos_data'),
+                'ensayos_data_len' => $ensayosRaw ? strlen($ensayosRaw) : 0,
+                'tiene_componentes_data' => $request->has('componentes_data'),
+                'componentes_data_len' => $componentesRaw ? strlen($componentesRaw) : 0,
+                'componentes_data_preview' => $componentesRaw ? substr($componentesRaw, 0, 400) : '(vacío)',
+            ]);
             Log::info('Datos recibidos en store:', $request->all());
 
             // Validar datos básicos
@@ -713,15 +736,19 @@ class VentasController extends Controller {
                 'cotio_items_sample' => array_slice($cotioItems, 0, 3)
             ]);
             
-            // Guardar versión 1
-            CotiVersion::create([
-                'coti_num' => $cotizacion->coti_num,
-                'version' => 1,
-                'fecha_version' => now(),
-                'coti_data' => $cotiData,
-                'cotio_data' => $cotioItems,
-            ]);
-            
+            // Guardar versión 1 (updateOrCreate evita duplicate key si ya existe por reintento)
+            CotiVersion::updateOrCreate(
+                [
+                    'coti_num' => $cotizacion->coti_num,
+                    'version' => 1,
+                ],
+                [
+                    'fecha_version' => now(),
+                    'coti_data' => $cotiData,
+                    'cotio_data' => $cotioItems,
+                ]
+            );
+
             Log::info('Versión 1 guardada exitosamente en coti_versions');
             
             Log::info('=== FIN CREACIÓN DE COTIZACIÓN EXITOSA ===');
@@ -1078,7 +1105,10 @@ class VentasController extends Controller {
                 return redirect()->route('ventas.index', request()->query())
                     ->with('error', 'Cotización no encontrada');
             }
-            
+
+            // Eliminar versiones históricas de la cotización en coti_versions
+            CotiVersion::where('coti_num', $cotizacion->coti_num)->delete();
+
             $cotizacion->delete();
             
             // Preservar los filtros activos en la redirección
@@ -1274,8 +1304,13 @@ class VentasController extends Controller {
             
             $cotizacion->save();
 
+            Log::info('Update ventas - antes de procesarEnsayosYComponentes', [
+                'coti_num' => $cotizacion->coti_num,
+                'tiene_componentes_data' => $request->has('componentes_data'),
+                'componentes_data_len' => $request->componentes_data ? strlen($request->componentes_data) : 0,
+            ]);
             $this->procesarEnsayosYComponentes($request, $cotizacion->coti_num, true);
-            
+
             return redirect()->route('ventas.index')
                 ->with('success', 'Cotización actualizada exitosamente');
                 
@@ -1790,7 +1825,8 @@ class VentasController extends Controller {
                 'matriz_codigo' => $matrizCodigo,
                 'matriz_descripcion' => $matrizDescripcion,
                 'text' => $ensayo->cotio_descripcion, // Para select2
-                'componentes_default' => $ensayo->componentesAsociados->pluck('id')->values(),
+                // Incluye componentes del agrupador (cotio_item_component) para preselección en cotizaciones
+                'componentes_default' => $ensayo->componentesAsociados->pluck('id')->values()->all(),
             ];
         }));
     }
@@ -2036,9 +2072,13 @@ class VentasController extends Controller {
         
         // Procesar componentes (cotio_subitem > 0)
         foreach ($componentesData as $componente) {
-            // Encontrar el ensayo asociado
-            $ensayoAsociado = collect($ensayosData)->firstWhere('item', $componente['ensayo_asociado'] ?? 0);
-            
+            $ensayoAsociadoItem = isset($componente['ensayo_asociado'])
+                ? (int) $componente['ensayo_asociado']
+                : 0;
+            $ensayoAsociado = collect($ensayosData)->first(function ($e) use ($ensayoAsociadoItem) {
+                return (int) ($e['item'] ?? 0) === $ensayoAsociadoItem;
+            });
+
             if (!$ensayoAsociado) {
                 continue;
             }
@@ -2125,11 +2165,12 @@ class VentasController extends Controller {
             $ensayosData = $request->ensayos_data ? json_decode($request->ensayos_data, true) : [];
             $componentesData = $request->componentes_data ? json_decode($request->componentes_data, true) : [];
             
-            Log::info('Datos recibidos:', [
+            Log::info('ProcesarEnsayosYComponentes - Datos recibidos:', [
                 'ensayos_count' => count($ensayosData),
                 'componentes_count' => count($componentesData),
-                'ensayos_raw' => $request->ensayos_data,
-                'componentes_raw' => $request->componentes_data
+                'items_en_ensayos' => collect($ensayosData)->pluck('item')->toArray(),
+                'componentes_raw_len' => $request->componentes_data ? strlen($request->componentes_data) : 0,
+                'componentes_raw_preview' => $request->componentes_data ? substr($request->componentes_data, 0, 350) : '(vacío)',
             ]);
 
             if ($reemplazarExistentes) {
@@ -2266,7 +2307,7 @@ class VentasController extends Controller {
                     ? $this->parseDecimalValue($ensayo['precio'])
                     : null;
                 $cotioEnsayo->cotio_precio = ($precioEnsayo && $precioEnsayo > 0) ? $precioEnsayo : null;
-                $cotioEnsayo->cotio_descripcion = $ensayo['descripcion'];
+                $cotioEnsayo->cotio_descripcion = $this->truncateCotioDescripcion($ensayo['descripcion'] ?? null);
                 $cotioEnsayo->cotio_codigoum = null;
                 $cotioEnsayo->cotio_codigometodo = $metodoMuestreoCodigo; // Copiar método de muestreo desde CotioItems.metodo_muestreo
                 $cotioEnsayo->cotio_codigometodo_analisis = $metodoAnalisisCodigo; // Copiar método de análisis desde CotioItems.metodo
@@ -2287,50 +2328,72 @@ class VentasController extends Controller {
             }
 
             // Procesar componentes (análisis con cotio_subitem > 0)
-            foreach ($componentesData as $componente) {
-                Log::info('Procesando componente:', $componente);
-                
-                // Encontrar el ensayo asociado para obtener el cotio_item correcto
-                $ensayoAsociado = collect($ensayosData)->firstWhere('item', $componente['ensayo_asociado']);
-                
+            $componentesGuardados = 0;
+            foreach ($componentesData as $index => $componente) {
+                Log::info('Procesando componente', ['index' => $index + 1, 'total' => count($componentesData), 'ensayo_asociado' => $componente['ensayo_asociado'] ?? null, 'descripcion' => $componente['descripcion'] ?? '']);
+
+                // Normalizar ensayo_asociado (puede venir como int o string desde JSON)
+                $ensayoAsociadoItem = isset($componente['ensayo_asociado'])
+                    ? (int) $componente['ensayo_asociado']
+                    : 0;
+
+                // Encontrar el ensayo asociado comparando por entero para evitar fallos de tipo
+                $ensayoAsociado = collect($ensayosData)->first(function ($e) use ($ensayoAsociadoItem) {
+                    return (int) ($e['item'] ?? 0) === $ensayoAsociadoItem;
+                });
+
                 if (!$ensayoAsociado) {
-                    Log::warning('Ensayo asociado no encontrado para componente:', $componente);
+                    Log::warning('COMPONENTE OMITIDO: Ensayo asociado no encontrado', [
+                        'ensayo_asociado_recibido' => $componente['ensayo_asociado'] ?? 'NO ENVIADO',
+                        'ensayo_asociado_normalizado' => $ensayoAsociadoItem,
+                        'items_en_ensayos' => collect($ensayosData)->pluck('item')->toArray(),
+                        'componente_descripcion' => $componente['descripcion'] ?? '',
+                    ]);
                     continue;
                 }
-                
+
                 // Buscar el código de producto correcto en la tabla prod
                 $prodCodigo = $this->buscarCodigoProducto($componente['descripcion'], false);
                 
                 if (!$prodCodigo) {
-                    Log::warning('No se encontró código de producto para componente:', $componente);
-                    continue;
-                }
-                
-                // Contar cuántos componentes ya existen para este ensayo para asignar el subitem
-                $componentesExistentes = Cotio::where('cotio_numcoti', $cotiNum)
-                    ->where('cotio_item', $ensayoAsociado['item'])
-                    ->where('cotio_subitem', '>', 0)
-                    ->count();
-                
-                // Validar que tenemos todos los campos requeridos antes de crear el objeto
-                if (empty($cotiNum) || empty($ensayoAsociado['item']) || empty($prodCodigo) || empty($componente['descripcion'])) {
-                    Log::error('Campos requeridos faltantes para componente:', [
-                        'cotiNum' => $cotiNum,
-                        'ensayo_item' => $ensayoAsociado['item'] ?? 'NO ENCONTRADO',
-                        'prodCodigo' => $prodCodigo,
-                        'descripcion' => $componente['descripcion'] ?? 'NO ENCONTRADA'
+                    Log::warning('COMPONENTE OMITIDO: No se encontró código de producto', [
+                        'descripcion' => $componente['descripcion'] ?? '',
+                        'componente' => $componente,
                     ]);
                     continue;
                 }
-                
+
+                $ensayoItemInt = (int) ($ensayoAsociado['item'] ?? 0);
+
+                // Contar cuántos componentes ya existen para este ensayo para asignar el subitem
+                $componentesExistentes = Cotio::where('cotio_numcoti', $cotiNum)
+                    ->where('cotio_item', $ensayoItemInt)
+                    ->where('cotio_subitem', '>', 0)
+                    ->count();
+
+                // Validar campos mínimos (descripción puede estar vacía; usamos fallback)
+                if (empty($cotiNum) || $ensayoItemInt <= 0 || empty($prodCodigo)) {
+                    Log::warning('COMPONENTE OMITIDO: Campos requeridos faltantes', [
+                        'cotiNum' => $cotiNum,
+                        'ensayo_item' => $ensayoItemInt,
+                        'prodCodigo' => $prodCodigo,
+                    ]);
+                    continue;
+                }
+
+                $descripcionComponente = trim($componente['descripcion'] ?? '');
+                if ($descripcionComponente === '') {
+                    $descripcionComponente = trim($componente['codigo'] ?? '') ?: 'Componente';
+                }
+
                 $cotioComponente = new Cotio();
                 $cotioComponente->cotio_numcoti = $cotiNum;
-                $cotioComponente->cotio_item = $ensayoAsociado['item'];
+                $cotioComponente->cotio_item = $ensayoItemInt;
                 $cotioComponente->cotio_subitem = $componentesExistentes + 1; // Incrementar subitem
                 $cotioComponente->cotio_codigoprod = $prodCodigo;
                 $cotioComponente->cotio_cantidad = $this->parseDecimalValue($componente['cantidad'] ?? 1) ?? 1;
                 $cotioComponente->cotio_precio = $this->parseDecimalValue($componente['precio'] ?? null);
-                $cotioComponente->cotio_descripcion = $componente['descripcion'];
+                $cotioComponente->cotio_descripcion = $this->truncateCotioDescripcion($descripcionComponente ?: null);
                 $unidadMedida = $componente['unidad_medida'] ?? null;
                 $metodoCodigo = $componente['metodo_codigo'] ?? null;
                 $metodoAnalisis = $componente['metodo_analisis_id'] ?? null;
@@ -2501,28 +2564,26 @@ class VentasController extends Controller {
                 // - cotio_codigometodo_analisis desde CotioItems.metodo
                 $cotioComponente->cotio_codigometodo = $metodoMuestreoCodigoComp;
                 
-                // Asignar método de análisis desde CotioItems.metodo
+                // Asignar método de análisis: la FK cotio_codigometodo_analisis referencia metodos_analisis.codigo
+                // Solo asignar si existe en metodos_analisis (evita violación de FK)
                 if ($metodoAnalisis) {
                     $codigoMetodoAnalisisTrim = trim($metodoAnalisis);
-                    // Verificar que existe en la tabla metodo
-                    if (Metodo::where('metodo_codigo', $codigoMetodoAnalisisTrim)->exists()) {
-                        $cotioComponente->cotio_codigometodo_analisis = $this->truncateAndPad($codigoMetodoAnalisisTrim, 15);
-                        Log::info('Método de análisis asignado al componente desde CotioItems.metodo (tabla metodo)', [
-                            'metodo_analisis' => $codigoMetodoAnalisisTrim,
+                    $metodoAnalisisRecord = MetodoAnalisis::where('codigo', $codigoMetodoAnalisisTrim)->first();
+                    if ($metodoAnalisisRecord) {
+                        $cotioComponente->cotio_codigometodo_analisis = $metodoAnalisisRecord->codigo;
+                        Log::info('Método de análisis asignado al componente (desde metodos_analisis)', [
+                            'codigo' => $metodoAnalisisRecord->codigo,
                             'componente' => $componente['descripcion']
                         ]);
                     } else {
-                        Log::warning('Método de análisis no encontrado en tabla metodo', [
+                        $cotioComponente->cotio_codigometodo_analisis = null;
+                        Log::warning('Código de método no existe en metodos_analisis, se guarda sin método de análisis', [
                             'codigo' => $codigoMetodoAnalisisTrim,
                             'componente' => $componente['descripcion']
                         ]);
-                        $cotioComponente->cotio_codigometodo_analisis = null;
                     }
                 } else {
                     $cotioComponente->cotio_codigometodo_analisis = null;
-                    Log::warning('No se encontró método de análisis desde CotioItems para componente', [
-                        'componente' => $componente['descripcion']
-                    ]);
                 }
 
                 if (!is_null($limiteDeteccion)) {
@@ -2554,10 +2615,12 @@ class VentasController extends Controller {
                     ]);
                     
                     $cotioComponente->save();
-                    Log::info('Componente guardado exitosamente:', [
+                    $componentesGuardados++;
+                    Log::info('COMPONENTE GUARDADO OK', [
                         'cotio_numcoti' => $cotioComponente->cotio_numcoti,
                         'cotio_item' => $cotioComponente->cotio_item,
                         'cotio_subitem' => $cotioComponente->cotio_subitem,
+                        'descripcion' => $cotioComponente->cotio_descripcion,
                         'prod_codigo' => $prodCodigo
                     ]);
                 } catch (\Exception $saveException) {
@@ -2580,9 +2643,13 @@ class VentasController extends Controller {
                     continue;
                 }
             }
-            
+
+            Log::info('=== RESUMEN PROCESAR ENSAYOS Y COMPONENTES ===', [
+                'componentes_recibidos' => count($componentesData),
+                'componentes_guardados' => $componentesGuardados,
+            ]);
             Log::info('Ensayos y componentes procesados exitosamente');
-            
+
         } catch (\Exception $e) {
             Log::error('Error procesando ensayos y componentes:', [
                 'error' => $e->getMessage(),

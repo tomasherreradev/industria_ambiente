@@ -250,6 +250,9 @@ public function dashboardMuestreo(Request $request)
     // Estadísticas (sin filtro de estado)
     $totalMuestras = $aplicarFiltrosBase(CotioInstancia::query())->count();
     
+    // Cotizaciones aprobadas (estado 'A')
+    $cotizacionesAprobadas = Coti::where('coti_estado', 'LIKE', 'A%')->count();
+    
     $pendientes = $aplicarFiltrosBase(CotioInstancia::query())
         ->where('cotio_estado', 'coordinado muestreo')
         ->count();
@@ -260,6 +263,10 @@ public function dashboardMuestreo(Request $request)
     
     $finalizadas = $aplicarFiltrosBase(CotioInstancia::query())
         ->where('cotio_estado', 'muestreado')
+        ->count();
+    
+    $suspendidas = $aplicarFiltrosBase(CotioInstancia::query())
+        ->where('cotio_estado', 'suspension')
         ->count();
     
     
@@ -347,9 +354,11 @@ public function dashboardMuestreo(Request $request)
     return view('dashboard.muestreo', compact(
         'muestras',
         'totalMuestras',
+        'cotizacionesAprobadas',
         'pendientes',
         'enProceso',
         'finalizadas',
+        'suspendidas',
         'muestrasProximas',
         'vehiculosAsignados',
         'herramientasEnUso',

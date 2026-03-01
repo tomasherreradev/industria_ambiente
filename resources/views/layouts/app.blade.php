@@ -116,6 +116,8 @@
                 top: 0;
                 left: 0;
                 padding-top: 2rem;
+                overflow-y: auto;
+                overflow-x: hidden;
             }
 
             .main-content {
@@ -335,19 +337,19 @@
             <a class="navbar-brand" href="
                 @if(Auth::user()->usu_nivel >= 900)
                     {{ url('/dashboard') }}
-                @elseif(Auth::user()->rol == 'laboratorio')
+                @elseif(userHasRole('laboratorio'))
                     {{ url('/mis-ordenes') }}
-                @elseif(Auth::user()->rol == 'muestreador')
+                @elseif(userHasRole('muestreador'))
                     {{ url('/mis-tareas') }}
-                @elseif(Auth::user()->rol == 'coordinador_lab')
+                @elseif(userHasRole('coordinador_lab'))
                     {{ url('/dashboard/analisis') }}
-                @elseif(Auth::user()->rol == 'coordinador_muestreo')
+                @elseif(userHasRole('coordinador_muestreo'))
                     {{ url('/dashboard/muestreo') }}
-                @elseif(Auth::user()->rol == 'ventas')
+                @elseif(userHasRole('ventas'))
                     {{ url('/ventas') }}
-                @elseif(Auth::user()->rol == 'firmador')
+                @elseif(userHasRole('firmador'))
                     {{ url('/informes') }}
-                @elseif(Auth::user()->rol == 'facturador')
+                @elseif(userHasRole('facturador'))
                     {{ url('/facturacion') }}
                 @endif
             ">
@@ -479,7 +481,7 @@
         </button>
         
         <nav class="nav flex-column px-3 py-3">
-            @if(Auth::user()->usu_nivel >= 900 || Auth::user()->rol == 'coordinador_lab' || Auth::user()->rol == 'coordinador_muestreo' || Auth::user()->rol == 'ventas')
+            @if(Auth::user()->usu_nivel >= 900 || userHasAnyRole(['coordinador_lab', 'coordinador_muestreo', 'ventas']))
 
                 @if(Auth::user()->usu_nivel >= 900)
                     <a class="nav-link mobile-nav-link" href="{{ url('/dashboard') }}">
@@ -488,56 +490,56 @@
                     </a>
                 @endif
 
-                @if(Auth::user()->rol == 'coordinador_lab')
+                @if(userHasRole('coordinador_lab'))
                     <a class="nav-link mobile-nav-link" href="{{ url('/dashboard/analisis') }}">
                         <x-heroicon-o-ticket style="width: 18px; height: 18px;" />
                         Dashboard Lab
                     </a>
                 @endif
 
-                @if(Auth::user()->rol == 'coordinador_muestreo')
+                @if(userHasRole('coordinador_muestreo'))
                     <a class="nav-link mobile-nav-link" href="{{ url('/dashboard/muestreo') }}">
                         <x-heroicon-o-ticket style="width: 18px; height: 18px;" />
                         Dashboard Muestreo
                     </a>
                 @endif
 
-                @if(Auth::user()->usu_nivel >= 900 || Auth::user()->rol == 'coordinador_muestreo' || Auth::user()->rol == 'coordinador_lab')
+                @if(Auth::user()->usu_nivel >= 900 || userHasAnyRole(['coordinador_muestreo', 'coordinador_lab']))
                     <a class="nav-link mobile-nav-link" href="{{ url('/') }}">
                         <x-heroicon-o-ticket style="width: 18px; height: 18px;" />
                         Cotizaciones
                     </a>
                 @endif
 
-                @if(Auth::user()->rol == 'ventas')
+                @if(userHasRole('ventas'))
                     <a class="nav-link mobile-nav-link" href="{{ url('/ventas') }}">
                         <x-heroicon-o-ticket style="width: 18px; height: 18px;" />
                         Cotizaciones
                     </a>
                 @endif
 
-                @if(Auth::user()->rol == 'ventas')
+                @if(userHasRole('ventas'))
                     <a class="nav-link mobile-nav-link" href="{{ url('/clientes') }}">
                         <x-heroicon-o-ticket style="width: 18px; height: 18px;" />
                         Clientes
                     </a>
                 @endif
 
-                @if(Auth::user()->usu_nivel >= 900 || Auth::user()->rol == 'coordinador_muestreo')
+                @if(Auth::user()->usu_nivel >= 900 || userHasRole('coordinador_muestreo') || userHasRole('cadena_custodia'))
                     <a class="nav-link mobile-nav-link" href="{{ url('/muestras') }}">
                         <x-heroicon-o-ticket style="width: 18px; height: 18px;" />
                         Muestras
                     </a>
                 @endif
 
-                @if(Auth::user()->usu_nivel >= 900 || Auth::user()->rol == 'coordinador_lab')
+                @if(Auth::user()->usu_nivel >= 900 || userHasRole('coordinador_lab'))
                     <a class="nav-link mobile-nav-link" href="{{ url('/inventarios') }}">
                         <x-heroicon-o-cog style="width: 18px; height: 18px;" />
                         Inventario Lab
                     </a>
                 @endif
                 
-                @if(Auth::user()->usu_nivel >= 900 || Auth::user()->rol == 'coordinador_muestreo')
+                @if(Auth::user()->usu_nivel >= 900 || userHasRole('coordinador_muestreo'))
                     <a class="nav-link mobile-nav-link" href="{{ url('/inventarios-muestreo') }}">
                         <x-heroicon-o-cog style="width: 18px; height: 18px;" />
                         Inventario Muestreo
@@ -545,28 +547,28 @@
                 @endif
 
                 
-                @if(Auth::user()->usu_nivel >= 900 || Auth::user()->rol == 'coordinador_muestreo' || Auth::user()->rol == 'coordinador_lab')
+                @if(Auth::user()->usu_nivel >= 900 || userHasAnyRole(['coordinador_muestreo', 'coordinador_lab']))
                     <a class="nav-link mobile-nav-link" href="{{ url('/variables-requeridas') }}">
                         <x-heroicon-o-cog style="width: 18px; height: 18px;" />
                         Mediciones de Campo
                     </a>
                 @endif
 
-                @if(Auth::user()->usu_nivel >= 900 || Auth::user()->rol == 'ventas')
+                @if(Auth::user()->usu_nivel >= 900 || userHasRole('ventas') || userHasRole('coordinador_lab')) 
                     <a class="nav-link mobile-nav-link" href="{{ url('/leyes-normativas') }}">
                         <x-heroicon-o-cog style="width: 18px; height: 18px;" />
                         Leyes y Normativas
                     </a>
                 @endif
 {{-- 
-                @if(Auth::user()->usu_nivel >= 900 || Auth::user()->rol == 'ventas')
+                @if(Auth::user()->usu_nivel >= 900 || userHasRole('ventas'))
                     <a class="nav-link mobile-nav-link" href="{{ url('/metodos') }}">
                         <x-heroicon-o-cog style="width: 18px; height: 18px;" />
                         Métodos
                     </a>
                 @endif --}}
 
-                @if(Auth::user()->usu_nivel >= 900 || Auth::user()->rol == 'ventas')
+                @if(Auth::user()->usu_nivel >= 900 || userHasRole('ventas') || userHasRole('coordinador_lab'))
                     <a class="nav-link mobile-nav-link" href="{{ url('/items') }}">
                         <x-heroicon-o-cog style="width: 18px; height: 18px;" />
                         Determinaciones
@@ -574,7 +576,7 @@
                 @endif
 
 
-                @if(Auth::user()->usu_nivel >= 900 || Auth::user()->rol == 'coordinador_muestreo')
+                @if(Auth::user()->usu_nivel >= 900 || userHasRole('coordinador_muestreo'))
                 <a class="nav-link mobile-nav-link" href="{{ url('/vehiculos') }}">
                     <x-heroicon-o-truck style="width: 18px; height: 18px;" />
                     Vehiculos
@@ -582,14 +584,14 @@
                 @endif
             @endif
             
-            @if(Auth::user()->usu_nivel >= 900 || Auth::user()->rol === 'coordinador_lab')
+            @if(Auth::user()->usu_nivel >= 900 || userHasRole('coordinador_lab'))
                 <a class="nav-link mobile-nav-link" href="{{ url('/ordenes') }}">
                     <x-heroicon-o-ticket style="width: 18px; height: 18px;" />
                     Ordenes de Trabajo
                 </a>
             @endif
 
-            @if(Auth::user()->usu_nivel >= 900 || Auth::user()->rol === 'coordinador_lab' || Auth::user()->rol === 'coordinador_muestreo' || Auth::user()->rol === 'firmador')
+            @if(Auth::user()->usu_nivel >= 900 || userHasAnyRole(['coordinador_lab', 'coordinador_muestreo', 'firmador']))
                 <a class="nav-link mobile-nav-link" href="{{ url('/informes') }}">
                     <x-heroicon-o-ticket style="width: 18px; height: 18px;" />
                     Informes
@@ -597,7 +599,7 @@
             @endif
 
             
-            @if(Auth::user()->usu_nivel >= 900 || Auth::user()->rol == 'facturador')
+            @if(Auth::user()->usu_nivel >= 900 || userHasRole('facturador'))
                 <a class="nav-link mobile-nav-link" href="{{ url('/facturacion') }}">
                     <x-heroicon-o-ticket style="width: 18px; height: 18px;" />
                     Facturación
@@ -633,15 +635,15 @@
     <a class="navbar-brand mb-3" href="
         @if(Auth::user()->usu_nivel >= 900)
             {{ url('/dashboard') }}
-        @elseif(Auth::user()->rol == 'laboratorio')
+        @elseif(userHasRole('laboratorio'))
             {{ url('/mis-ordenes') }}
-        @elseif(Auth::user()->rol == 'muestreador')
+        @elseif(userHasRole('muestreador'))
             {{ url('/mis-tareas') }}
-        @elseif(Auth::user()->rol == 'coordinador_lab')
+        @elseif(userHasRole('coordinador_lab'))
             {{ url('/dashboard/analisis') }}
-        @elseif(Auth::user()->rol == 'coordinador_muestreo')
+        @elseif(userHasRole('coordinador_muestreo'))
             {{ url('/dashboard/muestreo') }}
-        @elseif(Auth::user()->rol == 'ventas')
+        @elseif(userHasRole('ventas'))
             {{ url('/ventas') }}
         @endif
     ">
@@ -659,13 +661,13 @@
                 
                 <div id="bandejaTrabajo" class="accordion-collapse collapse show">
                     <div class="accordion-body p-0">
-                        @if(Auth::user()->rol == 'muestreador' || Auth::user()->rol == 'laboratorio' && Auth::user()->usu_nivel < 900)
-                            @if(Auth::user()->rol == 'muestreador')
+                        @if((userHasRole('muestreador') || userHasRole('laboratorio')) && Auth::user()->usu_nivel < 900)
+                            @if(userHasRole('muestreador'))
                                 <a class="nav-link" href="{{ url('/mis-tareas') }}">
                                     Mis muestras
                                 </a>
                             @endif
-                            @if(Auth::user()->rol == 'laboratorio')
+                            @if(userHasRole('laboratorio'))
                                 <a class="nav-link" href="{{ url('/mis-ordenes') }}">
                                     Mis análisis
                                 </a>
@@ -678,25 +680,25 @@
                             </a>
                         @endif
 
-                        @if(Auth::user()->rol == 'coordinador_lab')
+                        @if(userHasRole('coordinador_lab'))
                             <a class="nav-link" href="{{ url('/dashboard/analisis') }}">
                                 Dashboard Lab
                             </a>
                         @endif
 
-                        @if(Auth::user()->rol == 'coordinador_muestreo')
+                        @if(userHasRole('coordinador_muestreo'))
                             <a class="nav-link" href="{{ url('/dashboard/muestreo') }}">
                                 Dashboard Muestreo
                             </a>
                         @endif
 
-                        @if(Auth::user()->rol == 'ventas')
+                        @if(userHasRole('ventas'))
                             <a class="nav-link" href="{{ url('/ventas') }}">
                                 Cotizaciones
                             </a>
                         @endif
 
-                        @if(Auth::user()->rol == 'ventas')
+                        @if(userHasRole('ventas'))
                             <a class="nav-link" href="{{ url('/clientes') }}">
                                 Clientes
                             </a>
@@ -704,31 +706,31 @@
                     
                         
                         
-                        @if(Auth::user()->usu_nivel >= 900 || Auth::user()->rol == 'coordinador_muestreo' || Auth::user()->rol == 'coordinador_lab')
+                        @if(Auth::user()->usu_nivel >= 900 || userHasAnyRole(['coordinador_muestreo', 'coordinador_lab']))
                             <a class="nav-link" href="{{ url('/') }}">
                                 Cotizaciones
                             </a>
                         @endif
 
-                        @if(Auth::user()->usu_nivel >= 900 || Auth::user()->rol == 'coordinador_muestreo')
+                        @if(Auth::user()->usu_nivel >= 900 || userHasRole('coordinador_muestreo') || userHasRole('cadena_custodia'))
                             <a class="nav-link" href="{{ url('/muestras') }}">
                                 Muestras
                             </a>
                         @endif
                         
-                        @if(Auth::user()->usu_nivel >= 900 || Auth::user()->rol == 'coordinador_lab')
+                        @if(Auth::user()->usu_nivel >= 900 || userHasRole('coordinador_lab'))
                             <a class="nav-link" href="{{ url('/ordenes') }}">
                                 Ordenes de Trabajo
                             </a>
                         @endif
 
-                        @if(Auth::user()->usu_nivel >= 900 || Auth::user()->rol === 'coordinador_lab' || Auth::user()->rol === 'coordinador_muestreo' || Auth::user()->rol === 'firmador')
+                        @if(Auth::user()->usu_nivel >= 900 || userHasAnyRole(['coordinador_lab', 'coordinador_muestreo', 'firmador']))
                             <a class="nav-link mobile-nav-link" href="{{ url('/informes') }}">
                                 Informes
                             </a>
                         @endif
 
-                        @if(Auth::user()->usu_nivel >= 900 || Auth::user()->rol == 'facturador')
+                        @if(Auth::user()->usu_nivel >= 900 || userHasRole('facturador'))
                             <a class="nav-link mobile-nav-link" href="{{ url('/facturacion') }}">
                                 Facturación
                             </a>
@@ -738,7 +740,7 @@
             </div>
         @endif
 
-        @if(Auth::user()->usu_nivel >= 900 || Auth::user()->rol == 'coordinador_lab' || Auth::user()->rol == 'coordinador_muestreo' || Auth::user()->rol == 'ventas')
+        @if(Auth::user()->usu_nivel >= 900 || userHasAnyRole(['coordinador_lab', 'coordinador_muestreo', 'ventas']))
             <div class="accordion-item">
                 <button class="accordion-button nav-group-title" type="button" data-bs-toggle="collapse" data-bs-target="#configuracion">
                     Configuración
@@ -747,43 +749,43 @@
                 
                 <div id="configuracion" class="accordion-collapse collapse show">
                     <div class="accordion-body p-0">
-                        @if(Auth::user()->usu_nivel >= 900 || Auth::user()->rol == 'coordinador_lab')
+                        @if(Auth::user()->usu_nivel >= 900 || userHasRole('coordinador_lab'))
                             <a class="nav-link" href="{{ url('/inventarios') }}">
                                 Inventario Lab
                             </a>
                         @endif
                         
-                        @if(Auth::user()->usu_nivel >= 900 || Auth::user()->rol == 'coordinador_muestreo')
+                        @if(Auth::user()->usu_nivel >= 900 || userHasRole('coordinador_muestreo'))
                             <a class="nav-link" href="{{ url('/inventarios-muestreo') }}">
                                 Inventario Muestreo
                             </a>
                         @endif
 
-                        @if(Auth::user()->usu_nivel >= 900 || Auth::user()->rol == 'coordinador_muestreo' || Auth::user()->rol == 'coordinador_lab')
+                        @if(Auth::user()->usu_nivel >= 900 || userHasAnyRole(['coordinador_muestreo', 'coordinador_lab']))
                             <a class="nav-link" href="{{ url('/variables-requeridas') }}">
                                 Mediciones de Campo
                             </a>
                         @endif
                         
-                        @if(Auth::user()->usu_nivel >= 900 || Auth::user()->rol == 'coordinador_muestreo')
+                        @if(Auth::user()->usu_nivel >= 900 || userHasRole('coordinador_muestreo'))
                             <a class="nav-link" href="{{ url('/vehiculos') }}">
                                 Vehiculos
                             </a>
                         @endif
 
-                        @if(Auth::user()->usu_nivel >= 900 || Auth::user()->rol == 'ventas')
+                        @if(Auth::user()->usu_nivel >= 900 || userHasRole('ventas') || userHasRole('coordinador_lab'))
                             <a class="nav-link" href="{{ url('/leyes-normativas') }}">
                                 Leyes y Normativas
                             </a>
                         @endif
 
-                        {{-- @if(Auth::user()->usu_nivel >= 900 || Auth::user()->rol == 'ventas')
+                        {{-- @if(Auth::user()->usu_nivel >= 900 || userHasRole('ventas'))
                             <a class="nav-link" href="{{ url('/metodos') }}">
                                 Métodos 
                             </a>
                         @endif --}}
 
-                        @if(Auth::user()->usu_nivel >= 900 || Auth::user()->rol == 'ventas')
+                        @if(Auth::user()->usu_nivel >= 900 || userHasRole('ventas') || userHasRole('coordinador_lab'))
                             <a class="nav-link" href="{{ url('/items') }}">
                                 Determinaciones
                             </a>
@@ -794,7 +796,7 @@
             </div>
         @endif
 
-        @if(Auth::user()->rol == 'admin')
+        @if(userHasRole('admin'))
             <div class="accordion-item">
                 <button class="accordion-button nav-group-title" type="button" data-bs-toggle="collapse" data-bs-target="#administracion">
                     Administración
@@ -815,10 +817,10 @@
                             <x-heroicon-o-scale style="width: 16px; height: 16px;" class="me-2" />
                             Leyes y Normativas
                         </a>
-                        <a class="nav-link" href="{{ url('/variables') }}">
+                        {{-- <a class="nav-link" href="{{ url('/variables') }}">
                             <x-heroicon-o-beaker style="width: 16px; height: 16px;" class="me-2" />
                             Variables
-                        </a>
+                        </a> --}}
                     </div>
                 </div>
             </div>

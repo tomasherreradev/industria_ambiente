@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use App\Models\CotioInstancia;
+use Illuminate\Support\Facades\DB;
 
 class User extends Authenticatable
 {
@@ -17,7 +18,7 @@ class User extends Authenticatable
     ];
 
     protected $fillable = [
-        'usu_codigo', 'usu_descripcion', 'usu_clave', 'usu_nivel', 'usu_estado', 'sector_codigo', 'rol', 'dni', 'email', 'departamento'
+        'usu_codigo', 'usu_descripcion', 'usu_clave', 'usu_nivel', 'usu_estado', 'sector_codigo', 'sector_trabajo', 'rol', 'dni', 'email', 'departamento', 'sector_trabajo'
     ];
 
     // public function getAuthPassword()
@@ -73,6 +74,137 @@ class User extends Authenticatable
             'usu_codigo',
             'id'
         );
+    }
+
+    /**
+     * Obtener roles adicionales directamente desde la tabla pivot
+     */
+    public function rolesAdicionales()
+    {
+        return DB::table('user_roles')
+            ->where('usu_codigo', $this->usu_codigo)
+            ->pluck('rol')
+            ->toArray();
+    }
+
+    /**
+     * Obtener todos los roles del usuario (rol principal + roles adicionales)
+     */
+    public function getAllRolesAttribute()
+    {
+        $roles = [];
+        
+        // Agregar rol principal si existe
+        if (!empty($this->rol)) {
+            $roles[] = $this->rol;
+        }
+        
+        // Agregar roles adicionales desde la tabla pivot
+        $rolesAdicionales = DB::table('user_roles')
+            ->where('usu_codigo', $this->usu_codigo)
+            ->pluck('rol')
+            ->toArray();
+        
+        $roles = array_merge($roles, $rolesAdicionales);
+        
+        // Eliminar duplicados y retornar
+        return array_unique($roles);
+    }
+
+    /**
+     * Verificar si el usuario tiene un rol específico
+     * 
+     * @param string|array $role Rol o array de roles a verificar
+     * @return bool
+     */
+    public function hasRole($role)
+    {
+        if (is_array($role)) {
+            return $this->hasAnyRole($role);
+        }
+        
+        // Verificar rol principal
+        if ($this->rol === $role) {
+            return true;
+        }
+        
+        // Verificar roles adicionales
+        return DB::table('user_roles')
+            ->where('usu_codigo', $this->usu_codigo)
+            ->where('rol', $role)
+            ->exists();
+    }
+
+    /**
+     * Verificar si el usuario tiene alguno de los roles especificados
+     * 
+     * @param array $roles Array de roles a verificar
+     * @return bool
+     */
+    public function hasAnyRole(array $roles)
+    {
+        // Verificar rol principal
+        if (in_array($this->rol, $roles)) {
+            return true;
+        }
+        
+        // Verificar roles adicionales
+        return DB::table('user_roles')
+            ->where('usu_codigo', $this->usu_codigo)
+            ->whereIn('rol', $roles)
+            ->exists();
+    }
+
+    /**
+     * Obtener todos los roles como colección
+     */
+    public function getRoles()
+    {
+        return collect($this->all_roles);
+    }
+
+    /**
+     * Sincronizar roles adicionales (elimina los que no están y agrega los nuevos)
+     * 
+     * @param array $roles Array de roles a sincronizar
+     */
+    public function syncRoles(array $roles)
+    {
+        // Filtrar roles vacíos y normalizar
+        $roles = array_filter(array_map('trim', $roles));
+        $roles = array_filter($roles, function($rol) {
+            return !empty($rol);
+        });
+        
+        // Obtener roles actuales
+        $currentRoles = DB::table('user_roles')
+            ->where('usu_codigo', $this->usu_codigo)
+            ->pluck('rol')
+            ->toArray();
+        
+        // Roles a eliminar (están en current pero no en roles)
+        $toDelete = array_diff($currentRoles, $roles);
+        
+        // Roles a agregar (están en roles pero no en current)
+        $toAdd = array_diff($roles, $currentRoles);
+        
+        // Eliminar roles
+        if (!empty($toDelete)) {
+            DB::table('user_roles')
+                ->where('usu_codigo', $this->usu_codigo)
+                ->whereIn('rol', $toDelete)
+                ->delete();
+        }
+        
+        // Agregar nuevos roles
+        foreach ($toAdd as $rol) {
+            DB::table('user_roles')->insert([
+                'usu_codigo' => $this->usu_codigo,
+                'rol' => $rol,
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+        }
     }
 
 }

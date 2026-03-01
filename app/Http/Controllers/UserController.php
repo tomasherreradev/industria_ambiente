@@ -16,6 +16,15 @@ class UserController extends Controller
         // Empezar la consulta sin ejecutarla aún
         $query = User::where('rol', '!=', 'sector');
     
+        // Buscar por nombre (usu_descripcion)
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->whereRaw('LOWER(usu_descripcion) LIKE ?', ['%' . strtolower($search) . '%'])
+                  ->orWhereRaw('LOWER(usu_codigo) LIKE ?', ['%' . strtolower($search) . '%']);
+            });
+        }
+    
         // Filtrar por rol
         if ($request->filled('rol')) {
             $query->where('rol', $request->rol);
@@ -27,7 +36,7 @@ class UserController extends Controller
         }
     
         // Paginar resultados
-        $usuarios = $query->paginate(20);
+        $usuarios = $query->orderBy('usu_descripcion')->paginate(20)->withQueryString();
     
         return view('users.index', compact('usuarios'));
     }

@@ -17,7 +17,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Cargar helpers lo antes posible
+        if (file_exists(app_path('helpers.php'))) {
+            require_once app_path('helpers.php');
+        }
     }
 
     /**
@@ -34,5 +37,10 @@ class AppServiceProvider extends ServiceProvider
 
         CotioInstancia::observe(CotioInstanciaObserver::class);
         CotioValorVariable::observe(CotioValorVariableObserver::class);
+        
+        // Cargar helpers manualmente si no se cargaron automáticamente
+        if (!function_exists('userHasRole')) {
+            require_once app_path('helpers.php');
+        }
     }
 }

@@ -10,20 +10,20 @@
     {{-- Resumen General --}}
     <div class="row mb-4 g-4">
         <div class="col-xl-3 col-md-6">
-            <a href="{{ request()->fullUrlWithQuery(['estado' => 'all']) }}" class="text-decoration-none">
+            <a href="{{ route('cotizaciones.index', ['estado' => 'A']) }}" class="text-decoration-none">
                 <div class="card bg-primary bg-gradient text-white h-100">
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-center">
                             <div>
-                                <h5 class="card-title text-uppercase small">Total Muestras</h5>
-                                <p class="card-text display-6 fw-bold">{{ $totalMuestras }}</p>
+                                <h5 class="card-title text-uppercase small">Cotizaciones Aprobadas</h5>
+                                <p class="card-text display-6 fw-bold">{{ $cotizacionesAprobadas ?? 0 }}</p>
                             </div>
                             <div class="bg-white bg-opacity-25 p-3 rounded-circle" style="width: 50px; height: 50px; display: flex; align-items: center; justify-content: center;">
-                                <x-heroicon-o-beaker style="width: 20px; height: 20px;"/>
+                                <x-heroicon-o-document-check style="width: 20px; height: 20px;"/>
                             </div>
                         </div>
                         <div class="mt-2">
-                            <span class="small">Asignadas a mi equipo</span>
+                            <span class="small">Total aprobadas</span>
                         </div>
                     </div>
                 </div>
@@ -35,7 +35,7 @@
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-center">
                             <div>
-                                <h5 class="card-title text-uppercase small">Pendientes</h5>
+                                <h5 class="card-title text-uppercase small">Coordinados para Muestrear</h5>
                                 <p class="card-text display-6 fw-bold">{{ $pendientes }}</p>
                             </div>
                             <div class="bg-dark bg-opacity-25 p-3 rounded-circle" style="width: 50px; height: 50px; display: flex; align-items: center; justify-content: center;">
@@ -43,7 +43,7 @@
                             </div>
                         </div>
                         <div class="mt-2">
-                            <span class="small">Por procesar</span>
+                            <span class="small">Por muestrear</span>
                         </div>
                     </div>
                 </div>
@@ -55,7 +55,7 @@
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-center">
                             <div>
-                                <h5 class="card-title text-uppercase small">En Proceso</h5>
+                                <h5 class="card-title text-uppercase small">Muestreado en Revisión</h5>
                                 <p class="card-text display-6 fw-bold">{{ $enProceso }}</p>
                             </div>
                             <div class="bg-white bg-opacity-25 p-3 rounded-circle" style="width: 50px; height: 50px; display: flex; align-items: center; justify-content: center;">
@@ -63,7 +63,7 @@
                             </div>
                         </div>
                         <div class="mt-2">
-                            <span class="small">En revisión</span>
+                            <span class="small">Pendiente de revisión</span>
                         </div>
                     </div>
                 </div>
@@ -89,6 +89,26 @@
                 </div>
             </a>
         </div>
+        <div class="col-xl-3 col-md-6">
+            <a href="{{ request()->fullUrlWithQuery(['estado' => 'suspension']) }}" class="text-decoration-none">
+                <div class="card bg-danger bg-gradient text-white h-100">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h5 class="card-title text-uppercase small">Suspendidas</h5>
+                                <p class="card-text display-6 fw-bold">{{ $suspendidas ?? 0 }}</p>
+                            </div>
+                            <div class="bg-white bg-opacity-25 p-3 rounded-circle" style="width: 50px; height: 50px; display: flex; align-items: center; justify-content: center;">
+                                <x-heroicon-o-x-circle style="width: 20px; height: 20px;"/>
+                            </div>
+                        </div>
+                        <div class="mt-2">
+                            <span class="small">Muestras suspendidas</span>
+                        </div>
+                    </div>
+                </div>
+            </a>
+        </div>
     </div>
 
     {{-- Contenido principal --}}
@@ -107,9 +127,10 @@
                                 </button>
                                 <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="filterEstadoDropdown">
                                     <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'all', 'muestreador' => request('muestreador', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'zona' => request('zona', 'all')]) }}">Todos</a></li>
-                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'coordinado muestreo', 'muestreador' => request('muestreador', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'zona' => request('zona', 'all')]) }}">Pendientes</a></li>
-                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'en revision muestreo', 'muestreador' => request('muestreador', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'zona' => request('zona', 'all')]) }}">En proceso</a></li>
+                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'coordinado muestreo', 'muestreador' => request('muestreador', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'zona' => request('zona', 'all')]) }}">Coordinados para Muestrear</a></li>
+                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'en revision muestreo', 'muestreador' => request('muestreador', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'zona' => request('zona', 'all')]) }}">Muestreado en Revisión</a></li>
                                     <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'muestreado', 'muestreador' => request('muestreador', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'zona' => request('zona', 'all')]) }}">Finalizados</a></li>
+                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'suspension', 'muestreador' => request('muestreador', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'zona' => request('zona', 'all')]) }}">Suspendidas</a></li>
                                     <li><hr class="dropdown-divider"></li>
                                     <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'proximos', 'muestreador' => request('muestreador', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'zona' => request('zona', 'all')]) }}">Próximos 3 días</a></li>
                                 </ul>
@@ -287,16 +308,20 @@
                     <div class="mt-3">
                         <ul class="list-unstyled mb-0">
                             <li class="d-flex justify-content-between align-items-center py-1">
-                                <span>Pendientes</span>
+                                <span>Coordinados</span>
                                 <span class="badge bg-warning text-dark rounded-pill">{{ $pendientes }}</span>
                             </li>
                             <li class="d-flex justify-content-between align-items-center py-1">
-                                <span>En Proceso</span>
+                                <span>En Revisión</span>
                                 <span class="badge bg-info text-dark rounded-pill">{{ $enProceso }}</span>
                             </li>
                             <li class="d-flex justify-content-between align-items-center py-1">
                                 <span>Finalizadas</span>
                                 <span class="badge bg-success rounded-pill">{{ $finalizadas }}</span>
+                            </li>
+                            <li class="d-flex justify-content-between align-items-center py-1">
+                                <span>Suspendidas</span>
+                                <span class="badge bg-danger rounded-pill">{{ $suspendidas ?? 0 }}</span>
                             </li>
                         </ul>
                     </div>
@@ -511,7 +536,8 @@
         const datosGrafico = {
             pendientes: {{ $pendientes }},
             enProceso: {{ $enProceso }},
-            finalizadas: {{ $finalizadas }}
+            finalizadas: {{ $finalizadas }},
+            suspendidas: {{ $suspendidas ?? 0 }}
         };
         // console.log('Datos del gráfico:', datosGrafico);
 
@@ -521,22 +547,25 @@
             new Chart(ctx, {
                 type: 'doughnut',
                 data: {
-                    labels: ['Pendientes', 'En Proceso', 'Finalizadas'],
+                    labels: ['Coordinados', 'En Revisión', 'Finalizadas', 'Suspendidas'],
                     datasets: [{
                         data: [
                             datosGrafico.pendientes,
                             datosGrafico.enProceso,
-                            datosGrafico.finalizadas
+                            datosGrafico.finalizadas,
+                            datosGrafico.suspendidas
                         ],
                         backgroundColor: [
                             'rgba(255, 193, 7, 0.7)',
                             'rgba(13, 202, 240, 0.7)',
-                            'rgba(25, 135, 84, 0.7)'
+                            'rgba(25, 135, 84, 0.7)',
+                            'rgba(220, 53, 69, 0.7)'
                         ],
                         borderColor: [
                             'rgba(255, 193, 7, 1)',
                             'rgba(13, 202, 240, 1)',
-                            'rgba(25, 135, 84, 1)'
+                            'rgba(25, 135, 84, 1)',
+                            'rgba(220, 53, 69, 1)'
                         ],
                         borderWidth: 1
                     }]

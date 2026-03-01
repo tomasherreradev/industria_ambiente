@@ -1,7 +1,6 @@
 @php
     $user = Auth::user();
-    $role = $user->rol;
-    $isInformes = $role == 'informes';
+    $isInformes = userHasRole('informes');
 @endphp
 
 <div class="d-none d-lg-block">
@@ -83,7 +82,7 @@
                                                             @endif
                                                             </a>
                                                             
-                                                                        @if(!$muestra->firmado && Auth::user()->rol == 'firmador')
+                                                                        @if(!$muestra->firmado && userHasRole('firmador'))
                                                                             <a href="{{ route('informes.firmar', [
                                                                                 'cotio_numcoti' => $numCoti,
                                                                                 'cotio_item' => $muestra->cotio_item,

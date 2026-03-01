@@ -61,10 +61,10 @@
 </head>
 <body>
     <div class="no-print" style="text-align: center; margin-bottom: 20px;">
-        <h2>QRs para Cotización {{ $cotizacion->coti_num }}</h2>
+        <h2>CTs para Cotización {{ $cotizacion->coti_num }}</h2>
         <p>Cliente: {{ $cotizacion->coti_empresa }} - {{ $cotizacion->coti_establecimiento }}</p>
         <button onclick="window.print()" style="padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer;">
-            Imprimir Todos los QRs
+            Imprimir Todos los CTs
         </button>
     </div>
 
@@ -82,7 +82,10 @@
                 <div class="qr-info">
                     <p>Muestra: {{ $instancia->instance_number }}</p>
                     <p>Cliente: {{ $cotizacion->coti_empresa }} - {{ $cotizacion->coti_establecimiento }}</p>
-                    <small>Fecha Muestreo: {{ $instancia->fecha_muestreo ?? 'No definida' }}</small>
+                    <p>
+                        <strong>Fecha y hora:</strong>
+                        <span style="display:inline-block; min-width: 140px; border-bottom: 1px solid #000; margin-left: 4px;">&nbsp;</span>
+                    </p>
                 </div>
             </div>
         @endforeach

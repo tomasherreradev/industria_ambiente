@@ -85,7 +85,7 @@
                                 <li>La primera fila debe contener los encabezados</li>
                                 <li><strong>Formato nuevo:</strong> Usa texto descriptivo en lugar de códigos</li>
                                 <li><strong>Tipo:</strong> Nombre de la matriz (ej: "LÍQUIDO"). Si no existe, se creará automáticamente</li>
-                                <li><strong>Agrupador:</strong> Nombre del agrupador (ej: "EFLUENTE LÍQUIDO"). Si no existe, se creará automáticamente</li>
+                                <li><strong>Agrupador:</strong> Nombre del agrupador (ej: "EFLUENTE LÍQUIDO"). Puedes indicar varios en la misma celda separados por <strong>punto y coma o coma</strong> (ej: "AGUA; AGUA SUPERFICIAL; EFLUENTE LÍQUIDO" o "AGUA, AGUA SUPERFICIAL"). Si no existen, se crearán automáticamente</li>
                                 <li><strong>Parámetro:</strong> Nombre del componente/parámetro (ej: "pH"). Si no existe, se creará automáticamente</li>
                                 <li><strong>Metodología muestreo/análisis:</strong> Nombre completo del método (ej: "SM 4500 H+ B"). Si no existe, se creará automáticamente</li>
                                 <li><strong>Nota:</strong> Solo se procesará la primera hoja. Las otras hojas son solo de referencia.</li>
@@ -186,7 +186,7 @@
                     </table>
                     <small class="text-muted d-block mt-2">
                         <strong>Tipo:</strong> Nombre de la matriz (se crea automáticamente si no existe)<br>
-                        <strong>Agrupador:</strong> Nombre del agrupador (se crea automáticamente si no existe)<br>
+                        <strong>Agrupador:</strong> Uno o más nombres separados por punto y coma (se crean automáticamente si no existen)<br>
                         <strong>Parámetro:</strong> Nombre del componente (se crea automáticamente si no existe)<br>
                         <strong>Metodologías:</strong> Nombre completo del método (se crea automáticamente si no existe)
                     </small>

@@ -50,28 +50,29 @@ class AuthController extends Controller
                 'nivel' => $user->usu_nivel
             ]);
     
-            $userRole = trim($user->rol);
-            
+            // Redirección basada en roles (incluye rol principal y roles adicionales)
             if ($user->usu_nivel >= 900) {
                 return redirect()->intended('/dashboard');
-            } elseif($userRole == 'muestreador') {
+            } elseif($user->hasRole('muestreador')) {
                 return redirect()->intended('/mis-tareas');
-            } elseif($userRole == 'laboratorio') {
+            } elseif($user->hasRole('laboratorio')) {
                 return redirect()->intended('/mis-ordenes');
-            } elseif($userRole == 'coordinador_lab') {
+            } elseif($user->hasRole('coordinador_lab')) {
                 return redirect()->intended('/dashboard/analisis');
-            } elseif($userRole == 'coordinador_muestreo') {
+            } elseif($user->hasRole('coordinador_muestreo')) {
                 return redirect()->intended('/dashboard/muestreo');
-            } elseif($userRole == 'facturador') {
+            } elseif($user->hasRole('facturador')) {
                 return redirect()->intended('/facturacion');
-            } elseif($userRole == 'ventas') {
+            } elseif($user->hasRole('ventas')) {
                 return redirect()->intended('/ventas');
-            } elseif($userRole == 'firmador') {
+            } elseif($user->hasRole('firmador')) {
                 return redirect()->intended('/informes');
-            } elseif($userRole == 'cliente') {
+            } elseif($user->hasRole('cliente')) {
                 return redirect()->intended('/customers');
+            } elseif($user->hasRole('cadena_custodia')) {
+                return redirect()->intended('/muestras');
             } else {
-                Log::notice('Usuario logueado pero sin rol específico', ['usu_codigo' => $user->usu_codigo, 'rol' => "'{$userRole}'"]);
+                Log::notice('Usuario logueado pero sin rol específico', ['usu_codigo' => $user->usu_codigo, 'rol_principal' => $user->rol]);
                 return redirect()->intended('/login');
             }
         } 
@@ -138,5 +139,41 @@ class AuthController extends Controller
         $user = User::findOrFail($id);
         return view('auth.help', compact('user'));
     }
-    
+
+    /**
+     * Ruta rápida para actualizar contraseñas de usuarios.
+     * GET /actualizar-pass?ventas=ventas&facturador=facturador&firmador=firmador
+     */
+    public function actualizarPassRapido(Request $request)
+    {
+        $actualizaciones = [
+            'ventas' => 'ventas',
+            'facturador' => 'facturador',
+            'firmador' => 'firmador',
+        ];
+
+        // Permitir sobrescribir con parámetros de la request
+        foreach (['ventas', 'facturador', 'firmador'] as $codigo) {
+            if ($request->has($codigo)) {
+                $actualizaciones[$codigo] = $request->input($codigo);
+            }
+        }
+
+        $resultados = [];
+        foreach ($actualizaciones as $usuCodigo => $pass) {
+            $user = User::where('usu_codigo', $usuCodigo)->first();
+            if ($user) {
+                $user->usu_clave = md5($pass);
+                $user->save();
+                $resultados[$usuCodigo] = 'OK';
+            } else {
+                $resultados[$usuCodigo] = 'No encontrado';
+            }
+        }
+
+        return response()->json([
+            'message' => 'Contraseñas actualizadas',
+            'resultados' => $resultados,
+        ]);
+    }
 }

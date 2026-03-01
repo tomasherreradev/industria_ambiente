@@ -285,8 +285,8 @@ public function showTareas(Request $request)
         ? Carbon::parse($request->get('month')) 
         : now();
 
-    // Verificar rol
-    if ($user->rol !== 'muestreador') {
+    // Verificar rol (incluye rol principal y roles adicionales)
+    if (!$user->hasRole('muestreador')) {
         return redirect()->route('login')->with('error', 'Acceso denegado. Solo los muestreadores pueden ver estas tareas.');
     }
 

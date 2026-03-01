@@ -90,10 +90,16 @@
                                 <td class="align-middle">{{ $item->id }}</td>
                                 <td class="align-middle">
                                     {{ $item->cotio_descripcion }}
-                                    @if(!$item->es_muestra && $item->agrupadores->isNotEmpty())
+                                    {{-- Para componentes, mostrar solo agrupadores reales (es_muestra = true) en los que se usan --}}
+                                    @php
+                                        $agrupadoresReales = !$item->es_muestra
+                                            ? $item->agrupadores->where('es_muestra', true)
+                                            : collect();
+                                    @endphp
+                                    @if($agrupadoresReales->isNotEmpty())
                                         <br>
                                         <small class="text-muted">
-                                            ({{ $item->agrupadores->pluck('cotio_descripcion')->join(', ') }})
+                                            (Usado en: {{ $agrupadoresReales->pluck('cotio_descripcion')->join(', ') }})
                                         </small>
                                     @endif
                                 </td>

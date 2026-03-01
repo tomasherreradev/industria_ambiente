@@ -26,7 +26,31 @@
                         onclick="toggleMuestras('muestras-pendientes-lg')"
                     >
                         <h5 class="mb-0">Muestras Pendientes</h5>
-                        <x-heroicon-o-chevron-up id="chevron-muestras-pendientes-lg" class="text-white" style="width: 20px; height: 20px;" />
+                        <div class="d-flex align-items-center gap-2" onclick="event.stopPropagation();">
+                            @php
+                                $tiposParaSeleccionar = collect($agrupadas)
+                                    ->map(fn($a) => $a['categoria']->cotio_descripcion ?? '')
+                                    ->filter(fn($d) => $d !== '' && $d !== 'TRABAJO TECNICO EN CAMPO' && $d !== 'VIATICOS')
+                                    ->unique()
+                                    ->values()
+                                    ->toArray();
+                            @endphp
+                            <div class="dropdown">
+                                <button class="btn btn-sm btn-light dropdown-toggle" type="button" id="dropdownSeleccionarMuestras" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <i class="fas fa-check-double me-1"></i> Seleccionar muestras
+                                </button>
+                                <ul id="menu-seleccionar-muestras" class="dropdown-menu dropdown-menu-end" aria-labelledby="dropdownSeleccionarMuestras">
+                                    <li><button type="button" class="dropdown-item" data-seleccion="todas"><i class="fas fa-list me-2"></i>Todas (disponibles)</button></li>
+                                    @if(count($tiposParaSeleccionar) > 0)
+                                        <li><hr class="dropdown-divider"></li>
+                                        @foreach($tiposParaSeleccionar as $tipo)
+                                            <li><button type="button" class="dropdown-item" data-seleccion="tipo" data-descripcion="{{ $tipo }}"><i class="fas fa-vial me-2"></i>{{ $tipo }}</button></li>
+                                        @endforeach
+                                    @endif
+                                </ul>
+                            </div>
+                            <x-heroicon-o-chevron-up id="chevron-muestras-pendientes-lg" class="text-white" style="width: 20px; height: 20px;" />
+                        </div>
                     </div>
                     <div id="muestras-pendientes-lg" class="card-body collapse-content">
                         @if($tareas->isEmpty())
@@ -119,6 +143,7 @@
                                                     class="form-check-input categoria-checkbox"
                                                     data-item="{{ $categoria->original_item }}"
                                                     data-instance="{{ $instancia->instance_number }}"
+                                                    data-descripcion="{{ $descripcion }}"
                                                     onchange="toggleTareas(this)"
                                                     @if($instancia->active_muestreo) checked @endif
                                                     @if($instancia->enable_ot) disabled @endif
@@ -199,6 +224,7 @@
                                                                     data-instancia="{{ $instancia->id }}"
                                                                     data-cotizacion="{{ $cotizacion->coti_num }}"
                                                                     data-item="{{ $instancia->cotio_item }}"
+                                                                    data-descripcion="{{ $categoria->cotio_descripcion ?? $instancia->cotio_descripcion ?? '' }}"
                                                                     data-instance="{{ $instancia->instance_number }}">
                                                                 Recoordinar
                                                             </button>
@@ -220,16 +246,6 @@
                                                 </div>
 
                                                 @if(!$requiereMuestreo && !$instancia->enable_ot && (empty($instancia->cotio_estado) || $instancia->cotio_estado == 'pendiente'))
-                                                <button 
-                                                    type="button" 
-                                                    onclick="pasarDirectoAOT({{ $instancia }})" 
-                                                    class="btn btn-primary" 
-                                                    data-bs-toggle="tooltip" 
-                                                    data-bs-placement="bottom"
-                                                    title="Enviar esta muestra directamente a una Orden de Trabajo (OT)"
-                                                >
-                                                    Pasar a Laboratorio
-                                                </button>
                                                 @elseif(!$requiereMuestreo && $instancia->enable_ot)
                                                     <button 
                                                         type="button" 
@@ -249,7 +265,7 @@
                                                     <a 
                                                         href="#"
                                                         class="text-decoration-none"
-                                                        title="Generar QR para esta muestra"
+                                                        title="Generar CT para esta muestra"
                                                         data-url="{{ route('qr.universal', [
                                                         'cotio_numcoti' => $cotizacion->coti_num, 
                                                         'cotio_item' => $categoria->original_item,
@@ -742,7 +758,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function actualizarEstadoBoton() {
         const hayCambios = Object.values(cambiosPendientes).some(value => value === true);
-        document.getElementById('btn-aplicar-cambios').disabled = !hayCambios;
+        const btn = document.getElementById('btn-aplicar-cambios');
+        if (btn) btn.disabled = !hayCambios;
     }
 
     async function confirmarCambios() {
@@ -813,7 +830,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 cambiosPendientes = {};
                 hasChanges = false;
-                document.getElementById('btn-aplicar-cambios').disabled = true;
+                var btnAplicar = document.getElementById('btn-aplicar-cambios');
+                if (btnAplicar) btnAplicar.disabled = true;
                 
                 Swal.fire({
                     icon: 'success',
@@ -840,6 +858,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('[Seleccionar muestras] DOMContentLoaded ejecutado');
     // Obtener variables requeridas y si son obligatorias
     const variablesRequeridas = @json($variablesRequeridas);
     const mandatoryVariables = @json(\App\Models\VariableRequerida::where('obligatorio', true)->get()->groupBy('cotio_descripcion')->mapWithKeys(function ($variables, $tipoMuestra) {
@@ -858,6 +877,54 @@ document.addEventListener('DOMContentLoaded', function() {
         const btnAsignacionMasiva = document.getElementById('btn-asignacion-masiva');
         const hasManualSelections = document.querySelectorAll('.categoria-checkbox:checked:not([data-persisted]), .tarea-checkbox:checked:not([data-persisted])').length > 0;
         btnAsignacionMasiva.disabled = !hasManualSelections;
+    }
+
+    // Selección por tipo o todas: botón "Seleccionar muestras"
+    var menuSeleccionar = document.getElementById('menu-seleccionar-muestras');
+    if (menuSeleccionar) {
+        console.log('[Seleccionar muestras] Menu encontrado, registrando click');
+        menuSeleccionar.addEventListener('click', function(e) {
+            console.log('[Seleccionar muestras] Click en menu, target:', e.target, 'currentTarget:', e.currentTarget);
+            var link = e.target.closest('[data-seleccion]');
+            if (!link) {
+                console.log('[Seleccionar muestras] No es un botón con data-seleccion');
+                return;
+            }
+            e.preventDefault();
+            e.stopPropagation();
+            var accion = link.dataset.seleccion;
+            var descripcion = (link.dataset.descripcion || '').toString().trim();
+            // Solo muestras disponibles: no deshabilitadas (no en OT) y no ya coordinadas (sin data-persisted)
+            var checkboxes = document.querySelectorAll('.categoria-checkbox:not([disabled]):not([data-persisted])');
+            var count = 0;
+            console.log('[Seleccionar muestras] Accion:', accion, 'descripcion:', descripcion, 'checkboxes:', checkboxes.length);
+            if (accion === 'todas') {
+                var todasChecked = checkboxes.length > 0 && Array.from(checkboxes).every(function(cb) { return cb.checked; });
+                checkboxes.forEach(function(cb) {
+                    cb.checked = !todasChecked;
+                    if (typeof toggleTareas === 'function') toggleTareas(cb);
+                    if (!todasChecked) count++;
+                    else count--;
+                });
+                console.log('[Seleccionar muestras] Todas:', todasChecked ? 'desmarcadas' : 'marcadas', count < 0 ? -count : count, 'de', checkboxes.length);
+            } else if (accion === 'tipo' && descripcion) {
+                var delTipo = Array.from(checkboxes).filter(function(cb) { return (cb.dataset.descripcion || '').trim() === descripcion; });
+                var tipoChecked = delTipo.length > 0 && delTipo.every(function(cb) { return cb.checked; });
+                delTipo.forEach(function(cb) {
+                    cb.checked = !tipoChecked;
+                    if (typeof toggleTareas === 'function') toggleTareas(cb);
+                    if (!tipoChecked) count++;
+                    else count--;
+                });
+                console.log('[Seleccionar muestras] Tipo "' + descripcion + '":', tipoChecked ? 'desmarcadas' : 'marcadas', count < 0 ? -count : count);
+            } else {
+                console.log('[Seleccionar muestras] Acción no manejada o descripcion vacía');
+            }
+            if (count !== 0 && typeof handleCheckboxState === 'function') handleCheckboxState();
+            if (count !== 0 && typeof actualizarEstadoBoton === 'function') actualizarEstadoBoton();
+        });
+    } else {
+        console.warn('[Seleccionar muestras] No se encontró #menu-seleccionar-muestras');
     }
 
     function validateFrecuenciaEligibility(items) {
@@ -944,6 +1011,25 @@ document.addEventListener('DOMContentLoaded', function() {
             });
             return;
         }
+
+        // Restringir vehículos según tipos seleccionados: si algún tipo (cotio_descripcion) ya tiene vehículo fijado, solo mostrar ese(s) vehículo(s)
+        const muestras = items.filter(i => i.subitem === '0');
+        const descripcionesUnicas = [...new Set(muestras.map(m => (m.descripcion || '').toString().trim()))].filter(Boolean);
+        const vehiculosPermitidosIds = new Set();
+        descripcionesUnicas.forEach(desc => {
+            const id = window.vehiculoFijadoPorTipo && window.vehiculoFijadoPorTipo[desc];
+            if (id) vehiculosPermitidosIds.add(parseInt(id));
+        });
+        const selectVehiculo = document.getElementById('vehiculo');
+        selectVehiculo.innerHTML = '<option value="">-- Sin cambios --</option>';
+        let vehiculosToShow = window.todosVehiculos || [];
+        if (vehiculosPermitidosIds.size > 0) {
+            vehiculosToShow = vehiculosToShow.filter(v => vehiculosPermitidosIds.has(parseInt(v.id)));
+        }
+        vehiculosToShow.forEach(v => {
+            const text = [v.marca, v.modelo, v.patente].filter(Boolean).join(' ') || v.patente + ' - ' + v.modelo;
+            selectVehiculo.appendChild(new Option(text, v.id));
+        });
 
         // Mostrar u ocultar el campo de frecuencia
         const frecuenciaContainer = document.getElementById('frecuencia-container');
@@ -1349,6 +1435,14 @@ document.addEventListener('DOMContentLoaded', function() {
 //recoordinar muestra  
 document.addEventListener('DOMContentLoaded', function() {
 
+    @php
+        $todosVehiculosParaJs = $vehiculos->map(function ($v) {
+            return ['id' => $v->id, 'marca' => $v->marca, 'modelo' => $v->modelo, 'patente' => $v->patente];
+        })->values()->toArray();
+    @endphp
+    window.vehiculoFijadoPorTipo = @json($vehiculoFijadoPorTipo ?? []);
+    window.todosVehiculos = @json($todosVehiculosParaJs);
+
     // Inicializar selects múltiples
     $('#responsables_muestreo').select2({
         dropdownParent: $('#recoordinarModal'),
@@ -1391,6 +1485,18 @@ document.addEventListener('DOMContentLoaded', function() {
         $('#cotio_numcoti').val(cotizacionNum);
         $('#cotio_item').val(item);
         $('#instance_number').val(instanceNumber);
+
+        // Restringir vehículos según el tipo de muestra (cotio_descripcion): si este tipo ya tiene un vehículo fijado, solo mostrar ese
+        const select = document.getElementById('vehiculo_asignado');
+        const descripcion = (button.data('descripcion') || '').toString().trim();
+        const fijadoId = descripcion && window.vehiculoFijadoPorTipo ? window.vehiculoFijadoPorTipo[descripcion] : null;
+        select.innerHTML = '<option value="">Seleccione un vehículo</option>';
+        const vehiculosParaTipo = fijadoId
+            ? (window.todosVehiculos || []).filter(v => v.id == fijadoId)
+            : (window.todosVehiculos || []);
+        vehiculosParaTipo.forEach(v => {
+            select.appendChild(new Option(v.patente + ' - ' + v.modelo, v.id));
+        });
 
         // Cargar datos actuales via AJAX
         const response = await fetch(`/muestras/${instanciaId}/datos-recoordinacion`);
@@ -1831,7 +1937,7 @@ const quitarDirectoAOT = (instancia) => {
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <h5 class="modal-title">QR ${coti} - Categoría: ${categoria} - Fecha: ${fechaMuestreo}</h5>
+                        <h5 class="modal-title">CT ${coti} - Categoría: ${categoria} - Fecha: ${fechaMuestreo}</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
                     </div>
                     <div class="modal-body">
@@ -1848,7 +1954,7 @@ const quitarDirectoAOT = (instancia) => {
                     </div>
                     <div class="modal-footer justify-content-center">
                         <button onclick="printQr('${url}', '${coti}', '${categoria}', '${instance}', '${fechaMuestreo}')" class="btn btn-primary">
-                            Imprimir QR 
+                            Imprimir CT 
                         </button>
                         <a href="${url}" class="btn btn-primary">
                             Ver Formulario
@@ -1882,7 +1988,7 @@ const quitarDirectoAOT = (instancia) => {
             <!DOCTYPE html>
             <html>
             <head>
-                <title>Imprimir QR - Cotización ${coti}</title>
+                <title>Imprimir CT - Cotización ${coti}</title>
                 <style>
                     body {
                         display: flex;
@@ -1925,12 +2031,13 @@ const quitarDirectoAOT = (instancia) => {
             </head>
             <body>
                 <div class="print-container">
-                    <h1>QR ${coti}</h1>
+                    <h1>CT ${coti}</h1>
                     <p><strong>Muestreo:</strong> ${categoria}</p>
                     <p><strong>Muestra:</strong> ${instance}</p>
-                    <p><strong>Fecha de muestreo:</strong> ${fechaMuestreo}</p>
-                    
-                    
+                    <p>
+                        <strong>Fecha y hora:</strong>
+                        <span style="display:inline-block; min-width: 140px; border-bottom: 1px solid #000; margin-left: 4px;">&nbsp;</span>
+                    </p>
                     <div class="qr-wrapper">
                         <div id="qr"></div>
                         <div style="width: 100%; max-width: 90%; border: 1px solid #dee2e6; padding: 10px; border-radius: 8px; margin: 10px auto;">
@@ -1941,7 +2048,7 @@ const quitarDirectoAOT = (instancia) => {
                         </div>
                     </div>
                     
-                    <p class="info">Escanee este código QR para ver los detalles</p>
+                    <p class="info">Escanee este código CT para ver los detalles</p>
                     <p class="info no-print">Esta ventana se cerrará automáticamente después de imprimir</p>
                 </div>
                 

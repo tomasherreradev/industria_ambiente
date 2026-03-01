@@ -274,6 +274,53 @@
                     </div>
                 @endif
 
+                {{-- Datos de la muestra: identificación, coordenadas, precinto, cadena de custodia, foto --}}
+                @if($instanciaActual)
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header bg-light">
+                        <h5 class="card-title mb-0 p-2">Datos de la Muestra</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6 col-lg-7">
+                                <dl class="row mb-0">
+                                    <dt class="col-sm-4 text-muted">Identificación</dt>
+                                    <dd class="col-sm-8">{{ $instanciaActual->cotio_identificacion ?? '—' }}</dd>
+
+                                    @if($instanciaActual->latitud && $instanciaActual->longitud)
+                                    <dt class="col-sm-4 text-muted">Coordenadas</dt>
+                                    <dd class="col-sm-8">
+                                        {{ number_format($instanciaActual->latitud, 6) }}, {{ number_format($instanciaActual->longitud, 6) }}
+                                        <a class="btn btn-sm btn-outline-primary ms-2" href="https://www.google.com/maps/search/?api=1&query={{ $instanciaActual->latitud }},{{ $instanciaActual->longitud }}" target="_blank" rel="noopener">
+                                            <x-heroicon-o-map-pin style="width: 14px; height: 14px;" /> Ver en mapa
+                                        </a>
+                                    </dd>
+                                    @endif
+
+                                    <dt class="col-sm-4 text-muted">Precinto</dt>
+                                    <dd class="col-sm-8">{{ $instanciaActual->nro_precinto ?? '—' }}</dd>
+
+                                    <dt class="col-sm-4 text-muted">Cadena de custodia</dt>
+                                    <dd class="col-sm-8">{{ $instanciaActual->nro_cadena ?? '—' }}</dd>
+
+                                    @if($instanciaActual->fecha_identificacion)
+                                    <dt class="col-sm-4 text-muted">Fecha identificación</dt>
+                                    <dd class="col-sm-8">{{ \Carbon\Carbon::parse($instanciaActual->fecha_identificacion)->format('d/m/Y H:i') }}</dd>
+                                    @endif
+                                </dl>
+                            </div>
+                            @if($instanciaActual->image)
+                            <div class="col-md-6 col-lg-5 text-center mt-3 mt-md-0">
+                                <p class="text-muted small mb-2">Foto de la muestra</p>
+                                <a href="{{ Storage::url('images/' . $instanciaActual->image) }}" target="_blank" rel="noopener" class="d-inline-block">
+                                    <img src="{{ Storage::url('images/' . $instanciaActual->image) }}" alt="Foto de la muestra" class="img-fluid rounded shadow-sm" style="max-height: 220px; object-fit: contain;">
+                                </a>
+                            </div>
+                            @endif
+                        </div>
+                    </div>
+                </div>
+                @endif
 
                 @if($instanciaActual && $variablesMuestra->isNotEmpty())
                 <div class="card shadow-sm my-5">
@@ -350,19 +397,6 @@
                 @if($instanciaActual->cotio_estado == 'suspension')
                     <div class="alert alert-danger">
                         <strong>Motivos de suspensión:</strong> {{ $instanciaActual->cotio_observaciones_suspension ?? 'N/A' }}
-                    </div>
-                @endif
-
-                @if($instanciaActual->cotio_identificacion ?? 'N/A' )
-                    <div class="alert alert-info">
-                        <strong>Identificador de muestra:</strong> {{ $instanciaActual->cotio_identificacion ?? 'N/A' }}
-                    </div>
-                @endif
-                {{-- @dd($instanciaActual) --}}
-
-                @if($instanciaActual->image)
-                    <div class="mt-3">
-                        <img src="{{ Storage::url('images/' . $instanciaActual->image) }}" alt="Imagen de la muestra" class="img-fluid w-25 rounded">
                     </div>
                 @endif
 

@@ -23,7 +23,7 @@
                         <ol class="mb-0">
                             <li>Descarga la plantilla Excel haciendo clic en el botón "Descargar Plantilla"</li>
                             <li>La plantilla incluye 4 hojas: "Datos" (para completar), "Leyes Existentes", "Métodos" y "Matrices" (referencias)</li>
-                            <li>Completa la hoja "Datos" con la información de las leyes y sus variables</li>
+                            <li>Completa la hoja <strong>"Datos"</strong> con la información de las leyes y sus variables (no cambies el nombre de esa hoja; el import solo lee la hoja llamada "Datos")</li>
                             <li>Para Matriz y Método puedes usar el código o el nombre (consulta las hojas de referencia)</li>
                             <li>Si no especificas Matriz ni Método, la ley se aplicará a todos los items con ese nombre de analito</li>
                             <li>Sube el archivo completado usando el formulario a continuación</li>

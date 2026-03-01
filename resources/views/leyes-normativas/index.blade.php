@@ -105,9 +105,9 @@
                             <tr>
                                 <th>Código</th>
                                 <th>Nombre</th>
-                                <th>Grupo</th>
+                                {{-- <th>Grupo</th>
                                 <th>Artículo</th>
-                                <th>Organismo</th>
+                                <th>Organismo</th> --}}
                                 <th>Vigencia</th>
                                 <th>Estado</th>
                                 <th>Acciones</th>
@@ -117,10 +117,10 @@
                             @foreach($normativas as $normativa)
                                 <tr>
                                     <td><code>{{ $normativa->codigo }}</code></td>
-                                    <td>{{ Str::limit($normativa->nombre, 40) }}</td>
-                                    <td><span class="badge bg-info">{{ $normativa->grupo }}</span></td>
+                                    <td>{{ Str::limit($normativa->nombre, 60) }}</td>
+                                    {{-- <td><span class="badge bg-info">{{ $normativa->grupo }}</span></td>
                                     <td>{{ $normativa->articulo ?? '-' }}</td>
-                                    <td>{{ Str::limit($normativa->organismo_emisor ?? '-', 20) }}</td>
+                                    <td>{{ Str::limit($normativa->organismo_emisor ?? '-', 20) }}</td> --}}
                                     <td>
                                         @if($normativa->fecha_vigencia)
                                             {{ $normativa->fecha_vigencia->format('d/m/Y') }}

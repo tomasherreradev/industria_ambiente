@@ -39,9 +39,9 @@
                     <input type="hidden" name="view" value="{{ $viewType }}">
                     
                     <div class="col-md-4">
-                        <label for="search" class="form-label">Buscar cotización</label>
+                        <label for="search" class="form-label">Buscar cotización / OT</label>
                         <input type="text" class="form-control" id="search" name="search" 
-                               placeholder="Número, empresa o establecimiento, número de muestra" 
+                               placeholder="Nº cotización, empresa, establecimiento, Nº OT" 
                                value="{{ request('search') }}">
                     </div>
                     

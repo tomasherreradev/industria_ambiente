@@ -128,25 +128,9 @@ class ItemController extends Controller
 
             $item->save();
 
-            // Guardar matrices en tabla pivote
-            $matricesSeleccionadas = collect($validated['matrices'] ?? [])->filter()->unique();
-            if ($matricesSeleccionadas->isNotEmpty()) {
-                $matricesData = $matricesSeleccionadas->map(function($matrizCodigo) {
-                    return [
-                        'cotio_item_id' => null, // Se asignará después
-                        'matriz_codigo' => trim($matrizCodigo),
-                        'created_at' => now(),
-                        'updated_at' => now()
-                    ];
-                })->toArray();
-                
-                // Asignar el ID del item a cada registro
-                foreach ($matricesData as &$matrizData) {
-                    $matrizData['cotio_item_id'] = $item->id;
-                }
-                
-                DB::table('cotio_items_matriz')->insert($matricesData);
-            }
+            // Guardar matrices en tabla pivote (sync usa la relación y evita conflictos de secuencia)
+            $matricesSeleccionadas = collect($validated['matrices'] ?? [])->map(fn ($c) => trim($c))->filter()->unique()->values()->all();
+            $item->matrices()->sync($matricesSeleccionadas);
 
             if ($item->es_muestra && $componentesSeleccionados->isNotEmpty()) {
                 $item->componentesAsociados()->sync($componentesSeleccionados->toArray());
@@ -227,21 +211,8 @@ class ItemController extends Controller
         ]);
 
         // Sincronizar matrices en tabla pivote
-        $matricesSeleccionadas = collect($validated['matrices'] ?? [])->filter()->unique();
-        $matricesData = $matricesSeleccionadas->map(function($matrizCodigo) use ($item) {
-            return [
-                'cotio_item_id' => $item->id,
-                'matriz_codigo' => trim($matrizCodigo),
-                'created_at' => now(),
-                'updated_at' => now()
-            ];
-        })->toArray();
-        
-        // Eliminar relaciones existentes y crear nuevas
-        DB::table('cotio_items_matriz')->where('cotio_item_id', $item->id)->delete();
-        if (!empty($matricesData)) {
-            DB::table('cotio_items_matriz')->insert($matricesData);
-        }
+        $matricesSeleccionadas = collect($validated['matrices'] ?? [])->map(fn ($c) => trim($c))->filter()->unique()->values()->all();
+        $item->matrices()->sync($matricesSeleccionadas);
 
         if ($item->es_muestra) {
             $item->componentesAsociados()->sync($componentesSeleccionados->toArray());

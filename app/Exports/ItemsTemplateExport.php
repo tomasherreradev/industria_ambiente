@@ -32,6 +32,7 @@ class ItemsTemplateExport implements WithMultipleSheets
     {
         $sheets = [
             new ItemsDataSheet(),
+            new ItemsEjemploSheet(),
             new MetodosListSheet(),
             new MatricesListSheet(),
         ];
@@ -54,20 +55,8 @@ class ItemsDataSheet implements FromArray, WithHeadings, WithStyles, WithColumnW
      */
     public function array(): array
     {
-        // Datos de ejemplo para la plantilla basados en la nueva estructura
-        return [
-            [
-                'LÍQUIDO',  // Tipo (Matriz)
-                'EFLUENTE LÍQUIDO',  // Agrupador
-                'pH',  // Parámetro (Componente)
-                'S.M. 1060 - IRAM 29012',  // Metodología muestreo
-                'SM 4500 H+ B',  // Metodología análisis
-                'UpH',  // Unidades de medición
-                '0.01',  // Límite de detección
-                '',  // Límite de cuantificación
-                '9100.00'  // Precio de venta
-            ],
-        ];
+        // Hoja Datos vacía: solo encabezados, sin registros de ejemplo
+        return [];
     }
 
     /**
@@ -152,6 +141,113 @@ class ItemsDataSheet implements FromArray, WithHeadings, WithStyles, WithColumnW
     public function title(): string
     {
         return 'Datos';
+    }
+}
+
+/**
+ * Hoja "ejemplo": copia de la estructura de Datos rellena con datos de referencia
+ */
+class ItemsEjemploSheet implements FromArray, WithHeadings, WithStyles, WithColumnWidths, WithTitle
+{
+    public function array(): array
+    {
+        return [
+            [
+                'LÍQUIDO',
+                'EFLUENTE LÍQUIDO',
+                'pH',
+                'S.M. 1060 - IRAM 29012',
+                'SM 4500 H+ B',
+                'UpH',
+                '0.01',
+                '',
+                '9100',
+            ],
+            ['LÍQUIDO', 'AGUA', 'TEST2', 'EPA 17/OSHA 104', 'NIOSH 1453', 'ml', '4', '', '10000'],
+            ['LÍQUIDO', 'AGUA', 'TEST3', 'EPA 17/OSHA 104', 'NIOSH 1453', 'ml', '2', '', '10000'],
+            ['LÍQUIDO', 'AGUA', 'TEST4', 'EPA 17/OSHA 104', 'NIOSH 1453', 'ml', '3', '', '10000'],
+            ['LÍQUIDO', 'AGUA', 'TEST5', 'EPA 17/OSHA 104', 'NIOSH 1453', 'ml', '2', '', '10000'],
+            ['LÍQUIDO', 'AGUA', 'TEST6', 'EPA 17/OSHA 104', 'NIOSH 1453', 'ml', '1', '', '10000'],
+            ['LÍQUIDO', 'AGUA', 'TEST7', 'EPA 17/OSHA 104', 'NIOSH 1453', 'ml', '4', '', '10000'],
+            ['LÍQUIDO', 'AGUA', 'TEST8', 'EPA 17/OSHA 104', 'NIOSH 1453', 'ml', '5', '', '10000'],
+            ['LÍQUIDO', 'AGUA', 'TEST9', 'EPA 17/OSHA 104', 'NIOSH 1453', 'ml', '3', '', '10000'],
+            ['LÍQUIDO', 'AGUA', 'TEST10', 'EPA 17/OSHA 104', 'NIOSH 1453', 'ml', '3', '', '10000'],
+            ['SUELOS', 'ACIDEZ DE SUELO', 'ACIDEZ_2', 'SM 9060 - IRAM 29012', 'SM 4500 F D', 'mg/x', '1', '', '9510'],
+            ['SUELOS', 'ACIDEZ DE SUELO', 'ACIDEZ_3', 'SM 9060 - IRAM 29012', 'SM 4500 F D', 'mg/x', '4', '', '9510'],
+            ['SUELOS', 'ACIDEZ DE SUELO', 'ACIDEZ_4', 'SM 9060 - IRAM 29012', 'SM 4500 F D', 'mg/x', '3', '', '9510'],
+            ['SUELOS', 'ACIDEZ DE SUELO', 'ACIDEZ_5', 'SM 9060 - IRAM 29012', 'SM 4500 F D', 'mg/x', '55', '', '9510'],
+            ['SUELOS', 'ACIDEZ DE SUELO', 'ACIDEZ_6', 'SM 9060 - IRAM 29012', 'SM 4500 F D', 'mg/x', '3', '', '9510'],
+            ['SUELOS', 'ACIDEZ DE SUELO', 'ACIDEZ_7', 'SM 9060 - IRAM 29012', 'SM 4500 F D', 'mg/x', '4', '', '9510'],
+            ['SUELOS', 'ACIDEZ DE SUELO', 'ACIDEZ_8', 'SM 9060 - IRAM 29012', 'SM 4500 F D', 'mg/x', '1.5', '', '9510'],
+            ['SUELOS', 'ACIDEZ DE SUELO', 'ACIDEZ_9', 'SM 9060 - IRAM 29012', 'SM 4500 F D', 'mg/x', '1.5', '', '9510'],
+        ];
+    }
+
+    public function headings(): array
+    {
+        return [
+            'Tipo',
+            'Agrupador',
+            'Parámetro',
+            'Metodología muestreo',
+            'Metodología análisis',
+            'Unidades de medición',
+            'Límite de detección',
+            'Límite de cuantificación',
+            'Precio de venta',
+        ];
+    }
+
+    public function styles(Worksheet $sheet)
+    {
+        $sheet->getRowDimension(1)->setRowHeight(45);
+        foreach (range('A', 'I') as $column) {
+            $sheet->getStyle($column . '1')->getAlignment()->setVertical(Alignment::VERTICAL_CENTER);
+        }
+        return [
+            1 => [
+                'font' => [
+                    'bold' => true,
+                    'color' => ['rgb' => 'FFFFFF'],
+                    'size' => 12,
+                ],
+                'fill' => [
+                    'fillType' => Fill::FILL_SOLID,
+                    'startColor' => ['rgb' => '4472C4'],
+                ],
+                'alignment' => [
+                    'horizontal' => Alignment::HORIZONTAL_CENTER,
+                    'vertical' => Alignment::VERTICAL_CENTER,
+                    'wrapText' => true,
+                ],
+                'borders' => [
+                    'allBorders' => [
+                        'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                        'color' => ['rgb' => '000000'],
+                    ],
+                ],
+            ],
+        ];
+    }
+
+    public function columnWidths(): array
+    {
+        return [
+            'A' => 20,
+            'B' => 30,
+            'C' => 30,
+            'D' => 35,
+            'E' => 30,
+            'F' => 20,
+            'G' => 20,
+            'H' => 25,
+            'I' => 18,
+        ];
+    }
+
+    public function title(): string
+    {
+        return 'ejemplo';
     }
 }
 

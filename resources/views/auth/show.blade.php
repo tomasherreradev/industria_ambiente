@@ -20,7 +20,14 @@
                         <i class="bi bi-person-circle me-2"></i>
                         Perfil de {{ $user->usu_descripcion }}
                     </h5>
-                    <span class="badge bg-light text-dark">{{ $user->rol ?? 'Sin rol' }}</span>
+                    <div>
+                        <span class="badge bg-primary">{{ $user->rol ?? 'Sin rol' }}</span>
+                        @if($user->all_roles && count($user->all_roles) > 1)
+                            @foreach(array_diff($user->all_roles, [$user->rol]) as $rolAdicional)
+                                <span class="badge bg-secondary ms-1">{{ $rolAdicional }}</span>
+                            @endforeach
+                        @endif
+                    </div>
                 </div>
                 <div class="card-body">
                     <ul class="list-group list-group-flush mb-4">

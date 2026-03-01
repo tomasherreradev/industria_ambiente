@@ -44,6 +44,7 @@ class VariableRequeridaController extends Controller
     {
         $cotioDescripciones = CotioItems::select('cotio_descripcion')
             ->whereNotNull('cotio_descripcion')
+            ->where('es_muestra', true)
             ->distinct()
             ->orderBy('cotio_descripcion')
             ->pluck('cotio_descripcion');

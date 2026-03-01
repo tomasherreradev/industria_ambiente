@@ -76,6 +76,14 @@
                                     $muestra = $instancia['muestra'];
                                     $responsables = $muestra->responsablesAnalisis ?? collect();
                                     
+                                    // Verificar si es una instancia virtual (no persistida)
+                                    $esInstanciaVirtual = !is_numeric($muestra->id);
+                                    
+                                    // ID para el checkbox (numcoti_item_subitem_instance para virtuales)
+                                    $muestraId = $esInstanciaVirtual 
+                                        ? "{$muestra->cotio_numcoti}_{$muestra->cotio_item}_0_{$muestra->instance_number}"
+                                        : $muestra->id;
+                                    
                                     // Define header and badge classes based on analysis status
                                     $headerClass = 'bg-secondary';
                                     $badgeClass = 'bg-secondary';
@@ -106,12 +114,13 @@
                                                     <input
                                                         type="checkbox"
                                                         class="form-check-input instancia-checkbox"
-                                                        data-id="{{ $muestra->id }}"
+                                                        data-id="{{ $muestraId }}"
                                                         data-item="{{ $categoria->cotio_item }}"
                                                         data-subitem="0"
                                                         data-instance="{{ $muestra->instance_number }}"
                                                         data-numcoti="{{ $muestra->cotio_numcoti }}"
                                                         data-descripcion="{{ $categoria->cotio_descripcion }}"
+                                                        data-virtual="{{ $esInstanciaVirtual ? 'true' : 'false' }}"
                                                         @checked($muestra->active_ot)
                                                         data-user-toggled="false"
                                                         onchange="toggleInstancia(this)"
@@ -122,7 +131,7 @@
                                                     <input
                                                         type="checkbox"
                                                         class="form-check-input checkbox-auxiliar"
-                                                        data-id="{{ $muestra->id }}"
+                                                        data-id="{{ $muestraId }}"
                                                         data-item="{{ $categoria->cotio_item }}"
                                                         data-instance="{{ $muestra->instance_number }}"
                                                         data-numcoti="{{ $muestra->cotio_numcoti }}"
@@ -147,7 +156,14 @@
                                                                 {{ $categoria->cotio_descripcion }} (#{{ $muestra->otn ? $muestra->otn : $muestra->instance_number ?? 'N/A' }})
                                                                 <small class="fw-normal">(Instancia {{ $muestra->instance_number }} / {{ $categoria->cotio_cantidad ?? '-' }})</small>
                                                             </h6>
-                                                            @if($muestra->active_ot)
+                                                            @if($esInstanciaVirtual)
+                                                                <div class="ms-2">
+                                                                    <span class="badge bg-info text-white">
+                                                                        <x-heroicon-o-plus-circle style="width: 12px; height: 12px;" class="me-1" />
+                                                                        Nueva
+                                                                    </span>
+                                                                </div>
+                                                            @elseif($muestra->active_ot)
                                                                 <div class="ms-2">
                                                                     <span class="badge {{ $badgeClass }} text-white">
                                                                         {{ str_replace('_', ' ', ucwords($muestra->cotio_estado_analisis)) }}
@@ -217,7 +233,7 @@
                                                 <a 
                                                     href="#"
                                                     class="text-decoration-none text-white"
-                                                    title="Generar QR para esta muestra"
+                                                    title="Generar CT para esta muestra"
                                                     data-url="{{ route('qr.universal', [
                                                         'cotio_numcoti' => $cotizacion->coti_num, 
                                                         'cotio_item' => $categoria->cotio_item, 
@@ -275,13 +291,18 @@
                                                                     $tieneResultado = optional($tarea->instancia)->resultado !== null;
                                                                     $metodoAnalisis = $tarea->instancia ? $tarea->instancia->getMetodoAnalisisConTrim() : null;
                                                                     $metodoCodigo = $tarea->instancia && $tarea->instancia->cotio_codigometodo_analisis ? trim($tarea->instancia->cotio_codigometodo_analisis) : '';
+                                                                    
+                                                                    // Generar ID: usar ID real si es numérico, sino generar ID virtual
+                                                                    $tareaInstanciaId = $tarea->instancia && is_numeric($tarea->instancia->id) && $tarea->instancia->exists
+                                                                        ? $tarea->instancia->id
+                                                                        : ((int)$tarea->cotio_numcoti . '_' . (int)$tarea->cotio_item . '_' . (int)$tarea->cotio_subitem . '_' . (int)$instancia['muestra']->instance_number);
                                                                 @endphp
                                                                 <input
                                                                     type="checkbox"
                                                                     class="form-check-input tarea-checkbox"
                                                                     name="cotio_items[]"
                                                                     value="{{ $tarea->cotio_numcoti }}-{{ $tarea->cotio_item }}-{{ $tarea->cotio_subitem }}-{{ $instancia['muestra']->instance_number }}"
-                                                                    data-id="{{ $tarea->instancia->id ?? ($tarea->cotio_numcoti . '_' . $tarea->cotio_item . '_' . $tarea->cotio_subitem . '_' . $instancia['muestra']->instance_number) }}"
+                                                                    data-id="{{ $tareaInstanciaId }}"
                                                                     data-item="{{ $tarea->cotio_item }}"
                                                                     data-subitem="{{ $tarea->cotio_subitem }}"
                                                                     data-instance="{{ $instancia['muestra']->instance_number }}"
@@ -889,19 +910,28 @@
         const numcoti = checkbox.dataset.numcoti;
         const descripcion = checkbox.dataset.descripcion;
         const isChecked = checkbox.checked;
+        
+        console.log('toggleInstancia llamado:', { id, item, instance, numcoti, isChecked });
 
         // Update seleccionesInstancias
         if (isChecked) {
             if (!seleccionesInstancias.includes(id)) {
                 seleccionesInstancias.push(id);
+                console.log('Agregado a seleccionesInstancias:', id);
             }
         } else {
             seleccionesInstancias = seleccionesInstancias.filter(i => i !== id);
+            console.log('Removido de seleccionesInstancias:', id);
         }
 
         checkbox.dataset.userToggled = true;
 
-        document.querySelectorAll(`.tarea-checkbox[data-item="${item}"][data-instance="${instance}"][data-numcoti="${numcoti}"]:not(:disabled)`).forEach(tareaCheckbox => {
+        // Buscar y marcar todos los checkboxes de análisis de esta muestra
+        const tareasCheckboxes = document.querySelectorAll(`.tarea-checkbox[data-item="${item}"][data-instance="${instance}"][data-numcoti="${numcoti}"]:not(:disabled)`);
+        console.log('Tareas encontradas para esta muestra:', tareasCheckboxes.length);
+        
+        tareasCheckboxes.forEach(tareaCheckbox => {
+            console.log('Procesando tarea:', { id: tareaCheckbox.dataset.id, subitem: tareaCheckbox.dataset.subitem });
             tareaCheckbox.checked = isChecked;
             toggleTarea(tareaCheckbox);
         });
@@ -914,14 +944,18 @@
     function toggleTarea(checkbox) {
         const id = checkbox.dataset.id;
         const isChecked = checkbox.checked;
+        
+        console.log('toggleTarea llamado:', { id, isChecked, userToggled: checkbox.dataset.userToggled });
 
         if (checkbox.dataset.userToggled !== undefined) {
             if (isChecked) {
                 if (!seleccionesTareas.includes(id)) {
                     seleccionesTareas.push(id);
+                    console.log('Agregado a seleccionesTareas:', id, 'Total:', seleccionesTareas);
                 }
             } else {
                 seleccionesTareas = seleccionesTareas.filter(i => i !== id);
+                console.log('Removido de seleccionesTareas:', id, 'Total:', seleccionesTareas);
             }
         }
 
@@ -1089,6 +1123,11 @@
         const form = document.getElementById('formAsignacionMasiva');
         const responsables = Array.from(form['responsables_analisis[]'].selectedOptions).map(opt => opt.value);
 
+        // DEBUG: Log de selecciones
+        console.log('=== DEBUG ASIGNACION MASIVA ===');
+        console.log('seleccionesInstancias:', seleccionesInstancias);
+        console.log('seleccionesTareas:', seleccionesTareas);
+
         const data = {
             instancia_selecciones: seleccionesInstancias,
             tarea_selecciones: seleccionesTareas,
@@ -1098,6 +1137,8 @@
             fecha_fin_ot: form.fecha_fin_ot.value,
             aplicar_a_gemelas: document.getElementById('aplicar_a_gemelas').checked
         };
+        
+        console.log('Data a enviar:', data);
 
         const mensaje = document.getElementById('aplicar_a_gemelas').checked 
             ? `Esta acción afectará a ${seleccionesInstancias.length} instancias y ${seleccionesTareas.length} análisis, incluyendo sus instancias gemelas`
@@ -1324,7 +1365,7 @@
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <h5 class="modal-title">QR ${coti} - Categoría: ${categoria} - Fecha: ${fechaAnalisis || 'No asignada'}</h5>
+                        <h5 class="modal-title">CT ${coti} - Categoría: ${categoria} - Fecha: ${fechaAnalisis || 'No asignada'}</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
                     </div>
                     <div class="modal-body">
@@ -1341,7 +1382,7 @@
                     </div>
                     <div class="modal-footer justify-content-center">
                         <button onclick="printQr('${url}', '${coti}', '${categoria}', '${instance}', '${fechaAnalisis}')" class="btn btn-primary">
-                            Imprimir QR 
+                            Imprimir CT 
                         </button>
                         <a href="${url}" class="btn btn-primary">
                             Ver Formulario
@@ -1375,7 +1416,7 @@
             <!DOCTYPE html>
             <html>
             <head>
-                <title>Imprimir QR - Orden ${coti}</title>
+                <title>Imprimir CT - Orden ${coti}</title>
                 <style>
                     body {
                         display: flex;
@@ -1418,11 +1459,13 @@
             </head>
             <body>
                 <div class="print-container">
-                    <h1>QR ${coti}</h1>
+                    <h1>CT ${coti}</h1>
                     <p><strong>Análisis:</strong> ${categoria}</p>
                     <p><strong>Muestra:</strong> ${instance}</p>
-                    <p><strong>Fecha de análisis:</strong> ${fechaAnalisis}</p>
-                    
+                    <p>
+                        <strong>Fecha y hora:</strong>
+                        <span style="display:inline-block; min-width: 140px; border-bottom: 1px solid #000; margin-left: 4px;">&nbsp;</span>
+                    </p>
                     <div class="qr-wrapper">
                         <div id="qr"></div>
                         <div style="width: 100%; max-width: 90%; border: 1px solid #dee2e6; padding: 10px; border-radius: 8px; margin: 10px auto;">
@@ -1433,7 +1476,7 @@
                         </div>
                     </div>
                     
-                    <p class="info">Escanee este código QR para ver los detalles</p>
+                    <p class="info">Escanee este código CT para ver los detalles</p>
                     <p class="info no-print">Esta ventana se cerrará automáticamente después de imprimir</p>
                 </div>
                 

@@ -87,13 +87,15 @@
                         </td>
                         <td class="text-center">
                             <div class="btn-group" role="group">
-                                <a href="{{ url('/show/'.$coti->coti_num) }}" 
-                                   class="btn btn-sm btn-outline-primary" 
-                                   data-bs-toggle="tooltip" 
-                                   title="Gestionar muestras"
-                                   data-bs-placement="bottom">
-                                   <x-heroicon-o-pencil style="width: 15px; height: 15px;" />
-                                </a>
+                                @if(userHasRole('coordinador_muestreo') || Auth::user()->usu_nivel >= 900)
+                                    <a href="{{ url('/show/'.$coti->coti_num) }}" 
+                                        class="btn btn-sm btn-outline-primary" 
+                                        data-bs-toggle="tooltip" 
+                                        title="Gestionar muestras"
+                                        data-bs-placement="bottom">
+                                        <x-heroicon-o-pencil style="width: 15px; height: 15px;" />
+                                    </a>
+                                @endif
                                 <a href="{{ url('/cotizaciones/'.$coti->coti_num) }}" 
                                    class="btn btn-sm btn-outline-secondary" 
                                    data-bs-toggle="tooltip" 
@@ -213,12 +215,14 @@
                                 @endif
                             </div>
                             <div class="btn-group btn-group-sm" style="width: 100%; max-width: 200px;">
-                                <a href="{{ url('/show/'.$coti->coti_num) }}" class="btn btn-sm btn-outline-primary">
-                                    <x-heroicon-o-pencil style="width: 15px; height: 15px;" />
-                                </a>
+                                @if(userHasRole('coordinador_muestreo') || Auth::user()->usu_nivel >= 900)
+                                    <a href="{{ url('/show/'.$coti->coti_num) }}" class="btn btn-sm btn-outline-primary">
+                                        <x-heroicon-o-pencil style="width: 15px; height: 15px;" />
+                                    </a>
+                                @endif
                                 <a href="{{ url('/cotizaciones/'.$coti->coti_num) }}" class="btn btn-sm btn-outline-secondary">
                                     <x-heroicon-o-document-magnifying-glass style="width: 15px; height: 15px;" />
-                                </a>
+                                    </a>
                             </div>
                         </div>
                     </div>

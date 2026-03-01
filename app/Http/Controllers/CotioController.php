@@ -613,11 +613,16 @@ public function asignarIdentificacionMuestra(Request $request)
             'cotio_identificacion' => $request->cotio_identificacion,
             'nro_precinto' => $request->nro_precinto,
             'nro_cadena' => $request->nro_cadena,
-            'cotio_estado' => 'en revision muestreo'
         ];
 
-        // Guardar automáticamente la fecha y hora cuando se actualiza la identificación
-        if ($request->filled('cotio_identificacion')) {
+        $esBorrador = $request->get('accion') === 'borrador';
+
+        if (!$esBorrador) {
+            $data['cotio_estado'] = 'en revision muestreo';
+        }
+
+        // Guardar automáticamente la fecha y hora cuando se actualiza la identificación (solo si no es borrador)
+        if (!$esBorrador && $request->filled('cotio_identificacion')) {
             $data['fecha_identificacion'] = now();
             // Actualizar fecha fin solo si se establece fecha_identificacion
             $data['fecha_fin_muestreo'] = now();
@@ -958,7 +963,7 @@ public function actualizarEstado(Request $request)
 
         $vehiculoAsignado = $item->vehiculo_asignado;
 
-        if(Auth::user()->rol == 'coordinador_muestreo' || Auth::user()->usu_nivel >= '900') {
+        if(Auth::user()->hasRole('coordinador_muestreo') || Auth::user()->usu_nivel >= '900') {
             $item->cotio_estado = $validated['estado'];
         } 
 
@@ -1085,7 +1090,7 @@ public function updateResultado(Request $request, $cotio_numcoti, $cotio_item, $
         $hasResultado = $request->filled('resultado') || $request->filled('resultado_2') || $request->filled('resultado_3') || $request->filled('resultado_final');
 
         if ($hasResultado) {
-            if (Auth::user()->rol == 'muestreador') {
+            if (Auth::user()->hasRole('muestreador')) {
                 $instancia->cotio_estado = 'en revision muestreo';
             } else {
                 $instancia->cotio_estado_analisis = 'en revision analisis';
@@ -1369,7 +1374,7 @@ public function showTareasAll($cotio_numcoti, $cotio_item, $cotio_subitem = 0, $
     $instance = $instance ?? 1;
     $usuario = Auth::user();
     $usuarioActual = trim($usuario->usu_codigo);
-    $esPrivilegiado = ((int) $usuario->usu_nivel >= 900) || ($usuario->rol === 'coordinador_muestreo');
+    $esPrivilegiado = ((int) $usuario->usu_nivel >= 900) || $usuario->hasRole('coordinador_muestreo');
 
     try {
         // Obtener la instancia de muestra principal con sus variables
@@ -1464,7 +1469,7 @@ public function updateHerramientas(Request $request, $cotio_numcoti, $cotio_item
 
         $usuario = Auth::user();
         $usuarioActual = trim($usuario->usu_codigo);
-        $esPrivilegiado = ((int) $usuario->usu_nivel >= 900) || ($usuario->rol === 'coordinador_muestreo');
+        $esPrivilegiado = ((int) $usuario->usu_nivel >= 900) || $usuario->hasRole('coordinador_muestreo');
 
         // Verificar que el usuario tiene acceso a esta instancia
         $instanciaQuery = CotioInstancia::where([

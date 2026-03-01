@@ -25,6 +25,9 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
     protected $cacheAgrupadores = [];
     protected $cacheComponentes = [];
 
+    // Seguimiento de matrices asociadas en esta importación para cada item
+    protected $matricesPorItem = [];
+
     /**
      * Procesa la colección de filas del Excel
      * Nota: Solo procesa la primera hoja. Las hojas adicionales (como la lista de métodos) se ignoran automáticamente.
@@ -139,12 +142,21 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
                         }
                     }
                     
-                    // 2. Buscar/crear Agrupador (es_muestra = true)
-                    $agrupadorId = null;
+                    // 2. Agrupadores: permitir varios en la misma celda separados por punto y coma o coma
+                    $agrupadorIds = [];
                     if (!empty($agrupadorNombre)) {
-                        $agrupadorId = $this->findOrCreateAgrupador($agrupadorNombre, $rowNumber);
-                        if (!$agrupadorId) {
-                            continue; // Error ya registrado
+                        $nombresAgrupadores = array_filter(array_map('trim', preg_split('/[;,]/', (string) $agrupadorNombre)));
+                        foreach ($nombresAgrupadores as $nombre) {
+                            if ($nombre === '') {
+                                continue;
+                            }
+                            $agrupadorId = $this->findOrCreateAgrupador($nombre, $rowNumber);
+                            if ($agrupadorId) {
+                                $agrupadorIds[] = $agrupadorId;
+                            }
+                        }
+                        if (!empty($nombresAgrupadores) && empty($agrupadorIds)) {
+                            continue; // Todos fallaron, error ya registrado en findOrCreateAgrupador
                         }
                     }
                     
@@ -226,21 +238,20 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
                         $this->asociarMatrizAItem($componente->id, $matrizCodigo);
                     }
                     
-                    // 8. Asociar componente al agrupador si existe
-                    if ($agrupadorId && $componente) {
+                    // 8. Asociar componente a cada agrupador (puede haber varios por fila, separados por ;)
+                    foreach ($agrupadorIds as $agrupadorId) {
                         $agrupador = CotioItems::find($agrupadorId);
-                        if ($agrupador) {
+                        if ($agrupador && $componente) {
                             $agrupador->componentesAsociados()->syncWithoutDetaching([$componente->id]);
                             Log::debug('ItemsImport: Componente asociado a agrupador', [
                                 'componente_id' => $componente->id,
                                 'agrupador_id' => $agrupadorId
                             ]);
                         }
-                    }
-                    
-                    // 8.1. Asociar matriz al agrupador en tabla pivote si existe
-                    if ($agrupadorId && $matrizCodigo) {
-                        $this->asociarMatrizAItem($agrupadorId, $matrizCodigo);
+                        // 8.1. Asociar matriz al agrupador en tabla pivote si existe
+                        if ($agrupadorId && $matrizCodigo) {
+                            $this->asociarMatrizAItem($agrupadorId, $matrizCodigo);
+                        }
                     }
                     
                     $this->successCount++;
@@ -260,6 +271,9 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
             }
             
             DB::commit();
+            // Sincronizar matrices en tabla pivote para que solo queden las de esta importación
+            $this->syncMatricesPivot();
+
             Log::info('ItemsImport: Procesamiento completado (formato nuevo)', [
                 'successCount' => $this->successCount,
                 'errorCount' => $this->errorCount,
@@ -504,7 +518,29 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
                     }
 
                     // Buscar si ya existe un item con esta descripción
-                    $item = CotioItems::where('cotio_descripcion', $descripcion)->first();
+                    $itemQuery = CotioItems::where('cotio_descripcion', $descripcion);
+
+                    if ($esMuestra) {
+                        // Para agrupadores, solo diferenciamos por es_muestra
+                        $itemQuery->where('es_muestra', true);
+                    } else {
+                        // Para componentes, diferenciamos también por métodos
+                        $itemQuery->where('es_muestra', false);
+
+                        if ($metodoCodigo) {
+                            $itemQuery->where('metodo', $metodoCodigo);
+                        } else {
+                            $itemQuery->whereNull('metodo');
+                        }
+
+                        if ($metodoMuestreoCodigo) {
+                            $itemQuery->where('metodo_muestreo', $metodoMuestreoCodigo);
+                        } else {
+                            $itemQuery->whereNull('metodo_muestreo');
+                        }
+                    }
+
+                    $item = $itemQuery->first();
                     
                     if ($item) {
                         // Actualizar el item existente (sin matriz_codigo)
@@ -594,6 +630,9 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
             }
             
             DB::commit();
+            // Sincronizar matrices en tabla pivote para que solo queden las de esta importación
+            $this->syncMatricesPivot();
+
             Log::info('ItemsImport: Procesamiento completado', [
                 'successCount' => $this->successCount,
                 'errorCount' => $this->errorCount
@@ -810,6 +849,14 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
         }
         
         $matrizCodigo = trim($matrizCodigo);
+
+        // Registrar en memoria qué matrices debe tener este item según la importación actual
+        if (!isset($this->matricesPorItem[$itemId])) {
+            $this->matricesPorItem[$itemId] = [];
+        }
+        if (!in_array($matrizCodigo, $this->matricesPorItem[$itemId], true)) {
+            $this->matricesPorItem[$itemId][] = $matrizCodigo;
+        }
         
         // Verificar si la relación ya existe
         $existe = DB::table('cotio_items_matriz')
@@ -832,6 +879,29 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
     }
 
     /**
+     * Sincronizar la tabla pivote de matrices para que cada item tenga
+     * solo las matrices asignadas en esta importación.
+     */
+    protected function syncMatricesPivot()
+    {
+        foreach ($this->matricesPorItem as $itemId => $matrices) {
+            // Eliminar matrices antiguas que no aparecieron en esta importación
+            DB::table('cotio_items_matriz')
+                ->where('cotio_item_id', $itemId)
+                ->whereNotIn('matriz_codigo', $matrices)
+                ->delete();
+
+            Log::debug('ItemsImport: Matrices sincronizadas para item', [
+                'item_id' => $itemId,
+                'matrices_actuales' => $matrices,
+            ]);
+        }
+
+        // Reiniciar el registro para una posible futura importación en el mismo request
+        $this->matricesPorItem = [];
+    }
+
+    /**
      * Buscar o crear componente (es_muestra = false) por descripción
      */
     protected function findOrCreateComponente($nombre, $metodoCodigo, $metodoMuestreoCodigo, $matrizCodigo, $unidadMedida, $limitesEstablecidos, $limiteCuantificacion, $precio, $rowNumber)
@@ -844,15 +914,35 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
         }
 
         // Usar cache
-        $cacheKey = md5($nombre . $metodoCodigo . $matrizCodigo);
+        $cacheKey = md5(implode('|', [
+            $nombre,
+            $metodoCodigo ?? 'null',
+            $metodoMuestreoCodigo ?? 'null',
+            $matrizCodigo ?? 'null',
+        ]));
         if (isset($this->cacheComponentes[$cacheKey])) {
             return $this->cacheComponentes[$cacheKey];
         }
 
         // Buscar componente existente
-        $componente = CotioItems::where('cotio_descripcion', $nombre)
-            ->where('es_muestra', false)
-            ->first();
+        $query = CotioItems::where('cotio_descripcion', $nombre)
+            ->where('es_muestra', false);
+
+        // Diferenciar por método de análisis
+        if ($metodoCodigo) {
+            $query->where('metodo', $metodoCodigo);
+        } else {
+            $query->whereNull('metodo');
+        }
+
+        // Diferenciar también por método de muestreo
+        if ($metodoMuestreoCodigo) {
+            $query->where('metodo_muestreo', $metodoMuestreoCodigo);
+        } else {
+            $query->whereNull('metodo_muestreo');
+        }
+
+        $componente = $query->first();
 
         if ($componente) {
             // Actualizar componente existente (sin matriz_codigo)

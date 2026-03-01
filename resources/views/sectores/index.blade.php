@@ -9,13 +9,13 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div class="d-flex gap-2 align-items-center ">
             <a href="{{ url('/users') }}" class="btn btn-outline-secondary">Volver</a>
-            <a href="{{ route('sectores.create') }}" class="btn btn-primary">Nuevo Sector</a>
+            <a href="{{ route('sectores.create') }}" class="btn btn-primary">Nuevo Laboratorio</a>
         </div>
     </div>
     
     @if($sectores->isEmpty())
         <div class="alert alert-warning">
-            No hay Sectores disponibles.
+            No hay Laboratorios disponibles.
         </div>
     @else
 

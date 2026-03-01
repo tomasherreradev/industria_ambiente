@@ -1,8 +1,6 @@
 <script>
 (function () {
     const initCotizacionScripts = function () {
-        // console.log('[cotizacion] script inicializado');
-
         const config = window.cotizacionConfig || {
         modo: 'create',
         puedeEditar: true,
@@ -885,6 +883,7 @@
 
             catalogs.ensayos = await ensayosRes.json();
             catalogs.componentes = await componentesRes.json();
+
             catalogs.metodosAnalisis = await metodosRes.json();
             catalogs.leyes = await leyesRes.json();
 
@@ -947,14 +946,14 @@
                 // Determinar si hay un ensayo seleccionado para filtrar desde el inicio
                 const ensayoItemId = elements.selectEnsayoAsociado ? elements.selectEnsayoAsociado.value : null;
                 let matrizCodigoInicial = null;
-                
+
                 if (ensayoItemId) {
                     const ensayo = state.ensayos.find(e => e.item === Number(ensayoItemId));
                     if (ensayo && ensayo.matriz_codigo) {
                         matrizCodigoInicial = ensayo.matriz_codigo.toString().trim();
                     }
                 }
-                
+
                 // Cargar componentes con filtro si hay un ensayo seleccionado
                 await cargarOpcionesComponentes(matrizCodigoInicial);
                 actualizarEnsayosDisponiblesParaComponentes();
@@ -1459,6 +1458,45 @@
             elements.selectComponente.appendChild(option);
         });
 
+        // Agrupadores: si hay un ensayo seleccionado con componentes_sugeridos, asegurar que esas opciones existan
+        // (el filtro por matriz puede no devolverlos; los añadimos desde el catálogo completo)
+        const ensayoItemId = elements.selectEnsayoAsociado ? elements.selectEnsayoAsociado.value : null;
+        if (ensayoItemId && catalogs.componentes && catalogs.componentes.length) {
+            const ensayo = state.ensayos.find(e => e.item === Number(ensayoItemId));
+            const sugeridos = ensayo ? obtenerComponentesSugeridosDeEnsayo(ensayo) : [];
+            const opcionesYaValores = new Set(Array.from(elements.selectComponente.options).map(opt => opt.value.toString()));
+            const idsFaltantes = sugeridos.filter(id => !opcionesYaValores.has(id.toString()));
+            if (idsFaltantes.length > 0) {
+                idsFaltantes.forEach(idStr => {
+                    const comp = catalogs.componentes.find(c => String(c.id) === String(idStr));
+                    if (!comp) return;
+                    const option = document.createElement('option');
+                    const precio = Number(comp.precio || 0);
+                    const metodoCodigo = (comp.metodo_codigo || comp.metodo || '').toString().trim();
+                    option.value = comp.id;
+                    const esAgrupador = comp.es_muestra === true || comp.es_muestra === 1;
+                    option.textContent = esAgrupador ? `[AGRUPADOR] ${comp.descripcion || ''}` : (comp.descripcion || '');
+                    option.dataset.descripcion = comp.descripcion || '';
+                    option.dataset.codigo = comp.codigo || '';
+                    option.dataset.unidadMedida = comp.unidad_medida || '';
+                    option.dataset.precio = precio.toFixed(2);
+                    option.dataset.precioRaw = precio;
+                    option.dataset.metodoCodigo = metodoCodigo;
+                    option.dataset.metodoDescripcion = comp.metodo_descripcion || '';
+                    option.dataset.limitesEstablecidos = comp.limites_establecidos || '';
+                    option.dataset.matrizCodigo = (comp.matriz_codigo || '').toString().trim();
+                    option.dataset.matrizDescripcion = comp.matriz_descripcion || '';
+                    option.dataset.leyId = comp.ley_normativa_id || '';
+                    option.dataset.esAgrupador = esAgrupador ? '1' : '0';
+                    if (esAgrupador && comp.componentes_asociados && Array.isArray(comp.componentes_asociados)) {
+                        option.dataset.componentesAsociados = JSON.stringify(comp.componentes_asociados);
+                    }
+                    if (valoresSeleccionados.includes(comp.id.toString())) option.selected = true;
+                    elements.selectComponente.appendChild(option);
+                });
+            }
+        }
+
         // Si estamos usando Select2, actualizar valores seleccionados
         if (window.$ && window.$('#componente_analisis').length && window.$('#componente_analisis').data('select2')) {
             const $select = window.$('#componente_analisis');
@@ -1528,10 +1566,9 @@
             const ensayoItemId = this.value;
             if (ensayoItemId) {
                 const ensayo = state.ensayos.find(e => e.item === Number(ensayoItemId));
-                if (ensayo && ensayo.matriz_codigo) {
-                    const matrizCodigo = ensayo.matriz_codigo.toString().trim();
-                    await cargarOpcionesComponentes(matrizCodigo);
-                }
+                // Siempre cargar opciones: con matriz si existe (ensayos normales), o catálogo completo si no (agrupadores sin matriz)
+                const matrizCodigo = (ensayo && ensayo.matriz_codigo) ? ensayo.matriz_codigo.toString().trim() : null;
+                await cargarOpcionesComponentes(matrizCodigo || null);
             }
             preseleccionarComponentesDeEnsayo(ensayoItemId, false);
         };
@@ -1969,7 +2006,7 @@
         const componentesSugeridos = option && option.dataset && option.dataset.componentes
             ? JSON.parse(option.dataset.componentes)
             : (catalogs.ensayosDefaultsById[muestraId] || []);
-        
+
         // Capturar matriz_codigo y matriz_descripcion del option
         const matrizCodigo = option && option.dataset.matrizCodigo ? option.dataset.matrizCodigo.trim() : null;
         const matrizDescripcion = option && option.dataset.matrizDescripcion ? option.dataset.matrizDescripcion : null;
@@ -3615,14 +3652,18 @@
     }
 
     if (elements.form) {
+        // Usar fase de captura (true) para rellenar hidden antes de cualquier otro listener (p. ej. confirmación en edit)
         elements.form.addEventListener('submit', function () {
+            const ensayosJson = JSON.stringify(state.ensayos.map(serializarEnsayo));
+            const componentesJson = JSON.stringify(state.componentes.map(serializarComponente));
             if (elements.ensayosHidden) {
-                elements.ensayosHidden.value = JSON.stringify(state.ensayos.map(serializarEnsayo));
+                elements.ensayosHidden.value = ensayosJson;
             }
             if (elements.componentesHidden) {
-                elements.componentesHidden.value = JSON.stringify(state.componentes.map(serializarComponente));
+                elements.componentesHidden.value = componentesJson;
             }
-        });
+            console.log('[Cotización submit] Ensayos:', state.ensayos.length, 'Componentes:', state.componentes.length, 'componentes_data length:', componentesJson.length, 'preview:', componentesJson.substring(0, 300));
+        }, true);
     }
 
     function serializarEnsayo(ensayo) {
@@ -3643,15 +3684,15 @@
 
     function serializarComponente(componente) {
         return {
-            item: componente.item,
+            item: Number(componente.item) || 0,
             analisis_id: componente.analisis_id,
-            descripcion: componente.descripcion,
-            codigo: componente.codigo,
-            cantidad: componente.cantidad,
-            precio: componente.precio,
-            total: componente.total,
-            tipo: componente.tipo,
-            ensayo_asociado: componente.ensayo_asociado,
+            descripcion: (componente.descripcion || '').toString().trim(),
+            codigo: (componente.codigo || '').toString().trim(),
+            cantidad: toPositiveInt(componente.cantidad, 1),
+            precio: parseFloat(componente.precio) || 0,
+            total: parseFloat(componente.total) || 0,
+            tipo: componente.tipo || 'componente',
+            ensayo_asociado: Number(componente.ensayo_asociado) || 0,
             metodo_analisis_id: componente.metodo_analisis_id,
             metodo_codigo: componente.metodo_codigo,
             metodo_descripcion: componente.metodo_descripcion,

@@ -140,7 +140,21 @@ public function index(Request $request)
             }
         ])
             ->where('cotio_subitem', 0) // Solo instancias de muestras originales
-            ->whereNotNull('fecha_inicio_muestreo'); // Solo instancias con fecha de muestreo
+            ->whereNotNull('fecha_inicio_muestreo') // Solo instancias con fecha de muestreo
+            // Filtro: solo cotizaciones con cadena_custodia, muestreo o ensayo de visita técnica
+            ->where(function($q) {
+                $q->whereHas('cotizacion', function($subQ) {
+                    $subQ->where('coti_cadena_custodia', true)
+                         ->orWhere('coti_muestreo', true);
+                })
+                ->orWhereHas('cotizacion.tareas', function($subQ) {
+                    $subQ->where('cotio_subitem', 0)
+                         ->where(function($subQ2) {
+                             $subQ2->whereRaw("UPPER(TRIM(cotio_descripcion)) LIKE '%TRABAJO TECNICO%'")
+                                   ->orWhereRaw("UPPER(TRIM(cotio_descripcion)) LIKE '%VISITA TECNICA%'");
+                         });
+                });
+            });
         
         // Filtro por término de búsqueda
         if ($request->has('search') && !empty($request->search)) {
@@ -225,19 +239,26 @@ public function index(Request $request)
 
         $events = collect();
 
+        // Determinar si el usuario puede ver detalles de muestra (admin o coordinador_muestreo)
+        $canViewMuestraDetails = $user->usu_nivel >= 900 || $user->hasRole('coordinador_muestreo');
         
         foreach ($tareasCalendario as $date => $instancias) {
             foreach ($instancias as $instancia) {
-                $events->push([
-                    'title' => $instancia->cotizacion->coti_empresa . ' - ' . $instancia->cotio_numcoti,
-                    'start' => $instancia->fecha_inicio_muestreo,
-                    'end' => $instancia->fecha_fin_muestreo ?? null,
-                    'url' => route('categoria.verMuestra', [
+                // URL según permisos del usuario
+                $eventUrl = $canViewMuestraDetails 
+                    ? route('categoria.verMuestra', [
                         'cotizacion' => $instancia->cotio_numcoti,
                         'item' => $instancia->cotio_item,
                         'cotio_subitem' => $instancia->cotio_subitem,
                         'instance' => $instancia->instance_number
-                    ]),
+                    ])
+                    : route('cotizaciones.ver-detalle', ['cotizacion' => $instancia->cotio_numcoti]);
+
+                $events->push([
+                    'title' => $instancia->cotizacion->coti_empresa . ' - ' . $instancia->cotio_numcoti,
+                    'start' => $instancia->fecha_inicio_muestreo,
+                    'end' => $instancia->fecha_fin_muestreo ?? null,
+                    'url' => $eventUrl,
                     'extendedProps' => [
                         'empresa' => $instancia->cotizacion->coti_empresa,
                         'descripcion' => $instancia->cotizacion->coti_descripcion,
@@ -274,7 +295,22 @@ public function index(Request $request)
         $join->on('coti.coti_num', '=', 'cotio_instancias.cotio_numcoti')
              ->where('cotio_instancias.cotio_subitem', 0);
     })
-    ->groupBy('coti.coti_num');
+    ->groupBy('coti.coti_num')
+    // Filtro: solo cotizaciones con cadena_custodia, muestreo o ensayo de visita técnica
+    ->where(function($q) {
+        $q->where('coti_cadena_custodia', true)
+          ->orWhere('coti_muestreo', true)
+          ->orWhereExists(function($subQ) {
+              $subQ->select(DB::raw(1))
+                   ->from('cotio')
+                   ->whereColumn('cotio.cotio_numcoti', 'coti.coti_num')
+                   ->where('cotio.cotio_subitem', 0)
+                   ->where(function($subQ2) {
+                       $subQ2->whereRaw("UPPER(TRIM(cotio_descripcion)) LIKE '%TRABAJO TECNICO%'")
+                             ->orWhereRaw("UPPER(TRIM(cotio_descripcion)) LIKE '%VISITA TECNICA%'");
+                   });
+          });
+    });
 
     // Filtros (se mantienen igual)
     if ($request->has('search') && !empty($request->search)) {
@@ -536,9 +572,43 @@ protected function showUserTasksCalendar(Request $request, $userCode)
     if ($unscheduled->isNotEmpty()) {
         $tareasCalendario->put('sin-fecha', $unscheduled);
     }
+
+    // Generar eventos para el calendario
+    $user = Auth::user();
+    $canViewMuestraDetails = $user->usu_nivel >= 900 || $user->hasRole('coordinador_muestreo');
+    
+    $events = collect();
+    foreach ($tareasCalendario as $date => $instanciasGrupo) {
+        foreach ($instanciasGrupo as $instancia) {
+            // URL según permisos del usuario
+            $eventUrl = $canViewMuestraDetails 
+                ? route('categoria.verMuestra', [
+                    'cotizacion' => $instancia->cotio_numcoti,
+                    'item' => $instancia->cotio_item,
+                    'cotio_subitem' => $instancia->cotio_subitem,
+                    'instance' => $instancia->instance_number
+                ])
+                : route('cotizaciones.ver-detalle', ['cotizacion' => $instancia->cotio_numcoti]);
+
+            $events->push([
+                'title' => ($instancia->cotizacion->coti_empresa ?? 'Sin empresa') . ' - ' . $instancia->cotio_numcoti,
+                'start' => $instancia->fecha_inicio_muestreo ?? $instancia->fecha_muestreo,
+                'end' => $instancia->fecha_fin_muestreo ?? null,
+                'url' => $eventUrl,
+                'extendedProps' => [
+                    'empresa' => $instancia->cotizacion->coti_empresa ?? 'Sin empresa',
+                    'descripcion' => $instancia->cotizacion->coti_descripcion ?? '',
+                    'estado' => $instancia->cotio_estado,
+                    'analisis_count' => $instancia->analisis_count ?? 0,
+                ],
+                'className' => $this->getEventClass($instancia),
+            ]);
+        }
+    }
     
     return view('muestras.partials.calendario', [
         'tareasCalendario' => $tareasCalendario,
+        'events' => $events,
         'cotizaciones' => collect(),
         'viewType' => 'calendario',
         'request' => $request,
@@ -644,6 +714,20 @@ public function show($coti_num)
 {
     $cotizacion = Coti::findOrFail($coti_num);
     $inventario = InventarioMuestreo::all();
+
+    // Regla de vehículo único por TIPO de muestra (mismo cotio_descripcion):
+    // Por cada tipo (descripción, ej. "EMISIONES GASEOSAS"), si ya hay una instancia coordinada con vehículo asignado,
+    // las demás muestras de ese mismo tipo solo pueden usar ese mismo vehículo.
+    $vehiculoFijadoPorTipo = CotioInstancia::where('cotio_numcoti', $coti_num)
+        ->where('cotio_subitem', 0)
+        ->whereIn('cotio_estado', ['coordinado muestreo', 'muestreado'])
+        ->whereNotNull('vehiculo_asignado')
+        ->get()
+        ->filter(fn ($i) => trim((string) ($i->cotio_descripcion ?? '')) !== '')
+        ->groupBy(fn ($i) => trim((string) $i->cotio_descripcion))
+        ->map(fn ($g) => (int) $g->first()->vehiculo_asignado)
+        ->toArray();
+
     $vehiculos = Vehiculo::all();
 
     // Lista de tareas que no requieren muestreo
@@ -734,12 +818,13 @@ public function show($coti_num)
     }
 
     return view('muestras.show', compact(
-        'cotizacion', 
-        'tareas', 
-        'usuarios', 
-        'agrupadas', 
-        'inventario', 
-        'vehiculos', 
+        'cotizacion',
+        'tareas',
+        'usuarios',
+        'agrupadas',
+        'inventario',
+        'vehiculos',
+        'vehiculoFijadoPorTipo',
         'variablesRequeridas'
     ));
 }
@@ -1118,7 +1203,25 @@ public function verMuestra($cotizacion, $item, $instance = null)
                 ->get();
     
     $inventario = InventarioMuestreo::all();
-    $vehiculos = Vehiculo::all();
+
+    // Regla de vehículo único por TIPO de muestra (cotio_descripcion): para este tipo si ya hay
+    // una instancia coordinada con vehículo asignado, solo se permite ese vehículo.
+    $descripcionMuestra = trim((string) ($instanciaMuestra->cotio_descripcion ?? ''));
+    $vehiculoFijadoId = null;
+    if ($descripcionMuestra !== '') {
+        $vehiculoFijadoId = CotioInstancia::where('cotio_numcoti', $cotizacion->coti_num)
+            ->where('cotio_subitem', 0)
+            ->whereIn('cotio_estado', ['coordinado muestreo', 'muestreado'])
+            ->whereNotNull('vehiculo_asignado')
+            ->whereRaw('TRIM(cotio_descripcion) = ?', [$descripcionMuestra])
+            ->value('vehiculo_asignado');
+    }
+
+    if ($vehiculoFijadoId) {
+        $vehiculos = Vehiculo::where('id', $vehiculoFijadoId)->get();
+    } else {
+        $vehiculos = Vehiculo::all();
+    }
     
     $instanciasMuestra = CotioInstancia::where('cotio_numcoti', $cotizacion->coti_num)
                             ->where('cotio_item', $item)
@@ -1272,6 +1375,34 @@ public function asignacionMasiva(Request $request)
     DB::beginTransaction();
     try {
         $cotioNumcoti = $request->cotio_numcoti;
+
+        // Regla de vehículo único por TIPO de muestra (mismo cotio_descripcion): por cada tipo ya coordinado con vehículo,
+        // las nuevas asignaciones de ese tipo deben usar el mismo vehículo.
+        $vehiculoFijadoPorTipo = CotioInstancia::where('cotio_numcoti', $cotioNumcoti)
+            ->where('cotio_subitem', 0)
+            ->whereIn('cotio_estado', ['coordinado muestreo', 'muestreado'])
+            ->whereNotNull('vehiculo_asignado')
+            ->get()
+            ->filter(fn ($i) => trim((string) ($i->cotio_descripcion ?? '')) !== '')
+            ->groupBy(fn ($i) => trim((string) $i->cotio_descripcion))
+            ->map(fn ($g) => (int) $g->first()->vehiculo_asignado)
+            ->toArray();
+
+        if ($request->filled('vehiculo')) {
+            $vehiculoSolicitado = (int) $request->vehiculo;
+            $muestrasSeleccionadas = collect($itemsSeleccionados)->where('subitem', '0');
+            foreach ($muestrasSeleccionadas as $itemData) {
+                $descripcion = isset($itemData['descripcion']) ? trim((string) $itemData['descripcion']) : '';
+                if ($descripcion === '') continue;
+                $fijado = $vehiculoFijadoPorTipo[$descripcion] ?? null;
+                if ($fijado !== null && $vehiculoSolicitado !== $fijado) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => "Para el tipo \"{$descripcion}\" ya está asignado un vehículo. Todas las muestras de ese tipo deben usar el mismo vehículo."
+                    ], 422);
+                }
+            }
+        }
         $itemsData = $itemsSeleccionados;
         $parametrosSeleccionados = $parametrosSeleccionados;
         $userId = Auth::user()->usu_codigo;
@@ -1821,6 +1952,27 @@ public function recoordinar(Request $request)
         DB::beginTransaction();
 
         $instancia = CotioInstancia::findOrFail($validated['instancia_id']);
+
+        // Regla de vehículo único por TIPO de muestra (cotio_descripcion): si ya hay una instancia
+        // de este mismo tipo (misma descripción) con vehículo asignado, sólo se permite usar ese mismo vehículo.
+        $descripcionMuestra = trim((string) ($instancia->cotio_descripcion ?? ''));
+        $vehiculoFijadoId = null;
+        if ($descripcionMuestra !== '') {
+            $vehiculoFijadoId = CotioInstancia::where('cotio_numcoti', $validated['cotio_numcoti'])
+                ->where('cotio_subitem', 0)
+                ->whereIn('cotio_estado', ['coordinado muestreo', 'muestreado'])
+                ->whereNotNull('vehiculo_asignado')
+                ->whereRaw('TRIM(cotio_descripcion) = ?', [$descripcionMuestra])
+                ->value('vehiculo_asignado');
+        }
+
+        if (
+            $vehiculoFijadoId &&
+            !empty($validated['vehiculo_asignado']) &&
+            (int) $validated['vehiculo_asignado'] !== (int) $vehiculoFijadoId
+        ) {
+            throw new \Exception('Ya existe un vehículo asignado para muestras de este mismo tipo (misma descripción). Todas las muestras del tipo deben usar el mismo vehículo.');
+        }
 
         if ($instancia->cotio_estado !== 'suspension' && $instancia->cotio_estado !== 'coordinado muestreo' && $instancia->enable_ot == true) {
             throw new \Exception('La muestra no puede ser recoordinada. Se encuentra en órdenes de trabajo o su estado es avanzado.');

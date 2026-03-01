@@ -6,7 +6,7 @@ use App\Models\LeyNormativa;
 use App\Models\Variable;
 use App\Models\CotioItems;
 use App\Exports\LeyesNormativasTemplateExport;
-use App\Imports\LeyesNormativasImport;
+use App\Imports\LeyesNormativasImportWrapper;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
@@ -299,7 +299,7 @@ class LeyNormativaController extends Controller
         ]);
 
         try {
-            $import = new LeyesNormativasImport();
+            $import = new LeyesNormativasImportWrapper();
             Excel::import($import, $request->file('archivo'));
 
             // Guardar la fecha de la última importación

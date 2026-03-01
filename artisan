@@ -9,6 +9,13 @@ define('LARAVEL_START', microtime(true));
 // Register the Composer autoloader...
 require __DIR__.'/vendor/autoload.php';
 
+// Asegurar que los helpers estén cargados ANTES de iniciar Laravel
+// Esto es crítico para que las funciones estén disponibles cuando Blade compile las vistas
+$helpersPath = __DIR__.'/app/helpers.php';
+if (file_exists($helpersPath)) {
+    require_once $helpersPath;
+}
+
 // Bootstrap Laravel and handle the command...
 /** @var Application $app */
 $app = require_once __DIR__.'/bootstrap/app.php';

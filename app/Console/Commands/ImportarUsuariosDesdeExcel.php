@@ -21,17 +21,22 @@ class ImportarUsuariosDesdeExcel extends Command
      *
      * @var string
      */
-    protected $description = 'Importa usuarios desde un archivo Excel. Por defecto usa public/usuarios.xlsx';
+    protected $description = 'Actualiza roles de usuarios desde un archivo Excel. Por defecto usa public/usuarios.xlsx o public/usuarios_roles.xlsx';
 
     /**
      * Execute the console command.
      */
     public function handle()
     {
-        $archivo = $this->argument('archivo') ?? public_path('usuarios.xlsx');
+        // Intentar usar usuarios_roles.xlsx primero, luego usuarios.xlsx como fallback
+        $archivoDefault = file_exists(public_path('usuarios_roles.xlsx')) 
+            ? public_path('usuarios_roles.xlsx')
+            : public_path('usuarios.xlsx');
+        
+        $archivo = $this->argument('archivo') ?? $archivoDefault;
 
         $this->info("---------------------------------------------------------");
-        $this->info("IMPORTADOR DE USUARIOS");
+        $this->info("ACTUALIZADOR DE ROLES DE USUARIOS");
         $this->info("---------------------------------------------------------");
         $this->info("Archivo: {$archivo}");
 
@@ -41,8 +46,9 @@ class ImportarUsuariosDesdeExcel extends Command
             return Command::FAILURE;
         }
 
-        $this->info("Iniciando importación...");
-        Log::info("=== Iniciando importación de usuarios ===");
+        $this->info("Iniciando actualización de roles...");
+        $this->warn("NOTA: Solo se actualizarán usuarios existentes usando el código de usuario.");
+        Log::info("=== Iniciando actualización de roles de usuarios ===");
         Log::info("Archivo: {$archivo}");
 
         try {
@@ -60,9 +66,9 @@ class ImportarUsuariosDesdeExcel extends Command
             $errors = $import->getErrors();
 
             $this->info("---------------------------------------------------------");
-            $this->info("RESULTADOS DE LA IMPORTACIÓN");
+            $this->info("RESULTADOS DE LA ACTUALIZACIÓN");
             $this->info("---------------------------------------------------------");
-            $this->info("✓ Usuarios procesados correctamente: {$successCount}");
+            $this->info("✓ Usuarios actualizados correctamente: {$successCount}");
             $this->info("✗ Errores: {$errorCount}");
 
             if (!empty($errors)) {
@@ -79,16 +85,16 @@ class ImportarUsuariosDesdeExcel extends Command
             ]);
 
             if ($errorCount > 0) {
-                $this->warn("\nLa importación se completó con algunos errores. Revisa los logs para más detalles.");
+                $this->warn("\nLa actualización se completó con algunos errores. Revisa los logs para más detalles.");
                 return Command::FAILURE;
             }
 
-            $this->info("\n✓ Importación completada exitosamente!");
+            $this->info("\n✓ Actualización de roles completada exitosamente!");
             return Command::SUCCESS;
 
         } catch (\Exception $e) {
-            $this->error("Error al importar: " . $e->getMessage());
-            Log::error("Error en importación de usuarios", [
+            $this->error("Error al actualizar roles: " . $e->getMessage());
+            Log::error("Error en actualización de roles de usuarios", [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);

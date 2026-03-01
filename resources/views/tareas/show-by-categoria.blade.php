@@ -69,11 +69,6 @@
                 <div class="col-md-4">
                     <p><strong>Cotización:</strong> {{ $instancia->cotio_numcoti }}</p>
                     <p><strong>Identificación:</strong> {{ $instancia->cotio_identificacion ?? 'N/A' }}</p>
-                    {{-- @if($instancia->fecha_identificacion)
-                        <p><strong>Fecha Identificación:</strong> 
-                            {{ \Carbon\Carbon::parse($instancia->fecha_identificacion)->format('d/m/Y H:i') }}
-                        </p>
-                    @endif --}}
                     <p><strong>N° Precinto:</strong> {{ $instancia->nro_precinto ?? 'N/A' }}</p>
                     <p><strong>N° Cadena:</strong> {{ $instancia->nro_cadena ?? 'N/A' }}</p>
                 </div>
@@ -217,7 +212,7 @@
             </h5>
         </div>
         
-        <div id="medicionesCollapse" class="collapse">
+        <div id="medicionesCollapse" class="collapse show">
             <form class="card-body" action="{{ route('tareas.updateMediciones', $instancia->id) }}" 
                   method="POST" id="medicionesForm">
                 @csrf
@@ -339,10 +334,10 @@
                         <input type="hidden" name="instance_number" value="{{ $instanceNumber }}">
                         
                         <div class="mb-3">
-                            <label for="cotio_identificacion" class="form-label">Identificación</label>
+                            <label for="cotio_identificacion" class="form-label">Identificación <span class="text-danger">*</span></label>
                             <input type="text" class="form-control" id="cotio_identificacion" 
                                    name="cotio_identificacion" value="{{ $instancia->cotio_identificacion ?? '' }}"
-                                   placeholder="Ingrese la identificación de la muestra">
+                                   placeholder="Ingrese la identificación de la muestra" required>
                         </div>
                     
                         <div class="mb-3">
@@ -371,37 +366,40 @@
                         </div>
                     
                         <div class="mb-3">
-                            <label class="form-label">Georeferencia</label>
+                            <label class="form-label">Georeferencia (coordenadas) <span class="text-danger">*</span></label>
                             <div id="map" style="height: 300px; width: 100%;"></div>
                             <input type="hidden" id="latitud" name="latitud" value="{{ $instancia->latitud ?? '' }}">
                             <input type="hidden" id="longitud" name="longitud" value="{{ $instancia->longitud ?? '' }}">
                             <div class="input-group mt-2">
                                 <span class="input-group-text">Latitud</span>
-                                <input type="number" step="any" class="form-control" id="latitude-display" value="{{ $instancia->latitud ?? '' }}">
+                                <input type="number" step="any" class="form-control" id="latitude-display" value="{{ $instancia->latitud ?? '' }}" required placeholder="Ej: -33.441953">
                                 <span class="input-group-text">Longitud</span>
-                                <input type="number" step="any" class="form-control" id="longitude-display" value="{{ $instancia->longitud ?? '' }}">
+                                <input type="number" step="any" class="form-control" id="longitude-display" value="{{ $instancia->longitud ?? '' }}" required placeholder="Ej: -70.638523">
                             </div>
                             <small class="text-muted">Haz clic en el mapa para seleccionar la ubicación o edita los valores de latitud y longitud manualmente.</small>
                         </div>
                     
                         <div class="mb-3">
-                            <label for="nro_precinto" class="form-label">N° Precinto</label>
+                            <label for="nro_precinto" class="form-label">N° Precinto <span class="text-danger">*</span></label>
                             <input type="text" class="form-control" id="nro_precinto" 
                                    name="nro_precinto" value="{{ $instancia->nro_precinto ?? '' }}"
-                                   placeholder="Ingrese el número de precinto">
+                                   placeholder="Ingrese el número de precinto" required>
                         </div>
                     
                         <div class="mb-3">
-                            <label for="nro_cadena" class="form-label">N° Cadena</label>
+                            <label for="nro_cadena" class="form-label">N° Cadena <span class="text-danger">*</span></label>
                             <input type="text" class="form-control" id="nro_cadena" 
                                    name="nro_cadena" value="{{ $instancia->nro_cadena ?? '' }}"
-                                   placeholder="Ingrese el número de cadena">
+                                   placeholder="Ingrese el número de cadena" required>
                         </div>
                     
                         <div class="d-flex justify-content-end">
                             <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">Cancelar</button>
-                            <button type="submit" class="btn btn-primary">
-                                <i class="fas fa-save me-1"></i> Guardar Cambios
+                            <button type="submit" class="btn btn-outline-secondary me-2" name="accion" value="borrador" formnovalidate>
+                                <i class="fas fa-file-alt me-1"></i> Guardar
+                            </button>
+                            <button type="submit" class="btn btn-primary" name="accion" value="guardar">
+                                <i class="fas fa-save me-1"></i> Guardar y Enviar
                             </button>
                         </div>
                     </form>
@@ -717,6 +715,43 @@ async function enviarResultado(event, cotio_numcoti, cotio_item, cotio_subitem) 
         if (form) {
             form.addEventListener('submit', function(e) {
                 e.preventDefault();
+
+                // Sincronizar coordenadas de los inputs de solo lectura al hidden
+                const latDisplay = document.getElementById('latitude-display');
+                const lngDisplay = document.getElementById('longitude-display');
+                const latHidden = document.getElementById('latitud');
+                const lngHidden = document.getElementById('longitud');
+                if (latDisplay && lngDisplay && latHidden && lngHidden) {
+                    latHidden.value = latDisplay.value.trim();
+                    lngHidden.value = lngDisplay.value.trim();
+                }
+
+                const esGuardarYEnviar = e.submitter && e.submitter.value === 'guardar';
+
+                // Validar campos obligatorios solo si presionó "Guardar y Enviar"
+                if (esGuardarYEnviar) {
+                    const identificacion = (document.getElementById('cotio_identificacion') || {}).value || '';
+                    const precinto = (document.getElementById('nro_precinto') || {}).value || '';
+                    const cadena = (document.getElementById('nro_cadena') || {}).value || '';
+                    const lat = (document.getElementById('latitud') || {}).value || '';
+                    const lng = (document.getElementById('longitud') || {}).value || '';
+
+                    const faltantes = [];
+                    if (!identificacion.trim()) faltantes.push('Identificación de muestra');
+                    if (!precinto.trim()) faltantes.push('N° Precinto');
+                    if (!cadena.trim()) faltantes.push('N° Cadena');
+                    if (!lat.trim() || !lng.trim()) faltantes.push('Coordenadas (latitud y longitud)');
+
+                    if (faltantes.length > 0) {
+                        Swal.fire({
+                            icon: 'warning',
+                            title: 'Campos obligatorios',
+                            html: 'Debe completar: <strong>' + faltantes.join(', ') + '</strong>',
+                            confirmButtonText: 'Entendido'
+                        });
+                        return;
+                    }
+                }
                 
                 // Mostrar loader mientras se procesa
                 Swal.fire({
@@ -727,11 +762,16 @@ async function enviarResultado(event, cotio_numcoti, cotio_item, cotio_subitem) 
                         Swal.showLoading();
                     }
                 });
-                
+
+                const formData = new FormData(form);
+                if (e.submitter && e.submitter.name) {
+                    formData.append(e.submitter.name, e.submitter.value);
+                }
+
                 // Enviar el formulario manualmente
                 fetch(form.action, {
                     method: 'POST',
-                    body: new FormData(form),
+                    body: formData,
                     headers: {
                         'Accept': 'application/json',
                         'X-CSRF-TOKEN': form.querySelector('input[name="_token"]').value
@@ -980,78 +1020,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Manejar el envío del formulario
-    document.getElementById('muestraForm').addEventListener('submit', function(e) {
-        e.preventDefault();
-
-        const formData = new FormData(this);
-        const file = fileInput.files[0];
-
-        if (!file) {
-            Swal.fire({
-                icon: 'error',
-                title: 'No se seleccionó una imagen',
-                text: 'Por favor seleccioná o tomá una foto para subir.',
-            });
-            return;
-        }
-
-        // Mostrar loader
-        Swal.fire({
-            title: 'Guardando cambios...',
-            allowOutsideClick: false,
-            didOpen: () => {
-                Swal.showLoading();
-            }
-        });
-
-        fetch(this.action, {
-            method: 'POST',
-            body: formData,
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest',
-                'Accept': 'application/json'
-            }
-        })
-        .then(async response => {
-            const isJson = response.headers.get("content-type")?.includes("application/json");
-            const data = isJson ? await response.json() : { success: false, message: 'Respuesta inesperada del servidor', debug: await response.text() };
-
-            Swal.close();
-
-            if (data.success) {
-                // Redirección o éxito silencioso
-                // Swal.fire({ icon: 'success', title: 'Éxito', text: data.message });
-                // window.location.href = data.redirect;
-            } else {
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Error al guardar',
-                    html: `
-                        <p><strong>Mensaje:</strong> ${data.message || 'Ocurrió un error.'}</p>
-                        <pre style="white-space:pre-wrap;text-align:left;font-size:12px;background:#f5f5f5;padding:10px;border-radius:5px;">
-        ${data.debug ? data.debug : JSON.stringify(data, null, 2)}
-                        </pre>
-                    `,
-                    confirmButtonText: 'OK'
-                });
-            }
-        })
-        .catch(error => {
-            Swal.close();
-            Swal.fire({
-                icon: 'error',
-                title: 'Error de red',
-                html: `
-                    <p>No se pudo completar la solicitud.</p>
-                    <pre style="white-space:pre-wrap;text-align:left;font-size:12px;background:#f5f5f5;padding:10px;border-radius:5px;">
-        ${JSON.stringify(error, Object.getOwnPropertyNames(error), 2)}
-                    </pre>
-                `,
-                confirmButtonText: 'OK'
-            });
-        });
-    });
+    // Manejar el envío del formulario (validación y envío ya están en el primer listener de #editMuestraModal form)
+    // No requerimos imagen obligatoria; coordenadas, identificación, precinto y cadena se validan en el otro handler.
 });
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -1205,44 +1175,58 @@ function deseleccionarTodas() {
 </script>
 
 <script>
-    document.getElementById('medicionesForm').addEventListener('submit', function(event) {
-        event.preventDefault(); // Evita el envío inmediato del formulario
-    
-        // Obtener todos los campos de entrada de tipo texto para las variables
-        const inputs = document.querySelectorAll('input[name^="valores["][type="text"]');
-        let emptyInputs = 0;
-        let totalInputs = inputs.length;
-    
-        // Verificar si algún campo tiene un valor
-        inputs.forEach(input => {
-            if (input.value.trim() === '') {
-                emptyInputs++;
-            }
-        });
-    
-        // Si no hay valores ingresados, mostrar la alerta
-        if (emptyInputs > 0) {
-            Swal.fire({
-                title: 'Advertencia',
-                text: 'No has ingresado ningún valor IN SITU, Al menos una variable está vacía, ¿Deseas continuar?',
-                icon: 'warning',
-                showCancelButton: true,
-                confirmButtonText: 'Sí, continuar',
-                cancelButtonText: 'No, cancelar',
-                buttonsStyling: true,
-                confirmButtonColor: '#3085d6',
-                cancelButtonColor: '#d33'
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    // Si el usuario confirma, enviar el formulario
-                    this.submit();
+    const medicionesForm = document.getElementById('medicionesForm');
+    if (medicionesForm) {
+        medicionesForm.addEventListener('submit', function(event) {
+            event.preventDefault(); // Evita el envío inmediato del formulario
+        
+            // Obtener todos los campos de entrada de tipo texto para las variables
+            const inputs = document.querySelectorAll('input[name^="valores["][type="text"]');
+            const totalInputs = inputs.length;
+            let filledCount = 0;
+            let emptyInputs = 0;
+        
+            inputs.forEach(input => {
+                if (input.value.trim() === '') {
+                    emptyInputs++;
+                } else {
+                    filledCount++;
                 }
             });
-        } else {
-            // Si hay valores, enviar el formulario directamente
-            this.submit();
-        }
-    });
+
+            // Mediciones de campo es obligatorio: al menos una variable debe tener valor
+            if (totalInputs > 0 && filledCount === 0) {
+                Swal.fire({
+                    title: 'Mediciones de campo obligatorias',
+                    text: 'Debe ingresar al menos un valor en las variables de medición de campo.',
+                    icon: 'warning',
+                    confirmButtonColor: '#3085d6'
+                });
+                return;
+            }
+        
+            // Si hay variables vacías pero al menos una con valor, preguntar si desea continuar
+            if (emptyInputs > 0) {
+                Swal.fire({
+                    title: 'Advertencia',
+                    text: 'Al menos una variable está vacía, ¿Deseas continuar?',
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonText: 'Sí, continuar',
+                    cancelButtonText: 'No, cancelar',
+                    buttonsStyling: true,
+                    confirmButtonColor: '#3085d6',
+                    cancelButtonColor: '#d33'
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        medicionesForm.submit();
+                    }
+                });
+            } else {
+                medicionesForm.submit();
+            }
+        });
+    }
 </script>
 
 @endsection

@@ -1,6 +1,6 @@
 @extends('layouts.app')
 <head>
-    <title>Editar Sector</title>
+    <title>Editar Laboratorio</title>
 </head>
 
 @section('content')

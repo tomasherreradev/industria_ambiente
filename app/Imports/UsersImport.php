@@ -18,13 +18,13 @@ class UsersImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
     protected $errorCount = 0;
 
     /**
-     * Procesa la colección de filas del Excel
+     * Procesa la colección de filas del Excel para actualizar roles de usuarios existentes
      * 
      * @param Collection $rows
      */
     public function collection(Collection $rows)
     {
-        Log::info('UsersImport: Iniciando procesamiento', ['total_filas' => $rows->count()]);
+        Log::info('UsersImport: Iniciando actualización de roles', ['total_filas' => $rows->count()]);
         
         if ($rows->isEmpty()) {
             Log::warning('UsersImport: No se encontraron filas para procesar');
@@ -40,94 +40,150 @@ class UsersImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
                 
                 try {
                     // Obtener valores de la fila (WithHeadingRow convierte a slug)
-                    $nombre = $this->getRowValue($row, ['nombre']);
-                    $apellido = $this->getRowValue($row, ['apellido']);
+                    // Buscar variaciones de los nombres de columnas del Excel
+                    $usuCodigo = $this->getRowValue($row, [
+                        'codigo_usuario', 
+                        'codigo usuario', 
+                        'código usuario',
+                        'codigo',
+                        'usuario'
+                    ]);
                     $dni = $this->getRowValue($row, ['dni', 'd.n.i.']);
-                    $correo = $this->getRowValue($row, ['correo', 'email']);
-                    $departamento = $this->getRowValue($row, ['departamento']);
-                    $rol = $this->getRowValue($row, ['rol']);
-                    $sector = $this->getRowValue($row, ['sector']);
+                    $rolSistema = $this->getRowValue($row, [
+                        'rol_del_sistema',
+                        'rol del sistema',
+                        'rol',
+                        'rol_sistema'
+                    ]);
+                    
+                    // Obtener roles adicionales (buscar variaciones de nombres de columnas)
+                    $rolAdicional1 = $this->getRowValue($row, [
+                        'roles_adicional_1',      // "Roles adicional 1" (plural, con espacio)
+                        'roles adicional 1',     // Variación con espacio
+                        'rol_adicional_1',       // "Rol adicional 1" (singular)
+                        'rol adicional 1',       // Variación con espacio
+                        'roles_adicional1',      // Sin guión bajo
+                        'roles adicional1',     // Sin guión bajo con espacio
+                        'rol_adicional1',        // Singular sin guión bajo
+                        'rol adicional1'         // Singular sin guión bajo con espacio
+                    ]);
+                    $rolAdicional2 = $this->getRowValue($row, [
+                        'roles_adicional_2',
+                        'roles adicional 2',
+                        'rol_adicional_2',
+                        'rol adicional 2',
+                        'roles_adicional2',
+                        'roles adicional2',
+                        'rol_adicional2',
+                        'rol adicional2'
+                    ]);
+                    $rolAdicional3 = $this->getRowValue($row, [
+                        'roles_adicional_3',
+                        'roles adicional 3',
+                        'rol_adicional_3',
+                        'rol adicional 3',
+                        'roles_adicional3',
+                        'roles adicional3',
+                        'rol_adicional3',
+                        'rol adicional3'
+                    ]);
 
-                    // Validar campos requeridos
-                    if (empty($nombre) || empty($apellido)) {
-                        $this->errors[] = "Fila {$rowNumber}: Nombre y Apellido son requeridos";
+                    // Validar que el código de usuario esté presente
+                    if (empty($usuCodigo)) {
+                        $this->errors[] = "Fila {$rowNumber}: Código de usuario es requerido";
                         $this->errorCount++;
                         continue;
                     }
 
-                    // Generar usu_descripcion
-                    $usuDescripcion = trim($nombre) . ' ' . trim($apellido);
+                    // Limpiar y normalizar el código de usuario
+                    $usuCodigo = trim(strtolower($usuCodigo));
 
-                    // Generar usu_codigo (usar iniciales del nombre y apellido)
-                    $usuCodigo = $this->generateUsuCodigo($nombre, $apellido, $correo);
+                    // Buscar el usuario existente por código
+                    $user = User::where('usu_codigo', $usuCodigo)->first();
 
-                    // Verificar si el código ya existe
-                    if (User::where('usu_codigo', $usuCodigo)->exists()) {
-                        // Si existe, agregar un número
-                        $counter = 1;
-                        $originalCodigo = $usuCodigo;
-                        while (User::where('usu_codigo', $usuCodigo)->exists()) {
-                            $usuCodigo = $originalCodigo . $counter;
-                            $counter++;
+                    if (!$user) {
+                        $this->errors[] = "Fila {$rowNumber}: Usuario con código '{$usuCodigo}' no encontrado";
+                        $this->errorCount++;
+                        Log::warning("UsersImport: Usuario no encontrado", [
+                            'fila' => $rowNumber,
+                            'usu_codigo' => $usuCodigo
+                        ]);
+                        continue;
+                    }
+
+                    // Preparar datos para actualizar
+                    $updateData = [];
+                    $rolesAdicionales = [];
+
+                    // Actualizar rol principal si está presente
+                    if (!empty($rolSistema)) {
+                        $rolNormalizado = $this->normalizeRol($rolSistema);
+                        if ($rolNormalizado) {
+                            $updateData['rol'] = $rolNormalizado;
+                            
+                            // Actualizar usu_nivel según el rol principal
+                            $updateData['usu_nivel'] = $this->determineUsuNivel($rolSistema);
                         }
                     }
 
-                    // Normalizar sector_codigo
-                    $sectorNormalizado = $this->normalizeSector($sector);
-                    $sectorCodigo = null;
-                    
-                    // Si el sector normalizado existe como usu_codigo, usarlo
-                    // Si no existe, dejar null para evitar errores de foreign key
-                    if (!empty($sectorNormalizado)) {
-                        $sectorUsuario = User::where('usu_codigo', $sectorNormalizado)->first();
-                        if ($sectorUsuario) {
-                            $sectorCodigo = $sectorNormalizado;
-                        } else {
-                            // Si no existe como usuario, dejar null
-                            // (el usuario puede crear los sectores manualmente después si es necesario)
-                            Log::warning("UsersImport: Sector normalizado no existe como usuario, se dejará null", [
-                                'sector_original' => $sector,
-                                'sector_normalizado' => $sectorNormalizado
-                            ]);
+                    // Recopilar roles adicionales
+                    foreach ([$rolAdicional1, $rolAdicional2, $rolAdicional3] as $rolAdicional) {
+                        if (!empty($rolAdicional)) {
+                            $rolNormalizado = $this->normalizeRol($rolAdicional);
+                            if ($rolNormalizado) {
+                                $rolesAdicionales[] = $rolNormalizado;
+                            }
                         }
                     }
 
-                    // Normalizar rol
-                    $rolNormalizado = $this->normalizeRol($rol);
-                    
-                    // Determinar usu_nivel según el rol (usar el rol original para la lógica)
-                    $usuNivel = $this->determineUsuNivel($rol);
+                    // Actualizar DNI si está presente (limpiar puntos)
+                    if (!empty($dni)) {
+                        $dniClean = str_replace('.', '', trim($dni));
+                        if (!empty($dniClean)) {
+                            $updateData['dni'] = $dniClean;
+                        }
+                    }
 
-                    // Generar usu_clave (usar MD5 del DNI o contraseña por defecto)
-                    $defaultPassword = !empty($dni) ? str_replace('.', '', $dni) : 'password123';
-                    $usuClave = md5($defaultPassword);
-
-                    // Limpiar DNI (quitar puntos)
-                    $dniClean = !empty($dni) ? str_replace('.', '', $dni) : null;
-
-                    // Crear o actualizar usuario
-                    $user = User::updateOrCreate(
-                        ['usu_codigo' => $usuCodigo],
-                        [
-                            'usu_descripcion' => $usuDescripcion,
-                            'usu_clave' => $usuClave,
-                            'usu_nivel' => $usuNivel,
-                            'usu_estado' => true,
-                            'usu_sesionauto' => false,
-                            'rol' => $rolNormalizado,
-                            'sector_codigo' => $sectorCodigo,
-                            'dni' => $dniClean,
-                            'email' => $correo,
-                            'departamento' => $departamento,
-                        ]
-                    );
-
-                    $this->successCount++;
-                    Log::info("UsersImport: Usuario procesado correctamente", [
-                        'fila' => $rowNumber,
-                        'usu_codigo' => $usuCodigo,
-                        'usu_descripcion' => $usuDescripcion
-                    ]);
+                    // Solo actualizar si hay datos para actualizar
+                    if (!empty($updateData) || !empty($rolesAdicionales)) {
+                        // Guardar valores anteriores para el log
+                        $rolAnterior = $user->rol;
+                        $dniAnterior = $user->dni;
+                        $rolesAdicionalesAnteriores = DB::table('user_roles')
+                            ->where('usu_codigo', $usuCodigo)
+                            ->pluck('rol')
+                            ->toArray();
+                        
+                        // Actualizar datos básicos
+                        if (!empty($updateData)) {
+                            $user->update($updateData);
+                        }
+                        
+                        // Sincronizar roles adicionales
+                        if (!empty($rolesAdicionales)) {
+                            $user->syncRoles($rolesAdicionales);
+                        }
+                        
+                        $this->successCount++;
+                        Log::info("UsersImport: Usuario actualizado correctamente", [
+                            'fila' => $rowNumber,
+                            'usu_codigo' => $usuCodigo,
+                            'usu_descripcion' => $user->usu_descripcion,
+                            'rol_principal_anterior' => $rolAnterior,
+                            'rol_principal_nuevo' => $updateData['rol'] ?? $rolAnterior,
+                            'roles_adicionales_anteriores' => $rolesAdicionalesAnteriores,
+                            'roles_adicionales_nuevos' => $rolesAdicionales,
+                            'dni_anterior' => $dniAnterior,
+                            'dni_nuevo' => $updateData['dni'] ?? $dniAnterior
+                        ]);
+                    } else {
+                        $this->errors[] = "Fila {$rowNumber}: No se proporcionaron datos para actualizar (rol principal, roles adicionales o DNI)";
+                        $this->errorCount++;
+                        Log::warning("UsersImport: No hay datos para actualizar", [
+                            'fila' => $rowNumber,
+                            'usu_codigo' => $usuCodigo
+                        ]);
+                    }
 
                 } catch (\Exception $e) {
                     $this->errors[] = "Fila {$rowNumber}: " . $e->getMessage();
@@ -140,7 +196,7 @@ class UsersImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
             }
 
             DB::commit();
-            Log::info('UsersImport: Procesamiento completado', [
+            Log::info('UsersImport: Actualización de roles completada', [
                 'success' => $this->successCount,
                 'errors' => $this->errorCount
             ]);

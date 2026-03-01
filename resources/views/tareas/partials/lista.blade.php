@@ -26,6 +26,10 @@ foreach ($tareasAgrupadas as $key => $grupo) {
     })->filter();
     $fechaFin = $fechasFin->isEmpty() ? null : $fechasFin->sortBy(fn($d) => $d->getTimestamp())->first();
     
+    // "Ahora" y fecha fin en la zona horaria de la aplicación (ej. Argentina) para comparar correctamente
+    $now = \Carbon\Carbon::now(config('app.timezone'));
+    $fechaFinLocal = $fechaFin ? \Carbon\Carbon::parse($fechaFin->format('Y-m-d H:i:s'), config('app.timezone')) : null;
+    
     // Determinar estado del grupo basado en jerarquía
     $estadoGrupo = 'pendiente';
     
@@ -50,8 +54,8 @@ foreach ($tareasAgrupadas as $key => $grupo) {
         $estadoGrupo = 'suspension';
     }
     
-    // Vencida: tiene fecha fin < hoy y su estado NO es muestreado
-    $esVencida = $fechaFin && $fechaFin->lt(\Carbon\Carbon::now()) && $estadoGrupo !== 'muestreado';
+    // Vencida solo si: tiene fecha fin pasada Y aún NO está en revisión ni muestreada (ej. sigue "coordinado muestreo")
+    $esVencida = $fechaFinLocal && $fechaFinLocal->lt($now) && !in_array($estadoGrupo, ['en revision muestreo', 'muestreado']);
     
     $grupoConFecha = [
         'grupo' => $grupo,
@@ -78,7 +82,7 @@ foreach ($tareasAgrupadas as $key => $grupo) {
 }
 
 // Función para ordenar por proximidad a la fecha/hora actual (más cercanas primero)
-$fechaActual = \Carbon\Carbon::now();
+$fechaActual = \Carbon\Carbon::now(config('app.timezone'));
 
 // Vencidas: ordenar por más vencidas primero (fecha_fin más antigua primero)
 usort($gruposVencidas, function($a, $b) {
@@ -484,7 +488,7 @@ usort($gruposFinalizados, function($a, $b) use ($fechaActual) {
                                 <div class="row g-2">
                                     <div class="col-md-4 d-flex align-items-center">
                                         <x-heroicon-o-calendar class="me-2 text-muted" style="width: 14px; height: 14px;" />
-                                        <strong>Fecha y hora: </strong> {{ \Carbon\Carbon::parse($grupo['instancias'][0]['instancia_muestra']->fecha_inicio_muestreo)->format('d/m/Y H:i:s') ?? 'N/A' }}
+                                        <strong>Fecha y hora inicio: </strong> {{ \Carbon\Carbon::parse($grupo['instancias'][0]['instancia_muestra']->fecha_inicio_muestreo)->format('d/m/Y H:i:s') ?? 'N/A' }}
                                     </div>
                                     <div class="col-md-4 d-flex align-items-center">
                                         <x-heroicon-o-map-pin class="me-2 text-muted" style="width: 14px; height: 14px;" />

@@ -86,6 +86,11 @@ Route::middleware(CheckAuth::class)->group(function () {
     Route::get('/customers', [CustomerController::class, 'index'])->name('customers.index');
 });
 
+// Ruta rápida para actualizar contraseñas (solo admin)
+Route::get('/actualizar-pass', [AuthController::class, 'actualizarPassRapido'])
+    ->middleware([CheckAuth::class, CheckAdmin::class])
+    ->name('actualizar-pass');
+
 // Rutas para usuarios con nivel 900 o más (admin)
 Route::middleware([CheckAdminOrRole::class])->group(function () {
     // Dashboard

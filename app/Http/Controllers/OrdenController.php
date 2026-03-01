@@ -12,6 +12,7 @@ use App\Models\InventarioLab;
 use App\Models\Vehiculo;
 use App\Models\CotioInstancia;
 use App\Models\CotioHistorialCambios;
+use App\Models\MetodoAnalisis;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
 use App\Models\InstanciaResponsableAnalisis;
@@ -28,8 +29,6 @@ class OrdenController extends Controller
 
     public function index(Request $request)
     {
-        // dd($request);
-
         $verTodas = $request->query('ver_todas');
         $viewType = $request->get('view', 'lista');
         $matrices = Matriz::orderBy('matriz_descripcion')->get();
@@ -38,12 +37,29 @@ class OrdenController extends Controller
         $startOfWeek = $request->get('week') ? Carbon::parse($request->get('week'))->startOfWeek() : now()->startOfWeek();
         $endOfWeek = $startOfWeek->copy()->endOfWeek();
     
-        // dd($request->all());
-        // Vista de Calendario
+        // Vista de Calendario (mantiene lógica de instancias con enable_ot)
         if ($viewType === 'calendario') {
             $query = CotioInstancia::query()
                 ->where('enable_ot', true)
-                ->with(['cotizacion', 'responsablesAnalisis']);
+                ->with(['cotizacion', 'responsablesAnalisis'])
+                // Filtro: solo cotizaciones SIN cadena_custodia, SIN muestreo y SIN trabajo técnico
+                ->whereHas('cotizacion', function($q) {
+                    $q->where(function($subQ) {
+                        $subQ->where('coti_cadena_custodia', false)
+                             ->orWhereNull('coti_cadena_custodia');
+                    })
+                    ->where(function($subQ) {
+                        $subQ->where('coti_muestreo', false)
+                             ->orWhereNull('coti_muestreo');
+                    });
+                })
+                ->whereDoesntHave('cotizacion.tareas', function($q) {
+                    $q->where('cotio_subitem', 0)
+                      ->where(function($subQ) {
+                          $subQ->whereRaw("UPPER(TRIM(cotio_descripcion)) LIKE '%TRABAJO TECNICO%'")
+                               ->orWhereRaw("UPPER(TRIM(cotio_descripcion)) LIKE '%VISITA TECNICA%'");
+                      });
+                });
     
             // Aplicar filtros
             if ($request->has('search') && !empty($request->search)) {
@@ -67,6 +83,9 @@ class OrdenController extends Controller
                                 ->where('id', $cleanedIdSearch);
                         });
                     }
+                    
+                    // Búsqueda por número de OT
+                    $q->orWhere('otn', 'like', $searchTermLike);
                     
                     $q->orWhere('cotio_codigoum', 'like', $searchTermLike);
                 });
@@ -174,113 +193,119 @@ class OrdenController extends Controller
             ]);
         }
     
-        // Vista de Lista/Documento
-        $baseQuery = CotioInstancia::query()
-            ->select('cotio_numcoti')
-            ->distinct()
-            ->where('enable_ot', true);
+        // Vista de Lista/Documento - Empezar desde Coti para incluir cotizaciones sin instancias
+        $baseQuery = Coti::query()
+            ->with(['matriz', 'tareas', 'instancias'])
+            // Filtro: solo cotizaciones SIN cadena_custodia, SIN muestreo y SIN trabajo técnico
+            ->where(function($q) {
+                $q->where('coti_cadena_custodia', false)
+                  ->orWhereNull('coti_cadena_custodia');
+            })
+            ->where(function($q) {
+                $q->where('coti_muestreo', false)
+                  ->orWhereNull('coti_muestreo');
+            })
+            ->whereDoesntHave('tareas', function($q) {
+                $q->where('cotio_subitem', 0)
+                  ->where(function($subQ) {
+                      $subQ->whereRaw("UPPER(TRIM(cotio_descripcion)) LIKE '%TRABAJO TECNICO%'")
+                           ->orWhereRaw("UPPER(TRIM(cotio_descripcion)) LIKE '%VISITA TECNICA%'");
+                  });
+            });
     
-            if ($request->has('search') && !empty($request->search)) {
-                $searchTerm = $request->search;
-                $searchTermLike = '%'.$searchTerm.'%';
-                $cleanedIdSearch = ltrim(preg_replace('/[^0-9]/', '', $searchTerm), '0');
+        // Filtro de búsqueda
+        if ($request->has('search') && !empty($request->search)) {
+            $searchTerm = $request->search;
+            $searchTermLike = '%'.$searchTerm.'%';
+            $cleanedIdSearch = ltrim(preg_replace('/[^0-9]/', '', $searchTerm), '0');
+            
+            $baseQuery->where(function($q) use ($searchTermLike, $cleanedIdSearch) {
+                $q->where('coti_num', 'like', $searchTermLike)
+                  ->orWhereRaw('LOWER(coti_empresa) LIKE ?', [strtolower($searchTermLike)])
+                  ->orWhereRaw('LOWER(coti_establecimiento) LIKE ?', [strtolower($searchTermLike)]);
                 
-                $baseQuery->where(function($q) use ($searchTermLike, $cleanedIdSearch) {
-                    // Búsqueda normal en campos de cotización
-                    $q->whereHas('cotizacion', function($subQuery) use ($searchTermLike) {
-                        $subQuery->where('coti_num', 'like', $searchTermLike)
-                            ->orWhereRaw('LOWER(coti_empresa) LIKE ?', [strtolower($searchTermLike)])
-                            ->orWhereRaw('LOWER(coti_establecimiento) LIKE ?', [strtolower($searchTermLike)]);
-                    });
-                    
-                    // Si es búsqueda por ID de instancia
-                    if (is_numeric($cleanedIdSearch)) {
-                        $q->orWhereIn('cotio_numcoti', function($subQuery) use ($cleanedIdSearch) {
-                            $subQuery->select('cotio_numcoti')
-                                ->from('cotio_instancias')
-                                ->where('id', $cleanedIdSearch);
-                        });
-                    }
-                    
-                    $q->orWhere('cotio_codigoum', 'like', $searchTermLike);
+                // Búsqueda por número de OT en instancias
+                $q->orWhereHas('instancias', function($subQ) use ($searchTermLike) {
+                    $subQ->where('otn', 'like', $searchTermLike);
                 });
-            }
-    
-        if ($request->has('matriz') && !empty($request->matriz)) {
-            $baseQuery->whereHas('cotizacion', function($q) use ($request) {
-                $q->where('coti_codigomatriz', $request->matriz);
             });
         }
     
+        // Filtro por matriz
+        if ($request->has('matriz') && !empty($request->matriz)) {
+            $baseQuery->where('coti_codigomatriz', $request->matriz);
+        }
+    
+        // Filtro por estado
         if ($request->has('estado') && !empty($request->estado)) {
             if ($request->estado == 'pendiente por coordinar') {
-                $baseQuery->where('enable_ot', true)
-                          ->whereNull('cotio_estado_analisis');
+                // Cotizaciones que tienen instancias sin estado o no tienen instancias
+                $baseQuery->where(function($q) {
+                    $q->whereDoesntHave('instancias', function($subQ) {
+                        $subQ->where('cotio_subitem', 0)->where('enable_ot', true);
+                    })
+                    ->orWhereHas('instancias', function($subQ) {
+                        $subQ->where('cotio_subitem', 0)
+                             ->where('enable_ot', true)
+                             ->whereNull('cotio_estado_analisis');
+                    });
+                });
             } else {
-                $baseQuery->where('cotio_estado_analisis', $request->estado);
+                $baseQuery->whereHas('instancias', function($q) use ($request) {
+                    $q->where('cotio_estado_analisis', $request->estado);
+                });
             }
         } elseif (!$verTodas) {
-            $baseQuery->whereHas('cotizacion', function($q) {
-                $q->where('coti_estado', 'A');
-            });
+            $baseQuery->where('coti_estado', 'A');
         }
     
-        // Paginación de cotizaciones únicas
-        $pagination = $baseQuery->orderBy('cotio_numcoti', 'desc')
+        // Paginación
+        $pagination = $baseQuery->orderBy('coti_num', 'desc')
             ->paginate($viewType === 'documento' ? 100 : 100);
     
-        // Obtener todas las instancias para las cotizaciones paginadas
-        $instancias = CotioInstancia::with([
-                'cotizacion.matriz',
-                'tarea',
-                'responsablesAnalisis',
-                'cotizacion.instancias' => function ($q) {
-                    $q->select('id', 'cotio_numcoti', 'cotio_estado_analisis', 'es_priori', 'fecha_inicio_ot', 'fecha_muestreo');
-                }
-            ])
-            ->whereIn('cotio_numcoti', $pagination->pluck('cotio_numcoti'))
-            ->orderBy('cotio_numcoti', 'desc')
-            ->orderBy('cotio_item', 'asc')
-            ->orderBy('cotio_subitem', 'asc')
-            ->orderBy('instance_number', 'asc')
-            ->get();
-    
-        // Agrupar instancias por cotización
-        $ordenes = $instancias->groupBy('cotio_numcoti')->map(function ($group) {
-            $cotizacion = $group->first()->cotizacion;
-            $total = $group->where('cotio_subitem', '=', 0)->where('enable_ot', '=', 1)->count();
-            $completadas = $group->where('cotio_estado_analisis', 'analizado')->where('cotio_subitem', '=', 0)->count();
-            $enProceso = $group->where('cotio_estado_analisis', 'en revision analisis')->where('cotio_subitem', '=', 0)->count();
-            $coordinadas = $group->where('cotio_estado_analisis', 'coordinado analisis')->where('cotio_subitem', '=', 0)->count();
+        // Procesar las cotizaciones paginadas
+        $ordenes = collect();
+        foreach ($pagination as $coti) {
+            $instancias = $coti->instancias->where('cotio_subitem', 0);
+            $instanciasConOt = $instancias->where('enable_ot', true);
+            
+            $total = $instanciasConOt->count();
+            $completadas = $instanciasConOt->where('cotio_estado_analisis', 'analizado')->count();
+            $enProceso = $instanciasConOt->where('cotio_estado_analisis', 'en revision analisis')->count();
+            $coordinadas = $instanciasConOt->where('cotio_estado_analisis', 'coordinado analisis')->count();
             $porcentaje = $total > 0 ? round(($completadas / $total) * 100) : 0;
             
-            $fecha_orden = $group->min('fecha_inicio_ot') ?? $group->min('fecha_muestreo');
+            $fecha_orden = $instancias->min('fecha_inicio_ot') ?? $instancias->min('fecha_muestreo');
             
-            // Modificado: has_priority solo será true si hay muestras prioritarias Y al menos una no está analizada
-            $has_priority = $group->contains(function ($instancia) {
+            $has_priority = $instancias->contains(function ($instancia) {
                 return $instancia->es_priori && strtolower(trim($instancia->cotio_estado_analisis ?? '')) != 'analizado';
             });
             
-            // Determinar el estado predominante de la orden para ordenamiento
-            $muestrasDelGrupo = $group->where('cotio_subitem', 0);
-            $estadoPredominante = $this->determinarEstadoPredominanteConActiveOt($muestrasDelGrupo);
+            $has_suspension = $instancias->contains(function ($instancia) {
+                return strtolower(trim($instancia->cotio_estado_analisis ?? '')) === 'suspension';
+            });
             
-            return [
-                'instancias' => $group,
-                'cotizacion' => $cotizacion,
+            // Determinar estado predominante
+            $estadoPredominante = 'pendiente_coordinar';
+            if ($instanciasConOt->isNotEmpty()) {
+                $estadoPredominante = $this->determinarEstadoPredominanteConActiveOt($instanciasConOt);
+            }
+            
+            $ordenes[$coti->coti_num] = [
+                'instancias' => $coti->instancias,
+                'cotizacion' => $coti,
                 'total' => $total,
                 'completadas' => $completadas,
                 'en_proceso' => $enProceso,
                 'coordinadas' => $coordinadas,
                 'porcentaje' => $porcentaje,
-                'has_suspension' => $group->contains(function ($instancia) {
-                    return strtolower(trim($instancia->cotio_estado_analisis)) === 'suspension';
-                }),
+                'has_suspension' => $has_suspension,
                 'has_priority' => $has_priority,
                 'fecha_orden' => $fecha_orden,
-                'estado_predominante' => $estadoPredominante
+                'estado_predominante' => $estadoPredominante,
+                'tiene_instancias' => $instancias->isNotEmpty()
             ];
-        });
+        }
 
         // Ordenar las órdenes según el criterio mejorado
         $ordenes = $ordenes->sortBy(function($orden) {
@@ -554,7 +579,7 @@ public function showOrdenes(Request $request)
     }
 
     // Apply filters - usar lógica de documento para consistencia
-    $esPrivilegiado = ((int) $user->usu_nivel >= 900) || ($user->rol === 'coordinador_lab');
+    $esPrivilegiado = ((int) $user->usu_nivel >= 900) || $user->hasRole('coordinador_lab');
     
     // Para muestras: solo si el usuario es responsable de muestreo O tiene análisis asignados
     $queryMuestras->where(function ($query) use ($codigo) {
@@ -907,10 +932,9 @@ public function showOrdenes(Request $request)
 public function showDetalle($ordenId)
 {
     $cotizacion = Coti::findOrFail($ordenId);
-    //solo usuario lab y lab1
-    $usuarios = User::whereIn('usu_codigo', ['LAB1', 'LAB'])->get();
     $inventario = InventarioLab::all();
 
+    // Obtener todas las categorías (muestras) de la cotización desde Cotio
     $categoriasHabilitadas = $cotizacion->tareas()
         ->where('cotio_subitem', 0)
         ->orderBy('cotio_item')
@@ -918,6 +942,7 @@ public function showDetalle($ordenId)
 
     $categoriasIds = $categoriasHabilitadas->pluck('cotio_item')->toArray();
 
+    // Obtener todos los análisis (subitems > 0) de las categorías
     $tareas = $cotizacion->tareas()
         ->whereIn('cotio_item', $categoriasIds)
         ->where('cotio_subitem', '!=', 0)
@@ -925,42 +950,66 @@ public function showDetalle($ordenId)
         ->orderBy('cotio_subitem')
         ->get();
 
-        $usuarios = User::withCount(['instanciasAnalisis' => function($query) use ($ordenId) {
-            $query->where('cotio_numcoti', $ordenId)
-                  ->where('cotio_estado_analisis', '!=', 'analizado');
-        }])
-        ->whereIn('usu_codigo', ['LAB1', 'LAB'])
-        ->orderBy('usu_descripcion')
-        ->get();
+    $usuarios = User::withCount(['instanciasAnalisis' => function($query) use ($ordenId) {
+        $query->where('cotio_numcoti', $ordenId)
+              ->where('cotio_estado_analisis', '!=', 'analizado');
+    }])
+    ->whereIn('usu_codigo', ['LAB1', 'LAB'])
+    ->orderBy('usu_descripcion')
+    ->get();
 
     $agrupadas = [];
     $metodosUnicos = collect();
 
     foreach ($categoriasHabilitadas as $categoria) {
         $item = $categoria->cotio_item;
+        $cantidad = max(1, (int)$categoria->cotio_cantidad); // Mínimo 1 instancia
 
-        $instanciasMuestra = CotioInstancia::with('herramientas', 'responsablesAnalisis')
+        // Obtener instancias existentes (con enable_ot = true O sin enable_ot)
+        $instanciasExistentes = CotioInstancia::with('herramientas', 'responsablesAnalisis')
             ->where([
                 'cotio_numcoti' => $cotizacion->coti_num,
                 'cotio_item' => $item,
-                'cotio_subitem' => 0,
-                'enable_ot' => true
+                'cotio_subitem' => 0
             ])
             ->orderBy('instance_number')
-            ->get();
+            ->get()
+            ->keyBy('instance_number');
 
         $tareasDeCategoria = $tareas->where('cotio_item', $item);
+        $instanciasConAnalisis = collect();
 
-        $instanciasConAnalisis = $instanciasMuestra->map(function($instanciaMuestra) use ($tareasDeCategoria, $cotizacion, &$metodosUnicos) {
-            $analisisParaInstancia = $tareasDeCategoria->map(function($tarea) use ($instanciaMuestra, $cotizacion, &$metodosUnicos) {
+        // Crear instancias para cada número de instancia según cotio_cantidad
+        for ($instanceNumber = 1; $instanceNumber <= $cantidad; $instanceNumber++) {
+            // Verificar si existe una instancia real
+            $instanciaMuestra = $instanciasExistentes->get($instanceNumber);
+
+            if (!$instanciaMuestra) {
+                // Crear una instancia "virtual" para mostrar en la vista
+                $instanciaMuestra = new CotioInstancia([
+                    'cotio_numcoti' => $cotizacion->coti_num,
+                    'cotio_item' => $item,
+                    'cotio_subitem' => 0,
+                    'instance_number' => $instanceNumber,
+                    'active_ot' => false,
+                    'enable_ot' => false,
+                ]);
+                $instanciaMuestra->id = null; // Marcar como no persistida
+                $instanciaMuestra->setRelation('responsablesAnalisis', collect());
+                $instanciaMuestra->setRelation('herramientas', collect());
+            }
+
+            // Mapear análisis para esta instancia
+            $analisisParaInstancia = $tareasDeCategoria->map(function($tarea) use ($instanciaMuestra, $cotizacion, &$metodosUnicos, $instanceNumber) {
                 $tareaClonada = clone $tarea;
                 
+                // Buscar instancia de análisis existente
                 $instanciaAnalisis = CotioInstancia::with('herramientas', 'responsablesAnalisis', 'metodoAnalisis')
                     ->where([
                         'cotio_numcoti' => $cotizacion->coti_num,
                         'cotio_item' => $tarea->cotio_item,
                         'cotio_subitem' => $tarea->cotio_subitem,
-                        'instance_number' => $instanciaMuestra->instance_number
+                        'instance_number' => $instanceNumber
                     ])
                     ->first();
 
@@ -975,16 +1024,41 @@ public function showDetalle($ordenId)
                             'metodo' => $metodo
                         ]);
                     }
+                } else {
+                    // Crear instancia virtual para el análisis
+                    $instanciaVirtual = new CotioInstancia([
+                        'cotio_numcoti' => (int)$cotizacion->coti_num,
+                        'cotio_item' => (int)$tarea->cotio_item,
+                        'cotio_subitem' => (int)$tarea->cotio_subitem,
+                        'instance_number' => (int)$instanceNumber,
+                        'active_ot' => false,
+                        'enable_ot' => false,
+                        'cotio_codigometodo_analisis' => $tarea->cotio_codigometodo_analisis,
+                    ]);
+                    // ID virtual sin espacios (usando integers)
+                    $instanciaVirtual->id = (int)$cotizacion->coti_num . "_" . (int)$tarea->cotio_item . "_" . (int)$tarea->cotio_subitem . "_" . (int)$instanceNumber;
+                    $tareaClonada->instancia = $instanciaVirtual;
+                    
+                    // Obtener método desde la tarea original
+                    if ($tarea->cotio_codigometodo_analisis) {
+                        $metodo = MetodoAnalisis::where('codigo', trim($tarea->cotio_codigometodo_analisis))->first();
+                        if ($metodo) {
+                            $metodosUnicos->push([
+                                'codigo' => trim($tarea->cotio_codigometodo_analisis),
+                                'metodo' => $metodo
+                            ]);
+                        }
+                    }
                 }
 
                 return $tareaClonada;
             });
 
-            return [
+            $instanciasConAnalisis->push([
                 'muestra' => $instanciaMuestra,
                 'analisis' => $analisisParaInstancia
-            ];
-        });
+            ]);
+        }
 
         $agrupadas[] = [
             'categoria' => $categoria,
@@ -1410,7 +1484,7 @@ public function showOrdenesAll($cotio_numcoti, $cotio_item, $cotio_subitem = 0, 
     $instance = $instance ?? 1;
     $usuario = Auth::user();
     $usuarioActual = trim($usuario->usu_codigo);
-    $esPrivilegiado = ((int) $usuario->usu_nivel >= 900) || ($usuario->rol === 'coordinador_lab');
+    $esPrivilegiado = ((int) $usuario->usu_nivel >= 900) || $usuario->hasRole('coordinador_lab');
     $allHerramientas = InventarioLab::all();
 
     try {
@@ -1647,118 +1721,412 @@ public function asignacionMasiva(Request $request, $ordenId)
             'total' => count($usuariosASincronizar)
         ]);
 
-        // 2. Obtener todas las instancias seleccionadas
-        $instanciasSeleccionadas = CotioInstancia::with(['muestra'])
-            ->whereIn('id', array_merge($instanciaSelecciones, $tareaSelecciones))
-            ->get();
-
-        Log::debug('Instancias seleccionadas', [
-            'count' => $instanciasSeleccionadas->count(),
-            'ids' => $instanciasSeleccionadas->pluck('id')->toArray()
+        // 2. Obtener/crear todas las instancias seleccionadas
+        $allSelections = array_merge($instanciaSelecciones, $tareaSelecciones);
+        $instanciasSeleccionadas = collect();
+        
+        Log::info('=== INICIO PROCESAMIENTO ASIGNACION MASIVA ===', [
+            'instancia_selecciones_raw' => $instanciaSelecciones,
+            'tarea_selecciones_raw' => $tareaSelecciones,
+            'all_selections' => $allSelections
         ]);
-
-        // 3. Crear mapa de muestras a análisis seleccionados
-        $mapaSelecciones = $this->crearMapaSelecciones($instanciasSeleccionadas);
-        Log::debug('Mapa de selecciones creado', [
-            'mapa' => array_keys($mapaSelecciones)
+        
+        // Mapa para trackear IDs virtuales -> IDs reales
+        $mapaIdsVirtualesAReales = [];
+        
+        // Separar IDs numéricos de IDs virtuales (formato: numcoti_item_subitem_instance)
+        $idsNumericos = [];
+        $idsVirtuales = [];
+        
+        foreach ($allSelections as $id) {
+            $idStr = (string)$id;
+            Log::debug('Procesando ID', ['id' => $id, 'tipo' => gettype($id), 'is_numeric' => is_numeric($id), 'tiene_underscore' => strpos($idStr, '_') !== false]);
+            
+            if (is_numeric($id)) {
+                $idsNumericos[] = (int)$id;
+            } elseif (strpos($idStr, '_') !== false) {
+                $idsVirtuales[] = $idStr;
+            }
+        }
+        
+        Log::debug('IDs clasificados', [
+            'numericos' => $idsNumericos,
+            'virtuales' => $idsVirtuales
         ]);
-
-        // 4. Actualizar muestras relacionadas
-        $muestrasActualizadas = collect();
-        foreach ($instanciasSeleccionadas as $instancia) {
-            if ($instancia->cotio_subitem > 0) {
-                $muestra = CotioInstancia::where([
-                    'cotio_numcoti' => $instancia->cotio_numcoti,
-                    'cotio_item' => $instancia->cotio_item,
-                    'instance_number' => $instancia->instance_number,
-                    'cotio_subitem' => 0
+        
+        // Obtener instancias existentes por IDs numéricos
+        if (!empty($idsNumericos)) {
+            $instanciasExistentes = CotioInstancia::with(['muestra'])
+                ->whereIn('id', $idsNumericos)
+                ->get();
+            $instanciasSeleccionadas = $instanciasSeleccionadas->merge($instanciasExistentes);
+            
+            // Agregar al mapa de IDs
+            foreach ($instanciasExistentes as $inst) {
+                $mapaIdsVirtualesAReales[$inst->id] = $inst->id;
+            }
+        }
+        
+        // Crear instancias para IDs virtuales
+        foreach ($idsVirtuales as $idVirtual) {
+            $parts = explode('_', $idVirtual);
+            if (count($parts) === 4) {
+                [$numcoti, $item, $subitem, $instance] = $parts;
+                
+                // Obtener la tarea original de Cotio para copiar sus datos
+                $tarea = Cotio::where([
+                    'cotio_numcoti' => (int)$numcoti,
+                    'cotio_item' => (int)$item,
+                    'cotio_subitem' => (int)$subitem
                 ])->first();
-
-                if ($muestra && !$muestrasActualizadas->contains($muestra->id)) {
-                    $muestra->active_ot = true;
-                    $muestra->cotio_estado_analisis = 'coordinado analisis';
-                    $muestra->coordinador_codigo_lab = Auth::user()->usu_codigo;
-                    $muestra->save();
-                    $muestrasActualizadas->push($muestra->id);
-                    $updatedCount++;
-
-                    Log::info('Muestra actualizada', [
-                        'muestra_id' => $muestra->id,
-                        'cotio_numcoti' => $instancia->cotio_numcoti,
-                        'cotio_item' => $instancia->cotio_item,
-                        'instance_number' => $instancia->instance_number
-                    ]);
-
-                    if ($aplicarAGemelas) {
-                        foreach ($muestra->gemelos() as $muestraGemela) {
-                            $muestraGemela->active_ot = true;
-                            $muestraGemela->cotio_estado_analisis = 'coordinado analisis';
-                            $muestraGemela->save();
-                            $updatedCount++;
-                            Log::debug('Muestra gemela actualizada', [
-                                'gemela_id' => $muestraGemela->id,
-                                'cotio_numcoti' => $instancia->cotio_numcoti,
-                                'cotio_item' => $instancia->cotio_item,
-                                'instance_number' => $instancia->instance_number
-                            ]);
-                        }
+                
+                // Buscar o crear la instancia
+                $instancia = CotioInstancia::firstOrCreate(
+                    [
+                        'cotio_numcoti' => (int)$numcoti,
+                        'cotio_item' => (int)$item,
+                        'cotio_subitem' => (int)$subitem,
+                        'instance_number' => (int)$instance
+                    ],
+                    [
+                        'active_ot' => false,
+                        'enable_ot' => false,
+                        'responsable_muestreo' => Auth::user()->usu_codigo
+                    ]
+                );
+                
+                // Guardar el mapa de ID virtual a ID real
+                $mapaIdsVirtualesAReales[$idVirtual] = $instancia->id;
+                
+                // Copiar datos desde Cotio si existen y la instancia no los tiene
+                if ($tarea) {
+                    $camposACopiar = false;
+                    
+                    if ($tarea->cotio_descripcion && !$instancia->cotio_descripcion) {
+                        $instancia->cotio_descripcion = $tarea->cotio_descripcion;
+                        $camposACopiar = true;
+                    }
+                    if ($tarea->cotio_precio && !$instancia->monto) {
+                        $instancia->monto = $tarea->cotio_precio;
+                        $camposACopiar = true;
+                    }
+                    if ($tarea->cotio_codigometodo && !$instancia->cotio_codigometodo) {
+                        $instancia->cotio_codigometodo = $tarea->cotio_codigometodo;
+                        $camposACopiar = true;
+                    }
+                    if ($tarea->cotio_codigometodo_analisis && !$instancia->cotio_codigometodo_analisis) {
+                        $instancia->cotio_codigometodo_analisis = $tarea->cotio_codigometodo_analisis;
+                        $camposACopiar = true;
+                    }
+                    if ($tarea->cotio_codigoum && !$instancia->cotio_codigoum) {
+                        $instancia->cotio_codigoum = $tarea->cotio_codigoum;
+                        $camposACopiar = true;
+                    }
+                    
+                    if ($camposACopiar) {
+                        $instancia->save();
+                        Log::debug('Datos copiados desde Cotio a instancia', [
+                            'instancia_id' => $instancia->id,
+                            'descripcion' => $instancia->cotio_descripcion,
+                            'monto' => $instancia->monto,
+                            'metodo' => $instancia->cotio_codigometodo,
+                            'metodo_analisis' => $instancia->cotio_codigometodo_analisis,
+                            'codigoum' => $instancia->cotio_codigoum
+                        ]);
                     }
                 }
+                
+                $instancia->load('muestra');
+                $instanciasSeleccionadas->push($instancia);
+                
+                Log::debug('Instancia creada desde ID virtual', [
+                    'id_virtual' => $idVirtual,
+                    'instancia_id' => $instancia->id,
+                    'subitem' => $subitem
+                ]);
             }
         }
 
-        Log::info('Muestras actualizadas', [
-            'count' => $muestrasActualizadas->count(),
-            'ids' => $muestrasActualizadas->toArray()
+        Log::debug('Instancias seleccionadas', [
+            'count' => $instanciasSeleccionadas->count(),
+            'ids' => $instanciasSeleccionadas->pluck('id')->toArray(),
+            'mapa_ids' => $mapaIdsVirtualesAReales
         ]);
 
-        // 5. Procesar cada instancia seleccionada
-        foreach ($instanciasSeleccionadas as $instancia) {
-            $esAnalisisSeleccionado = $this->esInstanciaSeleccionada(
-                $instancia,
-                $instanciaSelecciones,
-                $tareaSelecciones
-            );
-
-            $countBefore = $updatedCount;
-            $updatedCount += $this->procesarInstancia(
-                $instancia,
-                $validated,
-                $herramientasLab,
-                $usuariosASincronizar,
-                $esAnalisisSeleccionado,
-                $mapaSelecciones
-            );
-
-            if ($updatedCount > $countBefore) {
-                Log::debug('Instancia procesada', [
-                    'instancia_id' => $instancia->id,
-                    'es_analisis' => $esAnalisisSeleccionado,
-                    'cotio_numcoti' => $instancia->cotio_numcoti,
-                    'cotio_item' => $instancia->cotio_item,
-                    'cotio_subitem' => $instancia->cotio_subitem
+        // 3. Procesar TODAS las instancias seleccionadas directamente
+        // Primero procesar las muestras (subitem=0), luego los análisis
+        $muestrasActualizadas = collect();
+        $analisisActualizados = collect();
+        
+        // Separar muestras de análisis (usar filter para asegurar comparación correcta)
+        $muestrasSeleccionadas = $instanciasSeleccionadas->filter(function($inst) {
+            return (int)$inst->cotio_subitem === 0;
+        });
+        $analisisSeleccionados = $instanciasSeleccionadas->filter(function($inst) {
+            return (int)$inst->cotio_subitem > 0;
+        });
+        
+        Log::debug('Separación de instancias', [
+            'muestras_count' => $muestrasSeleccionadas->count(),
+            'muestras' => $muestrasSeleccionadas->map(fn($m) => ['id' => $m->id, 'subitem' => $m->cotio_subitem])->toArray(),
+            'analisis_count' => $analisisSeleccionados->count(),
+            'analisis' => $analisisSeleccionados->map(fn($a) => ['id' => $a->id, 'subitem' => $a->cotio_subitem])->toArray()
+        ]);
+        
+        // 4. Procesar muestras directamente seleccionadas
+        foreach ($muestrasSeleccionadas as $muestra) {
+            if (!$muestrasActualizadas->contains($muestra->id)) {
+                // Copiar datos desde Cotio si no existen
+                $tareaMuestra = Cotio::where([
+                    'cotio_numcoti' => $muestra->cotio_numcoti,
+                    'cotio_item' => $muestra->cotio_item,
+                    'cotio_subitem' => 0
+                ])->first();
+                
+                if ($tareaMuestra) {
+                    if ($tareaMuestra->cotio_descripcion && !$muestra->cotio_descripcion) {
+                        $muestra->cotio_descripcion = $tareaMuestra->cotio_descripcion;
+                    }
+                    if ($tareaMuestra->cotio_precio && !$muestra->monto) {
+                        $muestra->monto = $tareaMuestra->cotio_precio;
+                    }
+                    if ($tareaMuestra->cotio_codigometodo && !$muestra->cotio_codigometodo) {
+                        $muestra->cotio_codigometodo = $tareaMuestra->cotio_codigometodo;
+                    }
+                    if ($tareaMuestra->cotio_codigometodo_analisis && !$muestra->cotio_codigometodo_analisis) {
+                        $muestra->cotio_codigometodo_analisis = $tareaMuestra->cotio_codigometodo_analisis;
+                    }
+                    if ($tareaMuestra->cotio_codigoum && !$muestra->cotio_codigoum) {
+                        $muestra->cotio_codigoum = $tareaMuestra->cotio_codigoum;
+                    }
+                }
+                
+                $muestra->active_ot = true;
+                $muestra->enable_ot = true;
+                $muestra->cotio_estado_analisis = 'coordinado analisis';
+                $muestra->coordinador_codigo_lab = Auth::user()->usu_codigo;
+                
+                // Generar OTN si no existe
+                if (!$muestra->otn) {
+                    $muestra->otn = CotioInstancia::generarNumeroOT();
+                }
+                
+                // Asignar fechas
+                if (!empty($validated['fecha_inicio_ot'])) {
+                    $muestra->fecha_inicio_ot = $validated['fecha_inicio_ot'];
+                }
+                if (!empty($validated['fecha_fin_ot'])) {
+                    $muestra->fecha_fin_ot = $validated['fecha_fin_ot'];
+                }
+                
+                $muestra->save();
+                
+                // Asignar responsables
+                if (!empty($usuariosASincronizar)) {
+                    $muestra->responsablesAnalisis()->sync($usuariosASincronizar);
+                }
+                
+                // Asignar herramientas
+                $this->asignarHerramientas($muestra, $herramientasLab);
+                
+                $muestrasActualizadas->push($muestra->id);
+                $updatedCount++;
+                
+                Log::info('Muestra procesada', [
+                    'muestra_id' => $muestra->id,
+                    'otn' => $muestra->otn,
+                    'cotio_numcoti' => $muestra->cotio_numcoti,
+                    'cotio_item' => $muestra->cotio_item,
+                    'instance_number' => $muestra->instance_number
                 ]);
             }
+        }
+        
+        // 5. Procesar análisis seleccionados
+        foreach ($analisisSeleccionados as $analisis) {
+            // Primero asegurar que la muestra padre exista y esté actualizada
+            $muestra = CotioInstancia::firstOrCreate(
+                [
+                    'cotio_numcoti' => $analisis->cotio_numcoti,
+                    'cotio_item' => $analisis->cotio_item,
+                    'instance_number' => $analisis->instance_number,
+                    'cotio_subitem' => 0
+                ],
+                [
+                    'active_ot' => false,
+                    'enable_ot' => false,
+                    'responsable_muestreo' => Auth::user()->usu_codigo
+                ]
+            );
+            
+            // Actualizar la muestra si no ha sido actualizada
+            if (!$muestrasActualizadas->contains($muestra->id)) {
+                // Copiar datos desde Cotio si no existen
+                $tareaMuestra = Cotio::where([
+                    'cotio_numcoti' => $muestra->cotio_numcoti,
+                    'cotio_item' => $muestra->cotio_item,
+                    'cotio_subitem' => 0
+                ])->first();
+                
+                if ($tareaMuestra) {
+                    if ($tareaMuestra->cotio_descripcion && !$muestra->cotio_descripcion) {
+                        $muestra->cotio_descripcion = $tareaMuestra->cotio_descripcion;
+                    }
+                    if ($tareaMuestra->cotio_precio && !$muestra->monto) {
+                        $muestra->monto = $tareaMuestra->cotio_precio;
+                    }
+                    if ($tareaMuestra->cotio_codigometodo && !$muestra->cotio_codigometodo) {
+                        $muestra->cotio_codigometodo = $tareaMuestra->cotio_codigometodo;
+                    }
+                    if ($tareaMuestra->cotio_codigometodo_analisis && !$muestra->cotio_codigometodo_analisis) {
+                        $muestra->cotio_codigometodo_analisis = $tareaMuestra->cotio_codigometodo_analisis;
+                    }
+                    if ($tareaMuestra->cotio_codigoum && !$muestra->cotio_codigoum) {
+                        $muestra->cotio_codigoum = $tareaMuestra->cotio_codigoum;
+                    }
+                }
+                
+                $muestra->active_ot = true;
+                $muestra->enable_ot = true;
+                $muestra->cotio_estado_analisis = 'coordinado analisis';
+                $muestra->coordinador_codigo_lab = Auth::user()->usu_codigo;
+                
+                if (!$muestra->otn) {
+                    $muestra->otn = CotioInstancia::generarNumeroOT();
+                }
+                
+                if (!empty($validated['fecha_inicio_ot'])) {
+                    $muestra->fecha_inicio_ot = $validated['fecha_inicio_ot'];
+                }
+                if (!empty($validated['fecha_fin_ot'])) {
+                    $muestra->fecha_fin_ot = $validated['fecha_fin_ot'];
+                }
+                
+                $muestra->save();
+                
+                if (!empty($usuariosASincronizar)) {
+                    $muestra->responsablesAnalisis()->sync($usuariosASincronizar);
+                }
+                
+                $this->asignarHerramientas($muestra, $herramientasLab);
+                $muestrasActualizadas->push($muestra->id);
+                $updatedCount++;
+                
+                Log::info('Muestra padre creada/actualizada para análisis', [
+                    'muestra_id' => $muestra->id,
+                    'otn' => $muestra->otn,
+                    'descripcion' => $muestra->cotio_descripcion
+                ]);
+            }
+            
+            // Ahora actualizar el análisis - copiar datos desde Cotio si no existen
+            if (!$analisisActualizados->contains($analisis->id)) {
+                $tareaAnalisis = Cotio::where([
+                    'cotio_numcoti' => $analisis->cotio_numcoti,
+                    'cotio_item' => $analisis->cotio_item,
+                    'cotio_subitem' => $analisis->cotio_subitem
+                ])->first();
+                
+                if ($tareaAnalisis) {
+                    if ($tareaAnalisis->cotio_descripcion && !$analisis->cotio_descripcion) {
+                        $analisis->cotio_descripcion = $tareaAnalisis->cotio_descripcion;
+                    }
+                    if ($tareaAnalisis->cotio_precio && !$analisis->monto) {
+                        $analisis->monto = $tareaAnalisis->cotio_precio;
+                    }
+                    if ($tareaAnalisis->cotio_codigometodo && !$analisis->cotio_codigometodo) {
+                        $analisis->cotio_codigometodo = $tareaAnalisis->cotio_codigometodo;
+                    }
+                    if ($tareaAnalisis->cotio_codigometodo_analisis && !$analisis->cotio_codigometodo_analisis) {
+                        $analisis->cotio_codigometodo_analisis = $tareaAnalisis->cotio_codigometodo_analisis;
+                    }
+                    if ($tareaAnalisis->cotio_codigoum && !$analisis->cotio_codigoum) {
+                        $analisis->cotio_codigoum = $tareaAnalisis->cotio_codigoum;
+                    }
+                }
+                
+                $analisis->active_ot = true;
+                $analisis->enable_ot = true;
+                $analisis->cotio_estado_analisis = 'coordinado analisis';
+                
+                if (!empty($validated['fecha_inicio_ot'])) {
+                    $analisis->fecha_inicio_ot = $validated['fecha_inicio_ot'];
+                }
+                if (!empty($validated['fecha_fin_ot'])) {
+                    $analisis->fecha_fin_ot = $validated['fecha_fin_ot'];
+                }
+                
+                $analisis->save();
+                
+                if (!empty($usuariosASincronizar)) {
+                    $analisis->responsablesAnalisis()->sync($usuariosASincronizar);
+                }
+                
+                $this->asignarHerramientas($analisis, $herramientasLab);
+                $analisisActualizados->push($analisis->id);
+                $updatedCount++;
+                
+                Log::info('Análisis procesado', [
+                    'analisis_id' => $analisis->id,
+                    'cotio_subitem' => $analisis->cotio_subitem,
+                    'descripcion' => $analisis->cotio_descripcion
+                ]);
+            }
+        }
 
-            if ($aplicarAGemelas) {
+        Log::info('Resumen de procesamiento', [
+            'muestras_actualizadas' => $muestrasActualizadas->toArray(),
+            'analisis_actualizados' => $analisisActualizados->toArray(),
+            'total_count' => $updatedCount
+        ]);
+        
+        // 6. Procesar gemelas si aplica
+        if ($aplicarAGemelas) {
+            foreach ($instanciasSeleccionadas as $instancia) {
                 foreach ($instancia->gemelos() as $gemelo) {
-                    $countBeforeGemela = $updatedCount;
-                    $updatedCount += $this->procesarInstanciaGemela(
-                        $gemelo,
-                        $validated,
-                        $herramientasLab,
-                        $usuariosASincronizar,
-                        $mapaSelecciones,
-                        $instancia
-                    );
-
-                    if ($updatedCount > $countBeforeGemela) {
-                        Log::debug('Instancia gemela procesada', [
-                            'gemela_id' => $gemelo->id,
-                            'cotio_numcoti' => $gemelo->cotio_numcoti,
-                            'cotio_item' => $gemelo->cotio_item,
-                            'cotio_subitem' => $gemelo->cotio_subitem
-                        ]);
+                    if ($instancia->cotio_subitem == 0) {
+                        // Muestra gemela
+                        if (!$muestrasActualizadas->contains($gemelo->id)) {
+                            $gemelo->active_ot = true;
+                            $gemelo->enable_ot = true;
+                            $gemelo->cotio_estado_analisis = 'coordinado analisis';
+                            if (!$gemelo->otn) {
+                                $gemelo->otn = CotioInstancia::generarNumeroOT();
+                            }
+                            if (!empty($validated['fecha_inicio_ot'])) {
+                                $gemelo->fecha_inicio_ot = $validated['fecha_inicio_ot'];
+                            }
+                            if (!empty($validated['fecha_fin_ot'])) {
+                                $gemelo->fecha_fin_ot = $validated['fecha_fin_ot'];
+                            }
+                            $gemelo->save();
+                            if (!empty($usuariosASincronizar)) {
+                                $gemelo->responsablesAnalisis()->sync($usuariosASincronizar);
+                            }
+                            $this->asignarHerramientas($gemelo, $herramientasLab);
+                            $muestrasActualizadas->push($gemelo->id);
+                            $updatedCount++;
+                        }
+                    } else {
+                        // Análisis gemelo
+                        if (!$analisisActualizados->contains($gemelo->id)) {
+                            $gemelo->active_ot = true;
+                            $gemelo->enable_ot = true;
+                            $gemelo->cotio_estado_analisis = 'coordinado analisis';
+                            if (!empty($validated['fecha_inicio_ot'])) {
+                                $gemelo->fecha_inicio_ot = $validated['fecha_inicio_ot'];
+                            }
+                            if (!empty($validated['fecha_fin_ot'])) {
+                                $gemelo->fecha_fin_ot = $validated['fecha_fin_ot'];
+                            }
+                            $gemelo->save();
+                            if (!empty($usuariosASincronizar)) {
+                                $gemelo->responsablesAnalisis()->sync($usuariosASincronizar);
+                            }
+                            $this->asignarHerramientas($gemelo, $herramientasLab);
+                            $analisisActualizados->push($gemelo->id);
+                            $updatedCount++;
+                        }
                     }
                 }
             }
@@ -2635,7 +3003,7 @@ public function actualizarEstado(Request $request)
 
         $vehiculoAsignado = $item->vehiculo_asignado;
 
-        if(Auth::user()->rol == 'coordinador_lab' || Auth::user()->usu_nivel >= '900') {
+        if(Auth::user()->hasRole('coordinador_lab') || Auth::user()->usu_nivel >= '900') {
             $item->cotio_estado_analisis = $validated['estado'];
             
             // Actualizar la fecha de carga OT si se proporcionó
