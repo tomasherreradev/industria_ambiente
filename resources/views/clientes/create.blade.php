@@ -279,37 +279,101 @@
                             <!-- Solapa Contactos -->
                             <div class="tab-pane fade" id="contactos" role="tabpanel">
                                 <div class="p-4">
-                                    <div class="row">
-                                        <!-- Columna izquierda -->
-                                        <div class="col-md-6">
-                                            <div class="mb-3">
-                                                <label for="telefono" class="form-label">Teléfono</label>
-                                                <input type="text" class="form-control" id="telefono" name="telefono" 
-                                                       value="{{ old('telefono') }}" maxlength="30">
-                                            </div>
-
-                                            <div class="mb-3">
-                                                <label for="telefono1" class="form-label">Teléfono 1</label>
-                                                <input type="text" class="form-control" id="telefono1" name="telefono1" 
-                                                       value="{{ old('telefono1') }}" maxlength="20">
-                                            </div>
-
+                                    <div class="mb-3">
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <h6 class="mb-0">Contactos</h6>
+                                            <button type="button" class="btn btn-sm btn-primary" onclick="agregarFilaContacto()">
+                                                <x-heroicon-o-plus style="width: 16px; height: 16px;" class="me-1" />
+                                                Agregar contacto
+                                            </button>
                                         </div>
 
-                                        <!-- Columna derecha -->
-                                        <div class="col-md-6">
-                                            <div class="mb-3">
-                                                <label for="email" class="form-label">Email</label>
-                                                <input type="email" class="form-control" id="email" name="email" 
-                                                       value="{{ old('email') }}" maxlength="30">
-                                            </div>
-
-                                            <div class="mb-3">
-                                                <label for="email2" class="form-label">Email 2</label>
-                                                <input type="email" class="form-control" id="email2" name="email2" 
-                                                       value="{{ old('email2') }}" maxlength="30">
-                                            </div>
-
+                                        <div class="table-responsive">
+                                            <table class="table table-sm table-bordered align-middle">
+                                                <thead class="table-light">
+                                                    <tr>
+                                                        <th style="width: 30%;">Nombre y Apellido</th>
+                                                        <th style="width: 20%;">Teléfono</th>
+                                                        <th style="width: 25%;">Email</th>
+                                                        <th style="width: 15%;">Tipo</th>
+                                                        <th style="width: 10%;">Acciones</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="tbodyContactos">
+                                                    @php
+                                                        $oldContactos = old('contactos', []);
+                                                    @endphp
+                                                    @if(is_array($oldContactos) && count($oldContactos) > 0)
+                                                        @foreach($oldContactos as $index => $contacto)
+                                                            <tr>
+                                                                <td>
+                                                                    <input type="text" class="form-control form-control-sm"
+                                                                           name="contactos[{{ $index }}][nombre]"
+                                                                           value="{{ $contacto['nombre'] ?? '' }}">
+                                                                </td>
+                                                                <td>
+                                                                    <input type="text" class="form-control form-control-sm"
+                                                                           name="contactos[{{ $index }}][telefono]"
+                                                                           value="{{ $contacto['telefono'] ?? '' }}">
+                                                                </td>
+                                                                <td>
+                                                                    <input type="email" class="form-control form-control-sm"
+                                                                           name="contactos[{{ $index }}][email]"
+                                                                           value="{{ $contacto['email'] ?? '' }}">
+                                                                </td>
+                                                                <td>
+                                                                    <select class="form-select form-select-sm"
+                                                                            name="contactos[{{ $index }}][tipo]">
+                                                                        @php
+                                                                            $tipo = $contacto['tipo'] ?? '';
+                                                                        @endphp
+                                                                        <option value="">Seleccionar...</option>
+                                                                        <option value="Compras" {{ $tipo === 'Compras' ? 'selected' : '' }}>Compras</option>
+                                                                        <option value="Envío de factura" {{ $tipo === 'Envío de factura' ? 'selected' : '' }}>Envío de factura</option>
+                                                                        <option value="Cobranza" {{ $tipo === 'Cobranza' ? 'selected' : '' }}>Cobranza</option>
+                                                                        <option value="SHyMA" {{ $tipo === 'SHyMA' ? 'selected' : '' }}>SHyMA</option>
+                                                                    </select>
+                                                                </td>
+                                                                <td class="text-center">
+                                                                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="eliminarFilaContacto(this)">
+                                                                        <x-heroicon-o-trash style="width: 14px; height: 14px;" />
+                                                                    </button>
+                                                                </td>
+                                                            </tr>
+                                                        @endforeach
+                                                    @else
+                                                        <tr>
+                                                            <td>
+                                                                <input type="text" class="form-control form-control-sm"
+                                                                       name="contactos[0][nombre]" placeholder="Nombre y Apellido">
+                                                            </td>
+                                                            <td>
+                                                                <input type="text" class="form-control form-control-sm"
+                                                                       name="contactos[0][telefono]" placeholder="Teléfono">
+                                                            </td>
+                                                            <td>
+                                                                <input type="email" class="form-control form-control-sm"
+                                                                       name="contactos[0][email]" placeholder="correo@ejemplo.com">
+                                                            </td>
+                                                            <td>
+                                                                <select class="form-select form-select-sm"
+                                                                        name="contactos[0][tipo]">
+                                                                    <option value="">Seleccionar...</option>
+                                                                    <option value="Compras">Compras</option>
+                                                                    <option value="Envío de factura">Envío de factura</option>
+                                                                    <option value="Cobranza">Cobranza</option>
+                                                                    <option value="SHyMA">SHyMA</option>
+                                                                </select>
+                                                            </td>
+                                                            <td class="text-center">
+                                                                <button type="button" class="btn btn-sm btn-outline-danger" onclick="eliminarFilaContacto(this)">
+                                                                    <x-heroicon-o-trash style="width: 14px; height: 14px;" />
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    @endif
+                                                </tbody>
+                                            </table>
                                         </div>
                                     </div>
                                 </div>
@@ -759,6 +823,51 @@
 </style>
 
 <script>
+    function agregarFilaContacto() {
+        const tbody = document.getElementById('tbodyContactos');
+        if (!tbody) return;
+
+        const index = tbody.children.length;
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>
+                <input type="text" class="form-control form-control-sm"
+                       name="contactos[${index}][nombre]" placeholder="Nombre y Apellido">
+            </td>
+            <td>
+                <input type="text" class="form-control form-control-sm"
+                       name="contactos[${index}][telefono]" placeholder="Teléfono">
+            </td>
+            <td>
+                <input type="email" class="form-control form-control-sm"
+                       name="contactos[${index}][email]" placeholder="correo@ejemplo.com">
+            </td>
+            <td>
+                <select class="form-select form-select-sm"
+                        name="contactos[${index}][tipo]">
+                    <option value="">Seleccionar...</option>
+                    <option value="Compras">Compras</option>
+                    <option value="Envío de factura">Envío de factura</option>
+                    <option value="Cobranza">Cobranza</option>
+                    <option value="SHyMA">SHyMA</option>
+                </select>
+            </td>
+            <td class="text-center">
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="eliminarFilaContacto(this)">
+                    <x-heroicon-o-trash style="width: 14px; height: 14px;" />
+                </button>
+            </td>
+        `;
+
+        tbody.appendChild(row);
+    }
+
+    function eliminarFilaContacto(button) {
+        const row = button.closest('tr');
+        if (row) {
+            row.remove();
+        }
+    }
     document.addEventListener('DOMContentLoaded', function() {
         // Inicializar tooltips si están disponibles
         var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));

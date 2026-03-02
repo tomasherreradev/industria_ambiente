@@ -168,6 +168,32 @@ class Clientes extends Model
         return $this->hasMany(ClienteRazonSocialFacturacion::class, 'cli_codigo', 'cli_codigo');
     }
 
+    public function contactos()
+    {
+        return $this->hasMany(ClienteContacto::class, 'cli_codigo', 'cli_codigo');
+    }
+
+    // Alcances (scopes)
+    public function scopeSoloPrincipales($query)
+    {
+        return $query
+            ->whereNotNull('cli_cuit')
+            ->whereRaw("TRIM(cli_cuit) <> ''")
+            ->whereRaw("TRIM(cli_cuit) <> '__-________-_'");
+    }
+
+    // Sucursales: mismos datos de razón social pero sin CUIT real
+    public function sucursales()
+    {
+        return $this->hasMany(self::class, 'cli_razonsocial', 'cli_razonsocial')
+            ->where('cli_codigo', '!=', $this->cli_codigo)
+            ->where(function ($q) {
+                $q->whereNull('cli_cuit')
+                  ->orWhereRaw("TRIM(cli_cuit) = ''")
+                  ->orWhereRaw("TRIM(cli_cuit) = '__-________-_'");
+            });
+    }
+
     // Métodos auxiliares
     public function getProximoCodigoCliente()
     {

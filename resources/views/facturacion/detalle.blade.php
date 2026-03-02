@@ -132,6 +132,18 @@
                         <strong>Importe bruto:</strong> ${{ number_format($resumenItems['total_bruto'] ?? 0, 2, ',', '.') }}
                     </div>
                     <div>
+                        <strong>Aumento aplicado:</strong>
+                        @php
+                            $aumentoPct = $resumenItems['aumento_porcentaje'] ?? 0;
+                            $aumentoMonto = $resumenItems['aumento_monto'] ?? 0;
+                        @endphp
+                        @if($aumentoPct > 0)
+                            {{ number_format($aumentoPct, 2, ',', '.') }}% ({{ '$' . number_format($aumentoMonto, 2, ',', '.') }})
+                        @else
+                            Sin aumento
+                        @endif
+                    </div>
+                    <div>
                         <strong>Descuento aplicado:</strong> 
                         @if(($resumenItems['descuento_porcentaje'] ?? 0) > 0)
                             {{ number_format($resumenItems['descuento_porcentaje'], 2, ',', '.') }}% ({{ '$' . number_format($resumenItems['descuento_monto'] ?? 0, 2, ',', '.') }})

@@ -271,16 +271,21 @@
                                         </div>
                                     </div>
 
-                                    <!-- Sección de Descuentos -->
+                                    <!-- Sección de Descuentos / Aumentos -->
                                     <div class="row mb-4">
                                         <div class="col-md-12">
-                                            <h5 class="mb-3">Descuentos</h5>
+                                            <h5 class="mb-3">Descuentos / Aumentos</h5>
                                             
                                             <div class="row mb-3">
                                                 <div class="col-md-3">
                                                     <label for="descuento" class="form-label">Descuento Global %</label>
                                                     <input type="number" step="0.01" class="form-control" id="descuento" name="descuento" 
                                                            value="{{ old('descuento', $cotizacion->coti_descuentoglobal ?? '0.00') }}" placeholder="0.00">
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <label for="aumento" class="form-label">Aumento Global %</label>
+                                                    <input type="number" step="0.01" class="form-control" id="aumento" name="aumento" 
+                                                           value="{{ old('aumento', $cotizacion->coti_aumentoglobal ?? '0.00') }}" placeholder="0.00">
                                                 </div>
                                             </div>
                                         </div>
@@ -328,6 +333,13 @@
                                                             <td></td>
                                                         </tr>
                                                         <tr>
+                                                            <td colspan="7" class="text-end text-muted">Aumento global cliente (<span id="aumentoGlobalPorcentaje">0.00%</span>):</td>
+                                                            <td class="text-success fw-semibold">
+                                                                +<span id="aumentoGlobalMonto">0.00</span>
+                                                            </td>
+                                                            <td></td>
+                                                        </tr>
+                                                        <tr>
                                                             <td colspan="7" class="text-end text-muted">Descuento global cliente (<span id="descuentoGlobalPorcentaje">0.00%</span>):</td>
                                                             <td class="text-danger fw-semibold">
                                                                 -<span id="descuentoGlobalMonto">0.00</span>
@@ -335,9 +347,9 @@
                                                             <td></td>
                                                         </tr>
                                                         <tr>
-                                                            <td colspan="7" class="text-end fw-bold">Total con descuento:</td>
+                                                            <td colspan="7" class="text-end fw-bold">Total final:</td>
                                                             <td class="fw-bold">
-                                                                <span id="totalConDescuento">0.00</span>
+                                                                <span id="totalConAjustes">0.00</span>
                                                             </td>
                                                             <td></td>
                                                         </tr>
@@ -856,6 +868,11 @@ document.addEventListener('DOMContentLoaded', function() {
         
         document.getElementById('comentario').value = cotiData.coti_notas || '';
         document.getElementById('descuento').value = (cotiData.coti_descuentoglobal !== null && cotiData.coti_descuentoglobal !== undefined) ? cotiData.coti_descuentoglobal : '0.00';
+        if (document.getElementById('aumento')) {
+            document.getElementById('aumento').value = (cotiData.coti_aumentoglobal !== null && cotiData.coti_aumentoglobal !== undefined)
+                ? cotiData.coti_aumentoglobal
+                : '0.00';
+        }
         document.getElementById('responsable').value = (cotiData.coti_responsable && cotiData.coti_responsable.trim()) ? cotiData.coti_responsable.trim() : '';
         document.getElementById('fecha_aprobado').value = cotiData.coti_fechaaprobado || '';
         document.getElementById('aprobo').value = (cotiData.coti_aprobo && cotiData.coti_aprobo.trim()) ? cotiData.coti_aprobo.trim() : '';

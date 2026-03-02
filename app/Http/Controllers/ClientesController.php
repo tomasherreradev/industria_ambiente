@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\Facades\Log;
 use App\Models\Clientes;
+use App\Models\ClienteContacto;
 use App\Models\CondicionIva;
 use App\Models\Zona;
 use App\Models\CondicionPago;
@@ -19,8 +20,8 @@ class ClientesController extends Controller {
     
     public function index(Request $request)
     {
-        // Construir query con filtros
-        $query = Clientes::query();
+        // Construir query con filtros solo sobre clientes principales (sin sucursales)
+        $query = Clientes::soloPrincipales();
         
         // Filtro por búsqueda general (usar ILIKE para búsqueda case-insensitive en PostgreSQL)
         if ($request->filled('search')) {
@@ -78,7 +79,17 @@ class ClientesController extends Controller {
         // Cargar tipos de cliente
         $tiposCliente = TipoCliente::orderBy('tcli_descripcion')->get();
 
-        return view('clientes.create', compact('condicionesIva', 'zonas', 'condicionesPago', 'listasPrecios', 'tiposCliente'));
+        // Contactos (en creación no hay contactos aún)
+        $contactos = collect();
+
+        return view('clientes.create', compact(
+            'condicionesIva',
+            'zonas',
+            'condicionesPago',
+            'listasPrecios',
+            'tiposCliente',
+            'contactos'
+        ));
     }
 
     public function store(Request $request)
@@ -196,26 +207,26 @@ class ClientesController extends Controller {
                 $cliente->cli_ultfot = $request->fecha_modif;
             }
 
-            // Campos de contacto
-            $cliente->cli_contacto = $request->contacto ? str_pad($request->contacto, 30, ' ', STR_PAD_RIGHT) : null;
-            $cliente->cli_contacto1 = $request->contacto1 ? str_pad($request->contacto1, 30, ' ', STR_PAD_RIGHT) : null;
-            $cliente->cli_contacto2 = $request->contacto2 ? str_pad($request->contacto2, 30, ' ', STR_PAD_RIGHT) : null;
-            $cliente->cli_contacto3 = $request->contacto3 ? str_pad($request->contacto3, 30, ' ', STR_PAD_RIGHT) : null;
+            // Campos de contacto principales (se completan más abajo desde la primera fila de contactos)
+            $cliente->cli_contacto = null;
+            $cliente->cli_contacto1 = null;
+            $cliente->cli_contacto2 = null;
+            $cliente->cli_contacto3 = null;
             
             // Campos de teléfono
-            $cliente->cli_preftel = $request->preftel ? str_pad($request->preftel, 10, ' ', STR_PAD_RIGHT) : null;
-            $cliente->cli_telefono = $request->telefono ? str_pad($request->telefono, 30, ' ', STR_PAD_RIGHT) : null;
-            $cliente->cli_telefono1 = $request->telefono1 ? str_pad($request->telefono1, 20, ' ', STR_PAD_RIGHT) : null;
-            $cliente->cli_telefono2 = $request->telefono2 ? str_pad($request->telefono2, 20, ' ', STR_PAD_RIGHT) : null;
-            $cliente->cli_telefono3 = $request->telefono3 ? str_pad($request->telefono3, 20, ' ', STR_PAD_RIGHT) : null;
-            $cliente->cli_telefono4 = $request->telefono4 ? str_pad($request->telefono4, 20, ' ', STR_PAD_RIGHT) : null;
-            $cliente->cli_telefono5 = $request->telefono5 ? str_pad($request->telefono5, 20, ' ', STR_PAD_RIGHT) : null;
-            $cliente->cli_telefono6 = $request->telefono6 ? str_pad($request->telefono6, 20, ' ', STR_PAD_RIGHT) : null;
-            $cliente->cli_telefono7 = $request->telefono7 ? str_pad($request->telefono7, 20, ' ', STR_PAD_RIGHT) : null;
-            $cliente->cli_telefono8 = $request->telefono8 ? str_pad($request->telefono8, 20, ' ', STR_PAD_RIGHT) : null;
-            $cliente->cli_telefono9 = $request->telefono9 ? str_pad($request->telefono9, 20, ' ', STR_PAD_RIGHT) : null;
-            $cliente->cli_telefono10 = $request->telefono10 ? str_pad($request->telefono10, 20, ' ', STR_PAD_RIGHT) : null;
-            $cliente->cli_telefono11 = $request->telefono11 ? str_pad($request->telefono11, 20, ' ', STR_PAD_RIGHT) : null;
+            $cliente->cli_preftel = null;
+            $cliente->cli_telefono = null;
+            $cliente->cli_telefono1 = null;
+            $cliente->cli_telefono2 = null;
+            $cliente->cli_telefono3 = null;
+            $cliente->cli_telefono4 = null;
+            $cliente->cli_telefono5 = null;
+            $cliente->cli_telefono6 = null;
+            $cliente->cli_telefono7 = null;
+            $cliente->cli_telefono8 = null;
+            $cliente->cli_telefono9 = null;
+            $cliente->cli_telefono10 = null;
+            $cliente->cli_telefono11 = null;
             
             // Campos de teléfonos de pago
             $cliente->cli_telpago1 = $request->tel_pago1 ? str_pad($request->tel_pago1, 20, ' ', STR_PAD_RIGHT) : null;
@@ -230,10 +241,10 @@ class ClientesController extends Controller {
             // Campo fax (campo eliminado, mantener null)
             $cliente->cli_fax = null;
             
-            // Campos de email y web
-            $cliente->cli_email = $request->email ? str_pad($request->email, 30, ' ', STR_PAD_RIGHT) : null;
-            $cliente->cli_email2 = $request->email2 ? str_pad($request->email2, 30, ' ', STR_PAD_RIGHT) : null;
-            $cliente->cli_email3 = $request->email3 ? str_pad($request->email3, 30, ' ', STR_PAD_RIGHT) : null;
+            // Campos de email y web (se completan más abajo desde la primera fila de contactos)
+            $cliente->cli_email = null;
+            $cliente->cli_email2 = null;
+            $cliente->cli_email3 = null;
             // Página web (campo eliminado, mantener null)
             $cliente->cli_webpage = null;
             
@@ -353,6 +364,7 @@ class ClientesController extends Controller {
             // Observaciones de facturación
             $cliente->cli_obs1 = $request->observaciones_facturacion;
 
+            // Guardar primero para tener cli_codigo
             Log::info('=== PREPARANDO PARA GUARDAR CLIENTE ===');
             Log::info('Datos finales del cliente antes de save:', [
                 'cli_codigo' => "'" . $cliente->cli_codigo . "'",
@@ -381,6 +393,46 @@ class ClientesController extends Controller {
                     'cliente_data' => $cliente->toArray()
                 ]);
                 throw $e;
+            }
+
+            // Guardar contactos (múltiples filas)
+            $contactosData = $request->input('contactos', []);
+            if (is_array($contactosData) && count($contactosData) > 0) {
+                $primerContacto = null;
+                foreach ($contactosData as $contactoData) {
+                    // Ignorar filas completamente vacías
+                    if (
+                        empty($contactoData['nombre']) &&
+                        empty($contactoData['telefono']) &&
+                        empty($contactoData['email'])
+                    ) {
+                        continue;
+                    }
+
+                    if ($primerContacto === null) {
+                        $primerContacto = $contactoData;
+                    }
+
+                    ClienteContacto::create([
+                        'cli_codigo' => $cliente->cli_codigo,
+                        'nombre' => trim($contactoData['nombre'] ?? ''),
+                        'telefono' => !empty($contactoData['telefono']) ? trim($contactoData['telefono']) : null,
+                        'email' => !empty($contactoData['email']) ? trim($contactoData['email']) : null,
+                        'tipo' => !empty($contactoData['tipo']) ? trim($contactoData['tipo']) : null,
+                    ]);
+                }
+
+                // Usar el primer contacto como contacto principal en la tabla cli
+                if ($primerContacto !== null) {
+                    $cliente->cli_contacto = str_pad($primerContacto['nombre'] ?? '', 30, ' ', STR_PAD_RIGHT);
+                    $cliente->cli_telefono = !empty($primerContacto['telefono'])
+                        ? str_pad($primerContacto['telefono'], 30, ' ', STR_PAD_RIGHT)
+                        : null;
+                    $cliente->cli_email = !empty($primerContacto['email'])
+                        ? str_pad($primerContacto['email'], 30, ' ', STR_PAD_RIGHT)
+                        : null;
+                    $cliente->save();
+                }
             }
 
             // Guardar empresas relacionadas (múltiples)
@@ -525,8 +577,45 @@ class ClientesController extends Controller {
                 'es_predeterminada' => $razonSocial->es_predeterminada ?? false
             ];
         })->toArray();
+
+        // Cargar contactos del cliente
+        $contactos = $cliente->contactos()->orderBy('nombre')->get();
+
+        // Cargar sucursales (otros registros en cli con la misma razón social y sin CUIT real)
+        $sucursales = $cliente->sucursales()
+            ->orderBy('cli_fantasia')
+            ->orderBy('cli_codigo')
+            ->get();
+        $sucursalesJson = $sucursales->map(function ($sucursal) {
+            return [
+                'codigo' => trim($sucursal->cli_codigo),
+                'fantasia' => trim($sucursal->cli_fantasia ?? ''),
+                'direccion' => trim($sucursal->cli_direccion ?? ''),
+                'partido' => trim($sucursal->cli_partido ?? ''),
+                'localidad' => trim($sucursal->cli_localidad ?? ''),
+                'provincia' => trim($sucursal->cli_codigoprv ?? ''),
+                'codigo_postal' => trim($sucursal->cli_codigopostal ?? ''),
+                'contacto' => trim($sucursal->cli_contacto ?? ''),
+                'telefono' => trim($sucursal->cli_telefono ?? ''),
+                'email' => trim($sucursal->cli_email ?? ''),
+            ];
+        })->toArray();
         
-        return View::make('clientes.edit', compact('cliente', 'condicionesIva', 'zonas', 'condicionesPago', 'listasPrecios', 'tiposCliente', 'empresasRelacionadas', 'empresasRelacionadasJson', 'razonesSociales', 'razonesSocialesJson'));
+        return View::make('clientes.edit', compact(
+            'cliente',
+            'condicionesIva',
+            'zonas',
+            'condicionesPago',
+            'listasPrecios',
+            'tiposCliente',
+            'empresasRelacionadas',
+            'empresasRelacionadasJson',
+            'razonesSociales',
+            'razonesSocialesJson',
+            'contactos',
+            'sucursales',
+            'sucursalesJson'
+        ));
     }
     
     public function update(Request $request, $id)
@@ -600,16 +689,13 @@ class ClientesController extends Controller {
                 $cliente->cli_ultfot = $request->fecha_modif;
             }
 
-            // Campos de contacto
-            $cliente->cli_telefono = $request->telefono ? str_pad($request->telefono, 30, ' ', STR_PAD_RIGHT) : null;
-            $cliente->cli_telefono1 = $request->telefono1 ? str_pad($request->telefono1, 20, ' ', STR_PAD_RIGHT) : null;
+            // Campos de contacto principales se gestionan desde la tabla de contactos
             // Horarios (campos eliminados, mantener null)
             $cliente->cli_horario1 = null;
             $cliente->cli_horario2 = null;
             // Fax (campo eliminado, mantener null)
             $cliente->cli_fax = null;
-            $cliente->cli_email = $request->email ? str_pad($request->email, 30, ' ', STR_PAD_RIGHT) : null;
-            $cliente->cli_email2 = $request->email2 ? str_pad($request->email2, 30, ' ', STR_PAD_RIGHT) : null;
+            // Emails principales se gestionan desde la tabla de contactos
             // Página web (campo eliminado, mantener null)
             $cliente->cli_webpage = null;
 
@@ -746,6 +832,146 @@ class ClientesController extends Controller {
                 }
             }
 
+            // Guardar contactos (múltiples) en la misma tabla auxiliar
+            $contactosData = $request->input('contactos', []);
+            // Eliminar contactos existentes
+            ClienteContacto::where('cli_codigo', $cliente->cli_codigo)->delete();
+
+            $primerContacto = null;
+            if (is_array($contactosData)) {
+                foreach ($contactosData as $contactoData) {
+                    if (
+                        empty($contactoData['nombre']) &&
+                        empty($contactoData['telefono']) &&
+                        empty($contactoData['email'])
+                    ) {
+                        continue;
+                    }
+
+                    if ($primerContacto === null) {
+                        $primerContacto = $contactoData;
+                    }
+
+                    ClienteContacto::create([
+                        'cli_codigo' => $cliente->cli_codigo,
+                        'nombre' => trim($contactoData['nombre'] ?? ''),
+                        'telefono' => !empty($contactoData['telefono']) ? trim($contactoData['telefono']) : null,
+                        'email' => !empty($contactoData['email']) ? trim($contactoData['email']) : null,
+                        'tipo' => !empty($contactoData['tipo']) ? trim($contactoData['tipo']) : null,
+                    ]);
+                }
+            }
+
+            // Usar el primer contacto como contacto principal en la tabla cli
+            if ($primerContacto !== null) {
+                $cliente->cli_contacto = str_pad($primerContacto['nombre'] ?? '', 30, ' ', STR_PAD_RIGHT);
+                $cliente->cli_telefono = !empty($primerContacto['telefono'])
+                    ? str_pad($primerContacto['telefono'], 30, ' ', STR_PAD_RIGHT)
+                    : null;
+                $cliente->cli_email = !empty($primerContacto['email'])
+                    ? str_pad($primerContacto['email'], 30, ' ', STR_PAD_RIGHT)
+                    : null;
+                $cliente->save();
+            }
+
+            // Guardar sucursales (múltiples) en la misma tabla cli
+            $sucursalesData = $request->input('sucursales', []);
+            $sucursalesExistentes = $cliente->sucursales()
+                ->get()
+                ->keyBy(function ($sucursal) {
+                    return trim($sucursal->cli_codigo);
+                });
+
+            $codigosEnviados = [];
+
+            if (is_array($sucursalesData)) {
+                foreach ($sucursalesData as $sucursalData) {
+                    // Ignorar filas completamente vacías
+                    if (
+                        empty($sucursalData['fantasia']) &&
+                        empty($sucursalData['direccion']) &&
+                        empty($sucursalData['partido']) &&
+                        empty($sucursalData['localidad']) &&
+                        empty($sucursalData['provincia']) &&
+                        empty($sucursalData['codigo_postal']) &&
+                        empty($sucursalData['contacto']) &&
+                        empty($sucursalData['telefono']) &&
+                        empty($sucursalData['email'])
+                    ) {
+                        continue;
+                    }
+
+                    $codigoLimpio = isset($sucursalData['codigo']) ? trim($sucursalData['codigo']) : '';
+                    $sucursal = null;
+
+                    if ($codigoLimpio !== '' && $sucursalesExistentes->has($codigoLimpio)) {
+                        // Actualizar sucursal existente
+                        $sucursal = $sucursalesExistentes->get($codigoLimpio);
+                        $codigosEnviados[] = $codigoLimpio;
+                    } else {
+                        // Crear nueva sucursal
+                        $sucursal = new Clientes();
+                        $nuevoCodigo = (new Clientes())->getProximoCodigoCliente();
+                        $sucursal->cli_codigo = $nuevoCodigo;
+                        $codigosEnviados[] = trim($nuevoCodigo);
+                    }
+
+                    // Compartir razón social con el cliente principal
+                    $sucursal->cli_razonsocial = $cliente->cli_razonsocial;
+                    $sucursal->cli_fantasia = !empty($sucursalData['fantasia'])
+                        ? str_pad($sucursalData['fantasia'], 60, ' ', STR_PAD_RIGHT)
+                        : null;
+                    $sucursal->cli_direccion = !empty($sucursalData['direccion'])
+                        ? str_pad($sucursalData['direccion'], 60, ' ', STR_PAD_RIGHT)
+                        : null;
+                    $sucursal->cli_partido = !empty($sucursalData['partido'])
+                        ? str_pad($sucursalData['partido'], 50, ' ', STR_PAD_RIGHT)
+                        : null;
+                    $sucursal->cli_localidad = !empty($sucursalData['localidad'])
+                        ? str_pad($sucursalData['localidad'], 50, ' ', STR_PAD_RIGHT)
+                        : null;
+                    $sucursal->cli_codigopostal = !empty($sucursalData['codigo_postal'])
+                        ? str_pad($sucursalData['codigo_postal'], 10, ' ', STR_PAD_RIGHT)
+                        : null;
+                    $sucursal->cli_contacto = !empty($sucursalData['contacto'])
+                        ? str_pad($sucursalData['contacto'], 30, ' ', STR_PAD_RIGHT)
+                        : null;
+                    $sucursal->cli_telefono = !empty($sucursalData['telefono'])
+                        ? str_pad($sucursalData['telefono'], 30, ' ', STR_PAD_RIGHT)
+                        : null;
+                    $sucursal->cli_email = !empty($sucursalData['email'])
+                        ? str_pad($sucursalData['email'], 30, ' ', STR_PAD_RIGHT)
+                        : null;
+
+                    // Las sucursales no deben tener CUIT real
+                    $sucursal->cli_cuit = null;
+                    $sucursal->cli_formcuit = null;
+
+                    // Copiar algunos campos básicos del cliente principal
+                    $sucursal->cli_codigopais = $cliente->cli_codigopais;
+                    $sucursal->cli_codigoprv = !empty($sucursalData['provincia'])
+                        ? str_pad(substr(trim($sucursalData['provincia']), 0, 5), 5, ' ', STR_PAD_RIGHT)
+                        : $cliente->cli_codigoprv;
+                    $sucursal->cli_codigociva = $cliente->cli_codigociva;
+                    $sucursal->cli_codigopag = $cliente->cli_codigopag;
+                    $sucursal->cli_estado = $cliente->cli_estado;
+                    $sucursal->cli_codigozon = $cliente->cli_codigozon;
+                    $sucursal->cli_fechaalta = $sucursal->cli_fechaalta ?? $cliente->cli_fechaalta;
+
+                    $sucursal->save();
+                }
+            }
+
+            // Eliminar sucursales que ya no vengan en el formulario
+            if (!empty($codigosEnviados)) {
+                $cliente->sucursales()
+                    ->whereNotIn(DB::raw('TRIM(cli_codigo)'), $codigosEnviados)
+                    ->delete();
+            } else {
+                // Si no se enviaron sucursales, eliminar todas las existentes
+                $cliente->sucursales()->delete();
+            }
+
             return redirect()->route('clientes.index')
                 ->with('success', 'Cliente actualizado exitosamente');
 
@@ -779,6 +1005,16 @@ class ClientesController extends Controller {
             if (!$cliente) {
                 return redirect()->route('clientes.index', request()->query())
                     ->with('error', 'Cliente no encontrado');
+            }
+            
+            // Eliminar también las sucursales asociadas (mismos datos de razón social sin CUIT)
+            try {
+                $cliente->sucursales()->delete();
+            } catch (\Exception $e) {
+                Log::warning('No se pudieron eliminar algunas sucursales del cliente al borrar el principal', [
+                    'id' => $id,
+                    'error' => $e->getMessage(),
+                ]);
             }
             
             $cliente->delete();

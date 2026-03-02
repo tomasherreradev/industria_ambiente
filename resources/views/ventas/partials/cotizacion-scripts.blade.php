@@ -49,9 +49,11 @@
         form: document.getElementById('cotizacionForm'),
         tablaItems: document.getElementById('tablaItems'),
         totalGeneral: document.getElementById('totalGeneral'),
-        totalConDescuento: document.getElementById('totalConDescuento'),
+        totalConAjustes: document.getElementById('totalConAjustes'),
         descuentoGlobalMonto: document.getElementById('descuentoGlobalMonto'),
         descuentoGlobalPorcentaje: document.getElementById('descuentoGlobalPorcentaje'),
+        aumentoGlobalMonto: document.getElementById('aumentoGlobalMonto'),
+        aumentoGlobalPorcentaje: document.getElementById('aumentoGlobalPorcentaje'),
         descuentoHidden: document.getElementById('cliente_descuento_hidden'),
         ensayosHidden: document.getElementById('ensayos_data'),
         componentesHidden: document.getElementById('componentes_data'),
@@ -392,10 +394,117 @@
                 // Si no es consultor, asegurar que el campo "Para" sea un input de texto
                 resetearCampoPara();
             }
+
+            // Configurar sucursales si el cliente tiene
+            if (Array.isArray(cliente.sucursales) && cliente.sucursales.length > 0) {
+                configurarSucursalesCliente(cliente.sucursales);
+            } else {
+                resetearSucursalesCliente();
+            }
         }
 
         actualizarDescuentoCliente();
         actualizarTotalGeneral();
+    }
+
+    function configurarSucursalesCliente(sucursales) {
+        const sucursalInput = document.getElementById('sucursal');
+        const sucursalSelect = document.getElementById('sucursal_select');
+
+        if (!sucursalInput || !sucursalSelect) {
+            return;
+        }
+
+        state.sucursalesCliente = Array.isArray(sucursales) ? sucursales : [];
+
+        // Limpiar opciones actuales
+        sucursalSelect.innerHTML = '';
+        const opcionDefault = document.createElement('option');
+        opcionDefault.value = '';
+        opcionDefault.textContent = 'Seleccionar sucursal...';
+        sucursalSelect.appendChild(opcionDefault);
+
+        state.sucursalesCliente.forEach((sucursal) => {
+            const option = document.createElement('option');
+            option.value = sucursal.codigo || '';
+            const descripcion =
+                (sucursal.fantasia && sucursal.fantasia.trim()) ||
+                (sucursal.direccion && sucursal.direccion.trim()) ||
+                (sucursal.localidad && sucursal.localidad.trim()) ||
+                'Sucursal';
+            option.textContent = `${(sucursal.codigo || '').trim()} - ${descripcion}`;
+            sucursalSelect.appendChild(option);
+        });
+
+        // Mostrar select y ocultar input libre (pero seguir usando el input como valor real)
+        sucursalInput.classList.add('d-none');
+        sucursalSelect.classList.remove('d-none');
+
+        if (!sucursalSelect.dataset.listenerSucursal) {
+            sucursalSelect.addEventListener('change', manejarCambioSucursal);
+            sucursalSelect.dataset.listenerSucursal = '1';
+        }
+    }
+
+    function resetearSucursalesCliente() {
+        const sucursalInput = document.getElementById('sucursal');
+        const sucursalSelect = document.getElementById('sucursal_select');
+        if (!sucursalInput || !sucursalSelect) {
+            return;
+        }
+
+        state.sucursalesCliente = [];
+        sucursalSelect.classList.add('d-none');
+        sucursalInput.classList.remove('d-none');
+        sucursalSelect.innerHTML = '<option value=\"\">Seleccionar sucursal...</option>';
+    }
+
+    function manejarCambioSucursal(event) {
+        const codigoSeleccionado = (event.target.value || '').trim();
+        const sucursalInput = document.getElementById('sucursal');
+        if (sucursalInput) {
+            sucursalInput.value = codigoSeleccionado;
+        }
+
+        const sucursales = state.sucursalesCliente || [];
+        const sucursal = sucursales.find(
+            (s) => (s.codigo || '').trim() === codigoSeleccionado
+        );
+
+        // Valores de respaldo del cliente (hidden)
+        const razonSocialCliente = document.getElementById('cliente_razon_social_hidden')?.value || '';
+        const direccionCliente = document.getElementById('cliente_direccion_hidden')?.value || '';
+        const localidadCliente = document.getElementById('cliente_localidad_hidden')?.value || '';
+        const codigoPostalCliente = document.getElementById('cliente_codigo_postal_hidden')?.value || '';
+        const telefonoCliente = document.getElementById('cliente_telefono_hidden')?.value || '';
+        const correoCliente = document.getElementById('cliente_correo_hidden')?.value || '';
+
+        // Empresa: siempre la razón social del cliente
+        if (razonSocialCliente) {
+            asignarValorSiExiste('empresa_nombre', razonSocialCliente);
+        }
+
+        if (sucursal) {
+            // Dirección / Empresa
+            asignarValorSiExiste('direccion_cliente', sucursal.direccion || direccionCliente);
+            asignarValorSiExiste('localidad_cliente', sucursal.localidad || localidadCliente);
+            asignarValorSiExiste('partido', sucursal.partido || '');
+            asignarValorSiExiste('codigo_postal_cliente', sucursal.codigo_postal || codigoPostalCliente);
+
+            // Contacto de la sucursal
+            asignarValorSiExiste('contacto', sucursal.contacto || '');
+            asignarValorSiExiste('correo', sucursal.email || correoCliente);
+            asignarValorSiExiste('telefono', sucursal.telefono || telefonoCliente);
+        } else {
+            // Si se limpia la sucursal, volver a los datos base del cliente
+            asignarValorSiExiste('direccion_cliente', direccionCliente);
+            asignarValorSiExiste('localidad_cliente', localidadCliente);
+            asignarValorSiExiste('partido', '');
+            asignarValorSiExiste('codigo_postal_cliente', codigoPostalCliente);
+            asignarValorSiExiste('contacto', '');
+            asignarValorSiExiste('correo', correoCliente);
+            asignarValorSiExiste('telefono', telefonoCliente);
+        }
     }
 
     function cargarEmpresasRelacionadas(codigoCliente, empresaIdPreseleccionado = null) {
@@ -712,6 +821,16 @@
                 actualizarDescuentosDesdeFormulario();
                 actualizarTotalGeneral();
             });
+        }
+
+        // Listener para aumento global
+        const aumentoGlobalInput = document.getElementById('aumento');
+        if (aumentoGlobalInput) {
+            const handler = () => {
+                actualizarTotalGeneral();
+            };
+            aumentoGlobalInput.addEventListener('input', handler);
+            aumentoGlobalInput.addEventListener('change', handler);
         }
 
     }
@@ -3426,20 +3545,33 @@
             elements.totalGeneral.textContent = formatNumber(total, 2);
         }
 
-        const globalPercent = clampPercent(getDescuentoGlobal());
-        const globalDecimal = globalPercent / 100;
+        // Aumento global
+        const aumentoPercent = clampPercent(getAumentoGlobal());
+        const aumentoDecimal = aumentoPercent / 100;
+        const aumentoGlobalMonto = total * aumentoDecimal;
+        const totalConAumento = total + aumentoGlobalMonto;
 
-        const descuentoGlobalMonto = total * globalDecimal;
-        const totalConDescuento = total - descuentoGlobalMonto;
+        // Descuento global (se aplica sobre el total base, igual que antes)
+        const descuentoPercent = clampPercent(getDescuentoGlobal());
+        const descuentoDecimal = descuentoPercent / 100;
+        const descuentoGlobalMonto = total * descuentoDecimal;
 
+        const totalFinal = totalConAumento - descuentoGlobalMonto;
+
+        if (elements.aumentoGlobalPorcentaje) {
+            elements.aumentoGlobalPorcentaje.textContent = `${formatNumber(aumentoPercent, 2)}%`;
+        }
+        if (elements.aumentoGlobalMonto) {
+            elements.aumentoGlobalMonto.textContent = formatNumber(aumentoGlobalMonto, 2);
+        }
         if (elements.descuentoGlobalPorcentaje) {
-            elements.descuentoGlobalPorcentaje.textContent = `${formatNumber(globalPercent, 2)}%`;
+            elements.descuentoGlobalPorcentaje.textContent = `${formatNumber(descuentoPercent, 2)}%`;
         }
         if (elements.descuentoGlobalMonto) {
             elements.descuentoGlobalMonto.textContent = formatNumber(descuentoGlobalMonto, 2);
         }
-        if (elements.totalConDescuento) {
-            elements.totalConDescuento.textContent = formatNumber(totalConDescuento, 2);
+        if (elements.totalConAjustes) {
+            elements.totalConAjustes.textContent = formatNumber(totalFinal, 2);
         }
     }
 
@@ -3458,6 +3590,17 @@
         }
         // Si no está disponible, leer del hidden field
         return getHiddenDatasetNumber('descuentoGlobal');
+    }
+
+    function getAumentoGlobal() {
+        const aumentoInput = document.getElementById('aumento');
+        if (aumentoInput) {
+            const valor = parseFloat(aumentoInput.value);
+            if (!isNaN(valor)) {
+                return clampPercent(valor);
+            }
+        }
+        return 0;
     }
 
 

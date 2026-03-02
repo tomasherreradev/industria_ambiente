@@ -19,12 +19,16 @@ foreach ($tareasAgrupadas as $key => $grupo) {
     
     $fechaMuestreo = $grupo['instancias'][0]['instancia_muestra']->fecha_inicio_muestreo ?? null;
     
-    // Obtener fecha de fin (fecha_fin_muestreo o fecha_fin_ot) para detectar vencidas
+    // Obtener fecha de fin (fecha_fin_muestreo o fecha_fin_ot) para detectar vencidas.
+    // IMPORTANTE: usamos la FECHA FIN MÁXIMA del grupo, así solo se marca vencido
+    // cuando TODAS las muestras hermanas ya pasaron su fecha de fin.
     $fechasFin = $grupo['instancias']->map(function($i) {
         $m = $i['instancia_muestra'];
         return $m->fecha_fin_muestreo ?? $m->fecha_fin_ot ?? null;
     })->filter();
-    $fechaFin = $fechasFin->isEmpty() ? null : $fechasFin->sortBy(fn($d) => $d->getTimestamp())->first();
+    $fechaFin = $fechasFin->isEmpty()
+        ? null
+        : $fechasFin->sortByDesc(fn($d) => $d->getTimestamp())->first();
     
     // "Ahora" y fecha fin en la zona horaria de la aplicación (ej. Argentina) para comparar correctamente
     $now = \Carbon\Carbon::now(config('app.timezone'));

@@ -146,6 +146,7 @@ public function facturar($coti_num)
     $muestrasTarifario = $resumenFinanciero['muestras'];
     $analisisTarifario = $resumenFinanciero['analisis'];
     $descuentoFactor = $resumenFinanciero['descuento_factor'];
+    $aumentoFactor = $resumenFinanciero['aumento_factor'] ?? 0.0;
     $resumenMontos = [
         'total_bruto' => $resumenFinanciero['totales']['bruto'],
         'total_neto' => $resumenFinanciero['totales']['neto'],
@@ -209,7 +210,7 @@ public function facturar($coti_num)
                         
                         // El precio de la muestra debe ser el total menos los análisis ya facturados
                         $precioBrutoMuestraAjustado = max(0.0, $precioBrutoMuestra - $precioAnalisisYaFacturados);
-                        $precioNetoMuestra = $this->aplicarDescuento($precioBrutoMuestraAjustado, $descuentoFactor);
+                        $precioNetoMuestra = $this->aplicarAjustes($precioBrutoMuestraAjustado, $aumentoFactor, $descuentoFactor);
 
                         Log::info('Cálculo de precio de muestra ajustado', [
                             'muestra_id' => $instancia->id,
@@ -234,7 +235,7 @@ public function facturar($coti_num)
                             }
 
                             $precioBrutoAnalisis = $analisisTarifario[$analisis->instancia->cotio_item][$analisis->instancia->cotio_subitem]['precio'] ?? 0.0;
-                            $precioNetoAnalisis = $this->aplicarDescuento($precioBrutoAnalisis, $descuentoFactor);
+                            $precioNetoAnalisis = $this->aplicarAjustes($precioBrutoAnalisis, $aumentoFactor, $descuentoFactor);
 
                             $analisis->instancia->precio_bruto = $precioBrutoAnalisis;
                             $analisis->instancia->precio_neto = $precioNetoAnalisis;
@@ -390,6 +391,7 @@ public function generarFacturaArca(Request $request, $coti_num)
         $muestrasTarifario = $resumenFinanciero['muestras'];
         $analisisTarifario = $resumenFinanciero['analisis'];
         $descuentoFactor = $resumenFinanciero['descuento_factor'];
+        $aumentoFactor = $resumenFinanciero['aumento_factor'] ?? 0.0;
         $totalesFinancieros = $resumenFinanciero['totales'];
         $descuentoPorcentaje = $totalesFinancieros['descuento_porcentaje'];
         $descuentoGlobalPorcentaje = $totalesFinancieros['descuento_global_porcentaje'];
@@ -397,6 +399,7 @@ public function generarFacturaArca(Request $request, $coti_num)
         $descuentoGlobalMontoTotal = $totalesFinancieros['descuento_global_monto'];
         $descuentoSectorMontoTotal = $totalesFinancieros['descuento_sector_monto'];
         $descuentoSectorEtiqueta = $totalesFinancieros['descuento_sector_etiqueta'];
+        $aumentoPorcentaje = $totalesFinancieros['aumento_porcentaje'] ?? 0.0;
 
         Log::info('Aplicando descuentos durante facturación (prioridad: cotización, luego cliente)', [
             'cotizacion' => $cotizacion->coti_num,
@@ -490,7 +493,7 @@ public function generarFacturaArca(Request $request, $coti_num)
                 'cantidad_analisis_ya_facturados' => $analisisYaFacturados->count()
             ]);
             
-            $precio = $this->aplicarDescuento($precioBaseAjustado, $descuentoFactor);
+            $precio = $this->aplicarAjustes($precioBaseAjustado, $aumentoFactor, $descuentoFactor);
 
             Log::info('Facturando muestra individual', [
                 'cotio_item' => $muestra->cotio_item,
@@ -539,7 +542,7 @@ public function generarFacturaArca(Request $request, $coti_num)
             }
 
             $precioBase = $analisisTarifario[$analisis_item->cotio_item][$analisis_item->cotio_subitem]['precio'] ?? 0.0;
-            $precio = $this->aplicarDescuento($precioBase, $descuentoFactor);
+            $precio = $this->aplicarAjustes($precioBase, $aumentoFactor, $descuentoFactor);
 
             Log::info('Facturando análisis individual', [
                 'analisis_id' => $analisis_item->id,
@@ -570,6 +573,7 @@ public function generarFacturaArca(Request $request, $coti_num)
         $descuentoMontoTotalSeleccionado = round($montoTotalBruto * ($descuentoPorcentaje / 100), 2);
         $descuentoGlobalMontoSeleccionado = round($montoTotalBruto * ($descuentoGlobalPorcentaje / 100), 2);
         $descuentoSectorMontoSeleccionado = round($montoTotalBruto * ($descuentoSectorPorcentaje / 100), 2);
+        $aumentoMontoTotalSeleccionado = round($montoTotalBruto * ($aumentoPorcentaje / 100), 2);
         
         $resumenDescuento = [
             'total_bruto' => round($montoTotalBruto, 2),
@@ -583,6 +587,8 @@ public function generarFacturaArca(Request $request, $coti_num)
             'descuento_global_monto' => $descuentoGlobalMontoSeleccionado,
             'descuento_sector_monto' => $descuentoSectorMontoSeleccionado,
             'descuento_sector_etiqueta' => $descuentoSectorEtiqueta,
+            'aumento_porcentaje' => $aumentoPorcentaje,
+            'aumento_monto' => $aumentoMontoTotalSeleccionado,
         ];
 
         // Preparar datos del cliente
@@ -892,6 +898,28 @@ private function aplicarDescuento(float $monto, float $factor): float
     return $resultado < 0 ? 0.0 : $resultado;
 }
 
+/**
+ * Aplica en un solo paso el aumento global y los descuentos totales.
+ * Fórmula: monto * (1 + aumentoFactor - descuentoFactor)
+ */
+private function aplicarAjustes(float $monto, float $aumentoFactor, float $descuentoFactor): float
+{
+    $monto = (float) $monto;
+
+    if ($monto <= 0) {
+        return round($monto, 2);
+    }
+
+    $aumentoFactor = (float) $aumentoFactor;
+    $descuentoFactor = (float) $descuentoFactor;
+
+    $ajusteFactor = $aumentoFactor - $descuentoFactor;
+
+    $resultado = round($monto * (1 + $ajusteFactor), 2);
+
+    return $resultado < 0 ? 0.0 : $resultado;
+}
+
 private function normalizarCodigoSector(?string $sector): ?string
 {
     if (is_null($sector)) {
@@ -1094,10 +1122,19 @@ private function construirResumenFinanciero(Coti $cotizacion, $tareas = null): a
     $totalBruto = $totalMuestras + $totalComponentesExtras;
 
     $descuentoData = $this->obtenerDatosDescuento($cotizacion);
+
+    // Aumento global de la cotización (mismo concepto que en la edición de la coti)
+    $aumentoPorcentaje = max(0.0, min((float) ($cotizacion->coti_aumentoglobal ?? 0.0), 100.0));
+    $aumentoFactor = $aumentoPorcentaje / 100;
+
     $descuentoMontoTotal = round($totalBruto * $descuentoData['factor_total'], 2);
     $descuentoMontoGlobal = round($totalBruto * $descuentoData['factor_global'], 2);
     $descuentoMontoSector = round($totalBruto * $descuentoData['factor_sector'], 2);
-    $totalNeto = round($totalBruto - $descuentoMontoTotal, 2);
+
+    $aumentoMontoTotal = round($totalBruto * $aumentoFactor, 2);
+
+    // Total neto = Subtotal + Aumento - Descuentos
+    $totalNeto = round($totalBruto + $aumentoMontoTotal - $descuentoMontoTotal, 2);
 
     return [
         'muestras' => $muestrasInfo,
@@ -1112,9 +1149,12 @@ private function construirResumenFinanciero(Coti $cotizacion, $tareas = null): a
             'descuento_global_monto' => $descuentoMontoGlobal,
             'descuento_sector_monto' => $descuentoMontoSector,
             'descuento_sector_etiqueta' => $descuentoData['sector_etiqueta'],
+            'aumento_porcentaje' => $aumentoPorcentaje,
+            'aumento_monto' => $aumentoMontoTotal,
             'neto' => $totalNeto,
         ],
         'descuento_factor' => $descuentoData['factor_total'],
+        'aumento_factor' => $aumentoFactor,
         'descuento_detalle' => $descuentoData,
     ];
 }
@@ -1653,6 +1693,7 @@ private function calcularMontoPendientes(): float
                 $resumenFinanciero = $this->construirResumenFinanciero($cotizacion, $tareas);
                 $muestrasTarifario = $resumenFinanciero['muestras'];
                 $descuentoFactor = $resumenFinanciero['descuento_factor'];
+                $aumentoFactor = $resumenFinanciero['aumento_factor'] ?? 0.0;
 
                 // Calcular monto para cada muestra de esta cotización
                 foreach ($muestras as $muestra) {
@@ -1671,10 +1712,10 @@ private function calcularMontoPendientes(): float
                         }
                     }
                     
-                    // Aplicar descuento
-                    $precioConDescuento = $this->aplicarDescuento($precioBase, $descuentoFactor);
+                    // Aplicar aumento y descuentos
+                    $precioConAjustes = $this->aplicarAjustes($precioBase, $aumentoFactor, $descuentoFactor);
                     
-                    $montoTotal += $precioConDescuento;
+                    $montoTotal += $precioConAjustes;
                 }
             } catch (\Exception $e) {
                 Log::warning('Error al calcular monto para cotización ' . $cotiNum . ': ' . $e->getMessage());

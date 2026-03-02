@@ -6,13 +6,13 @@
 ?>
 
 <head>
-    <title>Mis {{ Auth::user()->rol == 'laboratorio' ? 'análisis' : 'muestras' }}</title>
+    <title>Mis muestras</title>
 </head>
 
 @section('content')
 <div class="container py-3 py-md-4">
     <header class="d-flex flex-md-row justify-content-between align-items-center align-items-md-center">
-        <h1 class="mb-md-4">Mis {{ Auth::user()->rol == 'laboratorio' ? 'análisis' : 'muestras' }}</h1>
+        <h1 class="mb-md-4">Mis muestras</h1>
 
         <div class="d-flex gap-2 align-items-center mb-2">
             <button class="btn btn-sm btn-outline-primary me-2" type="button" data-bs-toggle="collapse" 

@@ -147,7 +147,13 @@
         $descuentoTotal = max((float) ($descuentoTotalCliente ?? ($descuentoGlobal + $descuentoSector)), 0);
         $descuentoGlobalMonto = $totalCalculado * ($descuentoGlobal / 100);
         $descuentoSectorMonto = $totalCalculado * ($descuentoSector / 100);
-        $importeConDescuento = $totalCalculado - ($descuentoGlobalMonto + $descuentoSectorMonto);
+
+        // Aumento global aplicado a la cotización (igual lógica que en la edición)
+        $aumentoGlobal = max((float) ($cotizacion->coti_aumentoglobal ?? 0), 0);
+        $aumentoGlobalMonto = $totalCalculado * ($aumentoGlobal / 100);
+
+        // Total final = Subtotal + Aumento - Descuentos
+        $importeConAjustes = $totalCalculado + $aumentoGlobalMonto - ($descuentoGlobalMonto + $descuentoSectorMonto);
 
         // Obtener empresa relacionada
         $empresaRelacionadaDetalle = null;
@@ -462,6 +468,12 @@
                     <td class="summary-label">Subtotal:</td>
                     <td class="summary-value">$ {{ $formatCurrency($totalCalculado) }}</td>
                 </tr>
+                @if($aumentoGlobal > 0)
+                <tr>
+                    <td class="summary-label">Aumento global ({{ number_format($aumentoGlobal, 2, ',', '.') }}%):</td>
+                    <td class="summary-value text-success">+ $ {{ $formatCurrency($aumentoGlobalMonto) }}</td>
+                </tr>
+                @endif
                 @if($descuentoGlobal > 0)
                 <tr>
                     <td class="summary-label">Descuento global ({{ number_format($descuentoGlobal, 2, ',', '.') }}%):</td>
@@ -476,7 +488,7 @@
                 @endif
                 <tr class="total-row">
                     <td class="summary-label"><strong>TOTAL:</strong></td>
-                    <td class="summary-value"><strong>$ {{ $formatCurrency($importeConDescuento) }}</strong></td>
+                    <td class="summary-value"><strong>$ {{ $formatCurrency($importeConAjustes) }}</strong></td>
                 </tr>
             </table>
         </div>

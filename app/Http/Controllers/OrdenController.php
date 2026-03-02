@@ -42,7 +42,9 @@ class OrdenController extends Controller
             $query = CotioInstancia::query()
                 ->where('enable_ot', true)
                 ->with(['cotizacion', 'responsablesAnalisis'])
-                // Filtro: solo cotizaciones SIN cadena_custodia, SIN muestreo y SIN trabajo técnico
+                // Filtro: solo cotizaciones SIN cadena_custodia y SIN trabajo técnico.
+                // EXCEPCIÓN: si la cotización es de muestreo pero ya tiene OTs (enable_ot=true),
+                // igual la incluimos porque pasó a laboratorio.
                 ->whereHas('cotizacion', function($q) {
                     $q->where(function($subQ) {
                         $subQ->where('coti_cadena_custodia', false)
@@ -50,7 +52,11 @@ class OrdenController extends Controller
                     })
                     ->where(function($subQ) {
                         $subQ->where('coti_muestreo', false)
-                             ->orWhereNull('coti_muestreo');
+                             ->orWhereNull('coti_muestreo')
+                             ->orWhereHas('instancias', function($instQ) {
+                                 $instQ->where('cotio_subitem', 0)
+                                       ->where('enable_ot', true);
+                             });
                     });
                 })
                 ->whereDoesntHave('cotizacion.tareas', function($q) {
@@ -196,14 +202,20 @@ class OrdenController extends Controller
         // Vista de Lista/Documento - Empezar desde Coti para incluir cotizaciones sin instancias
         $baseQuery = Coti::query()
             ->with(['matriz', 'tareas', 'instancias'])
-            // Filtro: solo cotizaciones SIN cadena_custodia, SIN muestreo y SIN trabajo técnico
+            // Filtro: solo cotizaciones SIN cadena_custodia y SIN trabajo técnico.
+            // EXCEPCIÓN: si la cotización es de muestreo pero ya tiene OTs (enable_ot=true),
+            // igual la incluimos porque pasó a laboratorio.
             ->where(function($q) {
                 $q->where('coti_cadena_custodia', false)
                   ->orWhereNull('coti_cadena_custodia');
             })
             ->where(function($q) {
                 $q->where('coti_muestreo', false)
-                  ->orWhereNull('coti_muestreo');
+                  ->orWhereNull('coti_muestreo')
+                  ->orWhereHas('instancias', function($subQ) {
+                      $subQ->where('cotio_subitem', 0)
+                           ->where('enable_ot', true);
+                  });
             })
             ->whereDoesntHave('tareas', function($q) {
                 $q->where('cotio_subitem', 0)

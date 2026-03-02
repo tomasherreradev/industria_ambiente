@@ -618,8 +618,9 @@ class VentasController extends Controller {
             $cotizacion->coti_notas = $request->coti_notas;
             $cotizacion->coti_codigosuc = $this->truncateAndPad($request->coti_codigosuc, 10);
             
-            // Campos de descuentos
+            // Campos de descuentos / aumentos
             $cotizacion->coti_descuentoglobal = $request->filled('descuento') ? floatval($request->descuento) : 0.00;
+            $cotizacion->coti_aumentoglobal = $request->filled('aumento') ? floatval($request->aumento) : 0.00;
             $cotizacion->coti_sector_laboratorio_pct = $request->filled('sector_laboratorio_porcentaje') ? floatval($request->sector_laboratorio_porcentaje) : 0.00;
             $cotizacion->coti_sector_higiene_pct = $request->filled('sector_higiene_porcentaje') ? floatval($request->sector_higiene_porcentaje) : 0.00;
             $cotizacion->coti_sector_microbiologia_pct = $request->filled('sector_microbiologia_porcentaje') ? floatval($request->sector_microbiologia_porcentaje) : 0.00;
@@ -1279,8 +1280,9 @@ class VentasController extends Controller {
             // Notas
             $cotizacion->coti_notas = $request->coti_notas;
             
-            // Campos de descuentos
+            // Campos de descuentos / aumentos
             $cotizacion->coti_descuentoglobal = $request->filled('descuento') ? floatval($request->descuento) : 0.00;
+            $cotizacion->coti_aumentoglobal = $request->filled('aumento') ? floatval($request->aumento) : 0.00;
             $cotizacion->coti_sector_laboratorio_pct = $request->filled('sector_laboratorio_porcentaje') ? floatval($request->sector_laboratorio_porcentaje) : 0.00;
             $cotizacion->coti_sector_higiene_pct = $request->filled('sector_higiene_porcentaje') ? floatval($request->sector_higiene_porcentaje) : 0.00;
             $cotizacion->coti_sector_microbiologia_pct = $request->filled('sector_microbiologia_porcentaje') ? floatval($request->sector_microbiologia_porcentaje) : 0.00;
@@ -1596,7 +1598,9 @@ class VentasController extends Controller {
         }
 
         try {
-            $clientes = Clientes::where('cli_estado', true)
+            // Solo buscar clientes principales (no sucursales)
+            $clientes = Clientes::soloPrincipales()
+                ->where('cli_estado', true)
                 ->where(function($query) use ($termino) {
                     $query->where('cli_codigo', 'ILIKE', "%{$termino}%")
                           ->orWhere('cli_razonsocial', 'ILIKE', "%{$termino}%")
@@ -1701,6 +1705,9 @@ class VentasController extends Controller {
                 return response()->json(['error' => 'Cliente no encontrado'], 404);
             }
 
+            // Cargar sucursales del cliente (mismos datos de razón social y sin CUIT real)
+            $cliente->load('sucursales');
+
             // Buscar razón social de facturación predeterminada
             $razonSocialPredeterminada = ClienteRazonSocialFacturacion::where('cli_codigo', $codigoPadded)
                 ->where('es_predeterminada', true)
@@ -1719,6 +1726,22 @@ class VentasController extends Controller {
             // Para localidad y código postal, usar los del cliente (no están en razones sociales)
             $localidadEmpresa = $cliente->cli_localidad ? trim($cliente->cli_localidad) : '';
             $codigoPostalEmpresa = $cliente->cli_codigopostal ? trim($cliente->cli_codigopostal) : '';
+
+            // Mapear sucursales a un formato sencillo para el front
+            $sucursalesData = $cliente->sucursales->map(function ($sucursal) {
+                return [
+                    'codigo' => trim($sucursal->cli_codigo),
+                    'fantasia' => $sucursal->cli_fantasia ? trim($sucursal->cli_fantasia) : '',
+                    'direccion' => $sucursal->cli_direccion ? trim($sucursal->cli_direccion) : '',
+                    'partido' => $sucursal->cli_partido ? trim($sucursal->cli_partido) : '',
+                    'localidad' => $sucursal->cli_localidad ? trim($sucursal->cli_localidad) : '',
+                    'provincia' => $sucursal->cli_codigoprv ? trim($sucursal->cli_codigoprv) : '',
+                    'codigo_postal' => $sucursal->cli_codigopostal ? trim($sucursal->cli_codigopostal) : '',
+                    'contacto' => $sucursal->cli_contacto ? trim($sucursal->cli_contacto) : '',
+                    'telefono' => $sucursal->cli_telefono ? trim($sucursal->cli_telefono) : '',
+                    'email' => $sucursal->cli_email ? trim($sucursal->cli_email) : '',
+                ];
+            })->values();
 
             $clienteData = [
                 'codigo' => trim($cliente->cli_codigo),
@@ -1745,6 +1768,8 @@ class VentasController extends Controller {
                 'localidad_facturacion' => $localidadEmpresa,
                 'codigo_postal_facturacion' => $codigoPostalEmpresa,
                 'tiene_razon_social_predeterminada' => $razonSocialPredeterminada !== null,
+                // Sucursales del cliente
+                'sucursales' => $sucursalesData,
             ];
             
             Log::info('Datos del cliente encontrado:', $clienteData);

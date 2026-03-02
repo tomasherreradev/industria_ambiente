@@ -88,8 +88,13 @@
                                 </div>
                                 <div class="col-md-2">
                                     <label for="sucursal" class="form-label fw-semibold mb-1 text-dark">Sucursal:</label>
-                                    <input type="text" class="form-control form-control-sm" id="sucursal" name="coti_codigosuc"
-                                           value="{{ old('coti_codigosuc') }}">
+                                    <div id="sucursalWrapper">
+                                        <input type="text" class="form-control form-control-sm" id="sucursal" name="coti_codigosuc"
+                                               value="{{ old('coti_codigosuc') }}" placeholder="Código sucursal">
+                                        <select class="form-select form-select-sm d-none mt-1" id="sucursal_select">
+                                            <option value="">Seleccionar sucursal...</option>
+                                        </select>
+                                    </div>
                                 </div>
                                 <div class="col-md-2">
                                     <label for="numero" class="form-label fw-semibold mb-1 text-dark">Nro:</label>
@@ -257,16 +262,21 @@
                                         </div>
                                     </div>
 
-                                    <!-- Sección de Descuentos -->
+                                    <!-- Sección de Descuentos / Aumentos -->
                                     <div class="row mb-4">
                                         <div class="col-md-12">
-                                            <h5 class="mb-3">Descuentos</h5>
+                                            <h5 class="mb-3">Descuentos / Aumentos</h5>
                                             
                                             <div class="row mb-3">
                                                 <div class="col-md-3">
                                                     <label for="descuento" class="form-label">Descuento Global %</label>
                                                     <input type="number" step="0.01" class="form-control" id="descuento" name="descuento" 
                                                            value="{{ old('descuento', '0.00') }}" placeholder="0.00">
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <label for="aumento" class="form-label">Aumento Global %</label>
+                                                    <input type="number" step="0.01" class="form-control" id="aumento" name="aumento" 
+                                                           value="{{ old('aumento', '0.00') }}" placeholder="0.00">
                                                 </div>
                                             </div>
 
@@ -315,6 +325,13 @@
                                                             <td></td>
                                                         </tr>
                                                         <tr>
+                                                            <td colspan="7" class="text-end text-muted">Aumento global cliente (<span id="aumentoGlobalPorcentaje">0.00%</span>):</td>
+                                                            <td class="text-success fw-semibold">
+                                                                +<span id="aumentoGlobalMonto">0.00</span>
+                                                            </td>
+                                                            <td></td>
+                                                        </tr>
+                                                        <tr>
                                                             <td colspan="7" class="text-end text-muted">Descuento global cliente (<span id="descuentoGlobalPorcentaje">0.00%</span>):</td>
                                                             <td class="text-danger fw-semibold">
                                                                 -<span id="descuentoGlobalMonto">0.00</span>
@@ -322,9 +339,9 @@
                                                             <td></td>
                                                         </tr>
                                                         <tr>
-                                                            <td colspan="7" class="text-end fw-bold">Total con descuento:</td>
+                                                            <td colspan="7" class="text-end fw-bold">Total final:</td>
                                                             <td class="fw-bold">
-                                                                <span id="totalConDescuento">0.00</span>
+                                                                <span id="totalConAjustes">0.00</span>
                                                             </td>
                                                             <td></td>
                                                         </tr>

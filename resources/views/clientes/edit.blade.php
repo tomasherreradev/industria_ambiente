@@ -83,6 +83,12 @@
                                 </button>
                             </li>
                             <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="sucursales-tab" data-bs-toggle="tab" 
+                                        data-bs-target="#sucursales" type="button" role="tab">
+                                    Sucursales
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
                                 <button class="nav-link disabled" type="button">Cobranza</button>
                             </li>
                             <li class="nav-item" role="presentation">
@@ -268,39 +274,180 @@
                             <!-- Solapa Contactos -->
                             <div class="tab-pane fade" id="contactos" role="tabpanel">
                                 <div class="p-4">
-                                    <div class="row">
-                                        <!-- Columna izquierda -->
-                                        <div class="col-md-6">
-                                            <div class="mb-3">
-                                                <label for="telefono" class="form-label">Teléfono</label>
-                                                <input type="text" class="form-control" id="telefono" name="telefono" 
-                                                       value="{{ old('telefono', trim($cliente->cli_telefono)) }}" maxlength="30">
-                                            </div>
-
-                                            <div class="mb-3">
-                                                <label for="telefono1" class="form-label">Teléfono 1</label>
-                                                <input type="text" class="form-control" id="telefono1" name="telefono1" 
-                                                       value="{{ old('telefono1', trim($cliente->cli_telefono1)) }}" maxlength="20">
-                                            </div>
-
+                                    <div class="mb-3">
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <h6 class="mb-0">Contactos</h6>
+                                            <button type="button" class="btn btn-sm btn-primary" onclick="agregarFilaContacto()">
+                                                <x-heroicon-o-plus style="width: 16px; height: 16px;" class="me-1" />
+                                                Agregar contacto
+                                            </button>
                                         </div>
 
-                                        <!-- Columna derecha -->
-                                        <div class="col-md-6">
-                                            <div class="mb-3">
-                                                <label for="email" class="form-label">Email</label>
-                                                <input type="email" class="form-control" id="email" name="email" 
-                                                       value="{{ old('email', trim($cliente->cli_email)) }}" maxlength="30">
-                                            </div>
-
-                                            <div class="mb-3">
-                                                <label for="email2" class="form-label">Email 2</label>
-                                                <input type="email" class="form-control" id="email2" name="email2" 
-                                                       value="{{ old('email2', trim($cliente->cli_email2)) }}" maxlength="30">
-                                            </div>
-
+                                        <div class="table-responsive">
+                                            <table class="table table-sm table-bordered align-middle">
+                                                <thead class="table-light">
+                                                    <tr>
+                                                        <th style="width: 30%;">Nombre y Apellido</th>
+                                                        <th style="width: 20%;">Teléfono</th>
+                                                        <th style="width: 25%;">Email</th>
+                                                        <th style="width: 15%;">Tipo</th>
+                                                        <th style="width: 10%;">Acciones</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="tbodyContactos">
+                                                    @php
+                                                        $oldContactos = old('contactos');
+                                                    @endphp
+                                                    @if(is_array($oldContactos))
+                                                        @foreach($oldContactos as $index => $contacto)
+                                                            <tr>
+                                                                <td>
+                                                                    <input type="text" class="form-control form-control-sm"
+                                                                           name="contactos[{{ $index }}][nombre]"
+                                                                           value="{{ $contacto['nombre'] ?? '' }}">
+                                                                </td>
+                                                                <td>
+                                                                    <input type="text" class="form-control form-control-sm"
+                                                                           name="contactos[{{ $index }}][telefono]"
+                                                                           value="{{ $contacto['telefono'] ?? '' }}">
+                                                                </td>
+                                                                <td>
+                                                                    <input type="email" class="form-control form-control-sm"
+                                                                           name="contactos[{{ $index }}][email]"
+                                                                           value="{{ $contacto['email'] ?? '' }}">
+                                                                </td>
+                                                                <td>
+                                                                    @php
+                                                                        $tipo = $contacto['tipo'] ?? '';
+                                                                    @endphp
+                                                                    <select class="form-select form-select-sm"
+                                                                            name="contactos[{{ $index }}][tipo]">
+                                                                        <option value="">Seleccionar...</option>
+                                                                        <option value="Compras" {{ $tipo === 'Compras' ? 'selected' : '' }}>Compras</option>
+                                                                        <option value="Envío de factura" {{ $tipo === 'Envío de factura' ? 'selected' : '' }}>Envío de factura</option>
+                                                                        <option value="Cobranza" {{ $tipo === 'Cobranza' ? 'selected' : '' }}>Cobranza</option>
+                                                                        <option value="SHyMA" {{ $tipo === 'SHyMA' ? 'selected' : '' }}>SHyMA</option>
+                                                                    </select>
+                                                                </td>
+                                                                <td class="text-center">
+                                                                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="eliminarFilaContacto(this)">
+                                                                        <x-heroicon-o-trash style="width: 14px; height: 14px;" />
+                                                                    </button>
+                                                                </td>
+                                                            </tr>
+                                                        @endforeach
+                                                    @else
+                                                        @forelse($contactos as $index => $contacto)
+                                                            <tr>
+                                                                <td>
+                                                                    <input type="text" class="form-control form-control-sm"
+                                                                           name="contactos[{{ $index }}][nombre]"
+                                                                           value="{{ trim($contacto->nombre) }}">
+                                                                </td>
+                                                                <td>
+                                                                    <input type="text" class="form-control form-control-sm"
+                                                                           name="contactos[{{ $index }}][telefono]"
+                                                                           value="{{ trim($contacto->telefono ?? '') }}">
+                                                                </td>
+                                                                <td>
+                                                                    <input type="email" class="form-control form-control-sm"
+                                                                           name="contactos[{{ $index }}][email]"
+                                                                           value="{{ trim($contacto->email ?? '') }}">
+                                                                </td>
+                                                                <td>
+                                                                    @php
+                                                                        $tipo = trim($contacto->tipo ?? '');
+                                                                    @endphp
+                                                                    <select class="form-select form-select-sm"
+                                                                            name="contactos[{{ $index }}][tipo]">
+                                                                        <option value="">Seleccionar...</option>
+                                                                        <option value="Compras" {{ $tipo === 'Compras' ? 'selected' : '' }}>Compras</option>
+                                                                        <option value="Envío de factura" {{ $tipo === 'Envío de factura' ? 'selected' : '' }}>Envío de factura</option>
+                                                                        <option value="Cobranza" {{ $tipo === 'Cobranza' ? 'selected' : '' }}>Cobranza</option>
+                                                                        <option value="SHyMA" {{ $tipo === 'SHyMA' ? 'selected' : '' }}>SHyMA</option>
+                                                                    </select>
+                                                                </td>
+                                                                <td class="text-center">
+                                                                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="eliminarFilaContacto(this)">
+                                                                        <x-heroicon-o-trash style="width: 14px; height: 14px;" />
+                                                                    </button>
+                                                                </td>
+                                                            </tr>
+                                                        @empty
+                                                            <tr>
+                                                                <td>
+                                                                    <input type="text" class="form-control form-control-sm"
+                                                                           name="contactos[0][nombre]" placeholder="Nombre y Apellido">
+                                                                </td>
+                                                                <td>
+                                                                    <input type="text" class="form-control form-control-sm"
+                                                                           name="contactos[0][telefono]" placeholder="Teléfono">
+                                                                </td>
+                                                                <td>
+                                                                    <input type="email" class="form-control form-control-sm"
+                                                                           name="contactos[0][email]" placeholder="correo@ejemplo.com">
+                                                                </td>
+                                                                <td>
+                                                                    <select class="form-select form-select-sm"
+                                                                            name="contactos[0][tipo]">
+                                                                        <option value="">Seleccionar...</option>
+                                                                        <option value="Compras">Compras</option>
+                                                                        <option value="Envío de factura">Envío de factura</option>
+                                                                        <option value="Cobranza">Cobranza</option>
+                                                                        <option value="SHyMA">SHyMA</option>
+                                                                    </select>
+                                                                </td>
+                                                                <td class="text-center">
+                                                                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="eliminarFilaContacto(this)">
+                                                                        <x-heroicon-o-trash style="width: 14px; height: 14px;" />
+                                                                    </button>
+                                                                </td>
+                                                            </tr>
+                                                        @endforelse
+                                                    @endif
+                                                </tbody>
+                                            </table>
                                         </div>
                                     </div>
+                                </div>
+                            </div>
+
+                            <!-- Solapa Sucursales -->
+                            <div class="tab-pane fade" id="sucursales" role="tabpanel">
+                                <div class="p-4">
+                                    <div class="d-flex justify-content-between align-items-center mb-3">
+                                        <h6 class="mb-0">Sucursales del Cliente</h6>
+                                        <button type="button" class="btn btn-sm btn-primary" onclick="agregarSucursal()">
+                                            <x-heroicon-o-plus style="width: 16px; height: 16px;" class="me-1" />
+                                            Agregar Sucursal
+                                        </button>
+                                    </div>
+
+                                    <div class="table-responsive">
+                                        <table class="table table-bordered table-sm" id="tablaSucursales">
+                                            <thead class="table-light">
+                                                <tr>
+                                                    <th style="width: 20%;">Nombre / Fantasía</th>
+                                                    <th style="width: 20%;">Dirección</th>
+                                                    <th style="width: 10%;">Partido</th>
+                                                    <th style="width: 10%;">Localidad</th>
+                                                    <th style="width: 8%;">Prov.</th>
+                                                    <th style="width: 8%;">Cód. Postal</th>
+                                                    <th style="width: 12%;">Contacto</th>
+                                                    <th style="width: 10%;">Teléfono</th>
+                                                    <th style="width: 10%;">Email</th>
+                                                    <th style="width: 5%;">Acciones</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="tbodySucursales">
+                                                <!-- Las sucursales se agregarán dinámicamente aquí -->
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    <p class="text-muted small mt-2">
+                                        Las sucursales comparten la misma Razón Social que el cliente principal y no almacenan CUIT propio.
+                                    </p>
                                 </div>
                             </div>
 
@@ -474,6 +621,70 @@
                             </div>
                         </div>
                     </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para agregar/editar sucursal -->
+    <div class="modal fade" id="modalSucursal" tabindex="-1" aria-labelledby="modalSucursalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="modalSucursalLabel">Agregar Sucursal</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="formSucursal">
+                        <input type="hidden" id="sucursal_index" value="">
+                        <div class="row">
+                            <div class="col-md-3 mb-3">
+                                <label for="sucursal_codigo" class="form-label">Código</label>
+                                <input type="text" class="form-control" id="sucursal_codigo" maxlength="10" readonly>
+                                <small class="text-muted">Se genera automáticamente para nuevas sucursales.</small>
+                            </div>
+                            <div class="col-md-9 mb-3">
+                                <label for="sucursal_fantasia" class="form-label">Nombre / Fantasía <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="sucursal_fantasia" maxlength="60" required>
+                            </div>
+                            <div class="col-md-12 mb-3">
+                                <label for="sucursal_direccion" class="form-label">Dirección</label>
+                                <input type="text" class="form-control" id="sucursal_direccion" maxlength="60">
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label for="sucursal_localidad" class="form-label">Localidad</label>
+                                <input type="text" class="form-control" id="sucursal_localidad" maxlength="50">
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label for="sucursal_partido" class="form-label">Partido</label>
+                                <input type="text" class="form-control" id="sucursal_partido" maxlength="50">
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label for="sucursal_provincia" class="form-label">Provincia (cód.)</label>
+                                <input type="text" class="form-control" id="sucursal_provincia" maxlength="5">
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label for="sucursal_codigo_postal" class="form-label">Código Postal</label>
+                                <input type="text" class="form-control" id="sucursal_codigo_postal" maxlength="10">
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label for="sucursal_contacto" class="form-label">Contacto (Nombre y Apellido)</label>
+                                <input type="text" class="form-control" id="sucursal_contacto" maxlength="50">
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label for="sucursal_telefono" class="form-label">Teléfono</label>
+                                <input type="text" class="form-control" id="sucursal_telefono" maxlength="30">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="sucursal_email" class="form-label">Email</label>
+                                <input type="email" class="form-control" id="sucursal_email" maxlength="30">
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-primary" onclick="guardarSucursal()">Guardar</button>
                 </div>
             </div>
         </div>
@@ -858,15 +1069,25 @@
     let razonesSocialesFacturacion = @json($razonesSocialesJson ?? []);
     let razonSocialEditandoIndex = -1;
 
-    // Cargar empresas existentes al iniciar
+    // Gestión de sucursales
+    let sucursales = @json($sucursalesJson ?? []);
+    let sucursalEditandoIndex = -1;
+
+    // Cargar datos existentes al iniciar
     document.addEventListener('DOMContentLoaded', function() {
         renderizarTablaEmpresas();
         renderizarTablaRazonesSocialesFacturacion();
+        renderizarTablaSucursales();
         
         // Verificar que el modal esté disponible
         const modalCheck = document.getElementById('modalEmpresaRelacionada');
         if (!modalCheck) {
             console.warn('Modal de empresas relacionadas no encontrado en el DOM');
+        }
+
+        const modalSucursalCheck = document.getElementById('modalSucursal');
+        if (!modalSucursalCheck) {
+            console.warn('Modal de sucursal no encontrado en el DOM');
         }
     });
 
@@ -1029,6 +1250,204 @@
         actualizarCamposHiddenEmpresas();
     }
 
+    // ========== FUNCIONES PARA SUCURSALES ==========
+    window.agregarSucursal = function() {
+        sucursalEditandoIndex = -1;
+
+        setTimeout(function() {
+            const modalLabel = document.getElementById('modalSucursalLabel');
+            const form = document.getElementById('formSucursal');
+            const indexInput = document.getElementById('sucursal_index');
+            const modalElement = document.getElementById('modalSucursal');
+            const codigoInput = document.getElementById('sucursal_codigo');
+
+            if (!modalLabel || !form || !indexInput || !modalElement || !codigoInput) {
+                console.error('Elementos del modal de sucursal no encontrados');
+                return;
+            }
+
+            modalLabel.textContent = 'Agregar Sucursal';
+            form.reset();
+            indexInput.value = '';
+            codigoInput.value = '';
+
+            const modal = new bootstrap.Modal(modalElement);
+            modal.show();
+        }, 100);
+    }
+
+    window.editarSucursal = function(index) {
+        sucursalEditandoIndex = index;
+        const sucursal = sucursales[index];
+
+        const modalLabel = document.getElementById('modalSucursalLabel');
+        const form = document.getElementById('formSucursal');
+        const indexInput = document.getElementById('sucursal_index');
+        const modalElement = document.getElementById('modalSucursal');
+        const codigoInput = document.getElementById('sucursal_codigo');
+        const fantasiaInput = document.getElementById('sucursal_fantasia');
+        const direccionInput = document.getElementById('sucursal_direccion');
+        const localidadInput = document.getElementById('sucursal_localidad');
+        const partidoInput = document.getElementById('sucursal_partido');
+        const provinciaInput = document.getElementById('sucursal_provincia');
+        const codigoPostalInput = document.getElementById('sucursal_codigo_postal');
+        const contactoInput = document.getElementById('sucursal_contacto');
+        const telefonoInput = document.getElementById('sucursal_telefono');
+        const emailInput = document.getElementById('sucursal_email');
+
+        if (!modalLabel || !form || !indexInput || !modalElement || !codigoInput || !fantasiaInput) {
+            console.error('Elementos del modal de sucursal no encontrados');
+            return;
+        }
+
+        modalLabel.textContent = 'Editar Sucursal';
+        codigoInput.value = sucursal.codigo || '';
+        fantasiaInput.value = sucursal.fantasia || '';
+        direccionInput.value = sucursal.direccion || '';
+        localidadInput.value = sucursal.localidad || '';
+        partidoInput.value = sucursal.partido || '';
+        provinciaInput.value = sucursal.provincia || '';
+        codigoPostalInput.value = sucursal.codigo_postal || '';
+        contactoInput.value = sucursal.contacto || '';
+        telefonoInput.value = sucursal.telefono || '';
+        emailInput.value = sucursal.email || '';
+        indexInput.value = index;
+
+        const modal = new bootstrap.Modal(modalElement);
+        modal.show();
+    }
+
+    window.eliminarSucursal = function(index) {
+        Swal.fire({
+            title: '¿Estás seguro?',
+            text: 'Esta acción no se puede deshacer',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#dc3545',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: 'Sí, eliminar',
+            cancelButtonText: 'Cancelar'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                sucursales.splice(index, 1);
+                renderizarTablaSucursales();
+            }
+        });
+    }
+
+    window.guardarSucursal = function() {
+        const form = document.getElementById('formSucursal');
+        const indexInput = document.getElementById('sucursal_index');
+        const codigoInput = document.getElementById('sucursal_codigo');
+        const fantasiaInput = document.getElementById('sucursal_fantasia');
+        const direccionInput = document.getElementById('sucursal_direccion');
+        const localidadInput = document.getElementById('sucursal_localidad');
+        const partidoInput = document.getElementById('sucursal_partido');
+        const provinciaInput = document.getElementById('sucursal_provincia');
+        const codigoPostalInput = document.getElementById('sucursal_codigo_postal');
+        const contactoInput = document.getElementById('sucursal_contacto');
+        const telefonoInput = document.getElementById('sucursal_telefono');
+        const emailInput = document.getElementById('sucursal_email');
+        const modalElement = document.getElementById('modalSucursal');
+
+        if (!form || !fantasiaInput || !modalElement) {
+            console.error('Elementos del formulario de sucursal no encontrados');
+            return;
+        }
+
+        if (!form.checkValidity()) {
+            form.reportValidity();
+            return;
+        }
+
+        const sucursal = {
+            codigo: codigoInput.value.trim(),
+            fantasia: fantasiaInput.value.trim(),
+            direccion: direccionInput.value.trim(),
+            partido: partidoInput.value.trim(),
+            localidad: localidadInput.value.trim(),
+            provincia: provinciaInput.value.trim(),
+            codigo_postal: codigoPostalInput.value.trim(),
+            contacto: contactoInput.value.trim(),
+            telefono: telefonoInput.value.trim(),
+            email: emailInput.value.trim()
+        };
+
+        const index = indexInput.value !== '' ? parseInt(indexInput.value, 10) : -1;
+
+        if (index >= 0) {
+            sucursales[index] = sucursal;
+        } else {
+            sucursales.push(sucursal);
+        }
+
+        renderizarTablaSucursales();
+        const modal = bootstrap.Modal.getInstance(modalElement);
+        if (modal) {
+            modal.hide();
+        }
+    }
+
+    window.renderizarTablaSucursales = function() {
+        const tbody = document.getElementById('tbodySucursales');
+        if (!tbody) return;
+
+        tbody.innerHTML = '';
+
+        if (!sucursales || sucursales.length === 0) {
+            const row = document.createElement('tr');
+            row.innerHTML = '<td colspan="8" class="text-center text-muted">No hay sucursales cargadas</td>';
+            tbody.appendChild(row);
+        } else {
+            sucursales.forEach((sucursal, index) => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${escapeHtml(sucursal.fantasia || '-')}</td>
+                    <td><small>${escapeHtml(sucursal.direccion || '-')}</small></td>
+                    <td>${escapeHtml(sucursal.partido || '-')}</td>
+                    <td>${escapeHtml(sucursal.localidad || '-')}</td>
+                    <td>${escapeHtml(sucursal.provincia || '-')}</td>
+                    <td>${escapeHtml(sucursal.codigo_postal || '-')}</td>
+                    <td>${escapeHtml(sucursal.contacto || '-')}</td>
+                    <td>${escapeHtml(sucursal.telefono || '-')}</td>
+                    <td>${escapeHtml(sucursal.email || '-')}</td>
+                    <td>
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="editarSucursal(${index})" title="Editar">
+                            <x-heroicon-o-pencil style="width: 14px; height: 14px;" />
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="eliminarSucursal(${index})" title="Eliminar">
+                            <x-heroicon-o-trash style="width: 14px; height: 14px;" />
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        // Actualizar campos hidden para el envío del formulario
+        actualizarCamposHiddenSucursales();
+    }
+
+    window.actualizarCamposHiddenSucursales = function() {
+        // Eliminar campos hidden anteriores
+        document.querySelectorAll('input[name^="sucursales"]').forEach(input => input.remove());
+
+        if (!sucursales || sucursales.length === 0) {
+            return;
+        }
+
+        // Crear campos hidden para cada sucursal
+        sucursales.forEach((sucursal, index) => {
+            Object.keys(sucursal).forEach(key => {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = `sucursales[${index}][${key}]`;
+                input.value = sucursal[key] || '';
+                document.getElementById('clienteForm').appendChild(input);
+            });
+        });
+    }
+
     window.actualizarCamposHiddenEmpresas = function() {
         // Eliminar campos hidden anteriores
         document.querySelectorAll('input[name^="empresas_relacionadas"]').forEach(input => input.remove());
@@ -1057,6 +1476,7 @@
     document.getElementById('clienteForm').addEventListener('submit', function() {
         actualizarCamposHiddenEmpresas();
         actualizarCamposHiddenRazonesSociales();
+        actualizarCamposHiddenSucursales();
     });
 
     // ========== FUNCIONES PARA RAZONES SOCIALES DE FACTURACIÓN ==========
@@ -1245,6 +1665,53 @@
 
         // Actualizar campos hidden para el envío del formulario
         actualizarCamposHiddenRazonesSociales();
+    }
+
+    // ========== FUNCIONES PARA CONTACTOS ==========
+    window.agregarFilaContacto = function() {
+        const tbody = document.getElementById('tbodyContactos');
+        if (!tbody) return;
+
+        const index = tbody.children.length;
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>
+                <input type="text" class="form-control form-control-sm"
+                       name="contactos[${index}][nombre]" placeholder="Nombre y Apellido">
+            </td>
+            <td>
+                <input type="text" class="form-control form-control-sm"
+                       name="contactos[${index}][telefono]" placeholder="Teléfono">
+            </td>
+            <td>
+                <input type="email" class="form-control form-control-sm"
+                       name="contactos[${index}][email]" placeholder="correo@ejemplo.com">
+            </td>
+            <td>
+                <select class="form-select form-select-sm"
+                        name="contactos[${index}][tipo]">
+                    <option value="">Seleccionar...</option>
+                    <option value="Compras">Compras</option>
+                    <option value="Envío de factura">Envío de factura</option>
+                    <option value="Cobranza">Cobranza</option>
+                    <option value="SHyMA">SHyMA</option>
+                </select>
+            </td>
+            <td class="text-center">
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="eliminarFilaContacto(this)">
+                    <x-heroicon-o-trash style="width: 14px; height: 14px;" />
+                </button>
+            </td>
+        `;
+
+        tbody.appendChild(row);
+    }
+
+    window.eliminarFilaContacto = function(button) {
+        const row = button.closest('tr');
+        if (row) {
+            row.remove();
+        }
     }
 
     window.actualizarCamposHiddenRazonesSociales = function() {
