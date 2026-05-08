@@ -8,6 +8,7 @@ use App\Models\Matriz;
 use App\Models\CotioItemPrecioHistorial;
 use App\Imports\ItemsImport;
 use App\Exports\ItemsTemplateExport;
+use App\Exports\ItemsExport;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Http\Request;
@@ -24,7 +25,9 @@ class ItemController extends Controller
     {
         $search = $request->input('q');
         $tipo = $request->input('tipo');
+        // En querystring, los "+" llegan como espacios. Normalizamos y trim para evitar filtros incompletos.
         $matrizCodigo = $request->input('matriz');
+        $matrizCodigo = is_string($matrizCodigo) ? trim(preg_replace('/\s+/', ' ', $matrizCodigo)) : $matrizCodigo;
         $query = CotioItems::query();
 
         if ($search) {
@@ -41,11 +44,13 @@ class ItemController extends Controller
 
         // Filtrar por matriz usando la tabla pivote
         if ($matrizCodigo !== null && $matrizCodigo !== '') {
-            $query->whereExists(function($q) use ($matrizCodigo) {
+            $matrizCodigoLimpio = trim((string) $matrizCodigo);
+            $query->whereExists(function($q) use ($matrizCodigoLimpio) {
                 $q->select(DB::raw(1))
                   ->from('cotio_items_matriz')
                   ->whereColumn('cotio_items_matriz.cotio_item_id', 'cotio_items.id')
-                  ->where('cotio_items_matriz.matriz_codigo', $matrizCodigo);
+                  // Comparar con TRIM para manejar espacios en blanco (legacy)
+                  ->whereRaw('TRIM(cotio_items_matriz.matriz_codigo) = ?', [trim($matrizCodigoLimpio)]);
             });
         }
 
@@ -85,15 +90,27 @@ class ItemController extends Controller
             'limites_establecidos' => ['nullable', 'string', 'max:255'],
             'metodo' => ['nullable', 'string', 'exists:metodo,metodo_codigo'],
             'unidad_medida' => ['nullable', 'string', 'max:255'],
-            'precio' => ['nullable'],
+            'precio' => ['nullable', 'numeric', 'min:0'],
             'componentes' => ['array'],
             'componentes.*' => ['integer', 'exists:cotio_items,id'],
+            'componentes_orden' => ['array'],
+            'componentes_orden.*' => ['integer', 'exists:cotio_items,id'],
             'matrices' => ['array'],
             'matrices.*' => ['string', 'exists:matriz,matriz_codigo'],
+            'nota_imprimible' => ['nullable', 'string'],
+            'nota_interna' => ['nullable', 'string'],
+            'notas_predeterminadas' => ['array'],
+            'notas_predeterminadas.*.titulo' => ['nullable', 'string', 'max:255'],
+            'notas_predeterminadas.*.contenido' => ['required', 'string'],
         ]);
 
         $componentesSeleccionados = collect($validated['componentes'] ?? [])->filter();
         $componentesSeleccionados = $componentesSeleccionados->map(fn ($id) => (int) $id)->filter()->unique();
+        $componentesOrden = collect($validated['componentes_orden'] ?? [])
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->unique()
+            ->values();
 
         if (!empty($validated['es_muestra'])) {
             $componentesInvalidos = CotioItems::whereIn('id', $componentesSeleccionados)
@@ -105,13 +122,29 @@ class ItemController extends Controller
                     ->withErrors(['componentes' => 'Los componentes seleccionados no pueden ser agrupadores.'])
                     ->withInput();
             }
+
+            // Si el agrupador tiene matrices asignadas, los componentes deben compartir al menos una de esas matrices
+            $matricesSeleccionadas = collect($validated['matrices'] ?? [])->map(fn ($c) => trim((string) $c))->filter()->unique()->values()->all();
+            if (!empty($matricesSeleccionadas) && $componentesSeleccionados->isNotEmpty()) {
+                $componentesFueraDeMatriz = CotioItems::whereIn('id', $componentesSeleccionados)
+                    ->whereDoesntHave('matrices', function ($q) use ($matricesSeleccionadas) {
+                        $q->whereIn('cotio_items_matriz.matriz_codigo', $matricesSeleccionadas);
+                    })
+                    ->pluck('id');
+
+                if ($componentesFueraDeMatriz->isNotEmpty()) {
+                    return back()
+                        ->withErrors(['componentes' => 'Algunos componentes no comparten la(s) matriz(ces) del agrupador.'])
+                        ->withInput();
+                }
+            }
         }
 
         // IMPORTANTE:
         // La tabla legacy `cotio_items` no tiene autoincrement en la columna `id`,
         // por lo que debemos asignar el ID manualmente y asegurarnos de que
         // se persista antes de crear registros en la tabla pivote.
-        return DB::transaction(function () use ($validated, $componentesSeleccionados) {
+        return DB::transaction(function () use ($validated, $componentesSeleccionados, $componentesOrden) {
             $nextId = DB::table('cotio_items')->max('id');
             $nextId = $nextId ? $nextId + 1 : 1;
 
@@ -126,6 +159,17 @@ class ItemController extends Controller
             // Asegurar que el precio tenga 2 decimales
             $item->precio                = $validated['precio'] !== null ? round((float)$validated['precio'], 2) : null;
 
+            $trimNota = static function ($v) {
+                if ($v === null) {
+                    return null;
+                }
+                $t = trim((string) $v);
+
+                return $t === '' ? null : $t;
+            };
+            $item->nota_imprimible = $trimNota($validated['nota_imprimible'] ?? null);
+            $item->nota_interna = $trimNota($validated['nota_interna'] ?? null);
+
             $item->save();
 
             // Guardar matrices en tabla pivote (sync usa la relación y evita conflictos de secuencia)
@@ -133,7 +177,32 @@ class ItemController extends Controller
             $item->matrices()->sync($matricesSeleccionadas);
 
             if ($item->es_muestra && $componentesSeleccionados->isNotEmpty()) {
-                $item->componentesAsociados()->sync($componentesSeleccionados->toArray());
+                // Orden: si no llega desde UI, usar el orden en que se seleccionaron.
+                $ordenFinal = $componentesOrden->filter(fn ($id) => $componentesSeleccionados->contains($id));
+                if ($ordenFinal->isEmpty()) {
+                    $ordenFinal = $componentesSeleccionados->values();
+                } else {
+                    $faltantes = $componentesSeleccionados->diff($ordenFinal);
+                    $ordenFinal = $ordenFinal->concat($faltantes->values());
+                }
+
+                $syncData = [];
+                foreach ($ordenFinal->values() as $idx => $id) {
+                    $syncData[$id] = ['orden' => $idx + 1];
+                }
+                $item->componentesAsociados()->sync($syncData);
+            }
+
+            // Sincronizar notas predeterminadas
+            if (!empty($validated['notas_predeterminadas'])) {
+                foreach ($validated['notas_predeterminadas'] as $idx => $notaData) {
+                    $item->notasPredeterminadas()->create([
+                        'titulo' => $notaData['titulo'] ?? null,
+                        'contenido' => $notaData['contenido'],
+                        'orden' => $idx + 1,
+                        'activa' => true
+                    ]);
+                }
             }
 
             return redirect()->route('items.index')->with('success', 'Ítem creado correctamente.');
@@ -153,7 +222,7 @@ class ItemController extends Controller
      */
     public function edit(CotioItems $cotio_items)
     {
-        $item = $cotio_items->load(['componentesAsociados', 'matrices']);
+        $item = $cotio_items->load(['componentesAsociados', 'matrices', 'notasPredeterminadas']);
         $metodos = Metodo::orderBy('metodo_codigo')->get();
         $matrices = Matriz::orderBy('matriz_descripcion')->get();
         $componentes = CotioItems::componentes()
@@ -178,14 +247,27 @@ class ItemController extends Controller
             'limites_establecidos' => ['nullable', 'string', 'max:255'],
             'metodo' => ['nullable', 'string', 'exists:metodo,metodo_codigo'],
             'unidad_medida' => ['nullable', 'string', 'max:255'],
-            'precio' => ['nullable', 'decimal:2'],
+            'precio' => ['nullable', 'numeric', 'min:0'],
             'componentes' => ['array'],
             'componentes.*' => ['integer', 'exists:cotio_items,id'],
+            'componentes_orden' => ['array'],
+            'componentes_orden.*' => ['integer', 'exists:cotio_items,id'],
             'matrices' => ['array'],
             'matrices.*' => ['string', 'exists:matriz,matriz_codigo'],
+            'nota_imprimible' => ['nullable', 'string'],
+            'nota_interna' => ['nullable', 'string'],
+            'notas_predeterminadas' => ['array'],
+            'notas_predeterminadas.*.titulo' => ['nullable', 'string', 'max:255'],
+            'notas_predeterminadas.*.contenido' => ['required', 'string'],
         ]);
 
         $componentesSeleccionados = collect($validated['componentes'] ?? [])->map(fn ($id) => (int) $id)->filter()->reject(fn ($id) => $id === $item->id)->unique();
+        $componentesOrden = collect($validated['componentes_orden'] ?? [])
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->reject(fn ($id) => $id === $item->id)
+            ->unique()
+            ->values();
 
         if (!empty($validated['es_muestra'])) {
             $componentesInvalidos = CotioItems::whereIn('id', $componentesSeleccionados)
@@ -197,28 +279,83 @@ class ItemController extends Controller
                     ->withErrors(['componentes' => 'Los componentes seleccionados no pueden ser agrupadores.'])
                     ->withInput();
             }
+
+            // Si el agrupador tiene matrices asignadas, los componentes deben compartir al menos una de esas matrices
+            $matricesSeleccionadas = collect($validated['matrices'] ?? [])->map(fn ($c) => trim((string) $c))->filter()->unique()->values()->all();
+            if (!empty($matricesSeleccionadas) && $componentesSeleccionados->isNotEmpty()) {
+                $componentesFueraDeMatriz = CotioItems::whereIn('id', $componentesSeleccionados)
+                    ->whereDoesntHave('matrices', function ($q) use ($matricesSeleccionadas) {
+                        $q->whereIn('cotio_items_matriz.matriz_codigo', $matricesSeleccionadas);
+                    })
+                    ->pluck('id');
+
+                if ($componentesFueraDeMatriz->isNotEmpty()) {
+                    return back()
+                        ->withErrors(['componentes' => 'Algunos componentes no comparten la(s) matriz(ces) del agrupador.'])
+                        ->withInput();
+                }
+            }
         }
 
-        $item->update([
-            'cotio_descripcion' => $validated['cotio_descripcion'],
-            'es_muestra' => (bool)($validated['es_muestra'] ?? false),
-            'agregable_a_comps' => (bool)($validated['agregable_a_comps'] ?? false),
-            'limites_establecidos' => $validated['limites_establecidos'] ?? null,
-            'metodo' => $validated['metodo'] ?? null,
-            'unidad_medida' => $validated['unidad_medida'] ?? null,
-            // Asegurar que el precio tenga 2 decimales
-            'precio' => $validated['precio'] !== null ? round((float)$validated['precio'], 2) : null,
-        ]);
+        $trimNota = static function ($v) {
+            if ($v === null) {
+                return null;
+            }
+            $t = trim((string) $v);
 
-        // Sincronizar matrices en tabla pivote
-        $matricesSeleccionadas = collect($validated['matrices'] ?? [])->map(fn ($c) => trim($c))->filter()->unique()->values()->all();
-        $item->matrices()->sync($matricesSeleccionadas);
+            return $t === '' ? null : $t;
+        };
+        $esAgrupador = (bool) ($validated['es_muestra'] ?? false);
 
-        if ($item->es_muestra) {
-            $item->componentesAsociados()->sync($componentesSeleccionados->toArray());
-        } else {
-            $item->componentesAsociados()->detach();
-        }
+        DB::transaction(function() use ($item, $validated, $esAgrupador, $trimNota, $componentesSeleccionados, $componentesOrden) {
+            $item->update([
+                'cotio_descripcion' => $validated['cotio_descripcion'],
+                'es_muestra' => $esAgrupador,
+                'agregable_a_comps' => (bool)($validated['agregable_a_comps'] ?? false),
+                'limites_establecidos' => $validated['limites_establecidos'] ?? null,
+                'metodo' => $validated['metodo'] ?? null,
+                'unidad_medida' => $validated['unidad_medida'] ?? null,
+                // Asegurar que el precio tenga 2 decimales
+                'precio' => $validated['precio'] !== null ? round((float)$validated['precio'], 2) : null,
+                'nota_imprimible' => $trimNota($validated['nota_imprimible'] ?? null),
+                'nota_interna' => $trimNota($validated['nota_interna'] ?? null),
+            ]);
+
+            // Sincronizar matrices en tabla pivote
+            $matricesSeleccionadas = collect($validated['matrices'] ?? [])->map(fn ($c) => trim($c))->filter()->unique()->values()->all();
+            $item->matrices()->sync($matricesSeleccionadas);
+
+            if ($item->es_muestra) {
+                $ordenFinal = $componentesOrden->filter(fn ($id) => $componentesSeleccionados->contains($id));
+                if ($ordenFinal->isEmpty()) {
+                    $ordenFinal = $componentesSeleccionados->values();
+                } else {
+                    $faltantes = $componentesSeleccionados->diff($ordenFinal);
+                    $ordenFinal = $ordenFinal->concat($faltantes->values());
+                }
+
+                $syncData = [];
+                foreach ($ordenFinal->values() as $idx => $id) {
+                    $syncData[$id] = ['orden' => $idx + 1];
+                }
+                $item->componentesAsociados()->sync($syncData);
+            } else {
+                $item->componentesAsociados()->detach();
+            }
+
+            // Sincronizar notas predeterminadas
+            $item->notasPredeterminadas()->delete();
+            if (!empty($validated['notas_predeterminadas'])) {
+                foreach ($validated['notas_predeterminadas'] as $idx => $notaData) {
+                    $item->notasPredeterminadas()->create([
+                        'titulo' => $notaData['titulo'] ?? null,
+                        'contenido' => $notaData['contenido'],
+                        'orden' => $idx + 1,
+                        'activa' => true
+                    ]);
+                }
+            }
+        });
 
         return redirect()->route('items.index')->with('success', 'Ítem actualizado correctamente.');
     }
@@ -445,6 +582,12 @@ class ItemController extends Controller
         ]);
 
         try {
+            @ini_set('memory_limit', '512M');
+            @ini_set('max_execution_time', '600');
+            if (function_exists('set_time_limit')) {
+                set_time_limit(600);
+            }
+
             Log::info('Iniciando importación de archivo', [
                 'archivo' => $request->file('archivo')->getClientOriginalName(),
                 'tamaño' => $request->file('archivo')->getSize()
@@ -508,6 +651,24 @@ class ItemController extends Controller
     {
         $incluirComponentes = request()->has('incluir_componentes') && request()->get('incluir_componentes') == '1';
         return Excel::download(new ItemsTemplateExport($incluirComponentes), 'plantilla_importar_determinaciones.xlsx');
+    }
+
+    /**
+     * Exportar determinaciones en formato de plantilla (para re-importar)
+     */
+    public function exportar(Request $request)
+    {
+        @ini_set('memory_limit', '512M');
+        @ini_set('max_execution_time', '300');
+
+        $search = $request->input('q');
+        $tipo = $request->input('tipo');
+        $matriz = $request->input('matriz');
+
+        return Excel::download(
+            new ItemsExport($search, $tipo, $matriz),
+            'determinaciones_export.xlsx'
+        );
     }
 
     /**

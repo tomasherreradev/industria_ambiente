@@ -22,7 +22,8 @@ class Factura extends Model
         'estado',
         'cliente_razon_social',
         'cliente_cuit',
-        'pdf_url'
+        'pdf_url',
+        'observaciones'
     ];
 
     protected $casts = [

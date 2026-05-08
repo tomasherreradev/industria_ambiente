@@ -34,6 +34,18 @@
                class="btn btn-sm {{ $viewType === 'documento' ? 'btn-primary' : 'btn-outline-secondary' }}">
                <x-heroicon-o-document style="width: 20px; height: 20px;" />
             </a>
+
+            @if($viewType === 'lista' && Auth::user()->rol == 'laboratorio')
+                <a
+                    href="{{ route('mis-ordenes', array_merge(request()->query(), ['view' => 'lista', 'print' => 1])) }}"
+                    target="_blank"
+                    rel="noopener"
+                    class="btn btn-sm btn-outline-dark ms-2"
+                    title="Imprimir listado">
+                    <x-heroicon-o-printer style="width: 18px; height: 18px;" class="me-1" />
+                    <span class="d-none d-sm-inline">Imprimir</span>
+                </a>
+            @endif
         </div>
     </header>
 

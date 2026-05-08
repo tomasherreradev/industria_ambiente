@@ -1,3 +1,11 @@
+@once
+    @if($muestras->contains(fn($c) => !empty($c->coti_cuotas)))
+        <p class="small text-muted mb-2 d-flex align-items-center flex-wrap gap-2">
+            <span class="badge bg-info text-white"><x-heroicon-o-check style="width: 10px; height: 10px;" /></span>
+            <span><strong>Cuotas</strong> = cotización con <strong>cuotas</strong> (coordinar a lo largo del plan).</span>
+        </p>
+    @endif
+@endonce
 @foreach($muestras as $coti)
 @php
     $estado = trim($coti->coti_estado);
@@ -28,6 +36,7 @@
 <div class="card mb-2 shadow-sm documento-card
     @if($coti->has_suspension) border-start border-danger border-3
     @elseif($coti->has_priority) border-start border-warning border-3
+    @elseif(! empty($coti->coti_cuotas)) border-start border-info border-3
     @else border-start border-3
     @endif">
     
@@ -51,8 +60,9 @@
                         <x-heroicon-o-star style="width: 10px; height: 10px;" /> Prioritaria
                     </span>
                 @endif
+                @include('muestras.partials.cuotas-cotizacion-badge', ['coti' => $coti])
                 <span class="text-muted small d-none d-md-inline">|</span>
-                <span class="small text-truncate" style="max-width: 200px;">{{ $coti->coti_empresa }}</span>
+                <span class="small text-truncate" style="max-width: 200px;">{{ \App\Support\CotizacionClienteEtiqueta::paraLista($coti) }}</span>
                 <span class="small text-muted d-none d-lg-inline">- {{ $coti->matriz->matriz_descripcion ?? 'N/A' }}</span>
             </div>
             

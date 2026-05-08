@@ -5,9 +5,12 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\User;
 use App\Models\Clientes;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\UsersExport;
+use Illuminate\Validation\Rule;
 
 class UserController extends Controller
 {
@@ -47,51 +50,99 @@ class UserController extends Controller
     
     public function createUser()
     {
-        $sectores = User::where('rol', 'sector')->get();
-        // $clientes = Clientes::where('cli_estado', true)->get();
+        $sectores = User::where('rol', 'sector')->orderBy('usu_descripcion')->get();
+
         return view('users.create', compact('sectores'));
     }
 
     public function storeUser(Request $request)
     {
-        Log::info('Starting user creation', ['request_data' => $request->except('password')]);
-    
+        Log::info('Starting user creation', ['request_data' => $request->except(['password', 'password_confirmation'])]);
+
+        $editor = Auth::user();
+        $esAdmin = $editor && (int) ($editor->usu_nivel ?? 0) >= 900;
+        $roles = $this->rolesPrincipalesValidos();
+
         try {
-            $validatedData = $request->validate([
+            $rules = [
                 'usu_descripcion' => 'required|string|max:255',
                 'usu_codigo' => 'required|string|max:50|unique:usu,usu_codigo',
-                'rol' => 'required|string',
-                'sector_codigo' => 'nullable|string',
-                'password' => 'required|string|min:4',
-            ]);
+                'rol' => ['required', 'string', 'max:50', Rule::in($roles)],
+                'sector_codigo' => 'nullable|string|max:50',
+                'dni' => 'nullable|string|max:20',
+                'email' => 'nullable|string|max:255',
+                'departamento' => 'nullable|string|max:255',
+                'sector_trabajo' => 'nullable|string|max:100',
+                'password' => 'required|string|min:4|confirmed',
+                'usu_estado' => 'required|boolean',
+            ];
+            if ($esAdmin) {
+                $rules['usu_nivel'] = 'nullable|integer|min:0|max:9999';
+                $rules['roles_adicionales'] = 'nullable|array';
+                $rules['roles_adicionales.*'] = ['string', 'max:50', Rule::in($roles)];
+            }
+
+            $validated = $request->validate($rules);
             Log::debug('Validation passed for new user');
-    
+
             $usuario = new User();
-            $usuario->usu_descripcion = $request->usu_descripcion;
-            $usuario->usu_codigo = $request->usu_codigo;
-            $usuario->rol = $request->rol;
-            $usuario->sector_codigo = $request->sector_codigo;
+            $usuario->usu_descripcion = $validated['usu_descripcion'];
+            $usuario->usu_codigo = $validated['usu_codigo'];
+            $usuario->rol = $validated['rol'];
             $usuario->usu_clave = md5($request->password);
-            $usuario->usu_estado = true;
-    
+            $usuario->usu_estado = (bool) $validated['usu_estado'];
+            $usuario->dni = $validated['dni'] ?? null;
+            $usuario->email = $validated['email'] ?? null;
+            $usuario->departamento = $validated['departamento'] ?? null;
+            $usuario->sector_trabajo = $validated['sector_trabajo'] ?? null;
+
+            if ($esAdmin && $request->filled('usu_nivel')) {
+                $usuario->usu_nivel = (int) $request->input('usu_nivel');
+            } else {
+                $usuario->usu_nivel = 500;
+            }
+
+            if ($request->filled('sector_codigo')) {
+                $sectorUser = User::where('usu_codigo', $request->sector_codigo)->first();
+                if (! $sectorUser) {
+                    return redirect()
+                        ->back()
+                        ->withInput()
+                        ->withErrors(['sector_codigo' => 'El sector seleccionado no corresponde a un laboratorio válido.']);
+                }
+                $usuario->sector_codigo = $sectorUser->usu_codigo;
+            } else {
+                $usuario->sector_codigo = null;
+            }
+
             $usuario->save();
+
+            if ($esAdmin) {
+                $principal = (string) $usuario->rol;
+                $adicionales = array_values(array_filter(
+                    array_map('strval', (array) $request->input('roles_adicionales', [])),
+                    fn ($r) => $r !== '' && $r !== $principal
+                ));
+                $usuario->syncRoles($adicionales);
+            }
+
             Log::info('User created successfully', ['user_id' => $usuario->usu_codigo]);
-    
+
             return redirect()
                 ->route('users.showUsers')
                 ->with('success', 'Usuario creado correctamente.');
-    
         } catch (\Illuminate\Validation\ValidationException $e) {
             Log::error('Validation failed while creating user', [
                 'errors' => $e->errors(),
-                'input' => $request->except('password')
+                'input' => $request->except(['password', 'password_confirmation']),
             ]);
             throw $e;
         } catch (\Exception $e) {
             Log::error('Error creating user', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
+
             return back()
                 ->withInput()
                 ->withErrors(['error' => 'Error al crear el usuario. Por favor, intente nuevamente.']);
@@ -101,43 +152,88 @@ class UserController extends Controller
 
     public function showUser($usu_codigo)
     {
-        $sectores = User::where('rol', 'sector')->get();
+        $sectores = User::where('rol', 'sector')->orderBy('usu_descripcion')->get();
         $usuario = User::findOrFail($usu_codigo);
-        return view('users.show', compact('usuario', 'sectores'));
+        $rolesAdicionales = DB::table('user_roles')
+            ->where('usu_codigo', $usuario->usu_codigo)
+            ->pluck('rol')
+            ->all();
+
+        return view('users.show', compact('usuario', 'sectores', 'rolesAdicionales'));
     }
 
     public function update(Request $request, $usu_codigo)
     {
-        $request->validate([
+        $editor = Auth::user();
+        $esAdmin = $editor && (int) ($editor->usu_nivel ?? 0) >= 900;
+
+        $rolesPrincipalesValidos = $this->rolesPrincipalesValidos();
+
+        $rules = [
             'usu_descripcion' => 'required|string|max:255',
             'usu_estado' => 'required|boolean',
-            'rol' => 'nullable|string|max:50',
+            'rol' => ['nullable', 'string', 'max:50', Rule::in(array_merge([''], $rolesPrincipalesValidos))],
             'sector_codigo' => 'nullable|string|max:50',
-        ]);
-    
+            'dni' => 'nullable|string|max:20',
+            'email' => 'nullable|string|max:255',
+            'departamento' => 'nullable|string|max:255',
+            'sector_trabajo' => 'nullable|string|max:100',
+        ];
+
+        if ($esAdmin) {
+            $rules['usu_nivel'] = 'nullable|integer|min:0|max:9999';
+            $rules['password'] = 'nullable|string|min:4|confirmed';
+            $rules['roles_adicionales'] = 'nullable|array';
+            $rules['roles_adicionales.*'] = ['string', 'max:50', Rule::in($rolesPrincipalesValidos)];
+            $rules['limpiar_sesion'] = 'nullable|boolean';
+        }
+
+        $validated = $request->validate($rules);
+
         $usuario = User::findOrFail($usu_codigo);
-        $usuario->usu_descripcion = $request->usu_descripcion;
-        $usuario->usu_estado = $request->usu_estado;
-        $usuario->rol = $request->rol;
-    
-        if ($request->sector_codigo) {
-            // Buscar al usuario por el código que llegó como "sector_codigo"
+        $usuario->usu_descripcion = $validated['usu_descripcion'];
+        $usuario->usu_estado = (bool) $validated['usu_estado'];
+        $rolInput = $request->input('rol');
+        $usuario->rol = ($rolInput === '' || $rolInput === null) ? null : (string) $rolInput;
+
+        if ($request->filled('sector_codigo')) {
             $usuarioSector = User::where('usu_codigo', $request->sector_codigo)->first();
-    
-            if ($usuarioSector) {
-                // Asignar el usu_codigo encontrado al campo sector_codigo
-                $usuario->sector_codigo = $usuarioSector->usu_codigo;
-                $usuario->rol = 'laboratorio'; // O ajustá según tu lógica de negocio
-            } else {
-                return redirect()->back()->withErrors(['sector_codigo' => 'El código ingresado no corresponde a ningún usuario.']);
+            if (! $usuarioSector) {
+                return redirect()->back()->withErrors(['sector_codigo' => 'El sector seleccionado no corresponde a un usuario (laboratorio) válido.'])->withInput();
             }
+            $usuario->sector_codigo = $usuarioSector->usu_codigo;
         } else {
             $usuario->sector_codigo = null;
         }
-    
+
+        $usuario->dni = $validated['dni'] ?? null;
+        $usuario->email = $validated['email'] ?? null;
+        $usuario->departamento = $validated['departamento'] ?? null;
+        $usuario->sector_trabajo = $validated['sector_trabajo'] ?? null;
+
+        if ($esAdmin) {
+            if ($request->filled('usu_nivel')) {
+                $usuario->usu_nivel = (int) $request->input('usu_nivel');
+            }
+            if ($request->filled('password')) {
+                $usuario->usu_clave = md5($request->input('password'));
+            }
+            if ($request->boolean('limpiar_sesion')) {
+                $usuario->current_session_id = null;
+            }
+            $principal = (string) ($usuario->rol ?? '');
+            $adicionales = array_values(array_filter(
+                array_map('strval', (array) $request->input('roles_adicionales', [])),
+                fn ($r) => $r !== '' && $r !== $principal
+            ));
+            $usuario->syncRoles($adicionales);
+        }
+
         $usuario->save();
-    
-        return redirect()->route('users.showUsers')->with('success', 'Usuario actualizado correctamente.');
+
+        return redirect()
+            ->route('users.showUser', ['usu_codigo' => $usuario->usu_codigo])
+            ->with('success', 'Usuario actualizado correctamente.');
     }
 
 
@@ -236,5 +332,15 @@ class UserController extends Controller
             return back()->with('error', 'Error al exportar los usuarios: ' . $e->getMessage());
         }
     }
-    
+
+    /**
+     * @return list<string>
+     */
+    private function rolesPrincipalesValidos(): array
+    {
+        return [
+            'laboratorio', 'muestreador', 'coordinador_lab', 'coordinador_muestreo', 'facturador',
+            'ventas', 'firmador', 'coordinador_consul', 'asp', 'clarke_fire', 'cliente',
+        ];
+    }
 }

@@ -6,6 +6,7 @@
         puedeEditar: true,
         ensayosIniciales: [],
         componentesIniciales: [],
+        coti_req_cadena_custodia_relacionada: false,
     };
 
         // console.log('[cotizacion] Inicializando state con config:', {
@@ -28,6 +29,8 @@
         modo: config.modo || 'create',
         clienteSeleccionado: null,
         ensayosColapsados: new Set(), // Guardar estado de colapso de ensayos
+        divisaCodigo: null,
+        puedeBajarPrecio: config.puedeBajarPrecio === true,
     };
     
     // console.log('[cotizacion] State inicializado:', {
@@ -81,7 +84,49 @@
         clienteResultados: document.getElementById('clienteResultados'),
         clienteBuscadorWrapper: document.getElementById('clienteBuscadorWrapper'),
         clienteAyuda: document.getElementById('clienteBusquedaAyuda'),
+        divisaSelect: document.getElementById('divisa_codigo'),
+        divisaLabel: document.getElementById('divisaLabel'),
+        razonSocialSelect: document.getElementById('razon_social_facturacion_select'),
+        razonSocialHelp: document.getElementById('razon_social_facturacion_help'),
     };
+
+        elements.contactoSelects = Array.from(document.querySelectorAll('.contacto-select'));
+
+        const cotiReqCadenaRelHidden = document.getElementById('input_coti_req_cadena_custodia_relacionada');
+        function setCotiReqCadenaRelHidden(val) {
+            if (cotiReqCadenaRelHidden) {
+                cotiReqCadenaRelHidden.value = val ? '1' : '0';
+            }
+        }
+        function valorCotiReqCadenaRelHidden() {
+            return !!(cotiReqCadenaRelHidden && cotiReqCadenaRelHidden.value === '1');
+        }
+        function syncCotiReqCadenaRelCheckboxesFromHidden() {
+            const v = valorCotiReqCadenaRelHidden();
+            ['ensayo_chk_req_cadena_relacionada', 'edit_ensayo_chk_req_cadena_relacionada'].forEach(function (id) {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.checked = v;
+                }
+            });
+        }
+        function inicializarCotiReqCadenaCustodiaRelacionadaUi() {
+            if (cotiReqCadenaRelHidden && typeof config.coti_req_cadena_custodia_relacionada !== 'undefined') {
+                setCotiReqCadenaRelHidden(!!config.coti_req_cadena_custodia_relacionada);
+            }
+            syncCotiReqCadenaRelCheckboxesFromHidden();
+            ['ensayo_chk_req_cadena_relacionada', 'edit_ensayo_chk_req_cadena_relacionada'].forEach(function (id) {
+                const el = document.getElementById(id);
+                if (!el || el.dataset.cotiReqRelBound === '1') {
+                    return;
+                }
+                el.dataset.cotiReqRelBound = '1';
+                el.addEventListener('change', function () {
+                    setCotiReqCadenaRelHidden(!!this.checked);
+                    syncCotiReqCadenaRelCheckboxesFromHidden();
+                });
+            });
+        }
 
         elements.camposComponenteInteractivos = [
         elements.campoPrecioComponente,
@@ -101,13 +146,18 @@
             inicializarTooltips();
             inicializarTabsLog();
             inicializarBusquedaClientes();
+            inicializarSelectContactos();
+            inicializarContactosUI();
             inicializarEventosTabla();
             inicializarBotonesAccion();
             inicializarBloqueAprobacion();
             await cargarCatalogos();
             inicializarEventosModales();
+            inicializarCotiReqCadenaCustodiaRelacionadaUi();
             inicializarEventosSector();
             inicializarEventosDescuentos();
+            inicializarEventosDivisa();
+            inicializarCondicionPagoYCuotas();
             sincronizarTotales();
             renderTabla();
             actualizarEnsayosDisponiblesParaComponentes();
@@ -148,6 +198,354 @@
                 // console.log('Solapa activa:', event.target.textContent.trim());
             });
         });
+    }
+
+    function inicializarSelectContactos() {
+        elements.contactoSelects = Array.from(document.querySelectorAll('.contacto-select'));
+        if (!elements.contactoSelects.length) {
+            return;
+        }
+
+        elements.contactoSelects.forEach((select) => {
+            if (select.dataset.listenerContactos) {
+                return;
+            }
+            select.addEventListener('change', function () {
+                const indice = this.dataset.contactoIndex || '1';
+                const option = this.options[this.selectedIndex];
+                if (!option || !option.dataset) {
+                    return;
+                }
+
+                const sufijo = indice === '1' ? '' : indice;
+                const nombre = option.dataset.nombre || '';
+                const email = option.dataset.email || '';
+                const telefono = option.dataset.telefono || '';
+                const tipo = option.dataset.tipo || '';
+
+                asignarValorSiExiste('contacto' + sufijo, nombre);
+                asignarValorSiExiste('correo' + sufijo, email);
+                asignarValorSiExiste('telefono' + sufijo, telefono);
+                if (tipo) {
+                    asignarValorSiExiste('coti_contacto_tipo' + sufijo, tipo);
+                }
+            });
+            select.dataset.listenerContactos = '1';
+        });
+    }
+
+    function configurarContactosCliente(contactos) {
+        elements.contactoSelects = Array.from(document.querySelectorAll('.contacto-select'));
+        if (!elements.contactoSelects.length) {
+            return;
+        }
+
+        const lista = Array.isArray(contactos) ? contactos : [];
+
+        elements.contactoSelects.forEach((select) => {
+            // Limpiar opciones actuales
+            select.innerHTML = '';
+
+            const opcionDefault = document.createElement('option');
+            opcionDefault.value = '';
+            opcionDefault.textContent = 'Seleccionar contacto registrado...';
+            select.appendChild(opcionDefault);
+
+            if (!lista.length) {
+                select.disabled = true;
+                return;
+            }
+
+            lista.forEach((contacto, index) => {
+                const option = document.createElement('option');
+                const id =
+                    contacto.id ||
+                    contacto.codigo ||
+                    contacto.contacto_id ||
+                    String(index + 1);
+                const nombre =
+                    contacto.nombre ||
+                    contacto.contacto ||
+                    contacto.descripcion ||
+                    '';
+                const email = contacto.email || contacto.correo || '';
+                const telefono = contacto.telefono || '';
+                const tipo =
+                    contacto.tipo ||
+                    contacto.tipo_contacto ||
+                    contacto.contacto_tipo ||
+                    '';
+
+                option.value = id;
+                option.textContent = nombre || `Contacto ${index + 1}`;
+                if (email) {
+                    option.textContent += ` - ${email}`;
+                }
+
+                option.dataset.nombre = nombre;
+                option.dataset.email = email;
+                option.dataset.telefono = telefono;
+                option.dataset.tipo = tipo;
+
+                select.appendChild(option);
+            });
+
+            select.disabled = false;
+        });
+    }
+
+    function inicializarContactosUI() {
+        const btnAgregar = document.getElementById('btnAgregarContacto');
+        const blocks = [2, 3, 4].map((i) => document.getElementById('contacto-block-' + i));
+
+        function getBlock(index) {
+            return document.getElementById('contacto-block-' + index);
+        }
+
+        function getContactoValues(index) {
+            const idx = String(index);
+            const sufijo = (idx === '1') ? '' : idx;
+            const tipoId = 'coti_contacto_tipo' + (idx === '1' ? '1' : idx);
+            return {
+                nombre: (document.getElementById('contacto' + sufijo) || {}).value || '',
+                correo: (document.getElementById('correo' + sufijo) || {}).value || '',
+                telefono: (document.getElementById('telefono' + sufijo) || {}).value || '',
+                tipo: (document.getElementById(tipoId) || {}).value || '',
+            };
+        }
+
+        function contactoYaExisteEnCliente(v) {
+            const selects = document.querySelectorAll('.contacto-select');
+            if (!selects.length) return false;
+
+            const nombreNuevo = (v.nombre || '').trim().toLowerCase();
+            const correoNuevo = (v.correo || '').trim().toLowerCase();
+            const telefonoNuevo = (v.telefono || '').trim().toLowerCase();
+            const tipoNuevo = (v.tipo || '').trim().toLowerCase();
+
+            let existe = false;
+
+            selects.forEach((select) => {
+                Array.from(select.options).forEach((opt) => {
+                    if (!opt.value) return;
+                    const nombre = (opt.dataset.nombre || '').trim().toLowerCase();
+                    const correo = (opt.dataset.email || '').trim().toLowerCase();
+                    const telefono = (opt.dataset.telefono || '').trim().toLowerCase();
+                    const tipo = (opt.dataset.tipo || '').trim().toLowerCase();
+
+                    if (
+                        nombre && nombre === nombreNuevo &&
+                        (correo === correoNuevo || (!correo && !correoNuevo)) &&
+                        (telefono === telefonoNuevo || (!telefono && !telefonoNuevo)) &&
+                        (tipo === tipoNuevo || (!tipo && !tipoNuevo))
+                    ) {
+                        existe = true;
+                    }
+                });
+            });
+
+            return existe;
+        }
+
+        function visibleCount() {
+            return 1 + blocks.filter((el) => el && !el.classList.contains('d-none')).length;
+        }
+
+        function updateBtnAgregar() {
+            if (!btnAgregar) return;
+            btnAgregar.disabled = visibleCount() >= 4;
+        }
+
+        // Al cargar: mostrar bloques 2-4 que tengan nombre
+        [2, 3, 4].forEach((i) => {
+            const block = getBlock(i);
+            const nombreEl = document.getElementById('contacto' + i);
+            if (block && nombreEl && nombreEl.value.trim() !== '') {
+                block.classList.remove('d-none');
+            }
+        });
+        updateBtnAgregar();
+
+        // + Agregar otro contacto
+        if (btnAgregar && !btnAgregar.dataset.contactosUiInit) {
+            btnAgregar.addEventListener('click', function () {
+                for (let i = 2; i <= 4; i++) {
+                    const block = getBlock(i);
+                    if (block && block.classList.contains('d-none')) {
+                        block.classList.remove('d-none');
+                        updateBtnAgregar();
+                        break;
+                    }
+                }
+            });
+            btnAgregar.dataset.contactosUiInit = '1';
+        }
+
+        // Quitar contacto
+        document.querySelectorAll('.btn-quitar-contacto').forEach((btn) => {
+            if (btn.dataset.contactosQuitarInit) return;
+            btn.addEventListener('click', function () {
+                const idx = this.dataset.contactoIndex;
+                if (!idx) return;
+                const block = getBlock(idx);
+                const nombreEl = document.getElementById('contacto' + idx);
+                const correoEl = document.getElementById('correo' + idx);
+                const telefonoEl = document.getElementById('telefono' + idx);
+                const tipoEl = document.getElementById('coti_contacto_tipo' + idx);
+                const selectEl = document.getElementById('contacto' + idx + '_selector');
+                if (nombreEl) nombreEl.value = '';
+                if (correoEl) correoEl.value = '';
+                if (telefonoEl) telefonoEl.value = '';
+                if (tipoEl) tipoEl.value = '';
+                if (selectEl) selectEl.value = '';
+                if (block) block.classList.add('d-none');
+                updateBtnAgregar();
+            });
+            btn.dataset.contactosQuitarInit = '1';
+        });
+
+        // Guardar como contacto del cliente
+        document.querySelectorAll('.btn-guardar-contacto').forEach((btn) => {
+            if (btn.dataset.contactosGuardarInit) return;
+            btn.addEventListener('click', async function () {
+                const idx = this.dataset.contactoIndex || '1';
+                const codigo = (document.getElementById('cliente_codigo') || {}).value || '';
+                if (!codigo.trim()) {
+                    if (window.Swal) {
+                        window.Swal.fire({ icon: 'warning', title: 'Sin cliente', text: 'Seleccioná un cliente antes de guardar el contacto.' });
+                    } else {
+                        alert('Seleccioná un cliente antes de guardar el contacto.');
+                    }
+                    return;
+                }
+                const v = getContactoValues(idx);
+                if (!v.nombre.trim()) {
+                    if (window.Swal) {
+                        window.Swal.fire({ icon: 'warning', title: 'Nombre requerido', text: 'El nombre del contacto es obligatorio.' });
+                    } else {
+                        alert('El nombre del contacto es obligatorio.');
+                    }
+                    return;
+                }
+
+                // Evitar guardar contactos duplicados para el mismo cliente
+                if (contactoYaExisteEnCliente(v)) {
+                    if (window.Swal) {
+                        window.Swal.fire({
+                            icon: 'info',
+                            title: 'Contacto ya existente',
+                            text: 'Este contacto ya está registrado para el cliente. Podés seleccionarlo desde la columna "Seleccionar".',
+                        });
+                    } else {
+                        alert('Este contacto ya está registrado para el cliente.');
+                    }
+                    return;
+                }
+                const url = `/api/clientes/${encodeURIComponent(codigo.trim())}/contactos`;
+                const body = {
+                    nombre: v.nombre.trim(),
+                    telefono: v.telefono.trim() || null,
+                    email: v.correo.trim() || null,
+                    tipo: v.tipo.trim() || null,
+                };
+                const csrfToken = document.querySelector('meta[name="csrf-token"]') && document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+                try {
+                    const res = await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'X-CSRF-TOKEN': csrfToken || (document.querySelector('input[name="_token"]') && document.querySelector('input[name="_token"]').value) || '',
+                        },
+                        body: JSON.stringify(body),
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok) {
+                        throw new Error(data.message || data.error || 'Error al guardar el contacto');
+                    }
+                    const contactos = data.contactos || [];
+                    configurarContactosCliente(contactos);
+                    if (window.Swal) {
+                        window.Swal.fire({ icon: 'success', title: 'Contacto guardado', text: 'Se agregó el contacto al cliente. Ya podés elegirlo desde "Usar contacto registrado".', timer: 2500, showConfirmButton: false });
+                    } else {
+                        alert('Contacto guardado correctamente.');
+                    }
+                } catch (e) {
+                    if (window.Swal) {
+                        window.Swal.fire({ icon: 'error', title: 'Error', text: e.message || 'Error al guardar el contacto' });
+                    } else {
+                        alert(e.message || 'Error al guardar el contacto');
+                    }
+                }
+            });
+            btn.dataset.contactosGuardarInit = '1';
+        });
+    }
+
+    function configurarRazonesSocialesFacturacion(lista) {
+        const select = elements.razonSocialSelect;
+        const help = elements.razonSocialHelp;
+
+        if (!select || !help) {
+            return;
+        }
+
+        const razones = Array.isArray(lista) ? lista : [];
+
+        // Limpiar opciones actuales
+        select.innerHTML = '';
+
+        const opcionDefault = document.createElement('option');
+        opcionDefault.value = '';
+        opcionDefault.textContent = 'Seleccionar razón social de facturación...';
+        select.appendChild(opcionDefault);
+
+        if (!razones.length) {
+            select.classList.add('d-none');
+            help.classList.add('d-none');
+            return;
+        }
+
+        razones.forEach((razon) => {
+            const option = document.createElement('option');
+            option.value = razon.id;
+            option.textContent = razon.razon_social || '';
+            if (razon.cuit) {
+                option.textContent += ` - CUIT ${razon.cuit}`;
+            }
+            if (razon.es_predeterminada) {
+                option.textContent += ' (Predeterminada)';
+                option.dataset.predeterminada = '1';
+            }
+
+            option.dataset.razonSocial = razon.razon_social || '';
+            option.dataset.cuit = razon.cuit || '';
+            option.dataset.direccion = razon.direccion || '';
+
+            select.appendChild(option);
+        });
+
+        select.classList.remove('d-none');
+        help.classList.remove('d-none');
+
+        if (!select.dataset.listenerRazones) {
+            select.addEventListener('change', function () {
+                const opt = this.options[this.selectedIndex];
+                if (!opt || !opt.value) {
+                    return;
+                }
+
+                const razonSocial = opt.dataset.razonSocial || '';
+                const cuit = opt.dataset.cuit || '';
+                const direccion = opt.dataset.direccion || '';
+
+                asignarValorSiExiste('empresa_nombre', razonSocial);
+                asignarValorSiExiste('cuit_cliente', cuit);
+                asignarValorSiExiste('direccion_cliente', direccion);
+            });
+            select.dataset.listenerRazones = '1';
+        }
     }
 
     function inicializarBusquedaClientes() {
@@ -334,6 +732,9 @@
         const soloDescuento = opciones.soloDescuento === true;
         const clienteInput = document.getElementById('cliente_codigo');
         const clienteNombre = document.getElementById('cliente_nombre');
+        const clonOverride = (typeof window !== 'undefined' && window.__clonCotizacionOverrideActive && window.__clonCotizacionOverride)
+            ? window.__clonCotizacionOverride
+            : null;
 
         const descuentoGlobalCliente = parseFloat(
             cliente.descuento_global ?? cliente.descuentoglobal ?? cliente.descuento ?? 0
@@ -370,12 +771,42 @@
             asignarValorSiExiste('localidad_cliente', localidadEmpresa);
             asignarValorSiExiste('cuit_cliente', cuitEmpresa);
             asignarValorSiExiste('codigo_postal_cliente', codigoPostalEmpresa);
+
+            // Configurar selector de razones sociales de facturación (si existen)
+            configurarRazonesSocialesFacturacion(
+                cliente.razones_sociales_facturacion || []
+            );
             
-            // Campos de la solapa General (usar siempre datos del cliente)
-            asignarValorSiExiste('telefono', cliente.telefono);
-            asignarValorSiExiste('correo', cliente.email);
-            asignarValorSiExiste('sector', cliente.sector);
-            asignarValorSiExiste('contacto', cliente.contacto);
+            // Campos de la solapa General (usar siempre datos del cliente),
+            // salvo que estemos clonando una cotización y debamos conservar los del presupuesto.
+            if (!clonOverride) {
+                asignarValorSiExiste('telefono', cliente.telefono);
+                asignarValorSiExiste('correo', cliente.email);
+                asignarValorSiExiste('sector', cliente.sector);
+                asignarValorSiExiste('contacto', cliente.contacto);
+            }
+            // Configurar contactos registrados del cliente (si existen)
+            configurarContactosCliente(
+                cliente.contactos ||
+                cliente.contactos_cliente ||
+                []
+            );
+            
+            // Condición de pago:
+            // - En creación de cotización, siempre se toma la del cliente
+            // - En edición, solo se actualiza si el select está vacío (no pisar lo ya guardado)
+            const selCondPago = document.getElementById('coti_cond_pago');
+            const puedeActualizarCondicion =
+                state.modo === 'create' ||
+                !selCondPago ||
+                !selCondPago.value;
+            if (puedeActualizarCondicion) {
+                asignarValorSiExiste('coti_cond_pago', cliente.condicion_pago);
+                // Actualizar visibilidad del panel de cuotas según condición de pago
+                if (selCondPago) {
+                    selCondPago.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            }
 
             // Campos hidden (usar datos de razón social predeterminada si existe para los campos de empresa)
             asignarValorSiExiste('cliente_razon_social_hidden', razonSocialEmpresa);
@@ -388,11 +819,14 @@
             asignarValorSiExiste('cliente_sector_hidden', cliente.sector);
             
             // Cargar empresas relacionadas del cliente solo si es consultor
+            actualizarVisibilidadNavEmpresaRelacionada();
             if (state.clienteSeleccionado.es_consultor) {
+                limpiarPanelEmpresaRelacionada();
                 cargarEmpresasRelacionadas(cliente.codigo);
             } else {
                 // Si no es consultor, asegurar que el campo "Para" sea un input de texto
                 resetearCampoPara();
+                limpiarPanelEmpresaRelacionada();
             }
 
             // Configurar sucursales si el cliente tiene
@@ -400,6 +834,60 @@
                 configurarSucursalesCliente(cliente.sucursales);
             } else {
                 resetearSucursalesCliente();
+            }
+
+            // Re-aplicar sucursal/contactos del clon DESPUÉS de autocompletar datos del cliente.
+            if (clonOverride) {
+                const aplicarOverride = () => {
+                    try {
+                        const suc = (clonOverride.sucursal || '').toString().trim();
+                        const sucursalInput = document.getElementById('sucursal');
+                        const sucursalSelect = document.getElementById('sucursal_select');
+                        if (sucursalInput) {
+                            sucursalInput.value = suc;
+                        }
+                        if (sucursalSelect && suc) {
+                            const opt = Array.from(sucursalSelect.options || []).find(o => (o.value || '').trim() === suc);
+                            if (opt) {
+                                sucursalSelect.value = opt.value;
+                                sucursalSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                            }
+                        }
+
+                        const conts = clonOverride.contactos || {};
+                        const setContacto = (idx, v) => {
+                            const suf = idx === 1 ? '' : String(idx);
+                            const nombre = (v && v.nombre) ? v.nombre : '';
+                            const correo = (v && v.correo) ? v.correo : '';
+                            const tel = (v && v.tel) ? v.tel : '';
+                            const tipo = (v && v.tipo) ? v.tipo : '';
+
+                            if (idx > 1 && (nombre || correo || tel || tipo)) {
+                                const block = document.getElementById(`contacto-block-${idx}`);
+                                if (block) block.classList.remove('d-none');
+                            }
+
+                            asignarValorSiExiste('contacto' + suf, nombre);
+                            asignarValorSiExiste('correo' + suf, correo);
+                            asignarValorSiExiste('telefono' + suf, tel);
+                            if (tipo) {
+                                asignarValorSiExiste('coti_contacto_tipo' + (idx === 1 ? '1' : String(idx)), tipo);
+                            }
+                        };
+                        setContacto(1, conts.c1);
+                        setContacto(2, conts.c2);
+                        setContacto(3, conts.c3);
+                        setContacto(4, conts.c4);
+
+                        window.__clonCotizacionOverrideActive = false;
+                    } catch (e) {
+                        // no-op
+                    }
+                };
+
+                setTimeout(aplicarOverride, 0);
+                setTimeout(aplicarOverride, 200);
+                setTimeout(aplicarOverride, 600);
             }
         }
 
@@ -427,12 +915,16 @@
         state.sucursalesCliente.forEach((sucursal) => {
             const option = document.createElement('option');
             option.value = sucursal.codigo || '';
-            const descripcion =
-                (sucursal.fantasia && sucursal.fantasia.trim()) ||
-                (sucursal.direccion && sucursal.direccion.trim()) ||
-                (sucursal.localidad && sucursal.localidad.trim()) ||
-                'Sucursal';
-            option.textContent = `${(sucursal.codigo || '').trim()} - ${descripcion}`;
+            const razonSocial = (sucursal.razon_social || '').trim();
+            const localidad = (sucursal.localidad || '').trim();
+            const etiqueta = razonSocial && localidad
+                ? `${razonSocial} - ${localidad}`
+                : razonSocial ||
+                  localidad ||
+                  (sucursal.fantasia && sucursal.fantasia.trim()) ||
+                  (sucursal.direccion && sucursal.direccion.trim()) ||
+                  'Sucursal';
+            option.textContent = etiqueta;
             sucursalSelect.appendChild(option);
         });
 
@@ -465,46 +957,8 @@
         if (sucursalInput) {
             sucursalInput.value = codigoSeleccionado;
         }
-
-        const sucursales = state.sucursalesCliente || [];
-        const sucursal = sucursales.find(
-            (s) => (s.codigo || '').trim() === codigoSeleccionado
-        );
-
-        // Valores de respaldo del cliente (hidden)
-        const razonSocialCliente = document.getElementById('cliente_razon_social_hidden')?.value || '';
-        const direccionCliente = document.getElementById('cliente_direccion_hidden')?.value || '';
-        const localidadCliente = document.getElementById('cliente_localidad_hidden')?.value || '';
-        const codigoPostalCliente = document.getElementById('cliente_codigo_postal_hidden')?.value || '';
-        const telefonoCliente = document.getElementById('cliente_telefono_hidden')?.value || '';
-        const correoCliente = document.getElementById('cliente_correo_hidden')?.value || '';
-
-        // Empresa: siempre la razón social del cliente
-        if (razonSocialCliente) {
-            asignarValorSiExiste('empresa_nombre', razonSocialCliente);
-        }
-
-        if (sucursal) {
-            // Dirección / Empresa
-            asignarValorSiExiste('direccion_cliente', sucursal.direccion || direccionCliente);
-            asignarValorSiExiste('localidad_cliente', sucursal.localidad || localidadCliente);
-            asignarValorSiExiste('partido', sucursal.partido || '');
-            asignarValorSiExiste('codigo_postal_cliente', sucursal.codigo_postal || codigoPostalCliente);
-
-            // Contacto de la sucursal
-            asignarValorSiExiste('contacto', sucursal.contacto || '');
-            asignarValorSiExiste('correo', sucursal.email || correoCliente);
-            asignarValorSiExiste('telefono', sucursal.telefono || telefonoCliente);
-        } else {
-            // Si se limpia la sucursal, volver a los datos base del cliente
-            asignarValorSiExiste('direccion_cliente', direccionCliente);
-            asignarValorSiExiste('localidad_cliente', localidadCliente);
-            asignarValorSiExiste('partido', '');
-            asignarValorSiExiste('codigo_postal_cliente', codigoPostalCliente);
-            asignarValorSiExiste('contacto', '');
-            asignarValorSiExiste('correo', correoCliente);
-            asignarValorSiExiste('telefono', telefonoCliente);
-        }
+        // No aplicar datos de la sucursal a la solapa Empresa (facturación).
+        // La sucursal es el destinatario; la solapa Empresa es solo razón social de facturación.
     }
 
     function cargarEmpresasRelacionadas(codigoCliente, empresaIdPreseleccionado = null) {
@@ -531,7 +985,7 @@
                 
                 const inputPara = document.getElementById('coti_para');
                 const selectPara = document.getElementById('coti_para_select');
-                const hiddenEmpresaId = document.getElementById('coti_cli_empresa');
+                const hiddenEmpresaId = document.getElementById('coti_empresa_rel');
                 
                 if (!inputPara || !selectPara || !hiddenEmpresaId) {
                     // console.error('Elementos del DOM no encontrados:', {
@@ -558,12 +1012,12 @@
                         option.dataset.localidad = empresa.localidad || '';
                         option.dataset.partido = empresa.partido || '';
                         option.dataset.contacto = empresa.contacto || '';
-                        
-                        // Preseleccionar si el ID coincide
-                        if (empresaIdPreseleccionado && empresa.id == empresaIdPreseleccionado) {
+                        // Preseleccionar si el ID coincide (comparar como string para evitar tipo número vs string)
+                        const idCoincide = empresaIdPreseleccionado && (String(empresa.id) === String(empresaIdPreseleccionado));
+                        if (idCoincide) {
                             option.selected = true;
-                            hiddenEmpresaId.value = empresa.id;
-                            inputPara.value = empresa.razon_social; // Mantener el texto en el input para referencia
+                            hiddenEmpresaId.value = String(empresa.id);
+                            inputPara.value = empresa.razon_social || '';
                         }
                         
                         selectPara.appendChild(option);
@@ -583,6 +1037,7 @@
                         $(selectPara).select2({
                             width: '100%',
                             placeholder: 'Seleccionar empresa relacionada...',
+                            allowClear: true,
                             templateResult: function(empresa) {
                                 if (!empresa.id) {
                                     return empresa.text;
@@ -625,11 +1080,28 @@
                                 return markup;
                             }
                         });
+                        $(selectPara).on('select2:select', function () {
+                            setTimeout(actualizarEmpresaSeleccionada, 0);
+                        });
+                        $(selectPara).on('select2:clear', function () {
+                            setTimeout(actualizarEmpresaSeleccionada, 0);
+                        });
                     }
                     
                     // Agregar event listener para actualizar el campo hidden cuando cambie la selección
                     selectPara.removeEventListener('change', actualizarEmpresaSeleccionada);
                     selectPara.addEventListener('change', actualizarEmpresaSeleccionada);
+                    
+                    // Si hay selección (incl. preselección en edición), solo actualizar campo "Para" e ID;
+                    // y pisar los datos base con la empresa relacionada (consultoras).
+                    const opcionSeleccionada = selectPara.options[selectPara.selectedIndex];
+                    if (opcionSeleccionada && opcionSeleccionada.value) {
+                        if (hiddenEmpresaId) hiddenEmpresaId.value = opcionSeleccionada.value;
+                        if (inputPara) {
+                            inputPara.value = opcionSeleccionada.dataset.razonSocial || opcionSeleccionada.getAttribute('data-razon-social') || opcionSeleccionada.textContent;
+                        }
+                        aplicarDatosEmpresaRelacionada(opcionSeleccionada);
+                    }
                     
                     // Si hay un ID preseleccionado y no se encontró en las opciones, mantenerlo en el input
                     if (empresaIdPreseleccionado && !selectPara.value) {
@@ -638,9 +1110,24 @@
                         selectPara.classList.add('d-none');
                         hiddenEmpresaId.value = empresaIdPreseleccionado;
                     }
+                    
+                    // Forzar que Select2 muestre la opción preseleccionada (edición)
+                    if (selectPara.value && $.fn.select2) {
+                        $(selectPara).val(selectPara.value).trigger('change');
+                    }
                 } else {
-                    // No hay empresas relacionadas, mantener como input
-                    resetearCampoPara();
+                    // No hay empresas relacionadas: si había ID guardado (edición), dejar input visible con su valor
+                    if (empresaIdPreseleccionado) {
+                        const inputPara = document.getElementById('coti_para');
+                        const selectPara = document.getElementById('coti_para_select');
+                        if (inputPara && selectPara) {
+                            inputPara.classList.remove('d-none');
+                            selectPara.classList.add('d-none');
+                            selectPara.innerHTML = '<option value="">Seleccionar empresa relacionada...</option>';
+                        }
+                    } else {
+                        resetearCampoPara();
+                    }
                 }
             })
             .catch(error => {
@@ -651,31 +1138,174 @@
 
     function actualizarEmpresaSeleccionada() {
         const selectPara = document.getElementById('coti_para_select');
-        const hiddenEmpresaId = document.getElementById('coti_cli_empresa');
+        const hiddenEmpresaId = document.getElementById('coti_empresa_rel');
         const inputPara = document.getElementById('coti_para');
         
         if (!selectPara || !hiddenEmpresaId) {
             return;
         }
         
-        const selectedOption = selectPara.options[selectPara.selectedIndex];
+        const valorSeleccionado = (selectPara.value || '').trim();
+        const selectedOption = valorSeleccionado
+            ? Array.from(selectPara.options).find(function (o) { return String(o.value || '').trim() === String(valorSeleccionado).trim(); })
+            : null;
+        
         if (selectedOption && selectedOption.value) {
-            hiddenEmpresaId.value = selectedOption.value; // Guardar el ID
+            hiddenEmpresaId.value = selectedOption.value;
             if (inputPara) {
-                inputPara.value = selectedOption.dataset.razonSocial || selectedOption.textContent; // Mostrar razón social en input si es necesario
+                inputPara.value = selectedOption.dataset.razonSocial || selectedOption.getAttribute('data-razon-social') || selectedOption.textContent;
             }
+            // Si el usuario selecciona una empresa relacionada (consultoras), reemplazar los datos
+            // inicialmente completados desde el cliente con los de la empresa relacionada.
+            aplicarDatosEmpresaRelacionada(selectedOption);
         } else {
             hiddenEmpresaId.value = '';
             if (inputPara) {
                 inputPara.value = '';
             }
+            restablecerDatosDesdeClienteOSucursal();
         }
+    }
+
+    /**
+     * Aplica los datos de la empresa relacionada seleccionada a Empresa, Dirección, Localidad, etc.
+     * Replica la lógica de manejarCambioSucursal pero con los datos de la opción seleccionada.
+     */
+    function aplicarDatosEmpresaRelacionada(option) {
+        if (!option) {
+            return;
+        }
+        const getData = function (camelKey) {
+            const kebab = camelKey.replace(/([A-Z])/g, '-$1').toLowerCase();
+            return (option.dataset && option.dataset[camelKey]) || option.getAttribute('data-' + kebab) || '';
+        };
+        const razonSocial = (getData('razonSocial') || '').toString().trim();
+        const direcciones = (getData('direcciones') || '').toString().trim();
+        const localidad = (getData('localidad') || '').toString().trim();
+        const partido = (getData('partido') || '').toString().trim();
+        const cuit = (getData('cuit') || '').toString().trim();
+        const contacto = (getData('contacto') || '').toString().trim();
+
+        rellenarPanelEmpresaRelacionada({
+            razonSocial: razonSocial,
+            direccion: direcciones,
+            localidad: localidad,
+            partido: partido,
+            cuit: cuit,
+            contacto: contacto,
+        });
+    }
+
+    function obtenerRefsPanelEmpresaRelacionada() {
+        return {
+            nav: document.getElementById('empresaRelacionadaTabNav'),
+            sinSel: document.getElementById('empresa_rel_sin_seleccion'),
+            wrap: document.getElementById('empresa_rel_datos_wrapper'),
+            razon: document.getElementById('empresa_rel_razon_social'),
+            dir: document.getElementById('empresa_rel_direccion'),
+            loc: document.getElementById('empresa_rel_localidad'),
+            part: document.getElementById('empresa_rel_partido'),
+            cuit: document.getElementById('empresa_rel_cuit'),
+            contacto: document.getElementById('empresa_rel_contacto'),
+        };
+    }
+
+    function limpiarPanelEmpresaRelacionada() {
+        const r = obtenerRefsPanelEmpresaRelacionada();
+        if (!r.sinSel || !r.wrap) {
+            return;
+        }
+        [r.razon, r.dir, r.loc, r.part, r.cuit, r.contacto].forEach(function (el) {
+            if (el) {
+                el.value = '';
+            }
+        });
+        r.sinSel.classList.remove('d-none');
+        r.wrap.classList.add('d-none');
+    }
+
+    function rellenarPanelEmpresaRelacionada(data) {
+        const r = obtenerRefsPanelEmpresaRelacionada();
+        if (!r.sinSel || !r.wrap) {
+            return;
+        }
+        const razon = (data && data.razonSocial) ? String(data.razonSocial).trim() : '';
+        const dir = (data && data.direccion) ? String(data.direccion).trim() : '';
+        const loc = (data && data.localidad) ? String(data.localidad).trim() : '';
+        const part = (data && data.partido) ? String(data.partido).trim() : '';
+        const cuit = (data && data.cuit) ? String(data.cuit).trim() : '';
+        const contacto = (data && data.contacto) ? String(data.contacto).trim() : '';
+        const tiene = !!(razon || dir || loc || part || cuit || contacto);
+        if (!tiene) {
+            limpiarPanelEmpresaRelacionada();
+            return;
+        }
+        if (r.razon) {
+            r.razon.value = razon;
+        }
+        if (r.dir) {
+            r.dir.value = dir;
+        }
+        if (r.loc) {
+            r.loc.value = loc;
+        }
+        if (r.part) {
+            r.part.value = part;
+        }
+        if (r.cuit) {
+            r.cuit.value = cuit;
+        }
+        if (r.contacto) {
+            r.contacto.value = contacto;
+        }
+        r.sinSel.classList.add('d-none');
+        r.wrap.classList.remove('d-none');
+    }
+
+    function actualizarVisibilidadNavEmpresaRelacionada() {
+        const r = obtenerRefsPanelEmpresaRelacionada();
+        if (!r.nav) {
+            return;
+        }
+        const ok = !!(state.clienteSeleccionado && state.clienteSeleccionado.es_consultor);
+        r.nav.classList.toggle('d-none', !ok);
+    }
+
+    /**
+     * Restaura los campos Empresa/Dirección/Contacto etc. a los datos base:
+     * primero los del cliente (hidden) y luego, si hay sucursal seleccionada, aplica los de la sucursal.
+     */
+    function restablecerDatosDesdeClienteOSucursal() {
+        const razonSocialCliente = document.getElementById('cliente_razon_social_hidden')?.value || '';
+        const direccionCliente = document.getElementById('cliente_direccion_hidden')?.value || '';
+        const localidadCliente = document.getElementById('cliente_localidad_hidden')?.value || '';
+        const codigoPostalCliente = document.getElementById('cliente_codigo_postal_hidden')?.value || '';
+        const telefonoCliente = document.getElementById('cliente_telefono_hidden')?.value || '';
+        const correoCliente = document.getElementById('cliente_correo_hidden')?.value || '';
+        const cuitCliente = document.getElementById('cliente_cuit_hidden')?.value || '';
+
+        asignarValorSiExiste('empresa_nombre', razonSocialCliente);
+        asignarValorSiExiste('direccion_cliente', direccionCliente);
+        asignarValorSiExiste('localidad_cliente', localidadCliente);
+        asignarValorSiExiste('partido', '');
+        asignarValorSiExiste('codigo_postal_cliente', codigoPostalCliente);
+        asignarValorSiExiste('cuit_cliente', cuitCliente);
+        asignarValorSiExiste('contacto', '');
+        asignarValorSiExiste('correo', correoCliente);
+        asignarValorSiExiste('telefono', telefonoCliente);
+
+        const sucursalSelect = document.getElementById('sucursal_select');
+        if (sucursalSelect && !sucursalSelect.classList.contains('d-none') && sucursalSelect.value) {
+            manejarCambioSucursal({ target: sucursalSelect });
+        }
+
+        limpiarPanelEmpresaRelacionada();
     }
 
     function resetearCampoPara() {
         const inputPara = document.getElementById('coti_para');
         const selectPara = document.getElementById('coti_para_select');
-        const hiddenEmpresaId = document.getElementById('coti_cli_empresa');
+        const hiddenEmpresaId = document.getElementById('coti_empresa_rel');
         
         if (inputPara && selectPara) {
             inputPara.classList.remove('d-none');
@@ -686,6 +1316,8 @@
         if (hiddenEmpresaId) {
             hiddenEmpresaId.value = '';
         }
+
+        limpiarPanelEmpresaRelacionada();
     }
 
     function actualizarDescuentoCliente() {
@@ -827,12 +1459,119 @@
         const aumentoGlobalInput = document.getElementById('aumento');
         if (aumentoGlobalInput) {
             const handler = () => {
+                renderTabla();
                 actualizarTotalGeneral();
             };
             aumentoGlobalInput.addEventListener('input', handler);
             aumentoGlobalInput.addEventListener('change', handler);
         }
 
+    }
+
+    function inicializarEventosDivisa() {
+        const select = elements.divisaSelect || document.getElementById('divisa_codigo');
+        if (!select) {
+            return;
+        }
+
+        const handler = () => {
+            sincronizarDivisaDesdeFormulario();
+            renderTabla();
+            actualizarTotalGeneral();
+        };
+
+        select.addEventListener('change', handler);
+
+        // Sincronizar una vez al inicio
+        sincronizarDivisaDesdeFormulario();
+    }
+
+    function sincronizarDivisaDesdeFormulario() {
+        const select = elements.divisaSelect || document.getElementById('divisa_codigo');
+        let codigo = 'PES';
+        let etiqueta = '';
+
+        if (select) {
+            codigo = (select.value || 'PES').toString().trim() || 'PES';
+            const opt = select.selectedOptions && select.selectedOptions.length
+                ? select.selectedOptions[0]
+                : null;
+            etiqueta = opt ? opt.textContent.trim() : codigo;
+        }
+
+        state.divisaCodigo = codigo;
+
+        if (elements.divisaLabel) {
+            elements.divisaLabel.textContent = etiqueta;
+        }
+    }
+
+    function inicializarCondicionPagoYCuotas() {
+        const selectCondPago = document.getElementById('coti_cond_pago');
+        const cuotasPanel = document.getElementById('cuotasPanel');
+        if (!selectCondPago) return;
+
+        // Añadir opción "Cuotas" si no existe
+        if (!Array.from(selectCondPago.options).some(o => o.value === 'CUOTAS')) {
+            const opt = document.createElement('option');
+            opt.value = 'CUOTAS';
+            opt.textContent = 'Cuotas';
+            selectCondPago.appendChild(opt);
+        }
+
+        // Si el panel viene visible desde el servidor (cotización con cuotas),
+        // forzar que el select quede en "CUOTAS" para que el JS respete ese estado.
+        const panelVisibleInicialmente = cuotasPanel && !cuotasPanel.classList.contains('d-none');
+        if (panelVisibleInicialmente) {
+            const optCuotas = Array.from(selectCondPago.options).find(o => o.value === 'CUOTAS');
+            if (optCuotas) {
+                selectCondPago.value = 'CUOTAS';
+            }
+        }
+
+        function toggleCuotasPanelVisibility() {
+            if (!cuotasPanel) return;
+            const esCuotas = selectCondPago.value === 'CUOTAS';
+            if (esCuotas) {
+                cuotasPanel.classList.remove('d-none');
+                // Al mostrar el panel, sincronizar inmediatamente el monto total y recalcular el individual
+                actualizarTotalGeneral();
+            } else {
+                cuotasPanel.classList.add('d-none');
+            }
+        }
+
+        selectCondPago.addEventListener('change', toggleCuotasPanelVisibility);
+        toggleCuotasPanelVisibility();
+
+        // Auto-calcular monto individual = (monto total × (1 + interés%)) / cantidad cuotas
+        function recalcularMontoIndividual() {
+            const montoTotal  = parseFloat(document.getElementById('coti_cuota_monto_total')?.value)  || 0;
+            const cantidad    = parseInt(document.getElementById('coti_cuota_cant')?.value)            || 1;
+            const interesPct  = parseFloat(document.getElementById('coti_cuota_interes')?.value)       || 0;
+            const montoIndivInput = document.getElementById('coti_cuota_monto_indiv');
+            if (montoIndivInput && cantidad > 0) {
+                const montoConInteres = montoTotal * (1 + interesPct / 100);
+                montoIndivInput.value = (montoConInteres / cantidad).toFixed(2);
+            }
+        }
+
+        const cantInput        = document.getElementById('coti_cuota_cant');
+        const montoTotalInput  = document.getElementById('coti_cuota_monto_total');
+        const interesInput     = document.getElementById('coti_cuota_interes');
+
+        if (cantInput) {
+            cantInput.addEventListener('input',  recalcularMontoIndividual);
+            cantInput.addEventListener('change', recalcularMontoIndividual);
+        }
+        if (montoTotalInput) {
+            montoTotalInput.addEventListener('input',  recalcularMontoIndividual);
+            montoTotalInput.addEventListener('change', recalcularMontoIndividual);
+        }
+        if (interesInput) {
+            interesInput.addEventListener('input',  recalcularMontoIndividual);
+            interesInput.addEventListener('change', recalcularMontoIndividual);
+        }
     }
 
     function actualizarDescuentosDesdeFormulario() {
@@ -891,14 +1630,47 @@
                 if (state.clienteSeleccionado) {
                     state.clienteSeleccionado.es_consultor = cliente.es_consultor === true || cliente.es_consultor === 1 || cliente.es_consultor === '1';
                 }
-                
-                // Si es consultor y hay un ID guardado, cargar empresas relacionadas
-                const cotiCliEmpresa = document.getElementById('coti_cli_empresa');
-                if (cotiCliEmpresa && cotiCliEmpresa.value && state.clienteSeleccionado && state.clienteSeleccionado.es_consultor) {
-                    cargarEmpresasRelacionadas(codigoActual, cotiCliEmpresa.value);
-                } else if (!state.clienteSeleccionado || !state.clienteSeleccionado.es_consultor) {
-                    // Si no es consultor, asegurar que el campo "Para" sea un input de texto
+
+                // Configurar contactos registrados del cliente también en carga inicial (edición)
+                configurarContactosCliente(
+                    cliente.contactos ||
+                    cliente.contactos_cliente ||
+                    []
+                );
+
+                // Configurar sucursales y preseleccionar coti_codigosuc si existe
+                if (Array.isArray(cliente.sucursales) && cliente.sucursales.length > 0) {
+                    configurarSucursalesCliente(cliente.sucursales);
+                    const sucursalInput = document.getElementById('sucursal');
+                    const sucursalSelect = document.getElementById('sucursal_select');
+                    const codigoSucursalGuardado = (sucursalInput && sucursalInput.value) ? sucursalInput.value.trim() : '';
+                    if (codigoSucursalGuardado && sucursalSelect) {
+                        const opcion = Array.from(sucursalSelect.options).find(function (o) {
+                            return (o.value || '').trim() === codigoSucursalGuardado;
+                        });
+                        if (opcion) {
+                            sucursalSelect.value = opcion.value;
+                        }
+                    }
+                } else {
+                    resetearSucursalesCliente();
+                }
+
+                // Si hay un ID de empresa guardado (edición), cargar empresas y preseleccionar siempre.
+                // Si no hay ID pero el cliente es consultor, cargar lista de empresas.
+                const cotiEmpresaRel = document.getElementById('coti_empresa_rel');
+                const empresaIdGuardado = cotiEmpresaRel && (cotiEmpresaRel.value || '').trim();
+                if (empresaIdGuardado) {
+                    cargarEmpresasRelacionadas(codigoActual, empresaIdGuardado);
+                } else if (state.clienteSeleccionado && state.clienteSeleccionado.es_consultor) {
+                    cargarEmpresasRelacionadas(codigoActual, null);
+                } else {
                     resetearCampoPara();
+                }
+
+                actualizarVisibilidadNavEmpresaRelacionada();
+                if (!state.clienteSeleccionado || !state.clienteSeleccionado.es_consultor) {
+                    limpiarPanelEmpresaRelacionada();
                 }
             })
             .catch(error => {
@@ -1035,16 +1807,29 @@
             elements.modalEnsayo.addEventListener('shown.bs.modal', function () {
                 cargarOpcionesEnsayos();
                 cargarLeyesNormativas();
-                // Limpiar contenedor de notas al abrir el modal
-                const container = document.getElementById('notasEnsayoContainer');
-                if (container) {
-                    container.innerHTML = '';
+                const precioExtraNuevo = document.getElementById('ensayo_precio_extra');
+                if (precioExtraNuevo) {
+                    precioExtraNuevo.value = '0';
+                }
+                const chkNoMuestreoEnsayo = document.getElementById('ensayo_no_lleva_muestreo');
+                if (chkNoMuestreoEnsayo) {
+                    chkNoMuestreoEnsayo.checked = false;
+                    chkNoMuestreoEnsayo.disabled = false;
                 }
                 if (window.$ && window.$('#ensayo_muestra').length) {
                     window.$('#ensayo_muestra').select2({
                         dropdownParent: window.$('#modalAgregarEnsayo'),
                     });
+                    window.$('#ensayo_muestra').off('change.cotizacionEnsayoNotas').on('change.cotizacionEnsayoNotas', function () {
+                        if (elements.selectEnsayo) {
+                            handleCambioEnsayoModal({ target: elements.selectEnsayo });
+                        }
+                    });
                 }
+                if (elements.selectEnsayo) {
+                    handleCambioEnsayoModal({ target: elements.selectEnsayo });
+                }
+                syncCotiReqCadenaRelCheckboxesFromHidden();
             });
         }
 
@@ -1120,6 +1905,7 @@
                     }
                 }
 
+                handleCambioComponenteModal();
             });
         }
 
@@ -1154,6 +1940,32 @@
             guardarEnsayoEditado.addEventListener('click', guardarEnsayoEditadoHandler);
         }
 
+        // Limpiar error de cadena de custodia en modal "Agregar" al tildar cualquier opción
+        document.querySelectorAll('.custodia-chk-agregar').forEach(function(chk) {
+            chk.addEventListener('change', function() {
+                const group = document.getElementById('custodia_group_agregar');
+                const error = document.getElementById('custodia_error_agregar');
+                const alguno = Array.from(document.querySelectorAll('.custodia-chk-agregar')).some(c => c.checked);
+                if (alguno) {
+                    if (group) group.classList.remove('border-danger');
+                    if (error) error.classList.add('d-none');
+                }
+            });
+        });
+
+        // Limpiar error de cadena de custodia en modal "Editar" al tildar cualquier opción
+        document.querySelectorAll('.custodia-chk-editar').forEach(function(chk) {
+            chk.addEventListener('change', function() {
+                const group = document.getElementById('custodia_group_editar');
+                const error = document.getElementById('custodia_error_editar');
+                const alguno = Array.from(document.querySelectorAll('.custodia-chk-editar')).some(c => c.checked);
+                if (alguno) {
+                    if (group) group.classList.remove('border-danger');
+                    if (error) error.classList.add('d-none');
+                }
+            });
+        });
+
         // Event listeners para botones de agregar nota
         const btnAgregarNotaEnsayo = document.getElementById('btnAgregarNotaEnsayo');
         if (btnAgregarNotaEnsayo) {
@@ -1183,6 +1995,13 @@
                             selectMetodo.value = option.dataset.metodoCodigo;
                         }
                     }
+                }
+                const compCat = catalogs.componentes.find(c => String(c.id) === String(this.value));
+                const impEd = document.getElementById('edit_comp_nota_imprimible');
+                const intEd = document.getElementById('edit_comp_nota_interna');
+                if (compCat && impEd && intEd) {
+                    impEd.value = compCat.nota_imprimible != null ? String(compCat.nota_imprimible) : '';
+                    intEd.value = compCat.nota_interna != null ? String(compCat.nota_interna) : '';
                 }
             });
         }
@@ -1232,9 +2051,12 @@
         const unidadMedida = document.getElementById('edit_componente_unidad').value || '';
         const metodoId = document.getElementById('edit_componente_metodo').value || null;
 
+        const chkReqCadena = document.getElementById('edit_comp_req_cadena_custodia');
+        const chkReqProt = document.getElementById('edit_comp_req_prot_mapba');
+
         // Actualizar componente
         componente.analisis_id = analisisId;
-        componente.descripcion = option.textContent || componente.descripcion;
+        componente.descripcion = option.dataset.descripcion || option.textContent.replace(/\s*\(ID: \d+\)$/, '') || componente.descripcion;
         componente.codigo = option.dataset.codigo || componente.codigo;
         componente.precio = precio;
         // Mantener la cantidad actual del componente (no se edita)
@@ -1242,6 +2064,31 @@
         componente.unidad_medida = unidadMedida || option.dataset.unidadMedida || componente.unidad_medida;
         componente.metodo_analisis_id = metodoId;
         componente.metodo_codigo = option.dataset.metodoCodigo || componente.metodo_codigo;
+
+        // Verificar si el nuevo análisis es un componente sugerido del ensayo asociado
+        const ensayoAsociado = state.ensayos.find(e => e.item === componente.ensayo_asociado);
+        const esSugeridoEdit = ensayoAsociado && 
+                              Array.isArray(ensayoAsociado.componentes_sugeridos) && 
+                              ensayoAsociado.componentes_sugeridos.map(id => id.toString()).includes(analisisId.toString());
+        componente.de_agrupador = esSugeridoEdit;
+
+        // Actualizar requerimientos
+        if (chkReqCadena) {
+            componente.req_cadena_custodia = !!chkReqCadena.checked;
+        }
+        if (chkReqProt) {
+            componente.req_prot_mapba = !!chkReqProt.checked;
+        }
+
+        const impNota = document.getElementById('edit_comp_nota_imprimible');
+        const intNota = document.getElementById('edit_comp_nota_interna');
+        const impT = impNota ? String(impNota.value || '').trim() : '';
+        const intT = intNota ? String(intNota.value || '').trim() : '';
+        const notasArr = notasPredeterminadasDesdeCatalogo(impT || null, intT || null);
+        const npComp = notasAObjetoPersistencia(notasArr);
+        componente.nota_tipo = npComp.nota_tipo;
+        componente.nota_contenido = npComp.nota_contenido;
+        componente.notas = notasArr.length ? notasArr : null;
         
         // Actualizar método descripción
         if (metodoId) {
@@ -1385,9 +2232,31 @@
                 actualizarCantidadEnsayo(itemId, valor);
             } else if (event.target.classList.contains('input-precio-componente')) {
                 const itemId = Number(event.target.dataset.item);
-                const valor = toPositiveNumber(event.target.value, 0);
-                event.target.value = valor;
-                actualizarPrecioComponente(itemId, valor);
+                const componente = state.componentes.find(c => c.item === itemId);
+                const minBase = componente ? (parseFloat(componente.precio_minimo_venta) || 0) : 0;
+
+                let valorIngresado = toPositiveNumber(event.target.value, 0);
+                const factorAumento = 1 + (clampPercent(getAumentoGlobal()) / 100);
+                let precioBase = factorAumento > 0 ? valorIngresado / factorAumento : valorIngresado;
+
+                if (!state.puedeBajarPrecio && minBase > 0 && precioBase < minBase) {
+                    precioBase = minBase;
+                    valorIngresado = precioBase * factorAumento;
+                    if (window.Swal) {
+                        Swal.fire({
+                            icon: 'warning',
+                            title: 'Precio mínimo',
+                            text: 'No tenés autorización para bajar el precio por debajo del mínimo de venta.',
+                            timer: 2000,
+                            showConfirmButton: false,
+                            toast: true,
+                            position: 'top-end',
+                        });
+                    }
+                }
+
+                event.target.value = formatNumber(valorIngresado);
+                actualizarPrecioComponente(itemId, precioBase);
             }
         });
     }
@@ -1460,12 +2329,19 @@
         const unitario = document.querySelector(`[data-ensayo-unitario="${ensayoItem}"]`);
         const total = document.querySelector(`[data-ensayo-total="${ensayoItem}"]`);
 
+        const factorAumento = 1 + (clampPercent(getAumentoGlobal()) / 100);
         if (unitario) {
-            unitario.textContent = formatCurrency(ensayo.precio);
+            const valorUnitMostrado = precioAdicionalEnsayoPorUm(ensayo) * factorAumento;
+            const spanVal = unitario.querySelector('.cotizacion-precio-ensayo-valor');
+            if (spanVal) {
+                spanVal.textContent = formatCurrency(valorUnitMostrado);
+            } else {
+                unitario.textContent = formatCurrency(valorUnitMostrado);
+            }
         }
 
         if (total) {
-            total.textContent = formatCurrency(ensayo.total);
+            total.textContent = formatCurrency((parseFloat(ensayo.total) || 0) * factorAumento);
         }
     }
 
@@ -1473,7 +2349,15 @@
         const celda = document.querySelector(`[data-componente-total="${itemId}"]`);
         const componente = state.componentes.find(c => c.item === itemId);
         if (celda && componente) {
-            celda.textContent = formatCurrency(componente.total);
+            const factorAumento = 1 + (clampPercent(getAumentoGlobal()) / 100);
+            const totalConAumento = (parseFloat(componente.total) || 0) * factorAumento;
+            
+            const spanVal = celda.querySelector('.cotizacion-total-componente-valor');
+            if (spanVal) {
+                spanVal.textContent = formatCurrency(totalConAumento);
+            } else {
+                celda.textContent = formatCurrency(totalConAumento);
+            }
         }
     }
 
@@ -1487,7 +2371,8 @@
         catalogs.ensayos.forEach(ensayo => {
             const option = document.createElement('option');
             option.value = ensayo.id;
-            option.textContent = ensayo.descripcion;
+            option.textContent = (ensayo.descripcion || '') + ` (ID: ${ensayo.id})`;
+            option.dataset.descripcion = ensayo.descripcion || '';
             option.dataset.codigo = ensayo.codigo;
             option.dataset.metodoCodigo = (ensayo.metodo_codigo || ensayo.metodo || '').toString().trim();
             option.dataset.metodoDescripcion = ensayo.metodo_descripcion || '';
@@ -1495,6 +2380,10 @@
             // Guardar matriz_codigo y matriz_descripcion en el option
             option.dataset.matrizCodigo = (ensayo.matriz_codigo || '').toString().trim();
             option.dataset.matrizDescripcion = ensayo.matriz_descripcion || '';
+            const precioNum = parseFloat(ensayo.precio);
+            const precioOk = Number.isFinite(precioNum) && precioNum >= 0;
+            option.dataset.precio = precioOk ? precioNum.toFixed(2) : '';
+            option.dataset.precioRaw = precioOk ? String(precioNum) : '0';
             elements.selectEnsayo.appendChild(option);
         });
     }
@@ -1547,16 +2436,19 @@
         componentesParaMostrar.forEach(componente => {
             const option = document.createElement('option');
             const precio = Number(componente.precio || 0);
-            const metodoCodigo = (componente.metodo_codigo || componente.metodo || '').toString().trim();
+            const metodoAnalisisId = (componente.metodo_analisis_id || '').toString().trim();
+            const metodoCodigo = (componente.metodo_codigo || '').toString().trim(); // muestreo
             option.value = componente.id;
             // Si es agrupador, agregar indicador visual
             const esAgrupador = componente.es_muestra === true || componente.es_muestra === 1;
-            option.textContent = esAgrupador ? `[AGRUPADOR] ${componente.descripcion}` : componente.descripcion;
+            option.textContent = (esAgrupador ? `[AGRUPADOR] ` : '') + (componente.descripcion || '') + ` (ID: ${componente.id})`;
             option.dataset.descripcion = componente.descripcion || '';
             option.dataset.codigo = componente.codigo || '';
             option.dataset.unidadMedida = componente.unidad_medida || '';
             option.dataset.precio = precio.toFixed(2);
             option.dataset.precioRaw = precio;
+            option.dataset.precioDefinido = (componente.precio_definido === true || componente.precio_definido === 1 || componente.precio_definido === '1') ? '1' : '0';
+            option.dataset.metodoAnalisisId = metodoAnalisisId;
             option.dataset.metodoCodigo = metodoCodigo;
             option.dataset.metodoDescripcion = componente.metodo_descripcion || '';
             option.dataset.limitesEstablecidos = componente.limites_establecidos || '';
@@ -1591,16 +2483,19 @@
                     if (!comp) return;
                     const option = document.createElement('option');
                     const precio = Number(comp.precio || 0);
-                    const metodoCodigo = (comp.metodo_codigo || comp.metodo || '').toString().trim();
+                    const metodoAnalisisIdFalt = (comp.metodo_analisis_id || '').toString().trim();
+                    const metodoCodigoFalt = (comp.metodo_codigo || '').toString().trim(); // muestreo
                     option.value = comp.id;
                     const esAgrupador = comp.es_muestra === true || comp.es_muestra === 1;
-                    option.textContent = esAgrupador ? `[AGRUPADOR] ${comp.descripcion || ''}` : (comp.descripcion || '');
+                    option.textContent = (esAgrupador ? `[AGRUPADOR] ` : '') + (comp.descripcion || '') + ` (ID: ${comp.id})`;
                     option.dataset.descripcion = comp.descripcion || '';
                     option.dataset.codigo = comp.codigo || '';
                     option.dataset.unidadMedida = comp.unidad_medida || '';
                     option.dataset.precio = precio.toFixed(2);
                     option.dataset.precioRaw = precio;
-                    option.dataset.metodoCodigo = metodoCodigo;
+                    option.dataset.precioDefinido = (comp.precio_definido === true || comp.precio_definido === 1 || comp.precio_definido === '1') ? '1' : '0';
+                    option.dataset.metodoAnalisisId = metodoAnalisisIdFalt;
+                    option.dataset.metodoCodigo = metodoCodigoFalt;
                     option.dataset.metodoDescripcion = comp.metodo_descripcion || '';
                     option.dataset.limitesEstablecidos = comp.limites_establecidos || '';
                     option.dataset.matrizCodigo = (comp.matriz_codigo || '').toString().trim();
@@ -1645,11 +2540,14 @@
 
         catalogs.leyes.forEach(ley => {
             const option = document.createElement('option');
-            option.value = ley.id;
+            // FK en BD es leyes_normativas.codigo, no el id numérico
+            option.value = (ley.codigo != null && ley.codigo !== '') ? String(ley.codigo) : '';
             option.textContent = ley.text;
             option.dataset.codigo = ley.codigo;
             option.dataset.grupo = ley.grupo;
-            elements.selectEnsayoLeyNormativa.appendChild(option);
+            if (option.value) {
+                elements.selectEnsayoLeyNormativa.appendChild(option);
+            }
         });
     }
 
@@ -1697,13 +2595,14 @@
         const select = event.target;
         const option = select.options[select.selectedIndex];
 
-        if (!option) {
+        if (!option || !select.value) {
             if (elements.campoCodigoEnsayo) {
                 elements.campoCodigoEnsayo.value = '';
             }
             if (elements.infoMetodoEnsayo) {
                 elements.infoMetodoEnsayo.textContent = '';
             }
+            cargarNotasEnContenedor('notasEnsayoContainer', []);
             return;
         }
 
@@ -1717,6 +2616,41 @@
             elements.infoMetodoEnsayo.textContent = metodoCodigo
                 ? `Método asociado: ${metodoCodigo}${metodoDescripcion ? ` - ${metodoDescripcion}` : ''}`
                 : '';
+        }
+
+        const ensCat = catalogs.ensayos.find(e => String(e.id) === String(select.value));
+        const defNotas = ensCat
+            ? notasPredeterminadasDesdeCatalogo(ensCat.nota_imprimible, ensCat.nota_interna)
+            : [];
+        cargarNotasEnContenedor('notasEnsayoContainer', defNotas);
+
+        const precioExtraNuevo = document.getElementById('ensayo_precio_extra');
+        if (precioExtraNuevo && ensCat) {
+            const p = parseFloat(ensCat.precio);
+            const v = Number.isFinite(p) && p >= 0 ? p : 0;
+            precioExtraNuevo.value = formatNumber(v);
+        }
+
+        // Regla automática de muestreo según canal detectado
+        const canal = canalEspecialDesdeMatrizYDescripcion(option.dataset.matrizDescripcion, option.dataset.descripcion);
+        const isEdit = select.id === 'edit_ensayo_muestra';
+        const chkId = isEdit ? 'edit_ensayo_lleva_muestreo' : 'ensayo_no_lleva_muestreo';
+        const chk = document.getElementById(chkId);
+        if (chk) {
+            // Mediciones SI lleva muestreo por defecto. Los otros canales especiales NO.
+            // Para Mediciones, BLOQUEAMOS el checkbox para que no puedan marcar "No lleva muestreo"
+            if (canal === 'mediciones') {
+                chk.checked = false;
+                chk.disabled = true;
+            } else if (canal) {
+                // Otros canales especiales (ASP, Consultoría, etc) NO llevan muestreo por defecto
+                chk.checked = true;
+                chk.disabled = false;
+            } else {
+                // Análisis normales LLEVAN muestreo por defecto
+                chk.checked = false;
+                chk.disabled = false;
+            }
         }
     }
 
@@ -1732,6 +2666,8 @@
         }
 
         aplicarDatosComponenteDesdeOption(selectedOptions[0]);
+        const cat = catalogs.componentes.find(c => String(c.id) === String(selectedOptions[0].value));
+        aplicarTextareasNotasComponenteDesdeCatalogo(cat || null);
     }
 
     function limpiarCamposComponente() {
@@ -1741,6 +2677,7 @@
         if (elements.campoPrecioComponente) {
             elements.campoPrecioComponente.value = '0.00';
         }
+        limpiarTextareasNotasComponenteAgregar();
     }
 
     function aplicarDatosComponenteDesdeOption(option) {
@@ -1908,7 +2845,7 @@
         return `
             <div class="componente-option">
                 <div class="componente-option-title">
-                    ${escapeHtml(descripcion)}
+                    ${escapeHtml(descripcion)} (ID: ${data.id})
                     ${infoAgrupador}
                 </div>
                 <div class="componente-option-meta">${escapeHtml(meta)}</div>
@@ -1928,9 +2865,9 @@
         
         // Para el template de selección, mostrar descripción con indicador si es agrupador
         if (esAgrupador) {
-            return escapeHtml(descripcion) + ' [AGRUPADOR]';
+            return escapeHtml(descripcion) + ` (ID: ${data.id}) [AGRUPADOR]`;
         }
-        return escapeHtml(descripcion);
+        return escapeHtml(descripcion) + ` (ID: ${data.id})`;
     }
 
     function handleComponenteChangeFromSelect(selectEl) {
@@ -2081,6 +3018,75 @@
         return notas;
     }
 
+    /**
+     * Notas sugeridas desde catálogo cotio_items (imprimible / interna).
+     */
+    function notasPredeterminadasDesdeCatalogo(notaImprimible, notaInterna) {
+        const notas = [];
+        const ni = notaImprimible != null && String(notaImprimible).trim() !== '' ? String(notaImprimible).trim() : '';
+        const nin = notaInterna != null && String(notaInterna).trim() !== '' ? String(notaInterna).trim() : '';
+        if (ni) {
+            notas.push({ tipo: 'imprimible', contenido: ni });
+        }
+        if (nin) {
+            notas.push({ tipo: 'interna', contenido: nin });
+        }
+        return notas;
+    }
+
+    function notasAObjetoPersistencia(notas) {
+        if (!notas || notas.length === 0) {
+            return { nota_tipo: null, nota_contenido: null };
+        }
+        return {
+            nota_tipo: notas[0].tipo || null,
+            nota_contenido: JSON.stringify(notas),
+        };
+    }
+
+    /**
+     * Al agregar componente(s): con un solo ítem seleccionado, las cajas del modal mandan;
+     * con varios, cada fila usa las notas por defecto de su ítem de catálogo.
+     */
+    function notasParaNuevoComponenteDesdeModalYCatalogo(catalogoEntry, seleccionUnica) {
+        if (seleccionUnica) {
+            const impEl = document.getElementById('comp_nota_imprimible_texto');
+            const intEl = document.getElementById('comp_nota_interna_texto');
+            const imp = impEl ? String(impEl.value || '').trim() : '';
+            const intern = intEl ? String(intEl.value || '').trim() : '';
+            if (imp || intern) {
+                return notasPredeterminadasDesdeCatalogo(imp || null, intern || null);
+            }
+            return notasPredeterminadasDesdeCatalogo(
+                catalogoEntry ? catalogoEntry.nota_imprimible : null,
+                catalogoEntry ? catalogoEntry.nota_interna : null
+            );
+        }
+        return notasPredeterminadasDesdeCatalogo(
+            catalogoEntry ? catalogoEntry.nota_imprimible : null,
+            catalogoEntry ? catalogoEntry.nota_interna : null
+        );
+    }
+
+    function aplicarTextareasNotasComponenteDesdeCatalogo(catalogoEntry) {
+        const impEl = document.getElementById('comp_nota_imprimible_texto');
+        const intEl = document.getElementById('comp_nota_interna_texto');
+        if (!impEl || !intEl) {
+            return;
+        }
+        if (!catalogoEntry) {
+            impEl.value = '';
+            intEl.value = '';
+            return;
+        }
+        impEl.value = catalogoEntry.nota_imprimible != null ? String(catalogoEntry.nota_imprimible) : '';
+        intEl.value = catalogoEntry.nota_interna != null ? String(catalogoEntry.nota_interna) : '';
+    }
+
+    function limpiarTextareasNotasComponenteAgregar() {
+        aplicarTextareasNotasComponenteDesdeCatalogo(null);
+    }
+
     function cargarNotasEnContenedor(containerId, notas) {
         const container = document.getElementById(containerId);
         if (!container) return;
@@ -2094,6 +3100,27 @@
                 agregarNotaAlContenedor(containerId, nota.tipo || nota.nota_tipo, nota.contenido || nota.nota_contenido);
             });
         }
+    }
+
+    function canalEspecialDesdeMatrizYDescripcion(matrizDesc, descripcion) {
+        const mat = ((matrizDesc || '') + '').toString().toLowerCase();
+        const desc = ((descripcion || '') + '').toString().toLowerCase();
+        const hay = function (needle) {
+            return mat.includes(needle) || desc.includes(needle);
+        };
+        if (hay('consultoria')) {
+            return 'consultoria';
+        }
+        if (hay('clarke fire') || hay('clarke-fire') || hay('clarke_fire') || (hay('clarke') && hay('fire'))) {
+            return 'clarke_fire';
+        }
+        if (hay('asp')) {
+            return 'asp';
+        }
+        if (hay('mediciones')) {
+            return 'mediciones';
+        }
+        return null;
     }
 
     function agregarEnsayo() {
@@ -2120,7 +3147,7 @@
         }
 
         const option = elements.selectEnsayo.options[elements.selectEnsayo.selectedIndex];
-        const descripcion = option ? option.textContent : '';
+        const descripcion = option ? (option.dataset.descripcion || option.textContent.replace(/\s*\(ID: \d+\)$/, '')) : '';
         const codigo = option ? option.dataset.codigo : '';
         const componentesSugeridos = option && option.dataset && option.dataset.componentes
             ? JSON.parse(option.dataset.componentes)
@@ -2131,6 +3158,63 @@
         const matrizDescripcion = option && option.dataset.matrizDescripcion ? option.dataset.matrizDescripcion : null;
 
         const cantidad = toPositiveInt(elements.campoCantidadEnsayo ? elements.campoCantidadEnsayo.value : 1, 1);
+        const precioExtraEnsayo = Math.max(0, parseFloat(document.getElementById('ensayo_precio_extra')?.value) || 0);
+
+        // Validar que al menos una opción de cadena de custodia esté seleccionada
+        const _chkNoCust = document.getElementById('no_requiere_custodia');
+        const _chkMapba = document.getElementById('req_prot_mapba');
+        const _chkRelAgregar = document.getElementById('ensayo_chk_req_cadena_relacionada');
+        const _algunoSeleccionado = (_chkNoCust && _chkNoCust.checked)
+            || (_chkMapba && _chkMapba.checked)
+            || (_chkRelAgregar && _chkRelAgregar.checked);
+
+        const _groupAgregar = document.getElementById('custodia_group_agregar');
+        const _errorAgregar = document.getElementById('custodia_error_agregar');
+
+        if (!_algunoSeleccionado) {
+            if (_groupAgregar) _groupAgregar.classList.add('border-danger');
+            if (_errorAgregar) _errorAgregar.classList.remove('d-none');
+            if (window.Swal) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Campo requerido',
+                    text: 'Debe seleccionar al menos una opción de cadena de custodia.',
+                });
+            }
+            return;
+        }
+        if (_groupAgregar) _groupAgregar.classList.remove('border-danger');
+        if (_errorAgregar) _errorAgregar.classList.add('d-none');
+
+        // Cadena de custodia: id no_requiere_custodia — marcado = NO lleva cadena (req_cadena_custodia = false)
+        const noRequiereCustodiaCheckbox = document.getElementById('no_requiere_custodia');
+        const reqCadenaCustodia = noRequiereCustodiaCheckbox
+            ? !noRequiereCustodiaCheckbox.checked
+            : false;
+
+        // Lleva muestreo: igual que en edición — checkbox "No lleva muestreo" fuerza false; si no, regla por canal (matriz/descripción).
+        const canalDetectado = canalEspecialDesdeMatrizYDescripcion(matrizDescripcion, descripcion);
+        const chkNoLlevaMuestreo = document.getElementById('ensayo_no_lleva_muestreo');
+        let llevaMuestreo = true;
+        if (chkNoLlevaMuestreo && chkNoLlevaMuestreo.checked) {
+            llevaMuestreo = false;
+        } else {
+            // Mediciones SI lleva muestreo (true). Otros canales especiales NO (false).
+            if (canalDetectado === 'mediciones') {
+                llevaMuestreo = true;
+            } else {
+                llevaMuestreo = canalDetectado ? false : true;
+            }
+        }
+
+        // Protocolo MAPBA
+        const reqProtMapbaCheckbox = document.getElementById('req_prot_mapba');
+        const reqProtMapba = reqProtMapbaCheckbox ? !!reqProtMapbaCheckbox.checked : false;
+
+        const leyNormSelect = elements.selectEnsayoLeyNormativa;
+        const leyNormativaCodigo = (leyNormSelect && leyNormSelect.value)
+            ? String(leyNormSelect.value).trim()
+            : null;
 
         // Capturar múltiples notas del modal
         const notas = obtenerNotasDelContenedor('notasEnsayoContainer');
@@ -2156,6 +3240,12 @@
             notas: notas, // Guardar también como array para uso interno
             matriz_codigo: matrizCodigo,
             matriz_descripcion: matrizDescripcion,
+            req_cadena_custodia: reqCadenaCustodia,
+            req_prot_mapba: reqProtMapba,
+            lleva_muestreo: llevaMuestreo,
+            canal_especial: canalDetectado,
+            precio_extra_ensayo: precioExtraEnsayo,
+            ley_normativa_id: leyNormativaCodigo || null,
         });
 
         state.ensayos.push(nuevoEnsayo);
@@ -2230,141 +3320,138 @@
         const metodoAnalisisId = null;
         const leyNormativaId = null;
 
-        // Capturar datos de nota del modal de componente
-        const notaTipo = document.querySelector('input[name="comp_nota_tipo"]:checked')?.value || 'imprimible';
-        const notaContenido = document.getElementById('componente_nota_contenido')?.value || '';
+        // Cadena de custodia del componente: marcado = NO lleva cadena
+        const compNoRequiereCustodiaCheckbox = document.getElementById('comp_no_requiere_custodia');
+        const compReqCadenaCustodia = compNoRequiereCustodiaCheckbox
+            ? !compNoRequiereCustodiaCheckbox.checked
+            : false;
+
+        // Protocolo MAPBA del componente
+        const compReqProtMapbaCheckbox = document.getElementById('comp_req_prot_mapba');
+        const compReqProtMapba = compReqProtMapbaCheckbox ? !!compReqProtMapbaCheckbox.checked : false;
+
+        const seleccionUnicaAnalisis = selectedOptions.length === 1;
 
         let agregados = 0;
         let omitidos = 0;
 
-        // Primero procesar todos los items seleccionados (agrupadores y componentes)
-        const itemsParaAgregar = [];
-        const componentesAsociadosAgregar = new Set(); // Para evitar duplicados
-        let agrupadoresAgregados = 0; // Contador de agrupadores agregados
-        
-        selectedOptions.forEach(option => {
-            const analisisId = option.value;
-            const esAgrupador = option.dataset.esAgrupador === '1';
-            
-            // Verificar si el item principal ya existe
-            const yaExiste = state.componentes.some(comp => comp.analisis_id?.toString() === analisisId.toString() && comp.ensayo_asociado === ensayoAsociado);
-            if (yaExiste) {
+        // Agregar en orden visual: por cada selección, si es agrupador insertar sus asociados
+        // inmediatamente después, respetando el orden recibido en `componentesAsociados`.
+        let componentesDeAgrupadoresAgregados = 0;
+        let agrupadoresAgregados = 0;
+        const asociadosVistos = new Set();
+
+        function componenteYaExiste(analisisId) {
+            return state.componentes.some(comp =>
+                comp.analisis_id?.toString() === analisisId.toString() &&
+                comp.ensayo_asociado === ensayoAsociado
+            );
+        }
+
+        function agregarComponenteDesdeCatalogo(analisisId, deAgrupador, precioForzado = null) {
+            if (componenteYaExiste(analisisId)) {
                 omitidos += 1;
-                return;
+                return false;
             }
 
-            // Limpiar el prefijo [AGRUPADOR] de la descripción si existe
-            let descripcion = option.textContent.replace(/^\[AGRUPADOR\]\s*/, '');
-            const codigo = option.dataset.codigo || '';
-            const metodoCodigo = option.dataset.metodoCodigo || '';
-            const metodoDescripcion = option.dataset.metodoDescripcion || '';
-            const unidadMedida = option.dataset.unidadMedida || '';
-            const limiteDeteccion = option.dataset.limitesEstablecidos || '';
+            const componenteCatalogo = catalogs.componentes.find(c => c.id.toString() === analisisId.toString());
+            if (!componenteCatalogo) {
+                return false;
+            }
+
+            const descripcion = componenteCatalogo.descripcion || '';
+            const codigo = componenteCatalogo.codigo || '';
+            const metodoAnalisisId = (componenteCatalogo.metodo_analisis_id || '').toString().trim(); // análisis → cotio_codigometodo_analisis
+            const metodoCodigo = (componenteCatalogo.metodo_codigo || '').toString().trim();          // muestreo → cotio_codigometodo
+            const metodoDescripcion = componenteCatalogo.metodo_descripcion || '';
+            const unidadMedida = componenteCatalogo.unidad_medida || '';
+            const limiteDeteccion = componenteCatalogo.limites_establecidos || '';
             const cantidad = 1;
+            const precioCatalogo = toPositiveNumber(componenteCatalogo.precio || 0, 0);
+            const precio = (precioForzado !== null) ? toPositiveNumber(precioForzado, 0) : precioCatalogo;
+            const precioMinimoVenta = toPositiveNumber(componenteCatalogo.precio_minimo_venta || precioCatalogo || 0, 0);
 
-            let precio = precioManual;
-            if (!precio) {
-                precio = toPositiveNumber(option.dataset.precio || 0, 0);
-            }
+            const notasComp = notasParaNuevoComponenteDesdeModalYCatalogo(componenteCatalogo, false);
+            const np = notasAObjetoPersistencia(notasComp);
 
-            // Agregar el item principal (agrupador o componente)
-            itemsParaAgregar.push({
+            const esSugerido = ensayoRegistro && 
+                               Array.isArray(ensayoRegistro.componentes_sugeridos) && 
+                               ensayoRegistro.componentes_sugeridos.map(id => id.toString()).includes(analisisId.toString());
+
+            state.contador += 1;
+            const nuevoComponente = normalizarComponente({
+                item: state.contador,
                 analisis_id: analisisId,
                 descripcion: descripcion,
                 codigo: codigo,
                 cantidad: cantidad,
                 precio: precio,
+                precio_minimo_venta: precioMinimoVenta,
+                total: precio * cantidad,
+                ensayo_asociado: ensayoAsociado,
                 metodo_codigo: metodoCodigo,
                 metodo_descripcion: metodoDescripcion,
                 unidad_medida: unidadMedida,
                 limite_deteccion: limiteDeteccion,
-            });
-
-            // Si es agrupador, obtener componentes asociados
-            if (esAgrupador && option.dataset.componentesAsociados) {
-                try {
-                    const componentesAsociadosIds = JSON.parse(option.dataset.componentesAsociados);
-                    componentesAsociadosIds.forEach(compId => {
-                        componentesAsociadosAgregar.add(compId.toString());
-                    });
-                } catch (e) {
-                    // console.error('Error parseando componentes asociados:', e);
-                }
-            }
-        });
-
-        // Agregar el agrupador y sus componentes asociados
-        itemsParaAgregar.forEach((item, index) => {
-            // Verificar si es agrupador antes de agregar
-            const optionOriginal = selectedOptions.find(opt => opt.value === item.analisis_id.toString());
-            const esAgrupadorItem = optionOriginal && optionOriginal.dataset.esAgrupador === '1';
-            
-            state.contador += 1;
-
-            const nuevoComponente = normalizarComponente({
-                item: state.contador,
-                analisis_id: item.analisis_id,
-                descripcion: item.descripcion,
-                codigo: item.codigo,
-                cantidad: item.cantidad,
-                precio: item.precio,
-                total: item.precio * item.cantidad,
-                ensayo_asociado: ensayoAsociado,
-                metodo_codigo: item.metodo_codigo,
-                metodo_descripcion: item.metodo_descripcion,
-                unidad_medida: item.unidad_medida,
-                limite_deteccion: item.limite_deteccion,
                 metodo_analisis_id: metodoAnalisisId,
                 ley_normativa_id: leyNormativaId,
-                nota_tipo: notaTipo,
-                nota_contenido: notaContenido,
+                nota_tipo: np.nota_tipo,
+                nota_contenido: np.nota_contenido,
+                de_agrupador: !!deAgrupador || esSugerido,
             });
- 
+
             state.componentes.push(nuevoComponente);
             agregados += 1;
-            
-            // Si es agrupador, incrementar contador
-            if (esAgrupadorItem) {
-                agrupadoresAgregados += 1;
+            if (deAgrupador) componentesDeAgrupadoresAgregados += 1;
+            return true;
+        }
+
+        selectedOptions.forEach(option => {
+            const analisisId = option.value;
+            const esAgrupador = option.dataset.esAgrupador === '1';
+            const agrupadorTienePrecioDefinido = option.dataset.precioDefinido === '1';
+
+            let idsHijosAgrupador = [];
+            if (esAgrupador && option.dataset.componentesAsociados) {
+                try {
+                    idsHijosAgrupador = JSON.parse(option.dataset.componentesAsociados) || [];
+                } catch (e) {
+                    idsHijosAgrupador = [];
+                }
             }
-        });
+            // Si el agrupador tiene precio de catálogo y trae analitos, no duplicamos el agrupador como línea con importe:
+            // los hijos llevan su precio de lista y el "adic. ensayo" se define aparte en el ensayo.
+            const omitirPrincipalAgrupador = esAgrupador && agrupadorTienePrecioDefinido && idsHijosAgrupador.length > 0;
 
-        // Agregar componentes asociados de los agrupadores
-        let componentesDeAgrupadoresAgregados = 0;
-        if (componentesAsociadosAgregar.size > 0) {
-            componentesAsociadosAgregar.forEach(compId => {
-                // Verificar si el componente ya existe
-                const yaExiste = state.componentes.some(comp => 
-                    comp.analisis_id?.toString() === compId.toString() && 
-                    comp.ensayo_asociado === ensayoAsociado
-                );
-                
-                if (yaExiste) {
-                    omitidos += 1;
-                    return;
-                }
-
-                // Buscar el componente en el catálogo
-                const componenteCatalogo = catalogs.componentes.find(c => c.id.toString() === compId.toString());
-                if (!componenteCatalogo) {
-                    // console.warn('Componente asociado no encontrado en catálogo:', compId);
-                    return;
-                }
-
-                const descripcion = componenteCatalogo.descripcion || '';
-                const codigo = componenteCatalogo.codigo || '';
-                const metodoCodigo = componenteCatalogo.metodo_codigo || '';
-                const metodoDescripcion = componenteCatalogo.metodo_descripcion || '';
-                const unidadMedida = componenteCatalogo.unidad_medida || '';
-                const limiteDeteccion = componenteCatalogo.limites_establecidos || '';
+            // principal (agrupador o componente) tal como está en el option
+            if (!omitirPrincipalAgrupador && !componenteYaExiste(analisisId)) {
+                // Usar la descripción del dataset para evitar el ID
+                let descripcion = option.dataset.descripcion || option.textContent.replace(/^\[AGRUPADOR\]\s*/, '').replace(/\s*\(ID: \d+\)$/, '');
+                const codigo = option.dataset.codigo || '';
+                const metodoAnalisisId = (option.dataset.metodoAnalisisId || '').toString().trim(); // análisis → cotio_codigometodo_analisis
+                const metodoCodigo = (option.dataset.metodoCodigo || '').toString().trim();         // muestreo → cotio_codigometodo
+                const metodoDescripcion = option.dataset.metodoDescripcion || '';
+                const unidadMedida = option.dataset.unidadMedida || '';
+                const limiteDeteccion = option.dataset.limitesEstablecidos || '';
                 const cantidad = 1;
-                const precio = toPositiveNumber(componenteCatalogo.precio || 0, 0);
+
+                let precio = precioManual;
+                if (!precio) {
+                    precio = toPositiveNumber(option.dataset.precio || 0, 0);
+                }
+
+                const catPrincipal = catalogs.componentes.find(c => String(c.id) === String(analisisId));
+                const notasPrincipal = notasParaNuevoComponenteDesdeModalYCatalogo(catPrincipal, seleccionUnicaAnalisis);
+                const npPrincipal = notasAObjetoPersistencia(notasPrincipal);
+
+                const esSugeridoPrincipal = ensayoRegistro && 
+                                           Array.isArray(ensayoRegistro.componentes_sugeridos) && 
+                                           ensayoRegistro.componentes_sugeridos.map(id => id.toString()).includes(analisisId.toString());
 
                 state.contador += 1;
-
                 const nuevoComponente = normalizarComponente({
                     item: state.contador,
-                    analisis_id: compId,
+                    analisis_id: analisisId,
                     descripcion: descripcion,
                     codigo: codigo,
                     cantidad: cantidad,
@@ -2377,16 +3464,31 @@
                     limite_deteccion: limiteDeteccion,
                     metodo_analisis_id: metodoAnalisisId,
                     ley_normativa_id: leyNormativaId,
-                    nota_tipo: notaTipo,
-                    nota_contenido: notaContenido,
-                    de_agrupador: true, // Marcar que proviene de un agrupador
+                    nota_tipo: npPrincipal.nota_tipo,
+                    nota_contenido: npPrincipal.nota_contenido,
+                    de_agrupador: esSugeridoPrincipal,
                 });
- 
+
                 state.componentes.push(nuevoComponente);
                 agregados += 1;
-                componentesDeAgrupadoresAgregados += 1;
-            });
-        }
+            } else if (!omitirPrincipalAgrupador) {
+                omitidos += 1;
+            }
+
+            if (esAgrupador) {
+                agrupadoresAgregados += 1;
+            }
+
+            // asociados del agrupador, en el orden recibido (siempre precio de catálogo por analito)
+            if (idsHijosAgrupador.length) {
+                idsHijosAgrupador.forEach(id => {
+                    const idStr = id.toString();
+                    if (asociadosVistos.has(idStr)) return;
+                    asociadosVistos.add(idStr);
+                    agregarComponenteDesdeCatalogo(idStr, true, null);
+                });
+            }
+        });
 
         if (!agregados) {
             if (window.Swal && omitidos) {
@@ -2440,6 +3542,17 @@
                 window.$('#componente_analisis').val(null).trigger('change');
             }
         }
+
+        // Limpiar estado de error de cadena de custodia
+        const groupAgregar = document.getElementById('custodia_group_agregar');
+        const errorAgregar = document.getElementById('custodia_error_agregar');
+        if (groupAgregar) groupAgregar.classList.remove('border-danger');
+        if (errorAgregar) errorAgregar.classList.add('d-none');
+
+        const groupEditar = document.getElementById('custodia_group_editar');
+        const errorEditar = document.getElementById('custodia_error_editar');
+        if (groupEditar) groupEditar.classList.remove('border-danger');
+        if (errorEditar) errorEditar.classList.add('d-none');
     }
 
     function eliminarItem(tipo, itemId) {
@@ -2824,10 +3937,54 @@
         });
     }
 
+    /** Sin muestreo en campo: etiqueta según canal (consultoría / ASP / Clarke Fire) o lab directo genérico. */
+    function badgeFlujoEnsayoSinMuestreo(ensayo) {
+        let c = ((ensayo && ensayo.canal_especial) ? String(ensayo.canal_especial) : '').trim().toLowerCase();
+        if (!c && typeof canalEspecialDesdeMatrizYDescripcion === 'function') {
+            c = canalEspecialDesdeMatrizYDescripcion(ensayo.matriz_descripcion, ensayo.descripcion) || '';
+        }
+        if (c === 'consultoria') {
+            return '<span class="badge text-white ms-1" style="background-color:#0d6efd;" title="Consultoría (sin muestreo en campo)">Consultoría</span>';
+        }
+        if (c === 'asp') {
+            return '<span class="badge bg-dark ms-1" title="ASP (sin muestreo en campo)">ASP</span>';
+        }
+        if (c === 'clarke_fire') {
+            return '<span class="badge ms-1" style="background-color:#6f4e37;color:#fff;" title="Clarke Fire (sin muestreo en campo)">Clarke Fire</span>';
+        }
+        if (c === 'mediciones') {
+            return '<span class="badge ms-1" style="background-color:#6f42c1;color:#fff;" title="Mediciones (sin muestreo en campo)">Mediciones</span>';
+        }
+        return '<span class="badge bg-secondary ms-1" title="Laboratorio directo (sin muestreo en campo)">Lab directo</span>';
+    }
+
     function renderFilaEnsayo(ensayo, numeroSecuencial) {
+        // Aumento global: importe fila ensayo = adic. ensayo × cantidad; en P. unit. solo el adicional u.m.
+        const aumentoPercent = clampPercent(getAumentoGlobal());
+        const factorAumento = 1 + (aumentoPercent / 100);
+        const precioUnitAdicMostrado = precioAdicionalEnsayoPorUm(ensayo) * factorAumento;
+        const totalConAumento = (parseFloat(ensayo.total) || 0) * factorAumento;
         const cantidadCampo = state.puedeEditar
             ? `<input type="number" class="form-control form-control-sm input-cantidad-ensayo" data-item="${ensayo.item}" value="${formatInt(ensayo.cantidad)}" min="1" step="1">`
             : `<span>${formatInt(ensayo.cantidad)}</span>`;
+
+        const badgeCadena = ensayo.req_cadena_custodia === true
+            ? '<span class="badge bg-info text-dark ms-1" title="Requiere Cadena de Custodia">Cadena</span>'
+            : '';
+
+        const llevaMuestreo = (typeof ensayo.lleva_muestreo !== 'undefined') ? !!ensayo.lleva_muestreo : true;
+        const canal = canalEspecialDesdeMatrizYDescripcion(ensayo.matriz_descripcion, ensayo.descripcion);
+        
+        let badgeMuestreo = '';
+        if (llevaMuestreo) {
+            if (canal === 'mediciones') {
+                badgeMuestreo = '<span class="badge ms-1" style="background-color:#6f42c1;color:#fff;" title="Mediciones (lleva muestreo)">Mediciones</span>';
+            } else {
+                badgeMuestreo = '<span class="badge bg-success ms-1" title="Lleva muestreo">Muestreo</span>';
+            }
+        } else {
+            badgeMuestreo = badgeFlujoEnsayoSinMuestreo(ensayo);
+        }
 
         const componentesDelEnsayo = state.componentes.filter(c => c.ensayo_asociado === ensayo.item);
         const tieneComponentes = componentesDelEnsayo.length > 0;
@@ -2863,12 +4020,15 @@
             <tr data-tipo="ensayo" data-item="${ensayo.item}" class="sortable-ensayo" style="cursor: ${state.puedeEditar ? 'move' : 'default'};">
                 <td>${dragHandle} ${iconoExpandir} ${numeroSecuencial}</td>
                 <td>${escapeHtml(ensayo.codigo || '-')}</td>
-                <td>ENSAYO - ${escapeHtml(ensayo.descripcion || '')}</td>
+                <td>${escapeHtml(ensayo.descripcion || '')} ${badgeCadena} ${badgeMuestreo}</td>
                 <td>-</td>
                 <td>${botonEditar}</td>
                 <td>${cantidadCampo}</td>
-                <td data-ensayo-unitario="${ensayo.item}">${formatCurrency(ensayo.precio)}</td>
-                <td data-ensayo-total="${ensayo.item}">${formatCurrency(ensayo.total)}</td>
+                <td data-ensayo-unitario="${ensayo.item}" class="text-end cotizacion-col-precio">
+                    <span class="cotizacion-precio-ensayo-valor">${formatCurrency(precioUnitAdicMostrado)}</span>
+                    <small class="text-muted d-block cotizacion-leyenda-precio-ensayo">P. Unit. (total)</small>
+                </td>
+                <td data-ensayo-total="${ensayo.item}" class="text-end fw-semibold cotizacion-col-precio">${formatCurrency(totalConAumento)}</td>
                 <td>${acciones}</td>
             </tr>
         `;
@@ -2879,9 +4039,18 @@
 
         const cantidadCampo = `<span>${formatInt(componente.cantidad)}</span>`;
 
+        const aumentoPercent = clampPercent(getAumentoGlobal());
+        const factorAumento = 1 + (aumentoPercent / 100);
+        const esDeAgrupador = componente.de_agrupador === true;
+        const precioReal = esDeAgrupador ? 0 : (parseFloat(componente.precio) || 0);
+        const totalReal = esDeAgrupador ? 0 : (parseFloat(componente.total) || 0);
+
+        const precioConAumento = precioReal * factorAumento;
+        const totalConAumento = totalReal * factorAumento;
+
         const precioCampo = state.puedeEditar
-            ? `<input type="number" class="form-control form-control-sm input-precio-componente" data-item="${componente.item}" value="${formatNumber(componente.precio)}" min="0" step="0.01">`
-            : `<span>${formatCurrency(componente.precio)}</span>`;
+            ? `<input type="number" class="form-control form-control-sm input-precio-componente" data-item="${componente.item}" value="${formatNumber(precioConAumento)}" min="${formatNumber(0)}" step="0.01" ${esDeAgrupador ? 'readonly style="background-color: #f8f9fa;"' : ''}>`
+            : `<span>${formatCurrency(precioConAumento)}</span>`;
 
         const acciones = state.puedeEditar
             ? `<button type="button" class="btn btn-sm btn-outline-danger" onclick="eliminarItem('componente', ${componente.item})">
@@ -2894,7 +4063,6 @@
         </button>`;
 
         // Indicador sutil si proviene de un agrupador
-        const esDeAgrupador = componente.de_agrupador === true;
         const claseFila = esDeAgrupador ? 'componente-de-agrupador' : '';
         const indicadorAgrupador = esDeAgrupador 
             ? '<span class="badge badge-agrupador" title="Componente del agrupador">⊞</span>' 
@@ -2908,16 +4076,23 @@
                </span>`
             : '';
 
+        const badgeCadenaComp = componente.req_cadena_custodia === true
+            ? '<span class="badge bg-info text-dark ms-1" title="Requiere Cadena de Custodia">Cadena</span>'
+            : '';
+
         return `
             <tr data-tipo="componente" data-item="${componente.item}" data-ensayo="${ensayo.item}" class="sortable-componente componente-row componente-row-${ensayo.item} ${claseFila}" style="cursor: ${state.puedeEditar ? 'move' : 'default'};">
                 <td>${dragHandleComponente} ${itemLabel}</td>
                 <td>${escapeHtml(componente.codigo || '-')}</td>
-                <td>ANÁLISIS - ${indicadorAgrupador} ${escapeHtml(componente.descripcion || '')}</td>
+                <td>${indicadorAgrupador} ${escapeHtml(componente.descripcion || '')} ${badgeCadenaComp}</td>
                 <td><small>${escapeHtml(componente.metodo_descripcion || '-')}</small></td>
                 <td>${botonVer}</td>
                 <td>${cantidadCampo}</td>
-                <td>${precioCampo}</td>
-                <td data-componente-total="${componente.item}">${formatCurrency(componente.total)}</td>
+                <td class="text-end cotizacion-col-precio">${precioCampo}</td>
+                <td data-componente-total="${componente.item}" class="text-end cotizacion-col-precio">
+                    <span class="cotizacion-total-componente-valor">${formatCurrency(totalConAumento)}</span>
+                    ${componente.de_agrupador ? '<small class="text-muted d-block">(incluido)</small>' : ''}
+                </td>
                 <td>${acciones}</td>
             </tr>
         `;
@@ -2941,6 +4116,23 @@
         abrirModalEditarComponente(componente);
     }
 
+    function textosNotasImprimibleInternaDesdeComponente(componente) {
+        let imp = '';
+        let intern = '';
+        const lista = componente && componente.notas;
+        if (Array.isArray(lista)) {
+            lista.forEach(n => {
+                if (n && n.tipo === 'imprimible' && n.contenido) {
+                    imp = String(n.contenido);
+                }
+                if (n && n.tipo === 'interna' && n.contenido) {
+                    intern = String(n.contenido);
+                }
+            });
+        }
+        return { imp, intern };
+    }
+
     function abrirModalEditarComponente(componente) {
         const modal = document.getElementById('modalEditarComponente');
         if (!modal) {
@@ -2960,11 +4152,13 @@
             catalogs.componentes.forEach(comp => {
                 const option = document.createElement('option');
                 option.value = comp.id;
-                option.textContent = comp.descripcion;
+                option.textContent = `${comp.descripcion} (ID: ${comp.id})`;
+                option.dataset.descripcion = comp.descripcion;
                 option.dataset.codigo = comp.codigo || '';
                 option.dataset.precio = comp.precio || '0';
                 option.dataset.unidadMedida = comp.unidad_medida || '';
-                option.dataset.metodoCodigo = comp.metodo_codigo || '';
+                option.dataset.metodoAnalisisId = (comp.metodo_analisis_id || '').toString().trim();
+                option.dataset.metodoCodigo = (comp.metodo_codigo || '').toString().trim(); // muestreo
                 option.dataset.matrizCodigo = comp.matriz_codigo || '';
                 option.dataset.matrizDescripcion = comp.matriz_descripcion || '';
                 
@@ -3008,6 +4202,26 @@
         document.getElementById('edit_componente_precio').value = formatNumber(componente.precio);
         document.getElementById('edit_componente_unidad').value = componente.unidad_medida || '';
 
+        // Checkboxes de requerimientos
+        const chkReqCadena = document.getElementById('edit_comp_req_cadena_custodia');
+        if (chkReqCadena) {
+            chkReqCadena.checked = !!componente.req_cadena_custodia;
+        }
+        const chkReqProt = document.getElementById('edit_comp_req_prot_mapba');
+        if (chkReqProt) {
+            chkReqProt.checked = !!componente.req_prot_mapba;
+        }
+
+        const tn = textosNotasImprimibleInternaDesdeComponente(componente);
+        const impNotaEd = document.getElementById('edit_comp_nota_imprimible');
+        const intNotaEd = document.getElementById('edit_comp_nota_interna');
+        if (impNotaEd) {
+            impNotaEd.value = tn.imp;
+        }
+        if (intNotaEd) {
+            intNotaEd.value = tn.intern;
+        }
+
         // Abrir modal
         if (window.bootstrap && window.bootstrap.Modal) {
             const modalInstance = new window.bootstrap.Modal(modal);
@@ -3057,11 +4271,16 @@
                 catalogs.ensayos.forEach(ens => {
                 const option = document.createElement('option');
                 option.value = ens.id;
-                option.textContent = ens.descripcion;
+                option.textContent = `${ens.descripcion} (ID: ${ens.id})`;
+                option.dataset.descripcion = ens.descripcion;
                 option.dataset.codigo = ens.codigo || '';
                 option.dataset.componentes = JSON.stringify(Array.isArray(ens.componentes_default) ? ens.componentes_default : []);
                 option.dataset.matrizCodigo = (ens.matriz_codigo || '').toString().trim();
                 option.dataset.matrizDescripcion = ens.matriz_descripcion || '';
+                const precioNum = parseFloat(ens.precio);
+                const precioOk = Number.isFinite(precioNum) && precioNum >= 0;
+                option.dataset.precio = precioOk ? precioNum.toFixed(2) : '';
+                option.dataset.precioRaw = precioOk ? String(precioNum) : '0';
                 
                 if (String(ens.id) === String(ensayo.muestra_id)) {
                     option.selected = true;
@@ -3087,6 +4306,8 @@
                         option.dataset.componentes = originalOption.dataset.componentes || '[]';
                         option.dataset.matrizCodigo = originalOption.dataset.matrizCodigo || '';
                         option.dataset.matrizDescripcion = originalOption.dataset.matrizDescripcion || '';
+                        option.dataset.precio = originalOption.dataset.precio || '';
+                        option.dataset.precioRaw = originalOption.dataset.precioRaw || '0';
                         
                         if (String(originalOption.value) === String(ensayo.muestra_id)) {
                             option.selected = true;
@@ -3102,254 +4323,25 @@
             }
         }
 
-        // Cargar leyes/normativas
-        const selectLey = document.getElementById('edit_ensayo_ley_normativa');
-        if (selectLey) {
-            selectLey.innerHTML = '<option value="">Seleccionar normativa...</option>';
-            
-            // Verificar que el catálogo esté cargado
-            const leyesCatalogo = catalogs.leyesNormativas || catalogs.leyes;
-            if (leyesCatalogo && Array.isArray(leyesCatalogo)) {
-                leyesCatalogo.forEach(ley => {
-                    const option = document.createElement('option');
-                    // Usar codigo o id dependiendo de qué propiedad tenga
-                    option.value = ley.codigo || ley.id || '';
-                    // Usar nombre o text dependiendo de qué propiedad tenga
-                    option.textContent = ley.nombre || ley.text || '';
-                    selectLey.appendChild(option);
-                });
-            }
-        }
-
-        // Llenar campos
-        document.getElementById('edit_ensayo_codigo').value = ensayo.codigo || '';
-        document.getElementById('edit_ensayo_cantidad').value = formatInt(ensayo.cantidad);
-        
-        // Cargar múltiples notas
-        let notasParaCargar = [];
-        if (ensayo.notas && Array.isArray(ensayo.notas)) {
-            // Si ya está como array, usarlo directamente
-            notasParaCargar = ensayo.notas;
-        } else if (ensayo.nota_contenido) {
-            // Intentar parsear como JSON (si es múltiple)
-            try {
-                const notasParseadas = JSON.parse(ensayo.nota_contenido);
-                if (Array.isArray(notasParseadas)) {
-                    notasParaCargar = notasParseadas;
-                } else {
-                    // Si no es array, crear una nota con los datos antiguos
-                    notasParaCargar = [{
-                        tipo: ensayo.nota_tipo || 'imprimible',
-                        contenido: ensayo.nota_contenido
-                    }];
+        const editSelectMuestra = document.getElementById('edit_ensayo_muestra');
+        if (editSelectMuestra && !editSelectMuestra.dataset.ensayoPrecioCatalogListener) {
+            editSelectMuestra.dataset.ensayoPrecioCatalogListener = '1';
+            editSelectMuestra.addEventListener('change', function () {
+                const opt = this.options[this.selectedIndex];
+                const inp = document.getElementById('edit_ensayo_precio_extra');
+                if (!inp || !opt || !this.value) {
+                    return;
                 }
-            } catch (e) {
-                // Si no es JSON válido, es una nota simple (formato antiguo)
-                notasParaCargar = [{
-                    tipo: ensayo.nota_tipo || 'imprimible',
-                    contenido: ensayo.nota_contenido
-                }];
-            }
-        }
-        
-        // Cargar notas en el contenedor
-        cargarNotasEnContenedor('notasEditEnsayoContainer', notasParaCargar);
+                const p = parseFloat(opt.dataset.precio || opt.dataset.precioRaw);
+                if (!Number.isFinite(p)) {
+                    return;
+                }
+                inp.value = formatNumber(Math.max(0, p));
 
-        // Abrir modal
-        if (window.bootstrap && window.bootstrap.Modal) {
-            const modalInstance = new window.bootstrap.Modal(modal);
-            modalInstance.show();
-        }
-    }
-
-    function guardarEnsayoEditadoHandler() {
-        if (!state.puedeEditar) {
-            return;
-        }
-
-        const itemId = Number(document.getElementById('edit_ensayo_item_id').value);
-        if (!itemId) {
-            return;
-        }
-
-        const ensayo = state.ensayos.find(e => e.item === itemId);
-        if (!ensayo) {
-            if (window.Swal) {
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Error',
-                    text: 'No se encontró el ensayo a editar.',
-                });
-            }
-            return;
-        }
-
-        // Obtener valores del formulario
-        const selectMuestra = document.getElementById('edit_ensayo_muestra');
-        const muestraId = selectMuestra ? selectMuestra.value : null;
-        const option = selectMuestra && selectMuestra.selectedIndex >= 0 
-            ? selectMuestra.options[selectMuestra.selectedIndex] 
-            : null;
-
-        if (!muestraId || !option) {
-            if (window.Swal) {
-                Swal.fire({
-                    icon: 'warning',
-                    title: 'Validación',
-                    text: 'Debe seleccionar una muestra/ensayo.',
-                });
-            }
-            return;
-        }
-
-        const cantidad = toPositiveInt(document.getElementById('edit_ensayo_cantidad').value, 1);
-        
-        // Obtener múltiples notas del contenedor
-        const notas = obtenerNotasDelContenedor('notasEditEnsayoContainer');
-        
-        // Para compatibilidad con el backend, guardar como JSON en nota_contenido
-        // y el primer tipo en nota_tipo (o null si no hay notas)
-        const notaTipo = notas.length > 0 ? notas[0].tipo : null;
-        const notaContenido = notas.length > 0 ? JSON.stringify(notas) : null;
-
-        // Actualizar ensayo
-        ensayo.muestra_id = muestraId;
-        ensayo.descripcion = option.textContent || ensayo.descripcion;
-        ensayo.codigo = option.dataset.codigo || ensayo.codigo;
-        ensayo.cantidad = cantidad;
-        ensayo.nota_tipo = notaTipo;
-        ensayo.nota_contenido = notaContenido;
-        ensayo.notas = notas; // Guardar también como array para uso interno
-        
-        // Actualizar matriz_codigo y matriz_descripcion si están disponibles
-        if (option.dataset.matrizCodigo) {
-            ensayo.matriz_codigo = option.dataset.matrizCodigo.trim();
-        }
-        if (option.dataset.matrizDescripcion) {
-            ensayo.matriz_descripcion = option.dataset.matrizDescripcion;
-        }
-
-        // Actualizar componentes sugeridos si cambió la muestra
-        if (option.dataset.componentes) {
-            try {
-                ensayo.componentes_sugeridos = JSON.parse(option.dataset.componentes);
-            } catch (e) {
-                // console.error('Error parseando componentes sugeridos:', e);
-            }
-        }
-
-        // Recalcular precios
-        recalcularPreciosEnsayo(ensayo.item);
-        renderTabla();
-
-        // Cerrar modal
-        const modal = document.getElementById('modalEditarEnsayo');
-        if (modal && window.bootstrap && window.bootstrap.Modal) {
-            const modalInstance = window.bootstrap.Modal.getInstance(modal);
-            if (modalInstance) {
-                modalInstance.hide();
-            }
-        }
-
-        if (window.Swal) {
-            Swal.fire({
-                icon: 'success',
-                title: 'Ensayo actualizado',
-                text: 'Los cambios se han guardado correctamente.',
-                timer: 1500,
-                showConfirmButton: false,
-                toast: true,
-                position: 'top-end',
+                // Aplicar regla de muestreo y otras automáticas
+                handleCambioEnsayoModal({ target: this });
             });
         }
-    }
-
-    function editarEnsayo(itemId) {
-        const ensayo = state.ensayos.find(e => e.item === itemId);
-        if (!ensayo) {
-            if (window.Swal) {
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Error',
-                    text: 'No se encontró el ensayo a editar.',
-                });
-            }
-            return;
-        }
-
-        abrirModalEditarEnsayo(ensayo);
-    }
-
-    function abrirModalEditarEnsayo(ensayo) {
-        const modal = document.getElementById('modalEditarEnsayo');
-        if (!modal) {
-            // console.error('Modal de edición de ensayo no encontrado');
-            return;
-        }
-
-        // Limpiar contenedor de notas antes de cargar
-        const container = document.getElementById('notasEditEnsayoContainer');
-        if (container) {
-            container.innerHTML = '';
-        }
-
-        // Guardar ID del ensayo
-        document.getElementById('edit_ensayo_item_id').value = ensayo.item;
-
-        // Cargar opciones de muestras/ensayos
-        const selectMuestra = document.getElementById('edit_ensayo_muestra');
-        if (selectMuestra) {
-            selectMuestra.innerHTML = '<option value="">Seleccionar muestra...</option>';
-            
-            // Verificar que el catálogo esté cargado
-            if (catalogs.ensayos && Array.isArray(catalogs.ensayos)) {
-                catalogs.ensayos.forEach(ens => {
-                const option = document.createElement('option');
-                option.value = ens.id;
-                option.textContent = ens.descripcion;
-                option.dataset.codigo = ens.codigo || '';
-                option.dataset.componentes = JSON.stringify(Array.isArray(ens.componentes_default) ? ens.componentes_default : []);
-                option.dataset.matrizCodigo = (ens.matriz_codigo || '').toString().trim();
-                option.dataset.matrizDescripcion = ens.matriz_descripcion || '';
-                
-                if (String(ens.id) === String(ensayo.muestra_id)) {
-                    option.selected = true;
-                }
-                
-                selectMuestra.appendChild(option);
-                });
-                
-                // Asegurarse de que el select tenga el valor correcto
-                if (ensayo.muestra_id) {
-                    selectMuestra.value = String(ensayo.muestra_id);
-                }
-            } else {
-                // console.warn('Catálogo de ensayos no está cargado aún');
-                // Intentar cargar las opciones desde el select original si no están disponibles
-                if (elements.selectEnsayo && elements.selectEnsayo.options.length > 1) {
-                    for (let i = 1; i < elements.selectEnsayo.options.length; i++) {
-                        const originalOption = elements.selectEnsayo.options[i];
-                        const option = document.createElement('option');
-                        option.value = originalOption.value;
-                        option.textContent = originalOption.textContent;
-                        option.dataset.codigo = originalOption.dataset.codigo || '';
-                        option.dataset.componentes = originalOption.dataset.componentes || '[]';
-                        option.dataset.matrizCodigo = originalOption.dataset.matrizCodigo || '';
-                        option.dataset.matrizDescripcion = originalOption.dataset.matrizDescripcion || '';
-                        
-                        if (String(originalOption.value) === String(ensayo.muestra_id)) {
-                            option.selected = true;
-                        }
-                        
-                        selectMuestra.appendChild(option);
-                    }
-                    
-                    if (ensayo.muestra_id) {
-                        selectMuestra.value = String(ensayo.muestra_id);
-                    }
-                }
-            }
-        }
 
         // Cargar leyes/normativas
         const selectLey = document.getElementById('edit_ensayo_ley_normativa');
@@ -3360,19 +4352,60 @@
             const leyesCatalogo = catalogs.leyesNormativas || catalogs.leyes;
             if (leyesCatalogo && Array.isArray(leyesCatalogo)) {
                 leyesCatalogo.forEach(ley => {
+                    const cod = ley.codigo != null && ley.codigo !== '' ? String(ley.codigo).trim() : '';
+                    if (!cod) {
+                        return;
+                    }
                     const option = document.createElement('option');
-                    // Usar codigo o id dependiendo de qué propiedad tenga
-                    option.value = ley.codigo || ley.id || '';
-                    // Usar nombre o text dependiendo de qué propiedad tenga
-                    option.textContent = ley.nombre || ley.text || '';
+                    option.value = cod;
+                    option.textContent = ley.text || ley.nombre || cod;
                     selectLey.appendChild(option);
                 });
+            }
+
+            const leyGuardada = ensayo.ley_normativa_id ? String(ensayo.ley_normativa_id).trim() : '';
+            selectLey.value = leyGuardada || '';
+            if (leyGuardada && selectLey.value !== leyGuardada) {
+                const optExtra = document.createElement('option');
+                optExtra.value = leyGuardada;
+                optExtra.textContent = leyGuardada;
+                selectLey.appendChild(optExtra);
+                selectLey.value = leyGuardada;
             }
         }
 
         // Llenar campos
         document.getElementById('edit_ensayo_codigo').value = ensayo.codigo || '';
         document.getElementById('edit_ensayo_cantidad').value = formatInt(ensayo.cantidad);
+
+        const editPrecioExtra = document.getElementById('edit_ensayo_precio_extra');
+        if (editPrecioExtra) {
+            editPrecioExtra.value = formatNumber(Math.max(0, parseFloat(ensayo.precio_extra_ensayo) || 0));
+        }
+
+        // Checkbox "No lleva muestreo" (UI invertida respecto a lleva_muestreo en BD/state)
+        const chkLlevaMuestreo = document.getElementById('edit_ensayo_lleva_muestreo');
+        if (chkLlevaMuestreo) {
+            // Por defecto true si no viene definido
+            const valor = (typeof ensayo.lleva_muestreo !== 'undefined') ? !!ensayo.lleva_muestreo : true;
+            // checked = "No lleva muestreo" => lleva_muestreo = false
+            chkLlevaMuestreo.checked = !valor;
+        }
+
+        // Cadena de custodia: checkbox "NO requiere" (checked => req_cadena_custodia = false)
+        const chkNoReqCadena = document.getElementById('edit_ensayo_no_requiere_cadena_custodia');
+        if (chkNoReqCadena) {
+            chkNoReqCadena.checked = !ensayo.req_cadena_custodia;
+        }
+
+        // Forzar actualización de reglas automáticas (p. ej. muestreo para Mediciones)
+        if (editSelectMuestra) {
+            handleCambioEnsayoModal({ target: editSelectMuestra });
+        }
+        const chkReqProt = document.getElementById('edit_ensayo_req_prot_mapba');
+        if (chkReqProt) {
+            chkReqProt.checked = !!ensayo.req_prot_mapba;
+        }
         
         // Cargar múltiples notas
         let notasParaCargar = [];
@@ -3385,8 +4418,9 @@
                 const notasParseadas = JSON.parse(ensayo.nota_contenido);
                 if (Array.isArray(notasParseadas)) {
                     notasParaCargar = notasParseadas;
+                } else if (notasParseadas && typeof notasParseadas === 'object') {
+                    notasParaCargar = [notasParseadas];
                 } else {
-                    // Si no es array, crear una nota con los datos antiguos
                     notasParaCargar = [{
                         tipo: ensayo.nota_tipo || 'imprimible',
                         contenido: ensayo.nota_contenido
@@ -3403,6 +4437,8 @@
         
         // Cargar notas en el contenedor
         cargarNotasEnContenedor('notasEditEnsayoContainer', notasParaCargar);
+
+        syncCotiReqCadenaRelCheckboxesFromHidden();
 
         // Abrir modal
         if (window.bootstrap && window.bootstrap.Modal) {
@@ -3451,8 +4487,42 @@
             return;
         }
 
+        // Validar que al menos una opción de cadena de custodia esté seleccionada
+        const _chkNoCustEdit = document.getElementById('edit_ensayo_no_requiere_cadena_custodia');
+        const _chkMapbaEdit = document.getElementById('edit_ensayo_req_prot_mapba');
+        const _chkRelEdit2 = document.getElementById('edit_ensayo_chk_req_cadena_relacionada');
+        const _algunoSeleccionadoEdit = (_chkNoCustEdit && _chkNoCustEdit.checked)
+            || (_chkMapbaEdit && _chkMapbaEdit.checked)
+            || (_chkRelEdit2 && _chkRelEdit2.checked);
+
+        const _groupEditar = document.getElementById('custodia_group_editar');
+        const _errorEditar = document.getElementById('custodia_error_editar');
+
+        if (!_algunoSeleccionadoEdit) {
+            if (_groupEditar) _groupEditar.classList.add('border-danger');
+            if (_errorEditar) _errorEditar.classList.remove('d-none');
+            if (window.Swal) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Campo requerido',
+                    text: 'Debe seleccionar al menos una opción de cadena de custodia.',
+                });
+            }
+            return;
+        }
+        if (_groupEditar) _groupEditar.classList.remove('border-danger');
+        if (_errorEditar) _errorEditar.classList.add('d-none');
+
         const cantidad = toPositiveInt(document.getElementById('edit_ensayo_cantidad').value, 1);
+        const editPe = document.getElementById('edit_ensayo_precio_extra');
+        if (editPe) {
+            ensayo.precio_extra_ensayo = Math.max(0, parseFloat(editPe.value) || 0);
+        }
         
+        const chkNoReqCadena = document.getElementById('edit_ensayo_no_requiere_cadena_custodia');
+        const chkReqProt = document.getElementById('edit_ensayo_req_prot_mapba');
+        const chkLlevaMuestreo = document.getElementById('edit_ensayo_lleva_muestreo');
+
         // Obtener múltiples notas del contenedor
         const notas = obtenerNotasDelContenedor('notasEditEnsayoContainer');
         
@@ -3463,12 +4533,36 @@
 
         // Actualizar ensayo
         ensayo.muestra_id = muestraId;
-        ensayo.descripcion = option.textContent || ensayo.descripcion;
+        ensayo.descripcion = option.dataset.descripcion || option.textContent.replace(/\s*\(ID: \d+\)$/, '') || ensayo.descripcion;
         ensayo.codigo = option.dataset.codigo || ensayo.codigo;
         ensayo.cantidad = cantidad;
         ensayo.nota_tipo = notaTipo;
         ensayo.nota_contenido = notaContenido;
         ensayo.notas = notas; // Guardar también como array para uso interno
+
+        // Actualizar requerimientos (checkbox "NO requiere cadena de custodia")
+        if (chkNoReqCadena) {
+            ensayo.req_cadena_custodia = !chkNoReqCadena.checked;
+        }
+        if (chkReqProt) {
+            ensayo.req_prot_mapba = !!chkReqProt.checked;
+        }
+        if (chkLlevaMuestreo) {
+            // checked = "No lleva muestreo" => lleva_muestreo = false
+            ensayo.lleva_muestreo = !chkLlevaMuestreo.checked;
+        }
+
+        const chkRelEdit = document.getElementById('edit_ensayo_chk_req_cadena_relacionada');
+        if (chkRelEdit) {
+            setCotiReqCadenaRelHidden(!!chkRelEdit.checked);
+            syncCotiReqCadenaRelCheckboxesFromHidden();
+        }
+
+        const selectLeyEdit = document.getElementById('edit_ensayo_ley_normativa');
+        if (selectLeyEdit) {
+            const lc = selectLeyEdit.value ? String(selectLeyEdit.value).trim() : '';
+            ensayo.ley_normativa_id = lc || null;
+        }
         
         // Actualizar matriz_codigo y matriz_descripcion si están disponibles
         if (option.dataset.matrizCodigo) {
@@ -3525,45 +4619,62 @@
             return;
         }
 
+        const extraEnsayo = Math.max(0, parseFloat(ensayo.precio_extra_ensayo) || 0);
+        const cantidadEnsayo = toPositiveInt(ensayo.cantidad, 1);
+        
+        // Sumar componentes asociados para mostrar el total consolidado en la fila del ensayo
         const componentes = state.componentes.filter(c => c.ensayo_asociado === ensayoItemId);
-
-        const sumaComponentes = componentes.reduce((total, componente) => {
-            const precio = parseFloat(componente.precio) || 0;
-            const cantidad = toPositiveInt(componente.cantidad, 1);
-            return total + precio * cantidad;
+        const sumaComponentesUnitaria = componentes.reduce((suma, c) => {
+            // Si el componente viene del agrupador, no sumamos su precio individualmente
+            // porque ya está incluido en el precio base del agrupador (ensayo.precio_extra_ensayo)
+            if (c.de_agrupador === true) {
+                return suma;
+            }
+            const p = parseFloat(c.precio) || 0;
+            const cant = parseFloat(c.cantidad) || 1;
+            return suma + (p * (cant <= 0 ? 1 : cant));
         }, 0);
 
-        const cantidadEnsayo = toPositiveInt(ensayo.cantidad, 1);
-        ensayo.precio = sumaComponentes;
-        ensayo.total = sumaComponentes * cantidadEnsayo;
+        // Fila ensayo: P. unit. = consolidado (extra + componentes); importe = consolidado × cant. muestras.
+        ensayo.precio = extraEnsayo + sumaComponentesUnitaria;
+        ensayo.total = (extraEnsayo + sumaComponentesUnitaria) * cantidadEnsayo;
+    }
+
+    /** Solo el adicional del ensayo por u.m. (no incluye analitos); la UI lo muestra en P. unit. de la fila ensayo. */
+    function precioAdicionalEnsayoPorUm(ensayo) {
+        if (!ensayo) {
+            return 0;
+        }
+        return parseFloat(ensayo.precio) || 0;
     }
 
     function actualizarTotalGeneral() {
-        const total = state.ensayos.reduce((suma, ensayo) => suma + (parseFloat(ensayo.total) || 0), 0);
+        // Total base: importe filas ensayo (consolidado) + importe de componentes SUELTOS únicamente
+        const totalEnsayos = state.ensayos.reduce((suma, ensayo) => suma + (parseFloat(ensayo.total) || 0), 0);
+        const totalComponentesSueltos = state.componentes
+            .filter(c => !c.ensayo_asociado)
+            .reduce((suma, c) => suma + (parseFloat(c.total) || 0), 0);
+        
+        const totalBase = totalEnsayos + totalComponentesSueltos;
 
-        if (elements.totalGeneral) {
-            elements.totalGeneral.textContent = formatNumber(total, 2);
-        }
-
-        // Aumento global
+        // Aumento global: se aplica sobre cada ítem, por lo que el total mostrado
+        // ya incluye el aumento
         const aumentoPercent = clampPercent(getAumentoGlobal());
         const aumentoDecimal = aumentoPercent / 100;
-        const aumentoGlobalMonto = total * aumentoDecimal;
-        const totalConAumento = total + aumentoGlobalMonto;
+        const totalConAumento = totalBase * (1 + aumentoDecimal);
 
-        // Descuento global (se aplica sobre el total base, igual que antes)
+        if (elements.totalGeneral) {
+            elements.totalGeneral.textContent = formatNumber(totalConAumento, 2);
+        }
+
+        // Descuento global: se aplica sobre el total ya aumentado
         const descuentoPercent = clampPercent(getDescuentoGlobal());
         const descuentoDecimal = descuentoPercent / 100;
-        const descuentoGlobalMonto = total * descuentoDecimal;
+        const descuentoGlobalMonto = totalConAumento * descuentoDecimal;
 
         const totalFinal = totalConAumento - descuentoGlobalMonto;
 
-        if (elements.aumentoGlobalPorcentaje) {
-            elements.aumentoGlobalPorcentaje.textContent = `${formatNumber(aumentoPercent, 2)}%`;
-        }
-        if (elements.aumentoGlobalMonto) {
-            elements.aumentoGlobalMonto.textContent = formatNumber(aumentoGlobalMonto, 2);
-        }
+        // No mostramos visualmente el aumento global, solo el descuento y el total final
         if (elements.descuentoGlobalPorcentaje) {
             elements.descuentoGlobalPorcentaje.textContent = `${formatNumber(descuentoPercent, 2)}%`;
         }
@@ -3572,6 +4683,17 @@
         }
         if (elements.totalConAjustes) {
             elements.totalConAjustes.textContent = formatNumber(totalFinal, 2);
+        }
+
+        // Auto-sincronizar monto total de cuotas cuando el panel está visible
+        const cuotasPanel = document.getElementById('cuotasPanel');
+        if (cuotasPanel && !cuotasPanel.classList.contains('d-none')) {
+            const montoTotalInput = document.getElementById('coti_cuota_monto_total');
+            if (montoTotalInput) {
+                montoTotalInput.value = totalFinal.toFixed(2);
+                // Disparar recalculo de monto individual
+                montoTotalInput.dispatchEvent(new Event('input'));
+            }
         }
     }
 
@@ -3671,15 +4793,56 @@
                 const parsed = JSON.parse(raw.nota_contenido);
                 if (Array.isArray(parsed)) {
                     notas = parsed;
+                } else if (parsed && typeof parsed === 'object') {
+                    notas = [parsed];
                 } else {
-                    // Formato antiguo: nota simple
                     notas = raw.nota_tipo ? [{ tipo: raw.nota_tipo, contenido: raw.nota_contenido }] : null;
                 }
             } catch (e) {
-                // No es JSON, es formato antiguo
-                notas = raw.nota_tipo ? [{ tipo: raw.nota_tipo, contenido: raw.nota_contenido }] : null;
+                // No es JSON, es texto plano (legacy)
+                notas = raw.nota_contenido
+                    ? [{ tipo: raw.nota_tipo || 'imprimible', contenido: raw.nota_contenido }]
+                    : null;
             }
         }
+
+        // req_cadena_custodia:
+        //  - si viene explícito, usarlo
+        //  - si no, inferir desde no_requiere_custodia (dato histórico)
+        //  - si no hay datos históricos, por defecto = false (no marcar)
+        let reqCadena = false;
+        if (typeof raw.req_cadena_custodia !== 'undefined') {
+            reqCadena = !!raw.req_cadena_custodia;
+        } else if (typeof raw.no_requiere_custodia !== 'undefined') {
+            reqCadena = !(raw.no_requiere_custodia === true || raw.no_requiere_custodia === 1 || raw.no_requiere_custodia === '1');
+        }
+
+        const reqProtMapba = !!raw.req_prot_mapba;
+
+        // Precio adicional del ensayo (por unidad), aparte de la suma de componentes
+        let precioExtraEnsayo = 0;
+        if (typeof raw.precio_extra_ensayo !== 'undefined' && raw.precio_extra_ensayo !== null && raw.precio_extra_ensayo !== '') {
+            const pe = parseFloat(raw.precio_extra_ensayo);
+            precioExtraEnsayo = !isNaN(pe) && pe > 0 ? pe : 0;
+        }
+
+        // Lleva muestreo:
+        //  - si viene explícito, usarlo
+        //  - si no, por defecto true (se puede recalcular al crear el ensayo nuevo)
+        let llevaMuestreo = true;
+        if (typeof raw.lleva_muestreo !== 'undefined') {
+            llevaMuestreo = !!raw.lleva_muestreo;
+        }
+
+        const canalEsp = raw.canal_especial || canalEspecialDesdeMatrizYDescripcion(raw.matriz_descripcion, raw.descripcion);
+        if (canalEsp && canalEsp !== 'mediciones') {
+            llevaMuestreo = false;
+        }
+
+        const leyRaw = raw.ley_normativa_id ?? raw.ley_normativa ?? null;
+        const leyNormativaId = (leyRaw !== null && leyRaw !== undefined && String(leyRaw).trim() !== '')
+            ? String(leyRaw).trim()
+            : null;
 
         return {
             item: item,
@@ -3696,6 +4859,12 @@
             notas: notas, // Guardar como array para uso interno
             matriz_codigo: raw.matriz_codigo ? raw.matriz_codigo.toString().trim() : null,
             matriz_descripcion: raw.matriz_descripcion || null,
+            canal_especial: canalEsp || null,
+            req_cadena_custodia: reqCadena,
+            req_prot_mapba: reqProtMapba,
+            lleva_muestreo: llevaMuestreo,
+            precio_extra_ensayo: precioExtraEnsayo,
+            ley_normativa_id: leyNormativaId,
         };
     }
 
@@ -3704,6 +4873,42 @@
         const cantidad = toPositiveInt(raw.cantidad, 1);
         const precio = parseFloat(raw.precio) || 0;
         const total = parseFloat(raw.total) || precio * cantidad;
+        const precioMinimoVenta = (raw.precio_minimo_venta !== null && raw.precio_minimo_venta !== undefined)
+            ? (parseFloat(raw.precio_minimo_venta) || 0)
+            : precio;
+
+        // req_cadena_custodia:
+        //  - si viene explícito, usarlo
+        //  - si no, inferir desde no_requiere_custodia (dato histórico)
+        //  - si no hay datos históricos, por defecto = false (no marcar)
+        let reqCadena = false;
+        if (typeof raw.req_cadena_custodia !== 'undefined') {
+            reqCadena = !!raw.req_cadena_custodia;
+        } else if (typeof raw.no_requiere_custodia !== 'undefined') {
+            reqCadena = !(raw.no_requiere_custodia === true || raw.no_requiere_custodia === 1 || raw.no_requiere_custodia === '1');
+        }
+
+        const reqProtMapba = !!raw.req_prot_mapba;
+
+        let notasComp = null;
+        if (raw.notas && Array.isArray(raw.notas)) {
+            notasComp = raw.notas;
+        } else if (raw.nota_contenido) {
+            try {
+                const parsed = JSON.parse(raw.nota_contenido);
+                if (Array.isArray(parsed)) {
+                    notasComp = parsed;
+                } else if (parsed && typeof parsed === 'object') {
+                    notasComp = [parsed];
+                } else {
+                    notasComp = raw.nota_tipo ? [{ tipo: raw.nota_tipo, contenido: raw.nota_contenido }] : null;
+                }
+            } catch (e) {
+                notasComp = raw.nota_contenido
+                    ? [{ tipo: raw.nota_tipo || 'imprimible', contenido: raw.nota_contenido }]
+                    : null;
+            }
+        }
 
         return {
             item: item,
@@ -3713,6 +4918,7 @@
             cantidad: cantidad,
             precio: precio,
             total: total,
+            precio_minimo_venta: precioMinimoVenta,
             tipo: 'componente',
             ensayo_asociado: Number(raw.ensayo_asociado) || 0,
             metodo_analisis_id: raw.metodo_analisis_id || null,
@@ -3721,9 +4927,12 @@
             unidad_medida: raw.unidad_medida || '',
             limite_deteccion: raw.limite_deteccion || null,
             ley_normativa_id: raw.ley_normativa_id || null,
-            nota_tipo: raw.nota_tipo || null,
-            nota_contenido: raw.nota_contenido || null,
+            nota_tipo: notasComp && notasComp.length > 0 ? notasComp[0].tipo : (raw.nota_tipo || null),
+            nota_contenido: notasComp && notasComp.length > 0 ? JSON.stringify(notasComp) : (raw.nota_contenido || null),
+            notas: notasComp,
             de_agrupador: raw.de_agrupador === true || raw.de_agrupador === 1 || raw.de_agrupador === '1',
+            req_cadena_custodia: reqCadena,
+            req_prot_mapba: reqProtMapba,
         };
     }
 
@@ -3733,9 +4942,27 @@
         return Math.max(maxEnsayo, maxComponente);
     }
 
+    function getDivisaCodigoActual() {
+        if (state.divisaCodigo) {
+            return state.divisaCodigo;
+        }
+        const select = elements.divisaSelect || document.getElementById('divisa_codigo');
+        const codigo = select && select.value ? select.value.toString().trim() : 'PES';
+        state.divisaCodigo = codigo || 'PES';
+        return state.divisaCodigo;
+    }
+
     function formatCurrency(valor) {
         const numero = parseFloat(valor) || 0;
-        return `$${numero.toFixed(2)}`;
+        const codigo = getDivisaCodigoActual();
+
+        if (codigo === 'PES' || codigo === 'ARS') {
+            return `$${numero.toFixed(2)}`;
+        }
+        if (codigo === 'USD') {
+            return `USD ${numero.toFixed(2)}`;
+        }
+        return `${codigo} ${numero.toFixed(2)}`;
     }
 
     function formatNumber(valor, decimales = 2) {
@@ -3774,7 +5001,7 @@
 
         const aviso = document.createElement('div');
         aviso.className = 'alert alert-info mb-3';
-        aviso.textContent = 'La cotización está aprobada y no puede modificarse.';
+        aviso.textContent = 'Esta cotización está en modo solo lectura y no puede modificarse.';
 
         const contenedor = elements.form.closest('.card');
         if (contenedor && !contenedor.querySelector('.alert-info')) {
@@ -3805,11 +5032,15 @@
             if (elements.componentesHidden) {
                 elements.componentesHidden.value = componentesJson;
             }
+            if (typeof window.cotizacionReferenciaFactSyncHidden === 'function') {
+                window.cotizacionReferenciaFactSyncHidden();
+            }
             console.log('[Cotización submit] Ensayos:', state.ensayos.length, 'Componentes:', state.componentes.length, 'componentes_data length:', componentesJson.length, 'preview:', componentesJson.substring(0, 300));
         }, true);
     }
 
     function serializarEnsayo(ensayo) {
+        const canalSer = ensayo.canal_especial || canalEspecialDesdeMatrizYDescripcion(ensayo.matriz_descripcion, ensayo.descripcion);
         return {
             item: ensayo.item,
             muestra_id: ensayo.muestra_id,
@@ -3822,6 +5053,16 @@
             componentes_sugeridos: ensayo.componentes_sugeridos || [],
             nota_tipo: ensayo.nota_tipo || null,
             nota_contenido: ensayo.nota_contenido || null,
+            matriz_codigo: ensayo.matriz_codigo || null,
+            matriz_descripcion: ensayo.matriz_descripcion || null,
+            canal_especial: canalSer,
+            req_cadena_custodia: ensayo.req_cadena_custodia === true,
+            req_prot_mapba: ensayo.req_prot_mapba === true,
+            lleva_muestreo: (canalSer && canalSer !== 'mediciones') ? false : (ensayo.lleva_muestreo !== false),
+            precio_extra_ensayo: Math.max(0, parseFloat(ensayo.precio_extra_ensayo) || 0),
+            ley_normativa_id: ensayo.ley_normativa_id
+                ? String(ensayo.ley_normativa_id).trim()
+                : null,
         };
     }
 
@@ -3845,6 +5086,8 @@
             nota_tipo: componente.nota_tipo || null,
             nota_contenido: componente.nota_contenido || null,
             de_agrupador: componente.de_agrupador || false,
+            req_cadena_custodia: componente.req_cadena_custodia === true,
+            req_prot_mapba: componente.req_prot_mapba === true,
         };
     }
 
@@ -3879,6 +5122,29 @@
             return;
         }
 
+        function reordenarOpcionesSelectPorIds(selectEl, idsEnOrden) {
+            if (!selectEl || !Array.isArray(idsEnOrden) || idsEnOrden.length === 0) return;
+
+            const idsSet = new Set(idsEnOrden.map(v => v.toString()));
+            const optionById = new Map(
+                Array.from(selectEl.options).map(opt => [opt.value.toString(), opt])
+            );
+
+            // Mantener el resto en el orden actual (alfabético) y poner sugeridos arriba en orden.
+            const fragment = document.createDocumentFragment();
+
+            idsEnOrden.forEach(id => {
+                const opt = optionById.get(id.toString());
+                if (opt) fragment.appendChild(opt);
+            });
+
+            Array.from(optionById.entries()).forEach(([id, opt]) => {
+                if (!idsSet.has(id)) fragment.appendChild(opt);
+            });
+
+            selectEl.appendChild(fragment);
+        }
+
         if (!ensayoItemId) {
             if (window.$ && window.$('#componente_analisis').length) {
                 window.$('#componente_analisis').val(null).trigger('change');
@@ -3891,21 +5157,26 @@
             return;
         }
 
-        // Obtener componentes sugeridos del ensayo
-        const componentesIds = Array.from(new Set(obtenerComponentesSugeridosDeEnsayo(ensayo).map(id => id.toString())));
+        // Obtener componentes sugeridos del ensayo (mantener el orden)
+        const componentesIds = (obtenerComponentesSugeridosDeEnsayo(ensayo) || []).map(id => id.toString());
         
         // Filtrar solo los que existen en las opciones disponibles
         const opcionesDisponibles = Array.from(elements.selectComponente.options)
             .map(opt => opt.value.toString());
         const componentesIdsFiltrados = componentesIds.filter(id => opcionesDisponibles.includes(id));
 
-        // Preseleccionar usando Select2 de forma estándar
+        // Preseleccionar usando Select2 de forma estándar (respetar orden: sugeridos primero)
         if (window.$ && window.$('#componente_analisis').length && window.$('#componente_analisis').data('select2')) {
             const valoresActuales = window.$('#componente_analisis').val() || [];
-            const valoresCombinados = Array.from(new Set([...valoresActuales, ...componentesIdsFiltrados]));
+            const sugeridosSet = new Set(componentesIdsFiltrados.map(v => v.toString()));
+            const restantes = valoresActuales.map(v => v.toString()).filter(v => !sugeridosSet.has(v));
+            const valoresCombinados = [...componentesIdsFiltrados, ...restantes];
+            // Reordenar el DOM del <select> para que Select2 respete el orden de selección mostrado
+            reordenarOpcionesSelectPorIds(elements.selectComponente, valoresCombinados);
             window.$('#componente_analisis').val(valoresCombinados).trigger('change');
         } else {
             // Para selects nativos
+            reordenarOpcionesSelectPorIds(elements.selectComponente, componentesIdsFiltrados);
             Array.from(elements.selectComponente.options).forEach(opt => {
                 if (componentesIdsFiltrados.includes(opt.value.toString())) {
                     opt.selected = true;
@@ -4256,7 +5527,46 @@
                 
                 // console.log('[cotizacion] ========== cargarItemsDesdeVersion COMPLETADO ==========');
             }, 50); // Pequeño delay para asegurar que el DOM se actualice
-        }
+        },
+        syncCotiReqCadenaRelCheckboxesFromHidden: syncCotiReqCadenaRelCheckboxesFromHidden,
+        sincronizarResumenEmpresaRelacionadaDesdeCotiData: function (cotiData) {
+            if (!cotiData) {
+                limpiarPanelEmpresaRelacionada();
+                return;
+            }
+            const id = cotiData.coti_empresa_rel || cotiData.coti_cli_empresa;
+            if (!id) {
+                limpiarPanelEmpresaRelacionada();
+                return;
+            }
+            fetch('/api/empresa-relacionada/' + encodeURIComponent(String(id)))
+                .then(function (r) {
+                    if (!r.ok) {
+                        throw new Error('not ok');
+                    }
+                    return r.json();
+                })
+                .then(function (emp) {
+                    rellenarPanelEmpresaRelacionada({
+                        razonSocial: emp.razon_social || '',
+                        direccion: emp.direcciones || '',
+                        localidad: emp.localidad || '',
+                        partido: emp.partido || '',
+                        cuit: emp.cuit || '',
+                        contacto: emp.contacto || '',
+                    });
+                })
+                .catch(function () {
+                    rellenarPanelEmpresaRelacionada({
+                        razonSocial: (cotiData.coti_para || '').toString(),
+                        direccion: '',
+                        localidad: '',
+                        partido: '',
+                        cuit: '',
+                        contacto: '',
+                    });
+                });
+        },
     };
     };
 

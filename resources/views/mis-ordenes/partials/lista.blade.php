@@ -9,7 +9,7 @@ $gruposFinalizados = [];
 
 foreach ($ordenesAgrupadas as $key => $grupo) {
     $isLista = $viewType === 'lista';
-    
+
     // Determinar el estado del grupo y revisar request_review
     $estadosMuestras = [];
     $hasPriority = false;
@@ -45,7 +45,7 @@ foreach ($ordenesAgrupadas as $key => $grupo) {
             }
         }
     }
-    
+
     // Determinar el estado del grupo según la jerarquía
     $estadoGrupo = 'pendiente';
     if ($needsResultReview) {
@@ -59,19 +59,34 @@ foreach ($ordenesAgrupadas as $key => $grupo) {
     } elseif (count(array_unique($estadosMuestras)) === 1 && in_array('analizado', $estadosMuestras)) {
         $estadoGrupo = 'analizado';
     }
-    
+
     // Obtener fecha de muestreo
-    $fechaMuestreo = $isLista 
+    $fechaMuestreo = $isLista
         ? ($grupo['instancias'][0]['instancia_muestra']->fecha_inicio_ot ?? null)
         : ($grupo['instancia_muestra']->fecha_inicio_ot ?? null);
-    
+
     // Obtener fecha_fin_ot para detectar vencidas (fecha fin < hoy y estado NO analizado)
     $fechasFin = $isLista
         ? $grupo['instancias']->map(fn($i) => $i['instancia_muestra']->fecha_fin_ot ?? null)->filter()
         : collect([$grupo['instancia_muestra']->fecha_fin_ot ?? null])->filter();
-    $fechaFin = $fechasFin->isEmpty() ? null : $fechasFin->sortBy(fn($d) => $d->getTimestamp())->first();
-    $esVencida = $fechaFin && $fechaFin->lt(\Carbon\Carbon::now()) && $estadoGrupo !== 'analizado';
-    
+
+    // Tomar la fecha fin "máxima" del grupo: solo se considera vencida cuando el grupo (por jerarquía)
+    // sigue pendiente y la(s) fecha(s) de fin del grupo ya pasaron.
+    $fechaFin = $fechasFin->isEmpty()
+        ? null
+        : $fechasFin->sortByDesc(fn($d) => $d->getTimestamp())->first();
+
+    // Comparar en la misma timezone de la aplicación.
+    $now = \Carbon\Carbon::now(config('app.timezone'));
+    $fechaFinLocal = $fechaFin
+        ? \Carbon\Carbon::parse($fechaFin->format('Y-m-d H:i:s'), config('app.timezone'))
+        : null;
+
+    // Equivalente a la lógica de "tareas": no marcar vencido si el grupo está en revisión o ya analizado.
+    $esVencida = $fechaFinLocal
+        && $fechaFinLocal->lt($now)
+        && !in_array($estadoGrupo, ['en revision analisis', 'analizado']);
+
     $grupoConFecha = [
         'grupo' => $grupo,
         'key' => $key,
@@ -82,7 +97,7 @@ foreach ($ordenesAgrupadas as $key => $grupo) {
         'estadoGrupo' => $estadoGrupo,
         'es_vencida' => $esVencida
     ];
-    
+
     // Clasificar el grupo: revisión resultados, vencidas (fecha_fin_ot < hoy y NO analizado), prioritarias, coordinadas, en revisión, analizado
     if ($needsResultReview) {
         $gruposRevisionResultados[] = $grupoConFecha;
@@ -101,7 +116,7 @@ foreach ($ordenesAgrupadas as $key => $grupo) {
 }
 
 // Funciones para ordenar por fecha (más recientes primero)
-$sortFunction = function($a, $b) {
+$sortFunction = function ($a, $b) {
     if ($a['fecha'] && $b['fecha']) {
         return $b['fecha'] <=> $a['fecha'];
     }
@@ -109,12 +124,15 @@ $sortFunction = function($a, $b) {
 };
 
 // Vencidas: más vencidas primero (fecha_fin más antigua primero)
-usort($gruposVencidas, function($a, $b) {
+usort($gruposVencidas, function ($a, $b) {
     $fa = $a['fecha_fin'] ?? null;
     $fb = $b['fecha_fin'] ?? null;
-    if ($fa && $fb) return $fa->getTimestamp() <=> $fb->getTimestamp();
-    if (!$fa && !$fb) return 0;
-    if (!$fa) return 1;
+    if ($fa && $fb)
+        return $fa->getTimestamp() <=> $fb->getTimestamp();
+    if (!$fa && !$fb)
+        return 0;
+    if (!$fa)
+        return 1;
     return -1;
 });
 
@@ -131,12 +149,12 @@ usort($gruposFinalizados, $sortFunction);
         background-color: rgba(255, 193, 7, 0.1);
         box-shadow: 0 0 10px rgba(255, 193, 7, 0.2);
     }
-    
+
     .priority-instance {
         position: relative;
         padding-left: 30px !important;
     }
-    
+
     .priority-badge {
         background-color: #ffc107;
         color: #000;
@@ -145,29 +163,33 @@ usort($gruposFinalizados, $sortFunction);
         align-items: center;
         gap: 4px;
     }
-    
+
     /* Mantener los colores por estado pero con prioridad */
     .table-warning.priority-instance {
         background-color: rgba(255, 243, 205, 0.9) !important;
     }
+
     .table-info.priority-instance {
         background-color: rgba(209, 236, 241, 0.9) !important;
     }
+
     .table-success.priority-instance {
         background-color: rgba(212, 237, 218, 0.9) !important;
     }
-    
+
     .priority-highlight {
         animation: pulse 2s infinite;
     }
-    
+
     @keyframes pulse {
         0% {
             box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.4);
         }
+
         70% {
             box-shadow: 0 0 0 10px rgba(255, 193, 7, 0);
         }
+
         100% {
             box-shadow: 0 0 0 0 rgba(255, 193, 7, 0);
         }
@@ -197,7 +219,7 @@ usort($gruposFinalizados, $sortFunction);
                 <x-heroicon-o-exclamation-circle class="me-2" style="width: 24px; height: 24px;" />
                 Revisión de Resultados ({{ count($gruposRevisionResultados) }})
             </h3>
-            
+
             @foreach($gruposRevisionResultados as $grupoData)
                 @php
                     $grupo = $grupoData['grupo'];
@@ -206,29 +228,33 @@ usort($gruposFinalizados, $sortFunction);
                     $hasPriority = $grupoData['hasPriority'];
                     $estadoGrupo = $grupoData['estadoGrupo'];
                     $cotizacion = $cotizaciones->get($isLista ? $key : explode('_', $key)[0]);
-                    
+
                     $badgeClassMuestra = 'primary'; // Use primary for Revisión de Resultados
                 @endphp
 
                 <div class="card mb-4 shadow-sm revision-resultados-group">
                     <div class="card-header table-primary">
-                        <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
+                        <div
+                            class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
                             <div class="d-flex align-items-center">
-                                <button class="btn btn-link text-decoration-none p-0 me-2" 
-                                        data-bs-toggle="collapse" 
-                                        data-bs-target="#tabla-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}" 
-                                        aria-expanded="false" 
-                                        aria-controls="tabla-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}"
-                                        onclick="toggleChevron('chevron-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}')">
-                                    <x-heroicon-o-chevron-up id="chevron-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}" class="text-primary chevron-icon" style="width: 20px; height: 20px;" />
+                                <button class="btn btn-link text-decoration-none p-0 me-2" data-bs-toggle="collapse"
+                                    data-bs-target="#tabla-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}"
+                                    aria-expanded="false"
+                                    aria-controls="tabla-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}"
+                                    onclick="toggleChevron('chevron-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}')">
+                                    <x-heroicon-o-chevron-up
+                                        id="chevron-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}"
+                                        class="text-primary chevron-icon" style="width: 20px; height: 20px;" />
                                 </button>
                                 <div>
                                     <h4 class="mb-0 text-primary">
-                                        Cotización Nº {{ $isLista ? $key : explode('_', $key)[0] }} 
+                                        Cotización Nº {{ $isLista ? $key : explode('_', $key)[0] }}
                                         @if($isLista)
                                             - ({{ $grupo['instancias']->count() }} Muestras)
                                         @else
-                                            - {{ $grupo['instancia_muestra']->cotio_descripcion ?? 'N/A' }} (#{{ $grupo['instancia_muestra']->instance_number ?? ''}})
+                                            - {{ $grupo['instancia_muestra']->cotio_descripcion ?? 'N/A' }}
+                                            (OT
+                                            {{ $grupo['instancia_muestra']->otn ?? '—' }})
                                         @endif
                                     </h4>
                                     <div class="d-flex align-items-center gap-2 mt-1">
@@ -262,7 +288,7 @@ usort($gruposFinalizados, $sortFunction);
                                 <div class="row g-2">
                                     <div class="col-md-4 d-flex align-items-center">
                                         <x-heroicon-o-calendar class="me-2 text-muted" style="width: 14px; height: 14px;" />
-                                        <strong>Fecha: </strong> 
+                                        <strong>Fecha: </strong>
                                         @if($isLista)
                                             {{ \Carbon\Carbon::parse($grupo['instancias'][0]['instancia_muestra']->fecha_inicio_ot)->format('d/m/Y') ?? 'N/A' }}
                                         @else
@@ -315,30 +341,35 @@ usort($gruposFinalizados, $sortFunction);
                                                                         Prioritaria
                                                                     </span>
                                                                 @endif
-                                                                <span>MUESTRA: {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }} (#{{ $instanciaMuestra->instance_number }})</span>
-                                                                <small class="text-muted d-block mt-1">ID: #{{ $instanciaMuestra->instance_number }}</small>
+                                                                <span>MUESTRA: {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }}
+                                                                    (OT
+                                                                    {{ $instanciaMuestra->otn ?? '—' }})</span>
+                                                                <small class="text-muted d-block mt-1">OT:
+                                                                    {{ $instanciaMuestra->otn ?? '—' }}</small>
                                                                 @if($esFrecuente && $frecuenciaDias > 0)
                                                                     <span class="badge bg-light text-dark border mt-1">
-                                                                        <x-heroicon-o-arrow-path class="me-1" style="width: 14px; height: 14px;" />
+                                                                        <x-heroicon-o-arrow-path class="me-1"
+                                                                            style="width: 14px; height: 14px;" />
                                                                         Cada {{ $frecuenciaDias }} días
                                                                     </span>
                                                                 @endif
                                                             </div>
-                                                            <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}" 
-                                                               class="btn btn-sm btn-dark">
+                                                            <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}"
+                                                                class="btn btn-sm btn-dark">
                                                                 <x-heroicon-o-eye class="me-1" style="width: 16px; height: 16px;" />
                                                                 Ver
                                                             </a>
                                                         </div>
                                                     </td>
                                                     <td class="text-center">
-                                                        <span class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassMuestra) }}">
+                                                        <span
+                                                            class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassMuestra) }}">
                                                             {{ ucfirst($estadoMuestra) }}
                                                         </span>
                                                     </td>
                                                 </tr>
 
-                                                                                                 @foreach($analisis as $tarea)
+                                                @foreach($analisis as $tarea)
                                                     @php
                                                         $estado = strtolower($tarea->cotio_estado_analisis ?? 'pendiente');
                                                         $badgeClassAnalisis = match ($estado) {
@@ -361,7 +392,8 @@ usort($gruposFinalizados, $sortFunction);
                                                                     @endif
                                                                     @if($needsReview)
                                                                         <span class="badge revision-resultados-badge mt-1">
-                                                                            <x-heroicon-o-exclamation-circle class="me-1" style="width: 14px; height: 14px;" />
+                                                                            <x-heroicon-o-exclamation-circle class="me-1"
+                                                                                style="width: 14px; height: 14px;" />
                                                                             Revisión Requerida
                                                                         </span>
                                                                     @endif
@@ -369,7 +401,8 @@ usort($gruposFinalizados, $sortFunction);
                                                             </div>
                                                         </td>
                                                         <td class="text-center">
-                                                            <span class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassAnalisis) }}">
+                                                            <span
+                                                                class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassAnalisis) }}">
                                                                 {{ ucfirst($estado) }}
                                                             </span>
                                                         </td>
@@ -406,29 +439,32 @@ usort($gruposFinalizados, $sortFunction);
                                                                 </span>
                                                             @endif
                                                             <span>MUESTRA: {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }}</span>
-                                                            <small class="text-muted d-block mt-1">ID: #{{ $instanciaMuestra->instance_number }}</small>
+                                                            <small class="text-muted d-block mt-1">OT:
+                                                                {{ $instanciaMuestra->otn ?? '—' }}</small>
                                                             @if($esFrecuente && $frecuenciaDias > 0)
                                                                 <span class="badge bg-light text-dark border mt-1">
-                                                                    <x-heroicon-o-arrow-path class="me-1" style="width: 14px; height: 14px;" />
+                                                                    <x-heroicon-o-arrow-path class="me-1"
+                                                                        style="width: 14px; height: 14px;" />
                                                                     Cada {{ $frecuenciaDias }} días
                                                                 </span>
                                                             @endif
                                                         </div>
-                                                        <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}" 
-                                                           class="btn btn-sm btn-dark">
+                                                        <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}"
+                                                            class="btn btn-sm btn-dark">
                                                             <x-heroicon-o-eye class="me-1" style="width: 16px; height: 16px;" />
                                                             Ver
                                                         </a>
                                                     </div>
                                                 </td>
                                                 <td class="text-center">
-                                                    <span class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassMuestra) }}">
+                                                    <span
+                                                        class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassMuestra) }}">
                                                         {{ ucfirst($estadoMuestra) }}
                                                     </span>
                                                 </td>
                                             </tr>
 
-                                                                                             @foreach($analisis as $tarea)
+                                            @foreach($analisis as $tarea)
                                                 @php
                                                     $estado = strtolower($tarea->cotio_estado_analisis ?? 'pendiente');
                                                     $badgeClassAnalisis = match ($estado) {
@@ -451,7 +487,8 @@ usort($gruposFinalizados, $sortFunction);
                                                                 @endif
                                                                 @if($needsReview)
                                                                     <span class="badge revision-resultados-badge mt-1">
-                                                                        <x-heroicon-o-exclamation-circle class="me-1" style="width: 14px; height: 14px;" />
+                                                                        <x-heroicon-o-exclamation-circle class="me-1"
+                                                                            style="width: 14px; height: 14px;" />
                                                                         Revisión Requerida
                                                                     </span>
                                                                 @endif
@@ -459,7 +496,8 @@ usort($gruposFinalizados, $sortFunction);
                                                         </div>
                                                     </td>
                                                     <td class="text-center">
-                                                        <span class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassAnalisis) }}">
+                                                        <span
+                                                            class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassAnalisis) }}">
                                                             {{ ucfirst($estado) }}
                                                         </span>
                                                     </td>
@@ -503,23 +541,24 @@ usort($gruposFinalizados, $sortFunction);
 
                 <div class="card mb-4 shadow-sm ordenes-vencidas-group">
                     <div class="card-header table-{{ $badgeClassMuestra }}">
-                        <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
+                        <div
+                            class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
                             <div class="d-flex align-items-center">
-                                <button class="btn btn-link text-decoration-none p-0 me-2" 
-                                        data-bs-toggle="collapse" 
-                                        data-bs-target="#tabla-{{ $idVencida }}" 
-                                        aria-expanded="false" 
-                                        aria-controls="tabla-{{ $idVencida }}"
-                                        onclick="toggleChevron('chevron-{{ $idVencida }}')">
-                                    <x-heroicon-o-chevron-up id="chevron-{{ $idVencida }}" class="text-primary chevron-icon" style="width: 20px; height: 20px;" />
+                                <button class="btn btn-link text-decoration-none p-0 me-2" data-bs-toggle="collapse"
+                                    data-bs-target="#tabla-{{ $idVencida }}" aria-expanded="false"
+                                    aria-controls="tabla-{{ $idVencida }}" onclick="toggleChevron('chevron-{{ $idVencida }}')">
+                                    <x-heroicon-o-chevron-up id="chevron-{{ $idVencida }}" class="text-primary chevron-icon"
+                                        style="width: 20px; height: 20px;" />
                                 </button>
                                 <div>
                                     <h4 class="mb-0 text-primary">
-                                        Cotización Nº {{ $isLista ? $key : explode('_', $key)[0] }} 
+                                        Cotización Nº {{ $isLista ? $key : explode('_', $key)[0] }}
                                         @if($isLista)
                                             - ({{ $grupo['instancias']->count() }} Muestras)
                                         @else
-                                            - {{ $grupo['instancia_muestra']->cotio_descripcion ?? 'N/A' }} (#{{ $grupo['instancia_muestra']->instance_number ?? ''}})
+                                            - {{ $grupo['instancia_muestra']->cotio_descripcion ?? 'N/A' }}
+                                            (OT
+                                            {{ $grupo['instancia_muestra']->otn ?? '—' }})
                                         @endif
                                     </h4>
                                     <div class="d-flex align-items-center gap-2 mt-1 flex-wrap">
@@ -529,7 +568,8 @@ usort($gruposFinalizados, $sortFunction);
                                         </span>
                                         <span class="badge bg-{{ $badgeClassMuestra }} text-dark">{{ ucfirst($estadoGrupo) }}</span>
                                         @if($grupoData['fecha_fin'] ?? null)
-                                            <span class="badge bg-dark">Venció: {{ $grupoData['fecha_fin']->format('d/m/Y H:i') }}</span>
+                                            <span class="badge bg-dark">Venció:
+                                                {{ $grupoData['fecha_fin']->format('d/m/Y H:i') }}</span>
                                         @endif
                                         @if($hasPriority)
                                             <span class="badge priority-badge">
@@ -558,7 +598,7 @@ usort($gruposFinalizados, $sortFunction);
                                 <div class="row g-2">
                                     <div class="col-md-4 d-flex align-items-center">
                                         <x-heroicon-o-calendar class="me-2 text-muted" style="width: 14px; height: 14px;" />
-                                        <strong>Fecha: </strong> 
+                                        <strong>Fecha: </strong>
                                         @if($isLista)
                                             {{ $grupo['instancias'][0]['instancia_muestra']->fecha_inicio_ot ? \Carbon\Carbon::parse($grupo['instancias'][0]['instancia_muestra']->fecha_inicio_ot)->format('d/m/Y') : 'N/A' }}
                                         @else
@@ -609,24 +649,29 @@ usort($gruposFinalizados, $sortFunction);
                                                                         Prioritaria
                                                                     </span>
                                                                 @endif
-                                                                <span>MUESTRA: {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }} (#{{ $instanciaMuestra->instance_number }})</span>
-                                                                <small class="text-muted d-block mt-1">ID: #{{ $instanciaMuestra->instance_number }}</small>
+                                                                <span>MUESTRA: {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }}
+                                                                    (OT
+                                                                    {{ $instanciaMuestra->otn ?? '—' }})</span>
+                                                                <small class="text-muted d-block mt-1">OT:
+                                                                    {{ $instanciaMuestra->otn ?? '—' }}</small>
                                                                 @if($esFrecuente && $frecuenciaDias > 0)
                                                                     <span class="badge bg-light text-dark border mt-1">
-                                                                        <x-heroicon-o-arrow-path class="me-1" style="width: 14px; height: 14px;" />
+                                                                        <x-heroicon-o-arrow-path class="me-1"
+                                                                            style="width: 14px; height: 14px;" />
                                                                         Cada {{ $frecuenciaDias }} días
                                                                     </span>
                                                                 @endif
                                                             </div>
-                                                            <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}" 
-                                                               class="btn btn-sm btn-dark">
+                                                            <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}"
+                                                                class="btn btn-sm btn-dark">
                                                                 <x-heroicon-o-eye class="me-1" style="width: 16px; height: 16px;" />
                                                                 Ver
                                                             </a>
                                                         </div>
                                                     </td>
                                                     <td class="text-center">
-                                                        <span class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassMuestra) }}">{{ ucfirst($estadoMuestra) }}</span>
+                                                        <span
+                                                            class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassMuestra) }}">{{ ucfirst($estadoMuestra) }}</span>
                                                     </td>
                                                 </tr>
                                                 @foreach($analisis as $tarea)
@@ -652,7 +697,8 @@ usort($gruposFinalizados, $sortFunction);
                                                                     @endif
                                                                     @if($needsReview)
                                                                         <span class="badge revision-resultados-badge mt-1">
-                                                                            <x-heroicon-o-exclamation-circle class="me-1" style="width: 14px; height: 14px;" />
+                                                                            <x-heroicon-o-exclamation-circle class="me-1"
+                                                                                style="width: 14px; height: 14px;" />
                                                                             Revisión Requerida
                                                                         </span>
                                                                     @endif
@@ -660,7 +706,8 @@ usort($gruposFinalizados, $sortFunction);
                                                             </div>
                                                         </td>
                                                         <td class="text-center">
-                                                            <span class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassAnalisis) }}">{{ ucfirst($estado) }}</span>
+                                                            <span
+                                                                class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassAnalisis) }}">{{ ucfirst($estado) }}</span>
                                                         </td>
                                                     </tr>
                                                 @endforeach
@@ -693,23 +740,26 @@ usort($gruposFinalizados, $sortFunction);
                                                                 </span>
                                                             @endif
                                                             <span>MUESTRA: {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }}</span>
-                                                            <small class="text-muted d-block mt-1">ID: #{{ $instanciaMuestra->instance_number }}</small>
+                                                            <small class="text-muted d-block mt-1">OT:
+                                                                {{ $instanciaMuestra->otn ?? '—' }}</small>
                                                             @if($esFrecuente && $frecuenciaDias > 0)
                                                                 <span class="badge bg-light text-dark border mt-1">
-                                                                    <x-heroicon-o-arrow-path class="me-1" style="width: 14px; height: 14px;" />
+                                                                    <x-heroicon-o-arrow-path class="me-1"
+                                                                        style="width: 14px; height: 14px;" />
                                                                     Cada {{ $frecuenciaDias }} días
                                                                 </span>
                                                             @endif
                                                         </div>
-                                                        <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}" 
-                                                           class="btn btn-sm btn-dark">
+                                                        <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}"
+                                                            class="btn btn-sm btn-dark">
                                                             <x-heroicon-o-eye class="me-1" style="width: 16px; height: 16px;" />
                                                             Ver
                                                         </a>
                                                     </div>
                                                 </td>
                                                 <td class="text-center">
-                                                    <span class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassMuestra) }}">{{ ucfirst($estadoMuestra) }}</span>
+                                                    <span
+                                                        class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassMuestra) }}">{{ ucfirst($estadoMuestra) }}</span>
                                                 </td>
                                             </tr>
                                             @foreach($analisis as $tarea)
@@ -735,7 +785,8 @@ usort($gruposFinalizados, $sortFunction);
                                                                 @endif
                                                                 @if($needsReview)
                                                                     <span class="badge revision-resultados-badge mt-1">
-                                                                        <x-heroicon-o-exclamation-circle class="me-1" style="width: 14px; height: 14px;" />
+                                                                        <x-heroicon-o-exclamation-circle class="me-1"
+                                                                            style="width: 14px; height: 14px;" />
                                                                         Revisión Requerida
                                                                     </span>
                                                                 @endif
@@ -743,7 +794,8 @@ usort($gruposFinalizados, $sortFunction);
                                                         </div>
                                                     </td>
                                                     <td class="text-center">
-                                                        <span class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassAnalisis) }}">{{ ucfirst($estado) }}</span>
+                                                        <span
+                                                            class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassAnalisis) }}">{{ ucfirst($estado) }}</span>
                                                     </td>
                                                 </tr>
                                             @endforeach
@@ -764,7 +816,7 @@ usort($gruposFinalizados, $sortFunction);
                 <x-heroicon-o-star class="me-2" style="width: 24px; height: 24px;" />
                 Órdenes Prioritarias ({{ count($gruposPrioritarios) }})
             </h3>
-            
+
             @foreach($gruposPrioritarios as $grupoData)
                 @php
                     $grupo = $grupoData['grupo'];
@@ -773,7 +825,7 @@ usort($gruposFinalizados, $sortFunction);
                     $hasPriority = $grupoData['hasPriority'];
                     $estadoGrupo = $grupoData['estadoGrupo'];
                     $cotizacion = $cotizaciones->get($isLista ? $key : explode('_', $key)[0]);
-                    
+
                     $badgeClassMuestra = match ($estadoGrupo) {
                         'coordinado' => 'warning',
                         'en revision analisis' => 'info',
@@ -784,23 +836,26 @@ usort($gruposFinalizados, $sortFunction);
 
                 <div class="card mb-4 shadow-sm priority-group priority-highlight">
                     <div class="card-header table-{{ $badgeClassMuestra }}">
-                        <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
+                        <div
+                            class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
                             <div class="d-flex align-items-center">
-                                <button class="btn btn-link text-decoration-none p-0 me-2" 
-                                        data-bs-toggle="collapse" 
-                                        data-bs-target="#tabla-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}" 
-                                        aria-expanded="false" 
-                                        aria-controls="tabla-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}"
-                                        onclick="toggleChevron('chevron-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}')">
-                                    <x-heroicon-o-chevron-up id="chevron-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}" class="text-primary chevron-icon" style="width: 20px; height: 20px;" />
+                                <button class="btn btn-link text-decoration-none p-0 me-2" data-bs-toggle="collapse"
+                                    data-bs-target="#tabla-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}"
+                                    aria-expanded="false"
+                                    aria-controls="tabla-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}"
+                                    onclick="toggleChevron('chevron-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}')">
+                                    <x-heroicon-o-chevron-up
+                                        id="chevron-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}"
+                                        class="text-primary chevron-icon" style="width: 20px; height: 20px;" />
                                 </button>
                                 <div>
                                     <h4 class="mb-0 text-primary">
-                                        Cotización Nº {{ $isLista ? $key : explode('_', $key)[0] }} 
+                                        Cotización Nº {{ $isLista ? $key : explode('_', $key)[0] }}
                                         @if($isLista)
                                             - ({{ $grupo['instancias']->count() }} Muestras)
                                         @else
-                                            - {{ $grupo['instancia_muestra']->cotio_descripcion ?? 'N/A' }} (#{{ $grupo['instancia_muestra']->instance_number ?? ''}})
+                                            - {{ $grupo['instancia_muestra']->cotio_descripcion ?? 'N/A' }} (OT
+                                            {{ $grupo['instancia_muestra']->otn ?? '—' }})
                                         @endif
                                     </h4>
                                     <div class="d-flex align-items-center gap-2 mt-1">
@@ -827,7 +882,7 @@ usort($gruposFinalizados, $sortFunction);
                                 <div class="row g-2">
                                     <div class="col-md-4 d-flex align-items-center">
                                         <x-heroicon-o-calendar class="me-2 text-muted" style="width: 14px; height: 14px;" />
-                                        <strong>Fecha: </strong> 
+                                        <strong>Fecha: </strong>
                                         @if($isLista)
                                             {{ \Carbon\Carbon::parse($grupo['instancias'][0]['instancia_muestra']->fecha_inicio_ot)->format('d/m/Y') ?? 'N/A' }}
                                         @else
@@ -880,30 +935,34 @@ usort($gruposFinalizados, $sortFunction);
                                                                         Prioritaria
                                                                     </span>
                                                                 @endif
-                                                                <span>MUESTRA: {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }} (#{{ $instanciaMuestra->instance_number }})</span>
-                                                                <small class="text-muted d-block mt-1">ID: #{{ $instanciaMuestra->instance_number }}</small>
+                                                                <span>MUESTRA: {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }} (OT
+                                                                    {{ $instanciaMuestra->otn ?? '—' }})</span>
+                                                                <small class="text-muted d-block mt-1">OT:
+                                                                    {{ $instanciaMuestra->otn ?? '—' }}</small>
                                                                 @if($esFrecuente && $frecuenciaDias > 0)
                                                                     <span class="badge bg-light text-dark border mt-1">
-                                                                        <x-heroicon-o-arrow-path class="me-1" style="width: 14px; height: 14px;" />
+                                                                        <x-heroicon-o-arrow-path class="me-1"
+                                                                            style="width: 14px; height: 14px;" />
                                                                         Cada {{ $frecuenciaDias }} días
                                                                     </span>
                                                                 @endif
                                                             </div>
-                                                            <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}" 
-                                                               class="btn btn-sm btn-dark">
+                                                            <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}"
+                                                                class="btn btn-sm btn-dark">
                                                                 <x-heroicon-o-eye class="me-1" style="width: 16px; height: 16px;" />
                                                                 Ver
                                                             </a>
                                                         </div>
                                                     </td>
                                                     <td class="text-center">
-                                                        <span class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassMuestra) }}">
+                                                        <span
+                                                            class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassMuestra) }}">
                                                             {{ ucfirst($estadoMuestra) }}
                                                         </span>
                                                     </td>
                                                 </tr>
 
-                                                                                                 @foreach($analisis as $tarea)
+                                                @foreach($analisis as $tarea)
                                                     @php
                                                         $estado = strtolower($tarea->cotio_estado_analisis ?? 'pendiente');
                                                         $badgeClassAnalisis = match ($estado) {
@@ -927,7 +986,8 @@ usort($gruposFinalizados, $sortFunction);
                                                             </div>
                                                         </td>
                                                         <td class="text-center">
-                                                            <span class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassAnalisis) }}">
+                                                            <span
+                                                                class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassAnalisis) }}">
                                                                 {{ ucfirst($estado) }}
                                                             </span>
                                                         </td>
@@ -964,29 +1024,32 @@ usort($gruposFinalizados, $sortFunction);
                                                                 </span>
                                                             @endif
                                                             <span>MUESTRA: {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }}</span>
-                                                            <small class="text-muted d-block mt-1">ID: #{{ $instanciaMuestra->instance_number }}</small>
+                                                            <small class="text-muted d-block mt-1">OT:
+                                                                {{ $instanciaMuestra->otn ?? '—' }}</small>
                                                             @if($esFrecuente && $frecuenciaDias > 0)
                                                                 <span class="badge bg-light text-dark border mt-1">
-                                                                    <x-heroicon-o-arrow-path class="me-1" style="width: 14px; height: 14px;" />
+                                                                    <x-heroicon-o-arrow-path class="me-1"
+                                                                        style="width: 14px; height: 14px;" />
                                                                     Cada {{ $frecuenciaDias }} días
                                                                 </span>
                                                             @endif
                                                         </div>
-                                                        <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}" 
-                                                           class="btn btn-sm btn-dark">
+                                                        <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}"
+                                                            class="btn btn-sm btn-dark">
                                                             <x-heroicon-o-eye class="me-1" style="width: 16px; height: 16px;" />
                                                             Ver
                                                         </a>
                                                     </div>
                                                 </td>
                                                 <td class="text-center">
-                                                    <span class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassMuestra) }}">
+                                                    <span
+                                                        class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassMuestra) }}">
                                                         {{ ucfirst($estadoMuestra) }}
                                                     </span>
                                                 </td>
                                             </tr>
 
-                                                                                             @foreach($analisis as $tarea)
+                                            @foreach($analisis as $tarea)
                                                 @php
                                                     $estado = strtolower($tarea->cotio_estado_analisis ?? 'pendiente');
                                                     $badgeClassAnalisis = match ($estado) {
@@ -1010,7 +1073,8 @@ usort($gruposFinalizados, $sortFunction);
                                                         </div>
                                                     </td>
                                                     <td class="text-center">
-                                                        <span class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassAnalisis) }}">
+                                                        <span
+                                                            class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassAnalisis) }}">
                                                             {{ ucfirst($estado) }}
                                                         </span>
                                                     </td>
@@ -1035,7 +1099,7 @@ usort($gruposFinalizados, $sortFunction);
                 <x-heroicon-o-clipboard-document-check class="me-2" style="width: 24px; height: 24px;" />
                 Órdenes Pendientes ({{ count($gruposCoordinados) }})
             </h3>
-            
+
             @foreach($gruposCoordinados as $grupoData)
                 @php
                     $grupo = $grupoData['grupo'];
@@ -1043,7 +1107,7 @@ usort($gruposFinalizados, $sortFunction);
                     $isLista = $grupoData['isLista'];
                     $hasPriority = $grupoData['hasPriority'];
                     $cotizacion = $cotizaciones->get($isLista ? $key : explode('_', $key)[0]);
-                    
+
                     // Estado para el encabezado
                     $estadoMuestra = $isLista
                         ? strtolower($grupo['instancias'][0]['instancia_muestra']->cotio_estado_analisis ?? 'pendiente')
@@ -1059,23 +1123,26 @@ usort($gruposFinalizados, $sortFunction);
 
                 <div class="card mb-4 shadow-sm @if($hasPriority) priority-group priority-highlight @endif">
                     <div class="card-header table-{{ $badgeClassMuestra }}">
-                        <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
+                        <div
+                            class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
                             <div class="d-flex align-items-center">
-                                <button class="btn btn-link text-decoration-none p-0 me-2" 
-                                        data-bs-toggle="collapse" 
-                                        data-bs-target="#tabla-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}" 
-                                        aria-expanded="false" 
-                                        aria-controls="tabla-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}"
-                                        onclick="toggleChevron('chevron-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}')">
-                                    <x-heroicon-o-chevron-up id="chevron-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}" class="text-primary chevron-icon" style="width: 20px; height: 20px;" />
+                                <button class="btn btn-link text-decoration-none p-0 me-2" data-bs-toggle="collapse"
+                                    data-bs-target="#tabla-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}"
+                                    aria-expanded="false"
+                                    aria-controls="tabla-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}"
+                                    onclick="toggleChevron('chevron-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}')">
+                                    <x-heroicon-o-chevron-up
+                                        id="chevron-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}"
+                                        class="text-primary chevron-icon" style="width: 20px; height: 20px;" />
                                 </button>
                                 <div>
                                     <h4 class="mb-0 text-primary">
-                                        Cotización Nº {{ $isLista ? $key : explode('_', $key)[0] }} 
+                                        Cotización Nº {{ $isLista ? $key : explode('_', $key)[0] }}
                                         @if($isLista)
                                             - ({{ $grupo['instancias']->count() }} Muestras)
                                         @else
-                                            - {{ $grupo['instancia_muestra']->cotio_descripcion ?? 'N/A' }} (#{{ $grupo['instancia_muestra']->instance_number ?? ''}})
+                                            - {{ $grupo['instancia_muestra']->cotio_descripcion ?? 'N/A' }} (OT
+                                            {{ $grupo['instancia_muestra']->otn ?? '—' }})
                                         @endif
                                     </h4>
                                     <div class="d-flex align-items-center gap-2 mt-1">
@@ -1097,8 +1164,8 @@ usort($gruposFinalizados, $sortFunction);
                                     </div>
                                 </div>
                             </div>
-                            
-                
+
+
                         </div>
 
                         @if($cotizacion)
@@ -1106,7 +1173,7 @@ usort($gruposFinalizados, $sortFunction);
                                 <div class="row g-2">
                                     <div class="col-md-4 d-flex align-items-center">
                                         <x-heroicon-o-calendar class="me-2 text-muted" style="width: 14px; height: 14px;" />
-                                        <strong>Fecha: </strong> 
+                                        <strong>Fecha: </strong>
                                         @if($isLista)
                                             {{ \Carbon\Carbon::parse($grupo['instancias'][0]['instancia_muestra']->fecha_inicio_ot)->format('d/m/Y') ?? 'N/A' }}
                                         @else
@@ -1159,30 +1226,34 @@ usort($gruposFinalizados, $sortFunction);
                                                                         Prioritaria
                                                                     </span>
                                                                 @endif
-                                                                <span>MUESTRA: {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }} (#{{ $instanciaMuestra->instance_number }})</span>
-                                                                <small class="text-muted d-block mt-1">ID: #{{ $instanciaMuestra->instance_number }}</small>
+                                                                <span>MUESTRA: {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }} (OT
+                                                                    {{ $instanciaMuestra->otn ?? '—' }})</span>
+                                                                <small class="text-muted d-block mt-1">OT
+                                                                    {{ $instanciaMuestra->otn ?? '—' }}</small>
                                                                 @if($esFrecuente && $frecuenciaDias > 0)
                                                                     <span class="badge bg-light text-dark border mt-1">
-                                                                        <x-heroicon-o-arrow-path class="me-1" style="width: 14px; height: 14px;" />
+                                                                        <x-heroicon-o-arrow-path class="me-1"
+                                                                            style="width: 14px; height: 14px;" />
                                                                         Cada {{ $frecuenciaDias }} días
                                                                     </span>
                                                                 @endif
                                                             </div>
-                                                            <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}" 
-                                                               class="btn btn-sm btn-dark">
+                                                            <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}"
+                                                                class="btn btn-sm btn-dark">
                                                                 <x-heroicon-o-eye class="me-1" style="width: 16px; height: 16px;" />
                                                                 Ver
                                                             </a>
                                                         </div>
                                                     </td>
                                                     <td class="text-center">
-                                                        <span class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassMuestra) }}">
+                                                        <span
+                                                            class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassMuestra) }}">
                                                             {{ ucfirst($estadoMuestra) }}
                                                         </span>
                                                     </td>
                                                 </tr>
 
-                                                                                                 @foreach($analisis as $tarea)
+                                                @foreach($analisis as $tarea)
                                                     @php
                                                         $estado = strtolower($tarea->cotio_estado_analisis ?? 'pendiente');
                                                         $badgeClassAnalisis = match ($estado) {
@@ -1206,7 +1277,8 @@ usort($gruposFinalizados, $sortFunction);
                                                             </div>
                                                         </td>
                                                         <td class="text-center">
-                                                            <span class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassAnalisis) }}">
+                                                            <span
+                                                                class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassAnalisis) }}">
                                                                 {{ ucfirst($estado) }}
                                                             </span>
                                                         </td>
@@ -1243,29 +1315,32 @@ usort($gruposFinalizados, $sortFunction);
                                                                 </span>
                                                             @endif
                                                             <span>MUESTRA: {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }}</span>
-                                                            <small class="text-muted d-block mt-1">ID: #{{ $instanciaMuestra->instance_number }}</small>
+                                                            <small class="text-muted d-block mt-1">OT:
+                                                                {{ $instanciaMuestra->otn ?? '—' }}</small>
                                                             @if($esFrecuente && $frecuenciaDias > 0)
                                                                 <span class="badge bg-light text-dark border mt-1">
-                                                                    <x-heroicon-o-arrow-path class="me-1" style="width: 14px; height: 14px;" />
+                                                                    <x-heroicon-o-arrow-path class="me-1"
+                                                                        style="width: 14px; height: 14px;" />
                                                                     Cada {{ $frecuenciaDias }} días
                                                                 </span>
                                                             @endif
                                                         </div>
-                                                        <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}" 
-                                                           class="btn btn-sm btn-dark">
+                                                        <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}"
+                                                            class="btn btn-sm btn-dark">
                                                             <x-heroicon-o-eye class="me-1" style="width: 16px; height: 16px;" />
                                                             Ver
                                                         </a>
                                                     </div>
                                                 </td>
                                                 <td class="text-center">
-                                                    <span class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassMuestra) }}">
+                                                    <span
+                                                        class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassMuestra) }}">
                                                         {{ ucfirst($estadoMuestra) }}
                                                     </span>
                                                 </td>
                                             </tr>
 
-                                                                                             @foreach($analisis as $tarea)
+                                            @foreach($analisis as $tarea)
                                                 @php
                                                     $estado = strtolower($tarea->cotio_estado_analisis ?? 'pendiente');
                                                     $badgeClassAnalisis = match ($estado) {
@@ -1289,7 +1364,8 @@ usort($gruposFinalizados, $sortFunction);
                                                         </div>
                                                     </td>
                                                     <td class="text-center">
-                                                        <span class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassAnalisis) }}">
+                                                        <span
+                                                            class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassAnalisis) }}">
                                                             {{ ucfirst($estado) }}
                                                         </span>
                                                     </td>
@@ -1320,7 +1396,7 @@ usort($gruposFinalizados, $sortFunction);
                     $isLista = $grupoData['isLista'];
                     $hasPriority = $grupoData['hasPriority'];
                     $cotizacion = $cotizaciones->get($isLista ? $key : explode('_', $key)[0]);
-                    
+
                     // Estado para el encabezado
                     $estadoMuestra = $isLista
                         ? strtolower($grupo['instancias'][0]['instancia_muestra']->cotio_estado_analisis ?? 'pendiente')
@@ -1336,23 +1412,27 @@ usort($gruposFinalizados, $sortFunction);
 
                 <div class="card mb-4 shadow-sm @if($hasPriority) priority-group @endif">
                     <div class="card-header table-{{ $badgeClassMuestra }}">
-                        <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
+                        <div
+                            class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
                             <div class="d-flex align-items-center">
-                                <button class="btn btn-link text-decoration-none p-0 me-2" 
-                                        data-bs-toggle="collapse" 
-                                        data-bs-target="#tabla-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}" 
-                                        aria-expanded="false" 
-                                        aria-controls="tabla-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}"
-                                        onclick="toggleChevron('chevron-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}')">
-                                    <x-heroicon-o-chevron-up id="chevron-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}" class="text-primary chevron-icon" style="width: 20px; height: 20px;" />
+                                <button class="btn btn-link text-decoration-none p-0 me-2" data-bs-toggle="collapse"
+                                    data-bs-target="#tabla-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}"
+                                    aria-expanded="false"
+                                    aria-controls="tabla-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}"
+                                    onclick="toggleChevron('chevron-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}')">
+                                    <x-heroicon-o-chevron-up
+                                        id="chevron-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}"
+                                        class="text-primary chevron-icon" style="width: 20px; height: 20px;" />
                                 </button>
                                 <div>
                                     <h4 class="mb-0 text-primary">
-                                        Cotización Nº {{ $isLista ? $key : explode('_', $key)[0] }} 
+                                        Cotización Nº {{ $isLista ? $key : explode('_', $key)[0] }}
                                         @if($isLista)
                                             - ({{ $grupo['instancias']->count() }} Muestras)
                                         @else
-                                            - {{ $grupo['instancia_muestra']->cotio_descripcion ?? 'N/A' }} (#{{ $grupo['instancia_muestra']->instance_number ?? ''}})
+                                            - {{ $grupo['instancia_muestra']->cotio_descripcion ?? 'N/A' }}
+                                            (OT
+                                            {{ $grupo['instancia_muestra']->otn ?? '—' }})
                                         @endif
                                     </h4>
                                     <div class="d-flex align-items-center gap-2 mt-1">
@@ -1379,7 +1459,7 @@ usort($gruposFinalizados, $sortFunction);
                                     </div>
                                 </div>
                             </div>
-                          
+
                         </div>
 
                         @if($cotizacion)
@@ -1387,7 +1467,7 @@ usort($gruposFinalizados, $sortFunction);
                                 <div class="row g-2">
                                     <div class="col-md-4 d-flex align-items-center">
                                         <x-heroicon-o-calendar class="me-2 text-muted" style="width: 14px; height: 14px;" />
-                                        <strong>Fecha: </strong> 
+                                        <strong>Fecha: </strong>
                                         @if($isLista)
                                             {{ \Carbon\Carbon::parse($grupo['instancias'][0]['instancia_muestra']->fecha_inicio_ot)->format('d/m/Y') ?? 'N/A' }}
                                         @else
@@ -1440,29 +1520,32 @@ usort($gruposFinalizados, $sortFunction);
                                                                         Prioritaria
                                                                     </span>
                                                                 @endif
-                                                                <span>MUESTRA: {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }} (#{{ $instanciaMuestra->instance_number }})</span>
-                                                                <small class="text-muted d-block mt-1">ID: #{{ $instanciaMuestra->instance_number }}</small>
+                                                                <span>MUESTRA: {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }}
+                                                                    (OT
+                                                                    {{ $instanciaMuestra->otn ?? '—' }})</span>
                                                                 @if($esFrecuente && $frecuenciaDias > 0)
                                                                     <span class="badge bg-light text-dark border mt-1">
-                                                                        <x-heroicon-o-arrow-path class="me-1" style="width: 14px; height: 14px;" />
+                                                                        <x-heroicon-o-arrow-path class="me-1"
+                                                                            style="width: 14px; height: 14px;" />
                                                                         Cada {{ $frecuenciaDias }} días
                                                                     </span>
                                                                 @endif
                                                             </div>
-                                                            <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}" 
-                                                               class="btn btn-sm btn-dark">
+                                                            <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}"
+                                                                class="btn btn-sm btn-dark">
                                                                 <x-heroicon-o-eye class="me-1" style="width: 16px; height: 16px;" />
                                                                 Ver
                                                             </a>
                                                         </div>
                                                     </td>
                                                     <td class="text-center">
-                                                        <span class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassMuestra) }}">
+                                                        <span
+                                                            class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassMuestra) }}">
                                                             {{ ucfirst($estadoMuestra) }}
                                                         </span>
                                                     </td>
                                                 </tr>
-                                                                                                 @foreach($analisis as $tarea)
+                                                @foreach($analisis as $tarea)
                                                     @php
                                                         $estado = strtolower($tarea->cotio_estado_analisis ?? 'pendiente');
                                                         $badgeClassAnalisis = match ($estado) {
@@ -1486,7 +1569,8 @@ usort($gruposFinalizados, $sortFunction);
                                                             </div>
                                                         </td>
                                                         <td class="text-center">
-                                                            <span class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassAnalisis) }}">
+                                                            <span
+                                                                class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassAnalisis) }}">
                                                                 {{ ucfirst($estado) }}
                                                             </span>
                                                         </td>
@@ -1523,29 +1607,32 @@ usort($gruposFinalizados, $sortFunction);
                                                                 </span>
                                                             @endif
                                                             <span>MUESTRA: {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }}</span>
-                                                            <small class="text-muted d-block mt-1">ID: #{{ $instanciaMuestra->instance_number }}</small>
+                                                            <small class="text-muted d-block mt-1">OT
+                                                                {{ $instanciaMuestra->otn ?? '—' }}</small>
                                                             @if($esFrecuente && $frecuenciaDias > 0)
                                                                 <span class="badge bg-light text-dark border mt-1">
-                                                                    <x-heroicon-o-arrow-path class="me-1" style="width: 14px; height: 14px;" />
+                                                                    <x-heroicon-o-arrow-path class="me-1"
+                                                                        style="width: 14px; height: 14px;" />
                                                                     Cada {{ $frecuenciaDias }} días
                                                                 </span>
                                                             @endif
                                                         </div>
-                                                        <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}" 
-                                                           class="btn btn-sm btn-dark">
+                                                        <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}"
+                                                            class="btn btn-sm btn-dark">
                                                             <x-heroicon-o-eye class="me-1" style="width: 16px; height: 16px;" />
                                                             Ver
                                                         </a>
                                                     </div>
                                                 </td>
                                                 <td class="text-center">
-                                                    <span class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassMuestra) }}">
+                                                    <span
+                                                        class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassMuestra) }}">
                                                         {{ ucfirst($estadoMuestra) }}
                                                     </span>
                                                 </td>
                                             </tr>
 
-                                                                                             @foreach($analisis as $tarea)
+                                            @foreach($analisis as $tarea)
                                                 @php
                                                     $estado = strtolower($tarea->cotio_estado_analisis ?? 'pendiente');
                                                     $badgeClassAnalisis = match ($estado) {
@@ -1569,7 +1656,8 @@ usort($gruposFinalizados, $sortFunction);
                                                         </div>
                                                     </td>
                                                     <td class="text-center">
-                                                        <span class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassAnalisis) }}">
+                                                        <span
+                                                            class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassAnalisis) }}">
                                                             {{ ucfirst($estado) }}
                                                         </span>
                                                     </td>
@@ -1600,7 +1688,7 @@ usort($gruposFinalizados, $sortFunction);
                     $isLista = $grupoData['isLista'];
                     $hasPriority = $grupoData['hasPriority'];
                     $cotizacion = $cotizaciones->get($isLista ? $key : explode('_', $key)[0]);
-                    
+
                     // Estado para el encabezado
                     $estadoMuestra = $isLista
                         ? strtolower($grupo['instancias'][0]['instancia_muestra']->cotio_estado_analisis ?? 'pendiente')
@@ -1616,23 +1704,27 @@ usort($gruposFinalizados, $sortFunction);
 
                 <div class="card mb-4 shadow-sm @if($hasPriority) priority-group @endif">
                     <div class="card-header table-{{ $badgeClassMuestra }}">
-                        <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
+                        <div
+                            class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
                             <div class="d-flex align-items-center">
-                                <button class="btn btn-link text-decoration-none p-0 me-2" 
-                                        data-bs-toggle="collapse" 
-                                        data-bs-target="#tabla-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}" 
-                                        aria-expanded="false" 
-                                        aria-controls="tabla-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}"
-                                        onclick="toggleChevron('chevron-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}')">
-                                    <x-heroicon-o-chevron-up id="chevron-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}" class="text-primary chevron-icon" style="width: 20px; height: 20px;" />
+                                <button class="btn btn-link text-decoration-none p-0 me-2" data-bs-toggle="collapse"
+                                    data-bs-target="#tabla-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}"
+                                    aria-expanded="false"
+                                    aria-controls="tabla-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}"
+                                    onclick="toggleChevron('chevron-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}')">
+                                    <x-heroicon-o-chevron-up
+                                        id="chevron-{{ $isLista ? $key : explode('_', $key)[0] . '-' . explode('_', $key)[1] }}"
+                                        class="text-primary chevron-icon" style="width: 20px; height: 20px;" />
                                 </button>
                                 <div>
                                     <h4 class="mb-0 text-primary">
-                                        Cotización Nº {{ $isLista ? $key : explode('_', $key)[0] }} 
+                                        Cotización Nº {{ $isLista ? $key : explode('_', $key)[0] }}
                                         @if($isLista)
                                             - ({{ $grupo['instancias']->count() }} Muestras)
                                         @else
-                                            - {{ $grupo['instancia_muestra']->cotio_descripcion ?? 'N/A' }} (#{{ $grupo['instancia_muestra']->instance_number ?? ''}})
+                                            - {{ $grupo['instancia_muestra']->cotio_descripcion ?? 'N/A' }}
+                                            (OT
+                                            {{ $grupo['instancia_muestra']->otn ?? '—' }})
                                         @endif
                                     </h4>
                                     <div class="d-flex align-items-center gap-2 mt-1">
@@ -1659,7 +1751,7 @@ usort($gruposFinalizados, $sortFunction);
                                     </div>
                                 </div>
                             </div>
-                       
+
                         </div>
 
                         @if($cotizacion)
@@ -1667,7 +1759,7 @@ usort($gruposFinalizados, $sortFunction);
                                 <div class="row g-2">
                                     <div class="col-md-4 d-flex align-items-center">
                                         <x-heroicon-o-calendar class="me-2 text-muted" style="width: 14px; height: 14px;" />
-                                        <strong>Fecha: </strong> 
+                                        <strong>Fecha: </strong>
                                         @if($isLista)
                                             {{ \Carbon\Carbon::parse($grupo['instancias'][0]['instancia_muestra']->fecha_inicio_ot)->format('d/m/Y') ?? 'N/A' }}
                                         @else
@@ -1720,30 +1812,34 @@ usort($gruposFinalizados, $sortFunction);
                                                                         Prioritaria
                                                                     </span>
                                                                 @endif
-                                                                <span>MUESTRA: {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }} (#{{ $instanciaMuestra->instance_number }})</span>
-                                                                <small class="text-muted d-block mt-1">ID: #{{ $instanciaMuestra->instance_number }}</small>
+                                                                <span>MUESTRA: {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }} (OT
+                                                                    {{ $instanciaMuestra->otn ?? '—' }})</span>
+                                                                <small class="text-muted d-block mt-1">OT:
+                                                                    {{ $instanciaMuestra->otn ?? '—' }}</small>
                                                                 @if($esFrecuente && $frecuenciaDias > 0)
                                                                     <span class="badge bg-light text-dark border mt-1">
-                                                                        <x-heroicon-o-arrow-path class="me-1" style="width: 14px; height: 14px;" />
+                                                                        <x-heroicon-o-arrow-path class="me-1"
+                                                                            style="width: 14px; height: 14px;" />
                                                                         Cada {{ $frecuenciaDias }} días
                                                                     </span>
                                                                 @endif
                                                             </div>
-                                                            <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}" 
-                                                               class="btn btn-sm btn-dark">
+                                                            <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}"
+                                                                class="btn btn-sm btn-dark">
                                                                 <x-heroicon-o-eye class="me-1" style="width: 16px; height: 16px;" />
                                                                 Ver
                                                             </a>
                                                         </div>
                                                     </td>
                                                     <td class="text-center">
-                                                        <span class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassMuestra) }}">
+                                                        <span
+                                                            class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassMuestra) }}">
                                                             {{ ucfirst($estadoMuestra) }}
                                                         </span>
                                                     </td>
                                                 </tr>
 
-                                                                                                 @foreach($analisis as $tarea)
+                                                @foreach($analisis as $tarea)
                                                     @php
                                                         $estado = strtolower($tarea->cotio_estado_analisis ?? 'pendiente');
                                                         $badgeClassAnalisis = match ($estado) {
@@ -1767,7 +1863,8 @@ usort($gruposFinalizados, $sortFunction);
                                                             </div>
                                                         </td>
                                                         <td class="text-center">
-                                                            <span class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassAnalisis) }}">
+                                                            <span
+                                                                class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassAnalisis) }}">
                                                                 {{ ucfirst($estado) }}
                                                             </span>
                                                         </td>
@@ -1804,23 +1901,26 @@ usort($gruposFinalizados, $sortFunction);
                                                                 </span>
                                                             @endif
                                                             <span>MUESTRA: {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }}</span>
-                                                            <small class="text-muted d-block mt-1">ID: #{{ $instanciaMuestra->instance_number }}</small>
+                                                            <small class="text-muted d-block mt-1">OT:
+                                                                {{ $instanciaMuestra->otn ?? '—' }}</small>
                                                             @if($esFrecuente && $frecuenciaDias > 0)
                                                                 <span class="badge bg-light text-dark border mt-1">
-                                                                    <x-heroicon-o-arrow-path class="me-1" style="width: 14px; height: 14px;" />
+                                                                    <x-heroicon-o-arrow-path class="me-1"
+                                                                        style="width: 14px; height: 14px;" />
                                                                     Cada {{ $frecuenciaDias }} días
                                                                 </span>
                                                             @endif
                                                         </div>
-                                                        <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}" 
-                                                           class="btn btn-sm btn-dark">
+                                                        <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}"
+                                                            class="btn btn-sm btn-dark">
                                                             <x-heroicon-o-eye class="me-1" style="width: 16px; height: 16px;" />
                                                             Ver
                                                         </a>
                                                     </div>
                                                 </td>
                                                 <td class="text-center">
-                                                    <span class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassMuestra) }}">
+                                                    <span
+                                                        class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassMuestra) }}">
                                                         {{ ucfirst($estadoMuestra) }}
                                                     </span>
                                                 </td>
@@ -1850,7 +1950,8 @@ usort($gruposFinalizados, $sortFunction);
                                                         </div>
                                                     </td>
                                                     <td class="text-center">
-                                                        <span class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassAnalisis) }}">
+                                                        <span
+                                                            class="badge text-dark {{ str_replace('table-', 'bg-', $badgeClassAnalisis) }}">
                                                             {{ ucfirst($estado) }}
                                                         </span>
                                                     </td>
@@ -1882,38 +1983,49 @@ usort($gruposFinalizados, $sortFunction);
     .chevron-icon {
         transition: transform 0.3s ease;
     }
+
     .chevron-icon.rotated {
         transform: rotate(180deg);
     }
+
     .table td {
         vertical-align: middle;
     }
+
     .badge {
         font-size: 0.85em;
         font-weight: 500;
         padding: 0.35em 0.65em;
     }
+
     .table-light {
         background-color: rgba(248, 249, 250, 0.8) !important;
     }
+
     .table-warning {
         background-color: rgba(255, 243, 205, 0.8) !important;
     }
+
     .table-info {
         background-color: rgba(209, 236, 241, 0.8) !important;
     }
+
     .table-success {
         background-color: rgba(212, 237, 218, 0.8) !important;
     }
+
     .bg-warning {
         background-color: #ffc107 !important;
     }
+
     .bg-info {
         background-color: #0dcaf0 !important;
     }
+
     .bg-success {
         background-color: #198754 !important;
     }
+
     .card-header {
         padding: 1rem 1.25rem;
     }
@@ -1924,12 +2036,12 @@ usort($gruposFinalizados, $sortFunction);
         background-color: rgba(255, 193, 7, 0.1);
         box-shadow: 0 0 10px rgba(255, 193, 7, 0.2);
     }
-    
+
     .priority-instance {
         position: relative;
         padding-left: 30px !important;
     }
-    
+
     .priority-badge {
         background-color: #ffc107;
         color: #000;
@@ -1938,28 +2050,32 @@ usort($gruposFinalizados, $sortFunction);
         align-items: center;
         gap: 4px;
     }
-    
+
     .table-warning.priority-instance {
         background-color: rgba(255, 243, 205, 0.9) !important;
     }
+
     .table-info.priority-instance {
         background-color: rgba(209, 236, 241, 0.9) !important;
     }
+
     .table-success.priority-instance {
         background-color: rgba(212, 237, 218, 0.9) !important;
     }
-    
+
     .priority-highlight {
         animation: pulse 2s infinite;
     }
-    
+
     @keyframes pulse {
         0% {
             box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.4);
         }
+
         70% {
             box-shadow: 0 0 0 10px rgba(255, 193, 7, 0);
         }
+
         100% {
             box-shadow: 0 0 0 0 rgba(255, 193, 7, 0);
         }
@@ -1967,13 +2083,15 @@ usort($gruposFinalizados, $sortFunction);
 
     /* New style for Revisión de Resultados */
     .revision-resultados-group {
-        border-left: 4px solid #0d6efd; /* Primary blue border */
+        border-left: 4px solid #0d6efd;
+        /* Primary blue border */
         background-color: rgba(13, 110, 253, 0.1);
         box-shadow: 0 0 10px rgba(13, 110, 253, 0.2);
     }
 
     .revision-resultados-badge {
-        background-color: #0d6efd; /* Primary blue */
+        background-color: #0d6efd;
+        /* Primary blue */
         color: #fff;
         font-weight: bold;
         display: inline-flex;
@@ -1995,8 +2113,8 @@ usort($gruposFinalizados, $sortFunction);
             icon.classList.toggle('rotated');
         }
     }
-    
-    document.addEventListener('DOMContentLoaded', function() {
+
+    document.addEventListener('DOMContentLoaded', function () {
         document.querySelectorAll('.collapse.show').forEach(collapseElement => {
             const targetId = collapseElement.id;
             const iconId = `chevron-${targetId.replace('tabla-', '')}`;
@@ -2005,7 +2123,7 @@ usort($gruposFinalizados, $sortFunction);
                 icon.classList.add('rotated');
             }
         });
-        
+
         // Auto-scroll to first priority group if exists
         const firstPriorityGroup = document.querySelector('.priority-group');
         if (firstPriorityGroup) {
@@ -2016,11 +2134,11 @@ usort($gruposFinalizados, $sortFunction);
         const toggleOrdenesVencidas = document.getElementById('toggleOrdenesVencidas');
         const ordenesVencidasSection = document.querySelector('.ordenes-vencidas-section');
         const contadorOrdenesVencidas = document.getElementById('contadorOrdenesVencidas');
-        
+
         if (toggleOrdenesVencidas && ordenesVencidasSection) {
             const mostrarVencidas = localStorage.getItem('mostrarOrdenesVencidas') !== 'false';
             toggleOrdenesVencidas.checked = mostrarVencidas;
-            
+
             if (mostrarVencidas) {
                 ordenesVencidasSection.style.display = 'block';
                 if (contadorOrdenesVencidas) contadorOrdenesVencidas.style.display = 'none';
@@ -2028,8 +2146,8 @@ usort($gruposFinalizados, $sortFunction);
                 ordenesVencidasSection.style.display = 'none';
                 if (contadorOrdenesVencidas) contadorOrdenesVencidas.style.display = 'inline';
             }
-            
-            toggleOrdenesVencidas.addEventListener('change', function() {
+
+            toggleOrdenesVencidas.addEventListener('change', function () {
                 if (this.checked) {
                     ordenesVencidasSection.style.display = 'block';
                     if (contadorOrdenesVencidas) contadorOrdenesVencidas.style.display = 'none';

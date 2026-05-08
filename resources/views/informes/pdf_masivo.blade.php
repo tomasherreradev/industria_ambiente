@@ -1,283 +1,421 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
+
 <head>
     <meta charset="utf-8">
-    <title>Informes de Cotización #{{ $cotizacion->coti_num }}</title>
+    <title>Informes - Cotización #{{ $cotizacion->coti_num }}</title>
     <style>
+        /* Margen superior: espacio header + título; un poco menor para acercar título y cuadro .box */
+        @page {
+            margin: 54mm 10mm 14mm 10mm;
+        }
+
         body {
             font-family: 'Calibri', Arial, sans-serif;
-            font-size: 10pt;
-            line-height: 1.4;
+            font-size: 8pt;
+            line-height: 1.15;
             margin: 0;
-            padding: 1.5cm;
-            color: #333;
+            color: #000;
         }
-        .header { 
-            display: flex; 
-            justify-content: space-between; 
-            margin-bottom: 20px; 
-            border-bottom: 2px solid #3699cd; 
-            padding-bottom: 10px; 
+
+        .pdf-header {
+            position: fixed;
+            left: 0;
+            right: 0;
+            top: -58mm;
+            /* se dibuja en el margen superior */
+            height: 34mm;
+            z-index: 10;
         }
-        .logo-container { 
-            width: 120px; 
-            max-height: 30px; 
+
+        .pdf-header img {
+            width: 100%;
+            height: 100%;
+            display: block;
         }
-        .logo-container img { 
-            max-height: 100%; 
-            width: auto; 
+
+        /* Título + recuadro: tabla 1 fila (Dompdf alinea mal flex); valign middle centra el título con la caja */
+        .pdf-title-bar {
+            position: fixed;
+            left: 10mm;
+            right: 10mm;
+            /* Menos negativo = más abajo, más cerca del cuadro de datos */
+            top: -7mm;
+            z-index: 11;
+            width: calc(100% - 20mm);
+            box-sizing: border-box;
         }
-        .header-info { 
-            text-align: left; 
-            margin-top: 25px;
-        }
-        .header-title {
-            font-size: 14pt;
-            font-weight: bold;
-            color: #333;
-            margin: 0;
-        }
-        .header-subtitle {
-            font-size: 10pt;
-            color: #666;
-            margin: 5px 0 0 0;
-        }
-        .document-info {
-            font-size: 9pt;
-            color: #666;
-            margin: 5px 0 0 0;
-        }
-        .section {
-            margin: 25px 0;
-            page-break-inside: avoid;
-        }
-        .section-title {
-            font-size: 11pt;
-            font-weight: bold;
-            color: #333;
-            margin-bottom: 10px;
-            border-bottom: 1px solid #ddd;
-            padding-bottom: 5px;
-        }
-        .info-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 10px;
-            margin-bottom: 15px;
-        }
-        .info-item {
-            margin-bottom: 8px;
-        }
-        .info-label {
-            font-weight: bold;
-            color: #444;
-            font-size: 9pt;
-        }
-        .info-value {
-            color: #333;
-        }
-        .table {
+
+        .pdf-title-bar-table {
             width: 100%;
             border-collapse: collapse;
-            margin: 15px 0;
-            font-size: 9pt;
+            border-spacing: 0;
+            table-layout: fixed;
         }
-        .table th {
-            background-color: #f2f2f2;
-            border: 1px solid #ddd;
-            padding: 8px;
+
+        .pdf-title-bar-table td {
+            border: 0;
+            padding: 0;
+            vertical-align: middle;
+        }
+
+        .pdf-title-cell {
+            padding-right: 3mm;
+        }
+
+        .pdf-title-ctrl-cell {
+            width: 38%;
+            text-align: right;
+            vertical-align: middle;
+        }
+
+        .pdf-title-text {
+            font-weight: 700;
+            font-size: 14pt;
+            line-height: 1.15;
             text-align: left;
-            font-weight: bold;
+            text-decoration: underline;
+            text-transform: uppercase;
         }
-        .table td {
-            border: 1px solid #ddd;
-            padding: 8px;
+
+        .pdf-footer {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: -14mm;
+            color: #000;
         }
-        .table tr:nth-child(even) {
-            background-color: #f9f9f9;
+
+        /* Page counters handled via script block at the end */
+
+        .page {
+            padding: 0;
+            margin-top: -2mm;
+            page-break-after: always;
         }
-        .photo-container {
+
+        .page:last-child {
+            page-break-after: auto;
+        }
+
+        .box {
+            border: 1px solid #000;
+            padding: 3mm;
+            margin-bottom: 4mm;
+        }
+
+        table.kv {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 7.5pt;
+        }
+
+        table.kv td {
+            padding: 1.1mm 0.9mm;
+            vertical-align: top;
+        }
+
+        .k {
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .label {
+            font-weight: 700;
+            font-size: 7.6pt;
+            margin: 3mm 0 1.5mm 0;
+            text-decoration: underline;
+        }
+
+        table.data {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 7.2pt;
+        }
+
+        table.data th,
+        table.data td {
+            border: 1px solid #000;
+            padding: 1.3mm 1.2mm;
+        }
+
+        table.data th {
+            background: #f2f5ff;
+            font-weight: 700;
             text-align: center;
-            margin: 15px 0;
-            padding: 10px;
-            border: 1px solid #eee;
         }
-        .photo-container img {
-            max-width: 100%;
-            max-height: 300px;
+
+        table.data td {
+            vertical-align: top;
         }
-        .photo-caption {
-            font-size: 8pt;
-            color: #666;
-            margin-top: 5px;
+
+        .muted {
+            color: #444;
+            font-size: 7.2pt;
         }
+
+        .center {
+            text-align: center;
+        }
+
+        .right {
+            text-align: right;
+        }
+
         .no-data {
-            color: #777;
             font-style: italic;
+            color: #555;
+            padding: 2mm 0;
+        }
+
+        .map-wrap {
+            margin-top: 2mm;
             text-align: center;
-            padding: 10px;
-            font-size: 9pt;
         }
-        .footer {
-            margin-top: 40px;
-            text-align: center;
-            font-size: 8pt;
-            color: #666;
-            border-top: 1px solid #ddd;
-            padding-top: 10px;
-        }
-        .badge {
-            display: inline-block;
-            padding: 3px 8px;
-            border-radius: 3px;
-            font-size: 9pt;
-            font-weight: bold;
-        }
-        .badge-success {
-            background-color: #28a745;
-            color: white;
-        }
-        .badge-warning {
-            background-color: #ffc107;
-            color: #212529;
-        }
+
         .page-break {
             page-break-after: always;
         }
-        @page {
-            margin: 1.5cm;
-            @bottom-center {
-                content: "Página " counter(page);
-                font-family: 'Calibri', Arial, sans-serif;
-                font-size: 8pt;
-                color: #666;
-            }
+
+        .map-img {
+            width: 85%;
+            height: auto;
+            border: 1px solid #000;
+            max-height: 105mm;
+            /* más chica (tipo ejemplo A4) */
+            display: inline-block;
+        }
+
+        .map-caption {
+            font-size: 6.8pt;
+            text-align: center;
+            margin-top: 1mm;
+        }
+
+        .notas-box {
+            font-size: 7.2pt;
+            line-height: 1.3;
+            margin-top: 4mm;
+            margin-bottom: 3mm;
+            white-space: pre-wrap;
+        }
+
+        .instrumental-section {
+            page-break-inside: avoid;
+        }
+
+        .obs-box {
+            border: 1px solid #bbb;
+            padding: 2mm 3mm;
+            margin-top: 1mm;
+            min-height: 20mm;
+            font-size: 7.2pt;
+            line-height: 1.4;
         }
     </style>
 </head>
+
 <body>
-    <div class="header">
-        <div class="logo-container">
-            @if(file_exists(public_path('assets/img/logo.png')))
-                <img src="{{ public_path('assets/img/logo.png') }}" alt="Logo" style="width: 100px; height: auto;">
-            @else
-                <p style="color: #3699cd; font-weight: bold;">Industria y Ambiente S.A</p>
-            @endif
-        </div>
-        <div class="header-info">
-            <h1 class="header-title">INFORME DE MUESTREO</h1>
-            <p class="header-subtitle">Documento técnico - Confidencial</p>
-            <p class="document-info">Cotización: #{{ $cotizacion->coti_num }} | Fecha: {{ now()->format('d/m/Y H:i') }}</p>
+    <div class="pdf-header">
+        <img src="{{ public_path('assets/img/header_informe.png') }}" alt="Header">
+    </div>
+    <div class="pdf-footer">
+        <div style="font-weight: bold;">
+            {{-- El número de página se genera mediante el script al final del body --}}
         </div>
     </div>
+    @php
+        $versionInforme = 2;
+        //$fechaDescargaInforme = \Carbon\Carbon::now()->format('d/m/Y');
+        $tituloInformePdf = 'PROTOCOLO DE ENSAYO';
+        $fechaInforme = '22/12/2023';
 
-    <!-- Iterar sobre múltiples muestras -->
-    @foreach($muestras as $index => $muestra)
-        <div class="section">
-            <div class="d-flex justify-content-between">
-                <h2 class="section-title">Reporte #{{ $index + 1 }} - {{ $muestra->cotio_descripcion ?? 'EFLUENTE LÍQUIDO' }}</h2>
-                <p style="margin-left: 450px; margin-top: -30px;">O.T.N: #{{ $muestra->otn ?? 'N/A' }}</p>
-            </div>
-            <div class="info-grid">
-                <div class="info-item">
-                    <span class="info-label">Cliente:</span>
-                    <span class="info-value">{{ $muestra->cotizacion->coti_empresa }}</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Establecimiento:</span>
-                    <span class="info-value">{{ $muestra->cotizacion->coti_establecimiento ?? 'No especificado' }}</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Fecha de Muestreo:</span>
-                    <span class="info-value">{{ $muestra->fecha_muestreo ? \Carbon\Carbon::parse($muestra->fecha_muestreo)->format('d/m/Y') : 'No especificada' }}</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Matriz:</span>
-                    <span class="info-value">{{ $muestra->cotizacion->matriz->matriz_descripcion ?? 'No especificada' }}</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Identificación:</span>
-                    <span class="info-value">{{ $muestra->cotio_identificacion ?? 'No especificada' }}</span>
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Descripción:</span>
-                    <span class="info-value">{{ $muestra->cotio_descripcion ?? 'No especificada' }}</span>
-                </div>
-            </div>
-        </div>
+        $normalizeStr = function($str) {
+            if (empty($str)) return '';
+            $str = mb_strtolower($str, 'UTF-8');
+            $str = preg_replace('/\s*\(.*\)\s*/u', '', $str);
+            $search  = ['á', 'é', 'í', 'ó', 'ú', 'ñ', 'ü'];
+            $replace = ['a', 'e', 'i', 'o', 'u', 'n', 'u'];
+            $str = str_replace($search, $replace, $str);
+            // Quitar cualquier caracter que no sea letra o número para máxima compatibilidad
+            $str = preg_replace('/[^a-z0-9]/u', '', $str);
+            return trim($str);
+        };
+    @endphp
+    <div class="pdf-title-bar">
+        <table class="pdf-title-bar-table" role="presentation">
+            <tbody>
+                <tr>
+                    <td class="pdf-title-cell" valign="middle" align="center">
+                        <span class="pdf-title-text">{{ $tituloInformePdf }}</span>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
 
-        @if($muestra->showMap && $muestra->localMapPath)
-        <div class="section">
-            <h2 class="section-title">UBICACIÓN GEOGRÁFICA</h2>
-            <div class="map-container">
-                <img src="{{ $muestra->localMapPath }}" alt="Ubicación de la muestra" style="width: 100%; height: auto;">
-                <p class="map-caption">Figura {{ $index + 1 }}. Ubicación geográfica del punto de muestreo (Lat: {{ $muestra->latitud }}, Long: {{ $muestra->longitud }})</p>
-            </div>
-        </div>
-        @endif
+    @foreach($muestras as $muestra)
+        @php
+            $cab = \App\Support\ProtocoloInformePdfCabecera::forPdf($muestra);
+            $analisis = $muestra->analisis ?? collect();
+            $herrs = $muestra->herramientasMuestreo ?? collect();
 
-        @if($muestra->valoresVariables && $muestra->valoresVariables->count() > 0)
-            <div class="section">
-                <h2 class="section-title">MEDICIONES DE CAMPO</h2>
-                <table class="table">
+            $medicionesMapa = $muestra->valoresVariables->mapWithKeys(function($v) use ($normalizeStr) {
+                return [$normalizeStr($v->variable) => $v->valor];
+            });
+        @endphp
+
+        <div class="page">
+            @include('informes.partials.pdf-protocolo-cabecera-box', ['cab' => $cab])
+
+            @if(($muestra->showMap ?? false) && !empty($muestra->localMapPath))
+                <div class="map-wrap">
+                    <div class="label">Imagen satelital del predio</div>
+                    <img class="map-img" src="{{ $muestra->localMapPath }}" alt="Imagen satelital">
+                    <div class="map-caption">Punto N°{{ (int) ($muestra->instance_number ?? 1) }} (Lat: {{ $muestra->latitud }},
+                        Long: {{ $muestra->longitud }})</div>
+                </div>
+                <div class="page-break"></div>
+                {{-- Repetir bloque de datos al comenzar la hoja 2 --}}
+                @include('informes.partials.pdf-protocolo-cabecera-box', ['cab' => $cab])
+            @endif
+
+            <div class="label">Resultado del análisis</div>
+            @if($analisis && $analisis->count() > 0)
+                <table class="data">
                     <thead>
                         <tr>
-                            <th style="width: 70%;">Variable</th>
-                            <th style="width: 30%;">Valor</th>
+                            <th style="width: 25%;">Determinación de:</th>
+                            <th style="width: 20%;">Metodologías</th>
+                            <th style="width: 15%;">Fecha de análisis</th>
+                            <th style="width: 16%;">Resultados</th>
+                            <th style="width: 12%;">Unidades</th>
+                            <th style="width: 12%;">Límites</th>
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach($muestra->valoresVariables as $variable)
+                        @foreach($analisis as $item)
+                            @php
+                                $met = trim((string) ($item->cotio_codigometodo_analisis ?? $item->cotio_codigometodo ?? ''));
+                                // Priorizar fecha fin sobre fecha inicio y carga.
+                                $fechaAnalisis = $item->analista_fecha_fin ?? $item->fecha_fin_ot ?? $item->analista_fecha_inicio ?? $item->fecha_inicio_ot ?? $item->fecha_carga_ot ?? $item->fecha_carga_resultado_3 ?? $item->fecha_carga_resultado_2 ?? $item->fecha_carga_resultado_1 ?? null;
+                                $unidad = trim((string) ($item->cotio_codigoum ?? ''));
+
+                                $descNorm = $normalizeStr($item->cotio_descripcion);
+                                $valorSincronizado = $medicionesMapa->get($descNorm);
+
+                                if (!is_null($valorSincronizado)) {
+                                    $res = (string) $valorSincronizado;
+                                } else {
+                                    $res = trim((string) ($item->resultado_final ?? $item->resultado ?? ''));
+                                }
+
+                                $metDesc = $met !== '' ? (trim((string) optional(($metodosByCodigo ?? collect())->get($met))->metodo_descripcion) ?: $met) : '—';
+                                $leyEnsayo = \App\Support\LeyNormativaPresentacion::textoPlano($item->tarea ?? null);
+                                $mFi = $item->analista_fecha_inicio ?? null;
+                                $mFf = $item->analista_fecha_fin ?? null;
+                                $manualRangoAnalisis = null;
+                                if ($mFi && $mFf) {
+                                    $manualRangoAnalisis = \Carbon\Carbon::parse($mFi)->format('d/m/Y') . ' – ' . \Carbon\Carbon::parse($mFf)->format('d/m/Y');
+                                } elseif ($mFf) {
+                                    $manualRangoAnalisis = \Carbon\Carbon::parse($mFf)->format('d/m/Y');
+                                } elseif ($mFi) {
+                                    $manualRangoAnalisis = \Carbon\Carbon::parse($mFi)->format('d/m/Y');
+                                }
+                            @endphp
                             <tr>
-                                <td>{{ $variable->variable }}</td>
-                                <td>{{ $variable->valor }}</td>
+                                <td>{{ $item->cotio_descripcion ?? '—' }}</td>
+                                <td class="center">{{ $metDesc }}</td>
+                                <td class="center">
+                                    @if($manualRangoAnalisis){{ $manualRangoAnalisis }}@elseif($fechaAnalisis){{ \Carbon\Carbon::parse($fechaAnalisis)->format('d/m/Y') }}@else—@endif
+                                </td>
+                                <td class="right"><strong>{{ $res !== '' ? $res : '—' }}</strong></td>
+                                <td class="center">{{ $unidad !== '' ? $unidad : '—' }}</td>
+                                <td class="center">—</td>
                             </tr>
                         @endforeach
                     </tbody>
                 </table>
-            </div>
-        @else
-            <div class="section">
-                <h2 class="section-title">MEDICIONES DE CAMPO</h2>
-                <div class="no-data">No se registraron variables de medición</div>
-            </div>
-        @endif
+            @else
+                <div class="no-data">No se registraron análisis para esta muestra.</div>
+            @endif
 
-        @if(isset($muestra->analisis) && $muestra->analisis->count() > 0)
-            <div class="section">
-                <h2 class="section-title">ANÁLISIS REALIZADOS</h2>
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>Análisis</th>
-                            <th>Resultado</th>
-                            <th>Observación</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach($muestra->analisis as $item)
+            @php $metMuestreoNombre = trim((string) ($muestra->metodoMuestreoNombre ?? '')); @endphp
+            @if($metMuestreoNombre !== '')
+                <div class="muted" style="margin-top: 2mm;">{{ $metMuestreoNombre }}</div>
+            @endif
+
+            {{-- NOTAS DEL INFORME (Justo debajo de la tabla de resultados) --}}
+            @php
+                $jsonProtocolo = $muestra->protocolo_informe_json ?? [];
+                $notasInformePdf = trim((string) ($jsonProtocolo['notas_informe'] ?? ''));
+            @endphp
+            @if($notasInformePdf !== '')
+                <div class="notas-box" style="margin-bottom: 4mm;">
+                    {!! nl2br(e($notasInformePdf)) !!}
+                </div>
+            @endif
+
+            <div class="instrumental-section">
+                <div class="label">Instrumental utilizado</div>
+                @php
+                    $equipos = $muestra->equiposAnalisis ?? collect();
+                    if (!$equipos || $equipos->count() === 0) {
+                        $equipos = isset($muestra->herramientasLab) ? collect($muestra->herramientasLab) : collect();
+                    }
+                    if (!$equipos || $equipos->count() === 0) {
+                        $equipos = $herrs ?? collect();
+                    }
+                @endphp
+                @if($equipos && $equipos->count() > 0)
+                    <table class="data instrumental">
+                        <thead>
                             <tr>
-                                <td>{{ $item->cotio_descripcion ?? 'No especificado' }}</td>
-                                <td style="font-weight: bold;">{{ $item->resultado_final . ' ' . ($item->cotio_codigoum ?? '') }}</td>
-                                <td>{{ $item->observacion_resultado_final ?? '-' }}</td>
+                                <th>Equipo / Instrumento</th>
+                                <th style="width: 45%;">Detalle</th>
                             </tr>
-                        @endforeach
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            @foreach($equipos as $h)
+                                <tr>
+                                    <td class="center">
+                                        {{ $h->equipamiento ?? $h->descripcion ?? $h->nombre ?? ('ID ' . ($h->id ?? '')) }}</td>
+                                    <td class="muted center">
+                                        @php
+                                            $marca = trim((string) ($h->marca_modelo ?? ''));
+                                            $serie = trim((string) ($h->n_serie_lote ?? ''));
+                                            $ficha = trim((string) ($h->codigo_ficha ?? ''));
+                                            $parts = array_filter([$marca, $serie ? ('N° Serie/Lote: ' . $serie) : null, $ficha ? ('Ficha: ' . $ficha) : null]);
+                                        @endphp
+                                        {{ !empty($parts) ? implode(' · ', $parts) : '—' }}
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                @else
+                    <div class="no-data">—</div>
+                @endif
             </div>
-        @else
-            <div class="section">
-                <h2 class="section-title">ANÁLISIS REALIZADOS</h2>
-                <div class="no-data">No se registraron análisis para esta muestra</div>
+
+            <div style="margin-top: 5mm;">
+                @include('informes.partials.pdf-observaciones', ['muestra' => $muestra, 'analisis' => $analisis])
             </div>
-        @endif
+        </div>
     @endforeach
 
-    <div class="footer">
-        <p>INDUSTRIA Y AMBIENTE S.A.</p>
-        {{-- <p>Av. Ejemplo 1234, Ciudad - Tel: (123) 456-7890</p> --}}
-        <p>www.industriayambiente.com - info@industriayambiente.com</p>
-        <p style="margin-top: 10px;">Documento confidencial - Prohibida su reproducción sin autorización</p>
-    </div>
+    <script type="text/php">
+        if (isset($pdf)) {
+            $pdf->page_script('
+                $font = $fontMetrics->get_font("helvetica", "normal");
+                $size = 7;
+                $pageText = "Página " . $PAGE_NUM . " de " . $PAGE_COUNT;
+                $y = $pdf->get_height() - 20;
+                $x = ($pdf->get_width() / 2) - ($fontMetrics->get_text_width($pageText, $font, $size) / 2);
+                $pdf->text($x, $y, $pageText, $font, $size);
+            ');
+        }
+    </script>
 </body>
+
 </html>

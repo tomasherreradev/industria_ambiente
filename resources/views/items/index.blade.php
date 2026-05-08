@@ -7,6 +7,10 @@
     <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-3 gap-2">
         <h1 class="h4 mb-0">Determinaciones</h1>
         <div class="d-flex flex-wrap gap-2">
+            <a href="{{ route('items.exportar', array_filter(['q' => $search, 'tipo' => $tipo, 'matriz' => $matrizCodigo])) }}" class="btn btn-outline-success">
+                <x-heroicon-o-arrow-down-tray style="width: 16px; height: 16px;" />
+                <span class="d-none d-sm-inline">Exportar</span>
+            </a>
             <a href="{{ route('items.importar') }}" class="btn btn-success">
                 <x-heroicon-o-arrow-down-tray style="width: 16px; height: 16px;" />
                 <span class="d-none d-sm-inline">Importar desde Excel</span>

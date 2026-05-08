@@ -71,15 +71,17 @@
                     </div>
                     
                     <div class="col-md-2">
-                        <label for="fecha_inicio_ot" class="form-label">Desde</label>
+                        <label for="fecha_inicio_ot" class="form-label">Aprobación desde</label>
                         <input type="date" class="form-control" id="fecha_inicio_ot" 
-                               name="fecha_inicio_ot" value="{{ request('fecha_inicio_ot') }}">
+                               name="fecha_inicio_ot" value="{{ request('fecha_inicio_ot') }}"
+                               title="Fecha de aprobación de la cotización">
                     </div>
 
                     <div class="col-md-2">
-                        <label for="fecha_fin_ot" class="form-label">Hasta</label>
+                        <label for="fecha_fin_ot" class="form-label">Aprobación hasta</label>
                         <input type="date" class="form-control" id="fecha_fin_ot" 
-                               name="fecha_fin_ot" value="{{ request('fecha_fin_ot') }}">
+                               name="fecha_fin_ot" value="{{ request('fecha_fin_ot') }}"
+                               title="Fecha de aprobación de la cotización">
                     </div>
                     
                     <div class="col-12">
@@ -111,7 +113,8 @@
     @endif
 
     @php
-        $datosVista = $viewType === 'calendario' ? ($tareasCalendario ?? collect()) : ($ordenes ?? collect());
+        // Calendario: usar $events (no $tareasCalendario: un grupo puede quedar vacío y el mapa no refleja bien “hay datos”).
+        $datosVista = $viewType === 'calendario' ? ($events ?? collect()) : ($ordenes ?? collect());
     @endphp
 
     @if($datosVista->isEmpty())

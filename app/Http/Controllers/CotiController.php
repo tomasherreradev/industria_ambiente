@@ -16,8 +16,11 @@ use App\Models\CotioInstancia;
 use App\Models\Clientes;
 use App\Models\ClienteRazonSocialFacturacion;
 use App\Models\Divis;
+use App\Models\CondicionPago;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use App\Support\CotizacionClienteEtiqueta;
+use App\Support\CotizacionCanalEnsayo;
 
 class CotiController extends Controller
 {
@@ -292,7 +295,8 @@ public function showTareas(Request $request)
 
     // Consultas base - Modificadas para incluir muestreados cuando se filtra por ese estado
     $queryMuestras = CotioInstancia::with([
-        'muestra.cotizado',
+        'muestra.cotizado.cliente',
+        'muestra.cotizado.sucursal',
         'muestra.vehiculo',
         'vehiculo',
         'herramientas',
@@ -301,7 +305,8 @@ public function showTareas(Request $request)
     ])->where('cotio_subitem', 0);
 
     $queryAnalisis = CotioInstancia::with([
-        'tarea.cotizado',
+        'tarea.cotizado.cliente',
+        'tarea.cotizado.sucursal',
         'tarea.vehiculo',
         'vehiculo',
         'herramientas',
@@ -505,7 +510,11 @@ public function showTareas(Request $request)
     $cotizacionesIds = $todosAnalisis->pluck('cotio_numcoti')
         ->merge($muestras->pluck('cotio_numcoti'))
         ->unique();
-    $cotizaciones = Coti::whereIn('coti_num', $cotizacionesIds)->get()->keyBy('coti_num');
+    $cotizaciones = Coti::with(['cliente', 'sucursal'])
+        ->whereIn('coti_num', $cotizacionesIds)
+        ->get()
+        ->keyBy('coti_num');
+    CotizacionClienteEtiqueta::precargarEmpresasRelacionadas($cotizaciones->values());
 
     // Paginación
     $allTasks = $muestras->merge($todosAnalisis)->values();
@@ -520,9 +529,8 @@ public function showTareas(Request $request)
     if ($viewType === 'calendario') {
         $events = $muestras->map(function ($muestra) use ($user) {
             $descripcion = $muestra->cotio_descripcion ?? ($muestra->muestra->cotio_descripcion ?? 'Muestra sin descripción');
-            $empresa = $muestra->muestra && $muestra->muestra->cotizacion 
-                ? $muestra->muestra->cotizacion->coti_empresa 
-                : '';
+            $cotC = $muestra->muestra->cotizacion ?? null;
+            $empresa = $cotC ? CotizacionClienteEtiqueta::paraLista($cotC) : '';
             
             $estado = strtolower($muestra->cotio_estado ?? 'pendiente');
             $className = match ($estado) {
@@ -547,7 +555,7 @@ public function showTareas(Request $request)
                 ]),
                 'extendedProps' => [
                     'descripcion' => $descripcion,
-                    'empresa' => $empresa,
+                    'empresa' => $empresa !== '' ? $empresa : (string) (optional($cotC)->coti_empresa ?? ''),
                     'estado' => $estado,
                     'responsables' => $muestra->responsablesMuestreo->pluck('usu_nombre')->implode(', '),
                     'analisis_count' => $muestra->tareas->count()
@@ -761,6 +769,13 @@ public function showTareas(Request $request)
         // Obtener todas las tareas de la cotización
         $tareas = $cotizacion->tareas;
         }
+
+        $cotizacionModel->loadMissing('matriz');
+        $soloCanal = CotizacionCanalEnsayo::soloCanalUsuario(Auth::user());
+        if ($soloCanal) {
+            $matDesc = optional($cotizacionModel->matriz)->matriz_descripcion;
+            $tareas = CotizacionCanalEnsayo::filtrarTareasCotioPorCanal($tareas, $soloCanal, $matDesc);
+        }
     
         // Cargar instancias existentes con sus relaciones
         $instanciasExistentes = CotioInstancia::where('cotio_numcoti', $cotizacion->coti_num)
@@ -835,8 +850,9 @@ public function showTareas(Request $request)
 
         // Obtener empresa relacionada si existe
         $empresaRelacionada = null;
-        if ($cotizacion->coti_cli_empresa) {
-            $empresa = \App\Models\ClienteEmpresaRelacionada::find($cotizacion->coti_cli_empresa);
+        $idEmpresaRel = $cotizacion->coti_empresa_rel ?? $cotizacion->coti_cli_empresa;
+        if ($idEmpresaRel) {
+            $empresa = \App\Models\ClienteEmpresaRelacionada::find($idEmpresaRel);
             if ($empresa) {
                 $empresaRelacionada = $empresa;
             }
@@ -850,6 +866,58 @@ public function showTareas(Request $request)
                 ->first();
         }
 
+        // Condición de pago: priorizar la guardada en la cotización
+        $condicionPagoDescripcion = null;
+
+        $codigoCondicion = $cotizacion->coti_cond_pago ? trim($cotizacion->coti_cond_pago) : null;
+
+        // Caso especial: condición "CUOTAS" usa los campos de cuotas de la cotización
+        if ($codigoCondicion === 'CUOTAS') {
+            $partes = [];
+            $descCuota = trim((string) ($cotizacion->coti_cuota_desc ?? ''));
+            $cantCuotas = $cotizacion->coti_cuota_cant;
+            $montoIndiv = $cotizacion->coti_cuota_monto_indiv;
+            $montoTotal = $cotizacion->coti_cuota_monto_total;
+
+            if ($descCuota !== '') {
+                $partes[] = $descCuota;
+            }
+
+            if (!is_null($cantCuotas)) {
+                $textoCuotas = $cantCuotas . ' cuotas';
+                if (!is_null($montoIndiv)) {
+                    $textoCuotas .= ' de $' . number_format((float) $montoIndiv, 2, ',', '.');
+                }
+                $partes[] = $textoCuotas;
+            } elseif (!is_null($montoIndiv)) {
+                $partes[] = '$' . number_format((float) $montoIndiv, 2, ',', '.');
+            }
+
+            if (!is_null($montoTotal)) {
+                $partes[] = 'Total $' . number_format((float) $montoTotal, 2, ',', '.');
+            }
+
+            if (!empty($partes)) {
+                $condicionPagoDescripcion = 'Cuotas: ' . implode(' | ', $partes);
+            } else {
+                $condicionPagoDescripcion = 'Cuotas';
+            }
+        } elseif ($codigoCondicion) {
+            // pag_codigo suele venir con padding (CHAR). Comparar por trim para evitar que falle el match.
+            $registroCondicion = CondicionPago::whereRaw('LTRIM(RTRIM(pag_codigo)) = ?', [$codigoCondicion])->first();
+            if ($registroCondicion) {
+                $condicionPagoDescripcion = trim($registroCondicion->pag_descripcion ?? '');
+            }
+        }
+
+        if (!$condicionPagoDescripcion && $cliente) {
+            $condicionPagoDescripcion = optional($cliente->condicionPago)->pag_descripcion;
+        }
+
+        if (!$condicionPagoDescripcion) {
+            $condicionPagoDescripcion = 'Contra entrega';
+        }
+
         return view('cotizaciones.showDetalle', compact(
             'cotizacion',
             'tareas', // IMPORTANTE: Pasar $tareas a la vista para que use los items correctos de la versión
@@ -859,7 +927,8 @@ public function showTareas(Request $request)
             'descuentoTotalCliente',
             'sectorEtiqueta',
             'empresaRelacionada',
-            'razonSocialPredeterminada'
+            'razonSocialPredeterminada',
+            'condicionPagoDescripcion'
         ));
     }
 

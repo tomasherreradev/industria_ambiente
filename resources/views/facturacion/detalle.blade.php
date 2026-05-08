@@ -79,35 +79,31 @@
                             <dt class="col-sm-5">Número:</dt>
                             <dd class="col-sm-7"><strong>#{{ $factura->cotizacion->coti_num }}</strong></dd>
 
-                            <dt class="col-sm-5">Empresa:</dt>
-                            <dd class="col-sm-7">
-                                @php
-                                    $empresaRelacionadaFact = null;
-                                    if ($factura->cotizacion->coti_cli_empresa) {
-                                        $empresaRelacionadaFact = \App\Models\ClienteEmpresaRelacionada::find($factura->cotizacion->coti_cli_empresa);
-                                    }
-                                @endphp
-                                @if($empresaRelacionadaFact)
-                                    {{ $empresaRelacionadaFact->razon_social }}
-                                @else
-                                    {{ $factura->cotizacion->coti_empresa ?? 'N/A' }}
-                                @endif
-                            </dd>
+                            @php
+                                $factura->cotizacion?->loadMissing('cliente');
+                                $fiscalDet = $factura->cotizacion
+                                    ? \App\Support\CotizacionClienteEtiqueta::datosFacturacionFiscales($factura->cotizacion)
+                                    : null;
+                                $razonFact = $fiscalDet['razon_social'] ?? '';
+                                $cuitFact = $fiscalDet['cuit'] ?? '';
+                            @endphp
+                            <dt class="col-sm-5">Cliente (facturación):</dt>
+                            <dd class="col-sm-7">{{ $razonFact !== '' ? $razonFact : 'N/A' }}</dd>
 
                             <dt class="col-sm-5">CUIT:</dt>
-                            <dd class="col-sm-7">{{ $factura->cotizacion->coti_cuit ?? 'N/A' }}</dd>
+                            <dd class="col-sm-7">{{ $cuitFact !== '' ? $cuitFact : 'N/A' }}</dd>
 
                             <dt class="col-sm-5">Email:</dt>
-                            <dd class="col-sm-7">{{ $factura->cotizacion->coti_mail ?? 'N/A' }}</dd>
+                            <dd class="col-sm-7">{{ ($fiscalDet['email'] ?? '') !== '' ? $fiscalDet['email'] : 'N/A' }}</dd>
 
                             <dt class="col-sm-5">Dirección:</dt>
-                            <dd class="col-sm-7">{{ $factura->cotizacion->coti_direccioncli ?? 'N/A' }}</dd>
+                            <dd class="col-sm-7">{{ ($fiscalDet['domicilio'] ?? '') !== '' ? $fiscalDet['domicilio'] : 'N/A' }}</dd>
 
                             <dt class="col-sm-5">Localidad:</dt>
-                            <dd class="col-sm-7">{{ $factura->cotizacion->coti_localidad ?? 'N/A' }}</dd>
+                            <dd class="col-sm-7">{{ ($fiscalDet['localidad'] ?? '') !== '' ? $fiscalDet['localidad'] : 'N/A' }}</dd>
 
                             <dt class="col-sm-5">Partido:</dt>
-                            <dd class="col-sm-7">{{ $factura->cotizacion->coti_partido ?? 'N/A' }}</dd>
+                            <dd class="col-sm-7">{{ ($fiscalDet['provincia'] ?? '') !== '' ? $fiscalDet['provincia'] : 'N/A' }}</dd>
                         </dl>
                     @else
                         <div class="alert alert-warning">
@@ -237,6 +233,88 @@
             @endif
         </div>
     </div>
+    <!-- Notas de la Factura -->
+    <div class="card mt-4">
+        <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-sticky-note me-2"></i>Notas de la Factura</h5>
+            <button type="button" id="btnEditNotas" class="btn btn-sm btn-light">
+                <i class="fas fa-edit me-1"></i>Editar Notas
+            </button>
+        </div>
+        <div class="card-body">
+            <div id="notasDisplay" style="white-space: pre-wrap;">{{ $factura->observaciones ?: 'No hay notas registradas.' }}</div>
+            <div id="notasEdit" class="d-none">
+                <textarea id="notasTextarea" class="form-control mb-2" rows="3">{{ $factura->observaciones }}</textarea>
+                <div class="d-flex justify-content-end gap-2">
+                    <button type="button" id="btnCancelEdit" class="btn btn-sm btn-outline-secondary">Cancelar</button>
+                    <button type="button" id="btnSaveFacturaNotas" class="btn btn-sm btn-primary">Guardar Cambios</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const btnEdit = document.getElementById('btnEditNotas');
+            const btnCancel = document.getElementById('btnCancelEdit');
+            const btnSave = document.getElementById('btnSaveFacturaNotas');
+            const display = document.getElementById('notasDisplay');
+            const editDiv = document.getElementById('notasEdit');
+            const textarea = document.getElementById('notasTextarea');
+
+            btnEdit.addEventListener('click', function() {
+                display.classList.add('d-none');
+                editDiv.classList.remove('d-none');
+                btnEdit.classList.add('d-none');
+            });
+
+            btnCancel.addEventListener('click', function() {
+                display.classList.remove('d-none');
+                editDiv.classList.add('d-none');
+                btnEdit.classList.remove('d-none');
+                textarea.value = display.innerText === 'No hay notas registradas.' ? '' : display.innerText;
+            });
+
+            btnSave.addEventListener('click', function() {
+                const newNotas = textarea.value;
+                const originalHtml = btnSave.innerHTML;
+                
+                btnSave.disabled = true;
+                btnSave.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Guardando...';
+
+                fetch("{{ route('facturacion.update-notas', $factura->id) }}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                    },
+                    body: JSON.stringify({ observaciones: newNotas })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        display.innerText = newNotas || 'No hay notas registradas.';
+                        display.classList.remove('d-none');
+                        editDiv.classList.add('d-none');
+                        btnEdit.classList.remove('d-none');
+                        
+                        // Opcional: mostrar un mensaje de éxito temporal
+                        alert('Notas actualizadas. Recuerde que el PDF debe regenerarse para reflejar los cambios.');
+                    } else {
+                        alert('Error: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error al conectar con el servidor');
+                })
+                .finally(() => {
+                    btnSave.innerHTML = originalHtml;
+                    btnSave.disabled = false;
+                });
+            });
+        });
+    </script>
 
     <!-- Información Técnica (Solo para administradores) -->
     {{-- <div class="card mt-4">

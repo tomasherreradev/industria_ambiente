@@ -27,6 +27,9 @@
                     <option value="ventas" {{ request('rol') == 'ventas' ? 'selected' : '' }}>Ventas</option>
                     <option value="firmador" {{ request('rol') == 'firmador' ? 'selected' : '' }}>Firmador</option>
                     <option value="facturador" {{ request('rol') == 'facturador' ? 'selected' : '' }}>Facturador</option>
+                    <option value="coordinador_consul" {{ request('rol') == 'coordinador_consul' ? 'selected' : '' }}>Coord. Consultoría</option>
+                    <option value="asp" {{ request('rol') == 'asp' ? 'selected' : '' }}>ASP</option>
+                    <option value="clarke_fire" {{ request('rol') == 'clarke_fire' ? 'selected' : '' }}>Clarke Fire</option>
                 </select>
                 <button type="submit" class="btn btn-primary">Buscar</button>
                 @if(request('search') || request('rol'))
@@ -63,6 +66,9 @@
                     <option value="ventas" {{ request('rol') == 'ventas' ? 'selected' : '' }}>Ventas</option>
                     <option value="firmador" {{ request('rol') == 'firmador' ? 'selected' : '' }}>Firmador</option>
                     <option value="facturador" {{ request('rol') == 'facturador' ? 'selected' : '' }}>Facturador</option>
+                    <option value="coordinador_consul" {{ request('rol') == 'coordinador_consul' ? 'selected' : '' }}>Coord. Consultoría</option>
+                    <option value="asp" {{ request('rol') == 'asp' ? 'selected' : '' }}>ASP</option>
+                    <option value="clarke_fire" {{ request('rol') == 'clarke_fire' ? 'selected' : '' }}>Clarke Fire</option>
                 </select>
                 @if(request('search') || request('rol'))
                     <a href="{{ url('/users') }}" class="btn btn-sm btn-outline-secondary">Limpiar</a>

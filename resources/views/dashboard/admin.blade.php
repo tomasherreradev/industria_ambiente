@@ -2,9 +2,16 @@
 
 @section('content')
 <div class="container-fluid px-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
         <h1 class="mb-0">Panel de Control</h1>
-        <div class="text-muted">{{ now()->format('l, d F Y') }}</div>
+        <div class="d-flex align-items-center gap-3">
+            @if(Auth::user() && (int) Auth::user()->usu_nivel >= 900)
+                <a href="{{ route('admin.volumen-costeos') }}" class="btn btn-outline-primary btn-sm">
+                    Volumetría / costeos
+                </a>
+            @endif
+            <div class="text-muted">{{ now()->format('l, d F Y') }}</div>
+        </div>
     </div>
 
     {{-- Resumen General --}}
@@ -164,7 +171,12 @@
                                     <tbody>
                                         @forelse($muestrasProximas as $muestra)
                                         <tr>
-                                            <td class="ps-4 fw-bold">{{ $muestra->cotizacion->coti_num ?? 'N/A' }}</td>
+                                            <td class="ps-4 fw-bold">
+                                                {{ $muestra->cotizacion->coti_num ?? 'N/A' }}
+                                                @if($muestra->cotizacion && $muestra->cotizacion->coti_cuotas)
+                                                    <span class="badge bg-[#0dcaf0] text-white px-1 py-0 rounded-pill ms-1" style="font-size: 0.6rem; background-color: #0dcaf0;">CUOTAS</span>
+                                                @endif
+                                            </td>
                                             <td class="" style="max-width: 200px;" title="{{ $muestra->cotio_descripcion }}">
                                                 <a href="{{ route('muestras.ver', [
                                                     'cotizacion' => $muestra->cotizacion->coti_num,
@@ -222,7 +234,12 @@
                         @foreach($cotizacionesRecientes as $cotizacion)
                         <a href="{{ route('cotizaciones.ver-detalle', $cotizacion->coti_num) }}" class="list-group-item border-0 py-3 px-4">
                             <div class="d-flex justify-content-between align-items-start mb-1">
-                                <span class="fw-bold text-primary">#{{ $cotizacion->coti_num }}</span>
+                                <span class="fw-bold text-primary">
+                                    #{{ $cotizacion->coti_num }}
+                                    @if($cotizacion->coti_cuotas)
+                                        <span class="badge bg-[#0dcaf0] text-white px-2 py-1 rounded-pill ms-2" style="font-size: 0.65rem; background-color: #0dcaf0;">CUOTAS</span>
+                                    @endif
+                                </span>
                                 <span class="badge bg-{{ trim($cotizacion->coti_estado) == 'A' ? 'success' : 'secondary' }} text-white">
                                     {{ $cotizacion->coti_estado }}
                                 </span>

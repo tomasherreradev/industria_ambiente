@@ -164,11 +164,15 @@
         <div class="client-info">
             <div class="client-title">DATOS DEL CLIENTE</div>
             @if($factura->cotizacion)
-                <div><strong>Razón Social:</strong> {{ $factura->cotizacion->coti_empresa ?? 'N/A' }}</div>
-                <div><strong>CUIT:</strong> {{ $factura->cotizacion->coti_cuit ?? 'N/A' }}</div>
-                <div><strong>Dirección:</strong> {{ $factura->cotizacion->coti_direccioncli ?? 'N/A' }}</div>
-                <div><strong>Localidad:</strong> {{ $factura->cotizacion->coti_localidad ?? 'N/A' }}, {{ $factura->cotizacion->coti_partido ?? 'N/A' }}</div>
-                <div><strong>Email:</strong> {{ $factura->cotizacion->coti_mail ?? 'N/A' }}</div>
+                @php
+                    $factura->cotizacion->loadMissing('cliente');
+                    $fiscalTpl = \App\Support\CotizacionClienteEtiqueta::datosFacturacionFiscales($factura->cotizacion);
+                @endphp
+                <div><strong>Razón Social:</strong> {{ ($fiscalTpl['razon_social'] ?? '') !== '' ? $fiscalTpl['razon_social'] : 'N/A' }}</div>
+                <div><strong>CUIT:</strong> {{ ($fiscalTpl['cuit'] ?? '') !== '' ? $fiscalTpl['cuit'] : 'N/A' }}</div>
+                <div><strong>Dirección:</strong> {{ $fiscalTpl['domicilio'] !== '' ? $fiscalTpl['domicilio'] : 'N/A' }}</div>
+                <div><strong>Localidad:</strong> {{ $fiscalTpl['localidad'] !== '' ? $fiscalTpl['localidad'] : 'N/A' }}, {{ $fiscalTpl['provincia'] !== '' ? $fiscalTpl['provincia'] : 'N/A' }}</div>
+                <div><strong>Email:</strong> {{ $fiscalTpl['email'] !== '' ? $fiscalTpl['email'] : 'N/A' }}</div>
             @else
                 <div>Información del cliente no disponible</div>
             @endif

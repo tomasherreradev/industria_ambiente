@@ -73,7 +73,8 @@ class ItemsDataSheet implements FromArray, WithHeadings, WithStyles, WithColumnW
             'Unidades de medición',
             'Límite de detección',
             'Límite de cuantificación',
-            'Precio de venta'
+            'Precio de venta',
+            'Fecha importación original',
         ];
     }
 
@@ -87,7 +88,7 @@ class ItemsDataSheet implements FromArray, WithHeadings, WithStyles, WithColumnW
         $sheet->getRowDimension(1)->setRowHeight(45);
         
         // También puedes ajustar el padding de las celdas individualmente si es necesario
-        foreach (range('A', 'I') as $column) {
+        foreach (range('A', 'J') as $column) {
             $sheet->getStyle($column . '1')->getAlignment()->setVertical(Alignment::VERTICAL_CENTER);
         }
         
@@ -132,6 +133,7 @@ class ItemsDataSheet implements FromArray, WithHeadings, WithStyles, WithColumnW
             'G' => 20,  // Límite de detección
             'H' => 25,  // Límite de cuantificación
             'I' => 18,  // Precio de venta
+            'J' => 22,  // Fecha importación original (solo lectura en exportación)
         ];
     }
 
@@ -162,24 +164,25 @@ class ItemsEjemploSheet implements FromArray, WithHeadings, WithStyles, WithColu
                 '0.01',
                 '',
                 '9100',
+                '',
             ],
-            ['LÍQUIDO', 'AGUA', 'TEST2', 'EPA 17/OSHA 104', 'NIOSH 1453', 'ml', '4', '', '10000'],
-            ['LÍQUIDO', 'AGUA', 'TEST3', 'EPA 17/OSHA 104', 'NIOSH 1453', 'ml', '2', '', '10000'],
-            ['LÍQUIDO', 'AGUA', 'TEST4', 'EPA 17/OSHA 104', 'NIOSH 1453', 'ml', '3', '', '10000'],
-            ['LÍQUIDO', 'AGUA', 'TEST5', 'EPA 17/OSHA 104', 'NIOSH 1453', 'ml', '2', '', '10000'],
-            ['LÍQUIDO', 'AGUA', 'TEST6', 'EPA 17/OSHA 104', 'NIOSH 1453', 'ml', '1', '', '10000'],
-            ['LÍQUIDO', 'AGUA', 'TEST7', 'EPA 17/OSHA 104', 'NIOSH 1453', 'ml', '4', '', '10000'],
-            ['LÍQUIDO', 'AGUA', 'TEST8', 'EPA 17/OSHA 104', 'NIOSH 1453', 'ml', '5', '', '10000'],
-            ['LÍQUIDO', 'AGUA', 'TEST9', 'EPA 17/OSHA 104', 'NIOSH 1453', 'ml', '3', '', '10000'],
-            ['LÍQUIDO', 'AGUA', 'TEST10', 'EPA 17/OSHA 104', 'NIOSH 1453', 'ml', '3', '', '10000'],
-            ['SUELOS', 'ACIDEZ DE SUELO', 'ACIDEZ_2', 'SM 9060 - IRAM 29012', 'SM 4500 F D', 'mg/x', '1', '', '9510'],
-            ['SUELOS', 'ACIDEZ DE SUELO', 'ACIDEZ_3', 'SM 9060 - IRAM 29012', 'SM 4500 F D', 'mg/x', '4', '', '9510'],
-            ['SUELOS', 'ACIDEZ DE SUELO', 'ACIDEZ_4', 'SM 9060 - IRAM 29012', 'SM 4500 F D', 'mg/x', '3', '', '9510'],
-            ['SUELOS', 'ACIDEZ DE SUELO', 'ACIDEZ_5', 'SM 9060 - IRAM 29012', 'SM 4500 F D', 'mg/x', '55', '', '9510'],
-            ['SUELOS', 'ACIDEZ DE SUELO', 'ACIDEZ_6', 'SM 9060 - IRAM 29012', 'SM 4500 F D', 'mg/x', '3', '', '9510'],
-            ['SUELOS', 'ACIDEZ DE SUELO', 'ACIDEZ_7', 'SM 9060 - IRAM 29012', 'SM 4500 F D', 'mg/x', '4', '', '9510'],
-            ['SUELOS', 'ACIDEZ DE SUELO', 'ACIDEZ_8', 'SM 9060 - IRAM 29012', 'SM 4500 F D', 'mg/x', '1.5', '', '9510'],
-            ['SUELOS', 'ACIDEZ DE SUELO', 'ACIDEZ_9', 'SM 9060 - IRAM 29012', 'SM 4500 F D', 'mg/x', '1.5', '', '9510'],
+            ['LÍQUIDO', 'AGUA', 'TEST2', 'EPA 17/OSHA 104', 'NIOSH 1453', 'ml', '4', '', '10000', ''],
+            ['LÍQUIDO', 'AGUA', 'TEST3', 'EPA 17/OSHA 104', 'NIOSH 1453', 'ml', '2', '', '10000', ''],
+            ['LÍQUIDO', 'AGUA', 'TEST4', 'EPA 17/OSHA 104', 'NIOSH 1453', 'ml', '3', '', '10000', ''],
+            ['LÍQUIDO', 'AGUA', 'TEST5', 'EPA 17/OSHA 104', 'NIOSH 1453', 'ml', '2', '', '10000', ''],
+            ['LÍQUIDO', 'AGUA', 'TEST6', 'EPA 17/OSHA 104', 'NIOSH 1453', 'ml', '1', '', '10000', ''],
+            ['LÍQUIDO', 'AGUA', 'TEST7', 'EPA 17/OSHA 104', 'NIOSH 1453', 'ml', '4', '', '10000', ''],
+            ['LÍQUIDO', 'AGUA', 'TEST8', 'EPA 17/OSHA 104', 'NIOSH 1453', 'ml', '5', '', '10000', ''],
+            ['LÍQUIDO', 'AGUA', 'TEST9', 'EPA 17/OSHA 104', 'NIOSH 1453', 'ml', '3', '', '10000', ''],
+            ['LÍQUIDO', 'AGUA', 'TEST10', 'EPA 17/OSHA 104', 'NIOSH 1453', 'ml', '3', '', '10000', ''],
+            ['SUELOS', 'ACIDEZ DE SUELO', 'ACIDEZ_2', 'SM 9060 - IRAM 29012', 'SM 4500 F D', 'mg/x', '1', '', '9510', ''],
+            ['SUELOS', 'ACIDEZ DE SUELO', 'ACIDEZ_3', 'SM 9060 - IRAM 29012', 'SM 4500 F D', 'mg/x', '4', '', '9510', ''],
+            ['SUELOS', 'ACIDEZ DE SUELO', 'ACIDEZ_4', 'SM 9060 - IRAM 29012', 'SM 4500 F D', 'mg/x', '3', '', '9510', ''],
+            ['SUELOS', 'ACIDEZ DE SUELO', 'ACIDEZ_5', 'SM 9060 - IRAM 29012', 'SM 4500 F D', 'mg/x', '55', '', '9510', ''],
+            ['SUELOS', 'ACIDEZ DE SUELO', 'ACIDEZ_6', 'SM 9060 - IRAM 29012', 'SM 4500 F D', 'mg/x', '3', '', '9510', ''],
+            ['SUELOS', 'ACIDEZ DE SUELO', 'ACIDEZ_7', 'SM 9060 - IRAM 29012', 'SM 4500 F D', 'mg/x', '4', '', '9510', ''],
+            ['SUELOS', 'ACIDEZ DE SUELO', 'ACIDEZ_8', 'SM 9060 - IRAM 29012', 'SM 4500 F D', 'mg/x', '1.5', '', '9510', ''],
+            ['SUELOS', 'ACIDEZ DE SUELO', 'ACIDEZ_9', 'SM 9060 - IRAM 29012', 'SM 4500 F D', 'mg/x', '1.5', '', '9510', ''],
         ];
     }
 
@@ -195,13 +198,14 @@ class ItemsEjemploSheet implements FromArray, WithHeadings, WithStyles, WithColu
             'Límite de detección',
             'Límite de cuantificación',
             'Precio de venta',
+            'Fecha importación original',
         ];
     }
 
     public function styles(Worksheet $sheet)
     {
         $sheet->getRowDimension(1)->setRowHeight(45);
-        foreach (range('A', 'I') as $column) {
+        foreach (range('A', 'J') as $column) {
             $sheet->getStyle($column . '1')->getAlignment()->setVertical(Alignment::VERTICAL_CENTER);
         }
         return [
@@ -242,6 +246,7 @@ class ItemsEjemploSheet implements FromArray, WithHeadings, WithStyles, WithColu
             'G' => 20,
             'H' => 25,
             'I' => 18,
+            'J' => 22,
         ];
     }
 

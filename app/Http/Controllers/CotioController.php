@@ -597,7 +597,8 @@ public function asignarIdentificacionMuestra(Request $request)
             'cotio_item' => 'required',
             'instance_number' => 'required',
             'image_base64' => 'nullable|string',
-            'remove_image' => 'nullable|boolean'
+            'remove_image' => 'nullable|boolean',
+            'fecha_identificacion' => 'nullable|date',
         ]);
 
         Log::info('Datos recibidos:', $request->all());
@@ -609,13 +610,56 @@ public function asignarIdentificacionMuestra(Request $request)
             'instance_number' => $request->instance_number
         ])->firstOrFail();
 
+        $user = Auth::user();
+        $codUsuario = trim((string) $user->usu_codigo);
+        $privMuestreo = $user->hasRole('coordinador_muestreo') || (int) ($user->usu_nivel ?? 0) >= 900;
+        $esResponsableMuestreo = $instancia->responsablesMuestreo()
+            ->where('usu.usu_codigo', $codUsuario)
+            ->exists();
+
+        if (! $privMuestreo && ! $esResponsableMuestreo) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No tiene permiso para modificar la identificación de esta muestra.',
+            ], 403);
+        }
+
+        if ($instancia->cotio_estado === 'muestreado') {
+            return response()->json([
+                'success' => false,
+                'message' => 'La muestra ya está en estado muestreado; no se puede editar la identificación.',
+            ], 403);
+        }
+
+        // req_cadena_custodia vive en cotio (fila muestra subitem 0), no en cotio_instancias
+        $cotioMuestra = Cotio::where('cotio_numcoti', $instancia->cotio_numcoti)
+            ->where('cotio_item', $instancia->cotio_item)
+            ->where('cotio_subitem', 0)
+            ->first();
+        $reqCadenaCustodia = (bool) ($cotioMuestra?->req_cadena_custodia ?? false);
+
+        $esBorrador = $request->get('accion') === 'borrador';
+
+        // Coordinador / nivel 900 que no es responsable de campo: corrección administrativa sin cambiar flujo de estado
+        $esEdicionSoloCoordinador = $privMuestreo && ! $esResponsableMuestreo;
+        if ($esEdicionSoloCoordinador) {
+            $esBorrador = true;
+        }
+
+        if (!$esBorrador && $reqCadenaCustodia) {
+            $request->validate([
+                'nro_cadena' => 'required|string|max:100',
+            ]);
+        }
+
         $data = [
             'cotio_identificacion' => $request->cotio_identificacion,
             'nro_precinto' => $request->nro_precinto,
-            'nro_cadena' => $request->nro_cadena,
         ];
 
-        $esBorrador = $request->get('accion') === 'borrador';
+        if ($reqCadenaCustodia) {
+            $data['nro_cadena'] = $request->nro_cadena;
+        }
 
         if (!$esBorrador) {
             $data['cotio_estado'] = 'en revision muestreo';
@@ -700,6 +744,10 @@ public function asignarIdentificacionMuestra(Request $request)
                 'success' => false,
                 'message' => 'Error al guardar la imagen: '.$e->getMessage()
             ], 500);
+        }
+
+        if ($esEdicionSoloCoordinador && $request->filled('fecha_identificacion')) {
+            $data['fecha_identificacion'] = \Illuminate\Support\Carbon::parse($request->fecha_identificacion);
         }
 
         Log::info('Datos a actualizar:', $data);
@@ -1125,6 +1173,12 @@ public function updateResultado(Request $request, $cotio_numcoti, $cotio_item, $
         }
 
         // Update results
+        $valorSincronizado = $this->getValorSincronizado($instancia);
+        $esPrivilegiado = Auth::user() && (
+            in_array(Auth::user()->rol, ['coordinador', 'admin', 'coordinador_muestreo']) 
+            || (int) (Auth::user()->usu_nivel ?? 0) >= 900
+        );
+        
         if ($request->filled('resultado') && $instancia->resultado !== $request->resultado) {
             $instancia->resultado = $request->resultado;
             if (is_null($instancia->fecha_carga_resultado_1)) {
@@ -1146,7 +1200,20 @@ public function updateResultado(Request $request, $cotio_numcoti, $cotio_item, $
                 $instancia->fecha_carga_resultado_3 = now();
             }
         }
-        if ($request->filled('resultado_final') && $instancia->resultado_final !== $request->resultado_final) {
+
+        // Si es coordinador/admin, permitimos que el request sobrescriba el valor sincronizado
+        if ($esPrivilegiado && $request->filled('resultado_final')) {
+            $instancia->resultado_final = $request->resultado_final;
+            $instancia->responsable_resultado_final = Auth::user()->usu_codigo;
+            $instancia->fecha_carga_ot = now();
+        } elseif ($valorSincronizado !== null) {
+            // Para analistas normales, o si el coord no envió nada, forzamos sincronizado
+            $instancia->resultado_final = $valorSincronizado;
+            if (is_null($instancia->responsable_resultado_final)) {
+                $instancia->responsable_resultado_final = Auth::user()->usu_codigo;
+                $instancia->fecha_carga_ot = now();
+            }
+        } elseif ($request->filled('resultado_final') && $instancia->resultado_final !== $request->resultado_final) {
             $instancia->resultado_final = $request->resultado_final;
             $instancia->responsable_resultado_final = Auth::user()->usu_codigo;
             $instancia->fecha_carga_ot = now();
@@ -1243,6 +1310,8 @@ public function onlyUpdateResultado(Request $request, $cotio_numcoti, $cotio_ite
         }
 
         // Update other fields
+        $valorSincronizado = $this->getValorSincronizado($instancia);
+
         if ($request->filled('resultado') && $instancia->resultado !== $request->resultado) {
             $instancia->resultado = $request->resultado;
             if (is_null($instancia->fecha_carga_resultado_1)) {
@@ -1264,7 +1333,23 @@ public function onlyUpdateResultado(Request $request, $cotio_numcoti, $cotio_ite
                 $instancia->fecha_carga_resultado_3 = now();
             }
         }
-        if ($request->filled('resultado_final') && $instancia->resultado_final !== $request->resultado_final) {
+
+        $esPrivilegiado = Auth::user() && (
+            in_array(Auth::user()->rol, ['coordinador', 'admin', 'coordinador_muestreo']) 
+            || (int) (Auth::user()->usu_nivel ?? 0) >= 900
+        );
+
+        if ($esPrivilegiado && $request->filled('resultado_final')) {
+            $instancia->resultado_final = $request->resultado_final;
+            $instancia->responsable_resultado_final = Auth::user()->usu_codigo;
+            $instancia->fecha_carga_ot = now();
+        } elseif ($valorSincronizado !== null) {
+            $instancia->resultado_final = $valorSincronizado;
+            if (is_null($instancia->responsable_resultado_final)) {
+                $instancia->responsable_resultado_final = Auth::user()->usu_codigo;
+                $instancia->fecha_carga_ot = now();
+            }
+        } elseif ($request->filled('resultado_final') && $instancia->resultado_final !== $request->resultado_final) {
             $instancia->resultado_final = $request->resultado_final;
             $instancia->responsable_resultado_final = Auth::user()->usu_codigo;
             $instancia->fecha_carga_ot = now();
@@ -1462,7 +1547,8 @@ public function showTareasAll($cotio_numcoti, $cotio_item, $cotio_subitem = 0, $
             'instanceNumber' => $instance,
             'variables' => $instanciaMuestra->valoresVariables, // Pasamos solo las variables de la muestra principal
             'herramientasMuestra' => $herramientasMuestra, // Herramientas de la muestra principal
-            'todasHerramientas' => $todasHerramientas // Todas las herramientas disponibles
+            'todasHerramientas' => $todasHerramientas, // Todas las herramientas disponibles
+            'canalParaFiltrar' => request('canal')
         ]);
 
     } catch (\Exception $e) {
@@ -1708,7 +1794,7 @@ public function enableOt(Request $request)
         DB::beginTransaction();
         
         // Buscar la instancia específica usando el modelo Eloquent
-        $instancia = CotioInstancia::where('cotio_numcoti', $request->cotio_numcoti)
+        $instancia = CotioInstancia::with('muestra')->where('cotio_numcoti', $request->cotio_numcoti)
             ->where('cotio_item', $request->cotio_item)
             ->where('cotio_subitem', $request->cotio_subitem)
             ->where('instance_number', $request->instance)
@@ -1721,15 +1807,22 @@ public function enableOt(Request $request)
             ], 404);
         }
 
+        // Si es mediciones, no permitir habilitar OT por este flujo
+        if (optional($instancia->muestra)->cotio_canal_especial === 'mediciones') {
+            return redirect()->back()->with('error', 'Esta muestra de Mediciones debe pasar a Informes directamente.');
+        }
+
         // Generar número OT solo si es una muestra (cotio_subitem = 0)
         $instancia->enable_ot = true;
         $instancia->complete_muestreo = true;
         $instancia->cotio_estado_analisis = null;
         $instancia->es_priori = $request->es_priori ?? false;
 
-        // Solo asignar número OT si es una muestra y no tiene uno ya asignado
+        // Solo asignar número OT si es una muestra y no tiene uno ya asignado y no es canal especial
         if (($request->cotio_subitem == '0' || $request->cotio_subitem == 0) && !$instancia->otn) {
-            $instancia->otn = CotioInstancia::generarNumeroOT();
+            if ($instancia->debeLlevarOTN()) {
+                $instancia->otn = CotioInstancia::generarNumeroOT();
+            }
         }
 
         // Guardar la instancia
@@ -1815,4 +1908,58 @@ public function disableOt(Request $request)
 
 
 
+    /**
+     * Obtiene el valor sincronizado desde las mediciones de campo si la descripción coincide.
+     */
+    private function getValorSincronizado($instanciaAnalisis)
+    {
+        if (!$instanciaAnalisis || $instanciaAnalisis->cotio_subitem == 0) {
+            return null;
+        }
+
+        $instanciaMuestra = CotioInstancia::where([
+            'cotio_numcoti' => $instanciaAnalisis->cotio_numcoti,
+            'cotio_item' => $instanciaAnalisis->cotio_item,
+            'cotio_subitem' => 0,
+            'instance_number' => $instanciaAnalisis->instance_number,
+        ])->first();
+
+        if (!$instanciaMuestra) {
+            return null;
+        }
+
+        $mediciones = $instanciaMuestra->valoresVariables;
+        if ($mediciones->isEmpty()) {
+            return null;
+        }
+
+        $descNorm = $this->normalizeDescription($instanciaAnalisis->cotio_descripcion);
+
+        foreach ($mediciones as $medicion) {
+            if ($this->normalizeDescription($medicion->variable) === $descNorm) {
+                return $medicion->valor;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Normaliza una cadena para comparación (minúsculas, sin acentos, sin paréntesis).
+     */
+    private function normalizeDescription($str)
+    {
+        if (empty($str)) return '';
+        
+        $str = mb_strtolower($str, 'UTF-8');
+        // Quitar paréntesis y su contenido
+        $str = preg_replace('/\s*\(.*\)\s*/u', '', $str);
+        // Quitar acentos
+        $search  = ['á', 'é', 'í', 'ó', 'ú', 'ñ', 'ü'];
+        $replace = ['a', 'e', 'i', 'o', 'u', 'n', 'u'];
+        $str = str_replace($search, $replace, $str);
+        // Quitar cualquier caracter que no sea letra o número para máxima compatibilidad
+        $str = preg_replace('/[^a-z0-9]/u', '', $str);
+        return trim($str);
+    }
 }

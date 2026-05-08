@@ -23,7 +23,9 @@ class CotioItems extends Model
         'metodo_muestreo',
         'matriz_codigo',
         'unidad_medida',
-        'precio'
+        'precio',
+        'nota_imprimible',
+        'nota_interna',
     ];
 
     protected $casts = [
@@ -32,6 +34,16 @@ class CotioItems extends Model
         'precio' => 'decimal:2',
         'limite_cuantificacion' => 'decimal:6'
     ];
+
+    /**
+     * Notas predeterminadas del ítem
+     */
+    public function notasPredeterminadas()
+    {
+        return $this->hasMany(CotioItemsNota::class, 'cotio_item_id', 'id')
+                    ->where('activa', true)
+                    ->orderBy('orden');
+    }
 
     /**
      * Scope para obtener solo muestras (ensayos)
@@ -69,12 +81,18 @@ class CotioItems extends Model
     public function componentesAsociados()
     {
         return $this->belongsToMany(self::class, 'cotio_item_component', 'agrupador_id', 'componente_id')
+            ->withPivot('orden')
+            ->orderBy('cotio_item_component.orden')
+            ->orderBy('cotio_item_component.id')
             ->withTimestamps();
     }
 
     public function agrupadores()
     {
         return $this->belongsToMany(self::class, 'cotio_item_component', 'componente_id', 'agrupador_id')
+            ->withPivot(['orden', 'created_at'])
+            ->orderBy('cotio_item_component.orden')
+            ->orderBy('cotio_item_component.id')
             ->withTimestamps();
     }
 
@@ -110,5 +128,10 @@ class CotioItems extends Model
     public function metodoMuestreo()
     {
         return $this->belongsTo(Metodo::class, 'metodo_muestreo', 'metodo_codigo');
+    }
+
+    public function variables()
+    {
+        return $this->hasMany(Variable::class, 'cotio_item_id', 'id');
     }
 }

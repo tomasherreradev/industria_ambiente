@@ -56,6 +56,7 @@
                                     <div class="mt-2">
                                         <div class="small text-muted mb-1">
                                             <strong>Muestra: </strong> {{ $instanceNumber }}
+                                            · <strong>OT:</strong> {{ $instanciaMuestra->otn ?? '—' }}
                                         </div>
                                         @if($muestra)
                                             <div class="small text-muted mb-1">
@@ -99,7 +100,7 @@
                             </td>
                             <td class="d-none d-md-table-cell">
                                     {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }}
-                                    <div class="small text-muted">Muestra #{{ $instanciaMuestra->instance_number }}</div>
+                                    <div class="small text-muted">Muestra #{{ $instanciaMuestra->instance_number }} · OT {{ $instanciaMuestra->otn ?? '—' }}</div>
                             </td>
                             <td class="d-none d-md-table-cell">
                                 @if($analisis->isNotEmpty())

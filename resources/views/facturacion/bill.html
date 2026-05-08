@@ -2,197 +2,261 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Factura {{numero_factura}}</title>
     <style type="text/css">
-        * {
-            box-sizing: border-box;
-            font-family: Arial, sans-serif;
-            font-size: 13px;
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            padding: 0.2in;
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 10px;
+            color: #000;
         }
-        .bill-container {
-            width: 7.5in;
+        .factura-page {
+            max-width: 7.4in;
             margin: 0 auto;
-            border-collapse: collapse;
-            padding: 0.15in;
-        }
-        .bill-emitter-row td {
-            width: 50%;
-            border-bottom: 1px solid #000;
-            padding: 0.15in 0.25in;
-            vertical-align: top;
-            height: 1.5in;
-        }
-        .bill-emitter-row {
+            border: 1px solid #000;
+            padding: 0.12in 0.16in;
             position: relative;
         }
-        .bill-type-container {
+        .watermark {
             position: absolute;
-            top: 0.3in;
             left: 50%;
-            transform: translateX(-50%);
-            text-align: center;
+            top: 44%;
+            transform: translate(-50%, -50%);
+            width: 3.4in;
+            opacity: 0.07;
+            z-index: 0;
+            pointer-events: none;
         }
-        .bill-type {
-            border: 1px solid #000;
-            background: white;
-            width: 0.6in;
+        .watermark img { width: 100%; height: auto; display: block; }
+        .z1 { position: relative; z-index: 1; }
+        table.layout { width: 100%; border-collapse: collapse; }
+        .hdr-main td { vertical-align: top; padding: 0.07in 0.05in; }
+        .logo-cell { width: 38%; border-right: 1px solid #000; }
+        .tipo-cell { width: 18%; text-align: center; border-right: 1px solid #000; }
+        .fact-cell { width: 44%; }
+        .logo-cell img { max-height: 0.72in; max-width: 1.05in; display: block; margin-bottom: 0.05in; }
+        .empresa-nombre { font-size: 14px; font-weight: bold; margin: 0 0 0.03in 0; }
+        .empresa-sub { font-size: 8.5px; line-height: 1.25; margin: 0 0 0.05in 0; }
+        .empresa-datos { font-size: 8.5px; line-height: 1.35; }
+        .caja-tipo {
+            border: 2px solid #000;
+            width: 0.52in;
             height: 0.5in;
-            line-height: 0.5in;
-            text-align: center;
-            font-size: 40px;
-            font-weight: 600;
-        }
-        .text-lg {
-            font-size: 30px;
-        }
-        .text-center {
-            text-align: center;
-        }
-        .row { clear: both; }
-        .margin-b-0 { margin-bottom: 0px; }
-        .bill-row td {
-            padding: 0.1in 0.15in;
-        }
-        .bill-row td > div {
-            border-top: 1px solid #000;
-            border-bottom: 1px solid #000;
-            padding: 0.1in;
-        }
-        .period-table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        .period-table td {
-            padding: 0.05in;
-        }
-        .row-details table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        .row-details table td {
-            padding: 0.05in;
-        }
-        .row-details table tr:nth-child(1) {
-            border-top: 1px solid #000;
-            border-bottom: 1px solid #000;
-            background: #c0c0c0;
+            line-height: 0.46in;
+            margin: 0.06in auto 0.03in;
+            font-size: 34px;
             font-weight: bold;
             text-align: center;
         }
-        .row-details table tr + tr {
-            border-top: 1px solid #c0c0c0;
+        .cod-uno { font-size: 8.5px; text-align: center; margin-top: 0.02in; }
+        .tit-factura { font-size: 16px; font-weight: bold; margin: 0 0 0.06in 0; }
+        .fact-datos { font-size: 9.5px; line-height: 1.45; }
+        .fact-datos strong { font-weight: bold; }
+        .cliente-wrap {
+            border: 1px solid #000;
+            border-top: 1px solid #000;
+            padding: 0.08in 0.08in;
+            font-size: 9.5px;
+            line-height: 1.45;
         }
-        .text-right { text-align: right; }
-        .margin-b-10 { margin-bottom: 0.1in; }
-        .total-row td > div { border-width: 2px; }
-        .row-qrcode td { padding: 0.1in; }
-        #qrcode { width: 50%; }
+        .cliente-wrap table { width: 100%; border-collapse: collapse; }
+        .cliente-wrap td { padding: 0.02in 0.03in 0.03in 0; vertical-align: top; }
+        .cli-cod { float: right; font-weight: normal; }
+        .lbl { font-weight: bold; }
+        .bar-venta {
+            width: 100%;
+            border-collapse: collapse;
+            border: 1px solid #000;
+            border-top: none;
+            background: #fff;
+            font-size: 9.5px;
+        }
+        .bar-venta td {
+            padding: 0.05in 0.07in;
+            width: 33.33%;
+            border-right: 1px solid #000;
+            vertical-align: middle;
+        }
+        .bar-venta td:last-child { border-right: none; }
+        .items-wrap { position: relative; padding: 0.05in 0; }
+        .items { width: 100%; border-collapse: collapse; font-size: 9.5px; margin-top: 0.04in; }
+        .items th {
+            border: 1px solid #000;
+            padding: 0.05in 0.04in;
+            text-align: center;
+            font-weight: bold;
+            background: #e0e0e0;
+        }
+        .items td {
+            border: 1px solid #000;
+            padding: 0.045in 0.04in;
+            vertical-align: top;
+        }
+        .items tbody tr:nth-child(even) { background: #f7f7f7; }
+        .items .c-cant { text-align: right; width: 10%; }
+        .items .c-desc { text-align: left; width: 52%; }
+        .items .c-pu, .items .c-pt { text-align: right; width: 19%; }
+        .meta-trabajo {
+            margin-top: 0.1in;
+            font-size: 9.5px;
+            border-top: 2px solid #000;
+            padding-top: 0.08in;
+        }
+        .meta-trabajo td { padding: 0.02in 0.12in 0.02in 0; vertical-align: top; }
+        .meta-izq { line-height: 1.5; }
+        .totales-wrap { width: 100%; }
+        .totales { float: right; width: 44%; border-collapse: collapse; font-size: 9.5px; border: 1px solid #000; }
+        .totales td { padding: 0.04in 0.07in; border-bottom: 1px solid #000; }
+        .totales tr:nth-child(even) td:first-child { background: #ececec; }
+        .totales tr:nth-child(even) td:last-child { background: #f5f5f5; }
+        .totales td:first-child { text-align: left; background: #f0f0f0; font-weight: normal; }
+        .totales td:last-child { text-align: right; font-weight: normal; }
+        .totales tr:last-child td { border-bottom: none; }
+        .totales .tot-fin td { font-weight: bold; background: #d8d8d8 !important; border-top: 1px solid #000; }
+        .clear { clear: both; }
+        .leyenda-cambio { font-size: 8.5px; margin-top: 0.1in; font-style: italic; text-align: center; }
+        .pie-afip {
+            margin-top: 0.12in;
+            border: 1px solid #000;
+            padding: 0.08in 0.1in;
+            font-size: 8.5px;
+        }
+        .pie-afip table { width: 100%; border-collapse: collapse; }
+        .pie-afip .qr { width: 120px; vertical-align: middle; }
+        .pie-afip .qr img { width: 112px; height: 112px; display: block; }
+        .pie-afip .afip-mark { text-align: center; vertical-align: middle; padding: 0 0.08in; }
+        .pie-afip .afip-mark img { max-height: 36px; width: auto; display: inline-block; }
+        .pie-tit { font-weight: bold; font-size: 9px; margin-bottom: 0.03in; }
+        .pie-txt { font-size: 7.5px; line-height: 1.35; font-style: italic; text-align: left; }
+        .cae-line { width: 100%; border-collapse: collapse; margin-bottom: 0.06in; font-size: 9.5px; }
+        .cae-line td { padding: 0 0 0.04in 0; vertical-align: top; }
+        .cae-line td:last-child { text-align: right; }
     </style>
 </head>
 <body>
-    <table class="bill-container">
-        <tr>
-            <td colspan="2">
-                <div class="bill-type-container">
-                    <div class="bill-type">B</div>
-                </div>
-            </td>
-        </tr>
-        <tr class="bill-emitter-row">
-            <td style="padding-right: 0.45in;">
-                <div class="text-lg text-center">{{empresa_nombre}}</div>
-                <p><strong>Razón social:</strong> {{empresa_nombre}}</p>
-                <p><strong>Domicilio Comercial:</strong> {{empresa_direccion}}</p>
-                <p><strong>Condición Frente al IVA:</strong> Responsable Inscripto</p>
-            </td>
-            <td>
-                <div style="padding-left: 0.5in;">
-                    <div class="text-lg">Factura</div>
-                    <p><strong>Punto de Venta:</strong> {{punto_venta}}</p>
-                    <p><strong>Comp. Nro:</strong> {{comp_nro}}</p>
-                    <p><strong>Fecha de Emisión:</strong> {{fecha_emision}}</p>
-                    <p><strong>CUIT:</strong> {{empresa_cuit}}</p>
-                    <p><strong>Ingresos Brutos:</strong> {{empresa_iibb}}</p>
-                    <p><strong>Fecha de Inicio de Actividades:</strong> {{empresa_fecha_inicio}}</p>
-                </div>
-            </td>
-        </tr>
-        <tr class="bill-row">
-            <td colspan="2">
-                <div>
-                    <table class="period-table">
-                        <tr>
-                            <td style="width: 33.33%;"><strong>Período Facturado Desde:</strong> {{periodo_desde}}</td>
-                            <td style="width: 25%;"><strong>Hasta:</strong> {{periodo_hasta}}</td>
-                            <td style="width: 41.67%;"><strong>Fecha de Vto. para el pago:</strong> {{fecha_vencimiento_cae}}</td>
-                        </tr>
+<div class="factura-page">
+    <div class="watermark">{{empresa_logo_html}}</div>
+    <div class="z1">
+        <table class="layout hdr-main">
+            <tr>
+                <td class="logo-cell">
+                    {{empresa_logo_html}}
+                    <p class="empresa-nombre">{{empresa_nombre}}</p>
+                    <p class="empresa-sub">{{empresa_subtitulo}}</p>
+                    <div class="empresa-datos">
+                        {{empresa_direccion}}<br>
+                        {{empresa_contacto_linea}}
+                    </div>
+                    <p style="margin:0.06in 0 0 0; font-size:9.5px;"><strong>I.V.A.:</strong> {{empresa_condicion_iva}}</p>
+                </td>
+                <td class="tipo-cell">
+                    <div class="caja-tipo">{{tipo_comprobante}}</div>
+                    <div class="cod-uno">Cód. Nº: {{codigo_comprobante_afip}}</div>
+                </td>
+                <td class="fact-cell">
+                    <p class="tit-factura">{{titulo_factura}}</p>
+                    <div class="fact-datos">
+                        <p style="margin:0 0 0.03in 0;"><strong>Nº</strong> {{numero_factura}}</p>
+                        <p style="margin:0 0 0.03in 0;"><strong>Fecha:</strong> {{fecha_emision}}</p>
+                        <p style="margin:0 0 0.03in 0;"><strong>C.U.I.T.</strong> {{empresa_cuit}}</p>
+                        <p style="margin:0 0 0.03in 0;"><strong>Ing.Btos.</strong> {{empresa_iibb}}</p>
+                        <p style="margin:0;"><strong>Inicio Act.:</strong> {{empresa_fecha_inicio}}</p>
+                    </div>
+                </td>
+            </tr>
+        </table>
+
+        <div class="cliente-wrap">
+            <table>
+                <tr>
+                    <td colspan="2"><span class="lbl">Señor/es:</span> {{coti_empresa}}{{coti_codigo_cliente_bloque}}</td>
+                </tr>
+                <tr>
+                    <td colspan="2">{{coti_direccioncli}}</td>
+                </tr>
+                <tr>
+                    <td style="width:52%;"><span class="lbl">Localidad / Prov.:</span> {{coti_localidad_partido}}</td>
+                    <td style="text-align:left;"><span class="lbl">C.U.I.T.:</span> {{coti_cuit}} &nbsp; <span class="lbl">IVA:</span> {{coti_condicion_iva}}</td>
+                </tr>
+                <tr>
+                    <td><span class="lbl">Telefono:</span> {{coti_telefono}}</td>
+                    <td><span class="lbl">Zona:</span> {{cliente_zona}}</td>
+                </tr>
+                <tr>
+                    <td><span class="lbl">Mov.:</span> {{cliente_mov}}</td>
+                    <td><span class="lbl">Origen:</span> {{cliente_origen}} &nbsp; <span class="lbl">R:</span> {{cliente_r}} &nbsp; <span class="lbl">V:</span> {{cliente_v}}</td>
+                </tr>
+            </table>
+        </div>
+
+        <table class="layout bar-venta">
+            <tr>
+                <td><span class="lbl">Condiciones de Venta:</span> {{condiciones_venta}}</td>
+                <td><span class="lbl">Vto.:</span> {{fecha_vencimiento_pago}}</td>
+                <td><span class="lbl">Remito:</span> {{remito_o_ref}}</td>
+            </tr>
+        </table>
+
+        <div class="items-wrap">
+            <table class="items">
+                <thead>
+                    <tr>
+                        <th class="c-cant">CANTIDAD</th>
+                        <th class="c-desc">DESCRIPCION</th>
+                        <th class="c-pu">PRECIO UNITARIO</th>
+                        <th class="c-pt">PRECIO TOTAL</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{items_table}}
+                </tbody>
+            </table>
+        </div>
+
+        <table class="meta-trabajo layout">
+            <tr>
+                <td style="width:52%;" class="meta-izq">
+                    {{linea_cotiz_ot}}<br>
+                    <span class="lbl">Fecha de Trabajo:</span> {{fecha_trabajo}}<br>
+                    {{linea_oc_solic}}{{linea_refs_cotizacion}}
+                </td>
+                <td style="width:48%; vertical-align:top;">
+                    <table class="totales">
+                        <tr><td>Subtotal 1</td><td>{{neto}}</td></tr>
+                        <tr><td>Global</td><td>0,00</td></tr>
+                        <tr><td>Neto</td><td>{{neto}}</td></tr>
+                        <tr><td>I.V.A. ({{iva_alicuota}} %)</td><td>{{iva}}</td></tr>
+                        <tr><td>Neto NG.</td><td>0,00</td></tr>
+                        <tr class="tot-fin"><td>TOTAL</td><td>{{moneda_simbolo}} {{total}}</td></tr>
                     </table>
-                </div>
-            </td>
-        </tr>
-        <tr class="bill-row">
-            <td colspan="2">
-                <div>
-                    <p><strong>CUIL/CUIT:</strong> {{coti_cuit}}</p>
-                    <p><strong>Apellido y Nombre / Razón social:</strong> {{coti_empresa}}</p>
-                    <p><strong>Condición Frente al IVA:</strong> Consumidor final</p>
-                    <p><strong>Domicilio:</strong> {{coti_direccioncli}}</p>
-                    <p><strong>Condición de venta:</strong> Efectivo</p>
-                </div>
-            </td>
-        </tr>
-        <tr class="bill-row row-details">
-            <td colspan="2">
-                <div>
-                    <table>
-                        <tr>
-                            <td>Código</td>
-                            <td>Producto / Servicio</td>
-                            <td>Cantidad</td>
-                            <td>U. Medida</td>
-                            <td>Precio Unit.</td>
-                            <td>% Bonif.</td>
-                            <td>Imp. Bonif.</td>
-                            <td>Subtotal</td>
-                        </tr>
-                        {{items_table}}
-                    </table>
-                </div>
-            </td>
-        </tr>
-        <tr class="bill-row total-row">
-            <td colspan="2">
-                <div>
-                    <p style="text-align: right;"><strong>Subtotal: $</strong> {{neto}}</p>
-                    <p style="text-align: right;"><strong>Importe Otros Tributos: $</strong> {{iva}}</p>
-                    <p style="text-align: right;"><strong>Importe total: $</strong> {{total}}</p>
-                </div>
-            </td>
-        </tr>
-        <tr class="bill-row row-qrcode">
-            <td>
-                <div>
-                    <!-- <img id="qrcode" src="{{qr_code}}" alt="QR Code"> -->
-                </div>
-            </td>
-            <td>
-                <div>
-                    <p style="text-align: right; margin-bottom: 0.1in;"><strong>CAE Nº:</strong> {{cae}}</p>
-                    <p style="text-align: right;"><strong>Fecha de Vto. de CAE:</strong> {{fecha_vencimiento_cae}}</p>
-                </div>
-            </td>
-        </tr>
-        <tr class="bill-row row-details">
-            <td colspan="2">
-                <div>
-                    <p style="text-align: center; margin-bottom: 0.1in;">
-                        Generado con Afip SDK
-                        <img style="height: 20px; vertical-align: middle;" src="https://afipsdk.com/faviconx32.png" alt="📦">
-                    </p>
-                </div>
-            </td>
-        </tr>
-    </table>
+                </td>
+            </tr>
+        </table>
+        <div class="clear"></div>
+
+        {{leyenda_tipo_cambio_block}}
+        {{observaciones_block}}
+
+        <div class="pie-afip">
+            <table class="cae-line">
+                <tr>
+                    <td><strong>C.A.E.:</strong> {{cae}}</td>
+                    <td><strong>Vto. C.A.E.:</strong> {{fecha_vencimiento_cae}}</td>
+                </tr>
+            </table>
+            <table>
+                <tr>
+                    <td class="qr">{{qr_code_html}}</td>
+                    <td class="afip-mark">{{afip_logo_html}}</td>
+                    <td style="vertical-align: middle;">
+                        <div class="pie-tit">Comprobante Autorizado</div>
+                        <div class="pie-txt">Esta Administración Federal no se responsabiliza por los datos ingresados en el detalle de la operación</div>
+                    </td>
+                </tr>
+            </table>
+        </div>
+    </div>
 </body>
 </html>

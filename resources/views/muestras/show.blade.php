@@ -1,698 +1,938 @@
 @extends('layouts.app')
+
 <head>
     <title>Ver Cotización {{$cotizacion->coti_num}}</title>
 </head>
 
 @section('content')
-<div class="container py-4">
-    <a href="{{ url('/muestras') }}" class="btn btn-outline-secondary mb-4">← Volver a Muestras</a>
-    <h2 class="mb-4">Muestras de Cotización <span class="text-primary">{{ $cotizacion->coti_num }}</span></h2>
-    
-    @if (session('success'))
-        <div class="alert alert-success">
-            {{ session('success') }}
-        </div>
-    @endif
+    <div class="container py-4">
+        @php
+            $backUrl = url('/muestras');
+            if (isset($canalParaFiltrar)) {
+                switch ($canalParaFiltrar) {
+                    case 'consultoria':
+                        $backUrl = url('/consultoria');
+                        break;
+                    case 'asp':
+                        $backUrl = url('/asp');
+                        break;
+                    case 'clarke_fire':
+                        $backUrl = url('/clarke-fire');
+                        break;
+                }
+            }
+        @endphp
+        <a href="{{ $backUrl }}" class="btn btn-outline-secondary mb-4">← Volver</a>
+        <h2 class="mb-4">Muestras de Cotización <span class="text-primary">{{ $cotizacion->coti_num }}</span></h2>
 
-    @include('cotizaciones.info')
+        @if (session('success'))
+            <div class="alert alert-success">
+                {{ session('success') }}
+            </div>
+        @endif
 
-    <div class="d-lg-block">
-        <div class="row">
-            <div>
-                <div class="card shadow-sm mb-4">
-                    <div 
-                        class="card-header bg-primary text-white d-flex justify-content-between align-items-center" 
-                        style="cursor: pointer;" 
-                        onclick="toggleMuestras('muestras-pendientes-lg')"
-                    >
-                        <h5 class="mb-0">Muestras Pendientes</h5>
-                        <div class="d-flex align-items-center gap-2" onclick="event.stopPropagation();">
-                            @php
-                                $tiposParaSeleccionar = collect($agrupadas)
-                                    ->map(fn($a) => $a['categoria']->cotio_descripcion ?? '')
-                                    ->filter(fn($d) => $d !== '' && $d !== 'TRABAJO TECNICO EN CAMPO' && $d !== 'VIATICOS')
-                                    ->unique()
-                                    ->values()
-                                    ->toArray();
-                            @endphp
-                            <div class="dropdown">
-                                <button class="btn btn-sm btn-light dropdown-toggle" type="button" id="dropdownSeleccionarMuestras" data-bs-toggle="dropdown" aria-expanded="false">
-                                    <i class="fas fa-check-double me-1"></i> Seleccionar muestras
-                                </button>
-                                <ul id="menu-seleccionar-muestras" class="dropdown-menu dropdown-menu-end" aria-labelledby="dropdownSeleccionarMuestras">
-                                    <li><button type="button" class="dropdown-item" data-seleccion="todas"><i class="fas fa-list me-2"></i>Todas (disponibles)</button></li>
-                                    @if(count($tiposParaSeleccionar) > 0)
-                                        <li><hr class="dropdown-divider"></li>
-                                        @foreach($tiposParaSeleccionar as $tipo)
-                                            <li><button type="button" class="dropdown-item" data-seleccion="tipo" data-descripcion="{{ $tipo }}"><i class="fas fa-vial me-2"></i>{{ $tipo }}</button></li>
-                                        @endforeach
-                                    @endif
-                                </ul>
-                            </div>
-                            <x-heroicon-o-chevron-up id="chevron-muestras-pendientes-lg" class="text-white" style="width: 20px; height: 20px;" />
-                        </div>
-                    </div>
-                    <div id="muestras-pendientes-lg" class="card-body collapse-content">
-                        @if($tareas->isEmpty())
-                            <div class="alert alert-warning">
-                                No hay muestras registradas para esta cotización.
-                            </div>
-                        @else
-                            @php
-                                $mostradoTecnicoCampo = false;
-                                $mostradoViaticos = false;
-                            @endphp
-                            
-                            @foreach($agrupadas as $item)
+        @include('cotizaciones.info')
+
+        <div class="d-lg-block">
+            <div class="row">
+                <div>
+                    <div class="card shadow-sm mb-4">
+                        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center"
+                            style="cursor: pointer;" onclick="toggleMuestras('muestras-pendientes-lg')">
+                            <h5 class="mb-0">Muestras Pendientes</h5>
+                            <div class="d-flex align-items-center gap-2" onclick="event.stopPropagation();">
                                 @php
-                                    $categoria = $item['categoria'];
-                                    $descripcion = $categoria->cotio_descripcion;
+                                    $tiposParaSeleccionar = collect($agrupadas)
+                                        ->map(fn($a) => $a['categoria']->cotio_descripcion ?? '')
+                                        ->filter(fn($d) => $d !== '' && $d !== 'TRABAJO TECNICO EN CAMPO' && $d !== 'VIATICOS')
+                                        ->unique()
+                                        ->values()
+                                        ->toArray();
                                 @endphp
-                                
-                                @if($descripcion === 'TRABAJO TECNICO EN CAMPO' && !$mostradoTecnicoCampo)
-                                    <div class="mb-4">
-                                        <div class="card shadow-sm mi-tarjeta h-100">
-                                            <p class="card-header text-white d-flex justify-content-start align-items-center gap-2 flex-wrap bg-primary">
-                                                <x-heroicon-o-information-circle class="text-white" style="width: 20px; height: 20px;"/>
-                                                Visita a planta requerida
-                                            </p>
-                                        </div>
-                                    </div>
-                                    @php $mostradoTecnicoCampo = true; @endphp
-                                @elseif($descripcion === 'VIATICOS' && !$mostradoViaticos)
-                                    <div class="mb-4">
-                                        <div class="card shadow-sm mi-tarjeta h-100">
-                                            <p class="card-header text-white d-flex justify-content-start align-items-center gap-2 flex-wrap bg-primary">
-                                                <x-heroicon-o-information-circle class="text-white" style="width: 20px; height: 20px;"/>
-                                                Viaticos requeridos
-                                            </p>
-                                        </div>
-                                    </div>
-                                    @php $mostradoViaticos = true; @endphp
+                                <div class="dropdown">
+                                    <button class="btn btn-sm btn-light dropdown-toggle" type="button"
+                                        id="dropdownSeleccionarMuestras" data-bs-toggle="dropdown" aria-expanded="false">
+                                        <i class="fas fa-check-double me-1"></i> Seleccionar muestras
+                                    </button>
+                                    <ul id="menu-seleccionar-muestras" class="dropdown-menu dropdown-menu-end"
+                                        aria-labelledby="dropdownSeleccionarMuestras">
+                                        <li><button type="button" class="dropdown-item" data-seleccion="todas"><i
+                                                    class="fas fa-list me-2"></i>Todas (disponibles)</button></li>
+                                        @if(count($tiposParaSeleccionar) > 0)
+                                            <li>
+                                                <hr class="dropdown-divider">
+                                            </li>
+                                            @foreach($tiposParaSeleccionar as $tipo)
+                                                <li><button type="button" class="dropdown-item" data-seleccion="tipo"
+                                                        data-descripcion="{{ $tipo }}"><i
+                                                            class="fas fa-vial me-2"></i>{{ $tipo }}</button></li>
+                                            @endforeach
+                                        @endif
+                                    </ul>
+                                </div>
+                                @if(empty($cotizacion->cancelada))
+                                    <button type="button" style="background-color: #b45050; color: white;"
+                                        class="btn btn-sm btn-outline-danger"
+                                        onclick="cancelarMuestreo({{ $cotizacion->coti_num }})">
+                                        <i class="fas fa-ban me-1"></i> Cancelar muestreo
+                                    </button>
                                 @endif
-                            @endforeach
-                    
-                        @foreach($agrupadas as $item)
-                            @php
-                                $categoria = $item['categoria'];
-                                $requiereMuestreo = $categoria->requiere_muestreo;
-                                $instancia = $item['instancia'];
-                                $tareasItem = $item['tareas'];
-                                // dd($tareasItem);
-                                $responsables = $item['responsables'] ?? collect(); // Asegurar que siempre haya una colección
-                                $descripcion = $categoria->cotio_descripcion;
-                                $isTecnicoCampo = $descripcion === 'TRABAJO TECNICO EN CAMPO';
-                                $isViaticos = $descripcion === 'VIATICOS';
-                        
-                                // Determinar clase de fondo según estado
-                                $headerClass = $categoria->enable_ot ? 'bg-warning' : 'bg-secondary';
-                                if ($instancia->active_muestreo && $instancia->fecha_muestreo) {
-                                    $headerClass = 'bg-success';
-                                }
-                        
-                                if($instancia->cotio_estado == 'suspension') {
-                                    $headerClass = 'bg-danger';
-                                }
-                            @endphp
-                        
-                            @if(!$isTecnicoCampo && !$isViaticos)
-                            @php
-                                $estado = $instancia->cotio_estado;
-                                $badgeClass = match ($estado) {
-                                    'pendiente' => 'warning',
-                                    'coordinado muestreo' => 'warning',
-                                    'coordinado analisis' => 'warning',
-                                    'en proceso' => 'info',
-                                    'en revision muestreo' => 'info',
-                                    'en revision analisis' => 'info',
-                                    'finalizado' => 'success',
-                                    'muestreado' => 'success',
-                                    'analizado' => 'success',
-                                    'suspension' => 'danger',
-                                    default => 'secondary'
-                                };
-                            @endphp
-                                <div class="mb-4">
-                                    <div class="card shadow-sm mi-tarjeta h-100" @if($instancia->es_priori) style="border: 1px solid #FFC107;" @endif>
-                                        <!-- Encabezado de la tarjeta -->
-                                        <div class="card-header text-white d-flex justify-content-between align-items-center flex-wrap {{ $headerClass }} {{ $instancia->active_ot ? 'bg-success' : '' }}">
-                                            <div class="d-flex align-items-center gap-2 flex-wrap">
-                                                <!-- Checkbox principal -->
-                                                <input
-                                                    type="checkbox"
-                                                    class="form-check-input categoria-checkbox"
-                                                    data-item="{{ $categoria->original_item }}"
-                                                    data-instance="{{ $instancia->instance_number }}"
-                                                    data-descripcion="{{ $descripcion }}"
-                                                    onchange="toggleTareas(this)"
-                                                    @if($instancia->active_muestreo) checked @endif
-                                                    @if($instancia->enable_ot) disabled @endif
-                                                />
-                                            
-                                                
-                                                <!-- Información principal -->
-                                                <div class="d-flex flex-column">
-                                                    <a 
-                                                        href="{{ route('muestras.ver', [
-                                                            'cotizacion' => $cotizacion->coti_num, 
-                                                            'item' => $categoria->original_item,
-                                                            'instance' => $instancia->instance_number
-                                                        ]) }}" 
-                                                        class="text-decoration-none {{ $categoria->enable_ot ? 'text-dark' : 'text-white'}}"
-                                                    >
-                                                        <strong @if($instancia->es_priori) style="color: #FFC107;" @endif>
-                                                            @if($instancia->es_priori)
-                                                                <x-heroicon-o-star style="width: 18px; height: 18px;" />
-                                                            @endif
-                                                            {{ $descripcion }}
-                                                        </strong> 
-                                                        <span class="ms-2">(Muestra {{ $instancia->instance_number }} / {{ $categoria->cotio_cantidad ?? '-' }})</span>
-                                                        @if($instancia->active_ot)
-                                                            <span class="ms-2">(Esta muestra se encuentra en una Orden de Trabajo)</span>
-                                                        @endif
-                                                    </a>
-                                                    
-                                                    @if($instancia->active_muestreo && $instancia->fecha_muestreo)
-                                                        <div class="d-flex flex-column mt-1">
-                                                            <small class="text-light">
-                                                                Coordinado el: {{ $instancia->fecha_muestreo->format('d/m/Y H:i') }}
-                                                                @if($instancia->coordinador)
-                                                                    por {{ $instancia->coordinador->usu_descripcion }}
-                                                                @endif
-                                                            </small>
-                                                            <small class="text-light">
-                                                                Fecha de inicio: {{ $instancia->fecha_inicio_muestreo ? $instancia->fecha_inicio_muestreo->format('d/m/Y H:i') : 'No definida' }}
-                                                            </small>
-                                                        </div>
-                                                    @endif
-                                                    
-                                                    <!-- Mostrar responsables asignados -->
-                                                    @if($responsables->isNotEmpty())
-                                                        <div class="mt-1">
-                                                            <small class="text-light">Muestreadores:</small>
-                                                            <div class="d-flex flex-wrap gap-1">
-                                                                @foreach($responsables as $responsable)
-                                                                    <span class="badge bg-info">
-                                                                        {{ $responsable->usu_descripcion }}
-                                                                        @if($instancia->enable_ot == false)
-                                                                            <button type="button" 
-                                                                                class="btn-close btn-close-white btn-sm ms-1" 
-                                                                                style="font-size: 0.5rem;"
-                                                                                onclick="removerResponsable(event, {{ $instancia->id }}, '{{ $responsable->usu_codigo }}')"
-                                                                                title="Remover muestreador">
-                                                                            </button>
-                                                                        @endif
-                                                                    </span>
-                                                                @endforeach
-                                                            </div>
-                                                        </div>
-                                                    @endif
-                                                </div>
-                                            </div>
-                        
-                                            <!-- Acciones adicionales -->
-                                            <div class="d-flex align-items-center gap-2 mt-2 mt-md-0">
-                                                <div>
-                                                    <div class="d-flex align-items-center gap-1">
-                                                        <p class="mb-0 badge bg-{{ $badgeClass }} ms-2">
-                                                            {{ ucfirst($instancia->cotio_estado) }}
-                                                        </p>
-                                                        @if($instancia->cotio_estado == 'coordinado muestreo' && $instancia->enable_ot == false)
-                                                            <button type="button" class="btn btn-sm btn-outline-warning" 
-                                                                    data-bs-toggle="modal" 
-                                                                    data-bs-target="#recoordinarModal"
-                                                                    data-instancia="{{ $instancia->id }}"
-                                                                    data-cotizacion="{{ $cotizacion->coti_num }}"
-                                                                    data-item="{{ $instancia->cotio_item }}"
-                                                                    data-descripcion="{{ $categoria->cotio_descripcion ?? $instancia->cotio_descripcion ?? '' }}"
-                                                                    data-instance="{{ $instancia->instance_number }}">
-                                                                Recoordinar
-                                                            </button>
-                                                        @endif
-                                                        {{-- DEBUG: Rol usuario: "{{ Auth::user()->rol }}", Estado instancia: "{{ $instancia->cotio_estado }}" --}}
-                                                        @php
-                                                            $userRol = trim(Auth::user()->rol ?? '');
-                                                            $instanciaEstado = trim($instancia->cotio_estado ?? '');
-                                                            $mostrarSuspender = ($userRol == 'coordinador_muestreo' && $instanciaEstado == 'coordinado muestreo');
-                                                        @endphp
-                                                        @if($mostrarSuspender)
-                                                            <button type="button" class="btn btn-sm btn-warning" 
-                                                                    data-bs-toggle="modal" 
-                                                                    data-bs-target="#suspenderModal{{ $instancia->id }}">
-                                                                <i class="fas fa-pause me-1"></i> Suspender
-                                                            </button>
-                                                        @endif
-                                                    </div>
-                                                </div>
+                                <x-heroicon-o-chevron-up id="chevron-muestras-pendientes-lg" class="text-white"
+                                    style="width: 20px; height: 20px;" />
+                            </div>
+                        </div>
+                        <div id="muestras-pendientes-lg" class="card-body collapse-content">
+                            @if($tareas->isEmpty())
+                                <div class="alert alert-warning">
+                                    No hay muestras registradas para esta cotización.
+                                </div>
+                            @else
+                                @php
+                                    $mostradoTecnicoCampo = false;
+                                    $mostradoViaticos = false;
+                                @endphp
 
-                                                @if(!$requiereMuestreo && !$instancia->enable_ot && (empty($instancia->cotio_estado) || $instancia->cotio_estado == 'pendiente'))
-                                                @elseif(!$requiereMuestreo && $instancia->enable_ot)
-                                                    <button 
-                                                        type="button" 
-                                                        onclick="quitarDirectoAOT({{ $instancia }})" 
-                                                        class="btn btn-danger" 
-                                                        data-bs-toggle="tooltip" 
-                                                        title="Quitar esta muestra de la Orden de Trabajo"
-                                                    >
-                                                        Quitar de OT
-                                                    </button>
-                                                @elseif($requiereMuestreo && !$instancia->enable_ot)
-                                                    <span class="ms-2">(Debe pasar por muestreo)</span>
-                                                @endif
-                                            
-                                                {{-- @dd($instancia) --}}
-                                                {{-- @if(!$instancia->active_ot) --}}
-                                                    <a 
-                                                        href="#"
-                                                        class="text-decoration-none"
-                                                        title="Generar CT para esta muestra"
-                                                        data-url="{{ route('qr.universal', [
-                                                        'cotio_numcoti' => $cotizacion->coti_num, 
-                                                        'cotio_item' => $categoria->original_item,
-                                                        'cotio_subitem' => 0,
-                                                        'instance' => $instancia->instance_number
-                                                    ]) }}"
-                                                        data-coti="{{ $cotizacion->coti_num }}"
-                                                        data-categoria="{{ $descripcion }}"
-                                                        data-instance="{{ $instancia->instance_number }}"
-                                                        data-fechaMuestreo="{{ $instancia->fecha_muestreo }}"
-                                                        onclick="generateQr(this)"
-                                                    >
-                                                        <x-heroicon-o-qr-code class="text-white" style="width: 24px; height: 24px;"/>
-                                                    </a>
-                                                {{-- @endif --}}
-                        
+                                @foreach($agrupadas as $item)
+                                    @php
+                                        $categoria = $item['categoria'];
+                                        $descripcion = $categoria->cotio_descripcion;
+                                    @endphp
+
+                                    @if($descripcion === 'TRABAJO TECNICO EN CAMPO' && !$mostradoTecnicoCampo)
+                                        <div class="mb-4">
+                                            <div class="card shadow-sm mi-tarjeta h-100">
+                                                <p
+                                                    class="card-header text-white d-flex justify-content-start align-items-center gap-2 flex-wrap bg-primary">
+                                                    <x-heroicon-o-information-circle class="text-white"
+                                                        style="width: 20px; height: 20px;" />
+                                                    Visita a planta requerida
+                                                </p>
                                             </div>
                                         </div>
-                        
-                                        <!-- Cuerpo de la tarjeta -->
-                                        <div class="card-body">
-                                            @if(count($tareasItem) > 0)
-                                                <ul class="list-group">
-                                                    @foreach($tareasItem as $tarea)
-                                                        <li class="list-group-item">
-                                                            <div class="d-flex justify-content-between align-items-center">
-                                                                <div class="d-flex align-items-center">
-                                                                    <!-- Checkbox de análisis -->
-                                                                    <input 
-                                                                        type="checkbox"
-                                                                        class="form-check-input tarea-checkbox me-2" 
-                                                                        name="cotio_items[]"
-                                                                        value="{{ $tarea->original_item }}-{{ $tarea->cotio_subitem }}-{{ $instancia->instance_number }}"
-                                                                        data-item="{{ $tarea->original_item }}"
-                                                                        data-subitem="{{ $tarea->cotio_subitem }}"
+                                        @php $mostradoTecnicoCampo = true; @endphp
+                                    @elseif($descripcion === 'VIATICOS' && !$mostradoViaticos)
+                                        <div class="mb-4">
+                                            <div class="card shadow-sm mi-tarjeta h-100">
+                                                <p
+                                                    class="card-header text-white d-flex justify-content-start align-items-center gap-2 flex-wrap bg-primary">
+                                                    <x-heroicon-o-information-circle class="text-white"
+                                                        style="width: 20px; height: 20px;" />
+                                                    Viaticos requeridos
+                                                </p>
+                                            </div>
+                                        </div>
+                                        @php $mostradoViaticos = true; @endphp
+                                    @endif
+                                @endforeach
+
+                                @foreach($agrupadas as $item)
+                                    @php
+                                        $categoria = $item['categoria'];
+                                        $requiereMuestreo = $categoria->requiere_muestreo;
+                                        $instancia = $item['instancia'];
+                                        $tareasItem = $item['tareas'];
+                                        // dd($tareasItem);
+                                        $responsables = $item['responsables'] ?? collect(); // Asegurar que siempre haya una colección
+                                        $descripcion = $categoria->cotio_descripcion;
+                                        $isTecnicoCampo = $descripcion === 'TRABAJO TECNICO EN CAMPO';
+                                        $isViaticos = $descripcion === 'VIATICOS';
+
+                                        // Determinar clase de fondo según estado
+                                        $headerClass = $categoria->enable_ot ? 'bg-warning' : 'bg-secondary';
+                                        if ($instancia->active_muestreo && $instancia->fecha_muestreo) {
+                                            $headerClass = 'bg-success';
+                                        }
+
+                                        if ($instancia->cotio_estado == 'suspension') {
+                                            $headerClass = 'bg-danger';
+                                        }
+
+                                        // Parsear notas internas de la muestra (JSON o formato antiguo simple)
+                                        $notasInternas = [];
+                                        if (!empty($categoria->cotio_nota_contenido)) {
+                                            try {
+                                                $notasParsed = json_decode($categoria->cotio_nota_contenido, true);
+                                                if (is_array($notasParsed)) {
+                                                    $notasInternas = collect($notasParsed)->filter(function ($nota) {
+                                                        return isset($nota['tipo']) && $nota['tipo'] === 'interna';
+                                                    })->values()->toArray();
+                                                } else {
+                                                    // Formato antiguo: nota simple
+                                                    if (!empty($categoria->cotio_nota_tipo) && $categoria->cotio_nota_tipo === 'interna') {
+                                                        $notasInternas = [['tipo' => 'interna', 'contenido' => $categoria->cotio_nota_contenido]];
+                                                    }
+                                                }
+                                            } catch (\Exception $e) {
+                                                // No es JSON, es formato antiguo
+                                                if (!empty($categoria->cotio_nota_tipo) && $categoria->cotio_nota_tipo === 'interna') {
+                                                    $notasInternas = [['tipo' => 'interna', 'contenido' => $categoria->cotio_nota_contenido]];
+                                                }
+                                            }
+                                        }
+                                        // Fallback: si la nota es interna pero el JSON no trae tipo por ítem
+                                        if (empty($notasInternas) && !empty($categoria->cotio_nota_tipo) && $categoria->cotio_nota_tipo === 'interna') {
+                                            $notasInternas = [['tipo' => 'interna', 'contenido' => $categoria->cotio_nota_contenido]];
+                                        }
+                                        $tieneNotaInterna = !empty($notasInternas);
+                                    @endphp
+
+                                    @if(!$isTecnicoCampo && !$isViaticos)
+                                                    @php
+                                                        $estado = $instancia->cotio_estado;
+                                                        $badgeClass = match ($estado) {
+                                                            'pendiente' => 'warning',
+                                                            'coordinado muestreo' => 'warning',
+                                                            'coordinado analisis' => 'warning',
+                                                            'en proceso' => 'info',
+                                                            'en revision muestreo' => 'info',
+                                                            'en revision analisis' => 'info',
+                                                            'finalizado' => 'success',
+                                                            'muestreado' => 'success',
+                                                            'analizado' => 'success',
+                                                            'suspension' => 'danger',
+                                                            default => 'secondary'
+                                                        };
+                                                    @endphp
+                                                    <div class="mb-4">
+                                                        <div class="card shadow-sm mi-tarjeta h-100" @if($instancia->es_priori)
+                                                        style="border: 1px solid #FFC107;" @endif>
+                                                            <!-- Encabezado de la tarjeta -->
+                                                            <div
+                                                                class="card-header text-white d-flex justify-content-between align-items-center flex-wrap {{ $headerClass }} {{ $instancia->active_ot ? 'bg-success' : '' }}">
+                                                                <div class="d-flex align-items-center gap-2 flex-wrap">
+                                                                    <!-- Checkbox principal -->
+                                                                    <input type="checkbox" class="form-check-input categoria-checkbox"
+                                                                        data-item="{{ $categoria->original_item }}"
                                                                         data-instance="{{ $instancia->instance_number }}"
-                                                                        onchange="actualizarEstadoTarea(this)"
-                                                                        @if(filter_var($tarea->instancia->active_muestreo, FILTER_VALIDATE_BOOLEAN)) checked @endif
-                                                                        @if($instancia->enable_ot) disabled @endif
-                                                                    />
-                                                                
-                                                                
-                                                                    
-                                                                    <div class="d-flex gap-2 align-items-start justify-content-center">
-                                                                        {{ $tarea->cotio_descripcion }}
-                                                                        <div>
-                                                                            @php
-                                                                                $estado = $tarea->instancia->cotio_estado;
-                                                                                $badgeClass = match ($estado) {
-                                                                                    'pendiente' => 'warning',
-                                                                                    'coordinado muestreo' => 'warning',
-                                                                                    'coordinado analisis' => 'warning',
-                                                                                    'en proceso' => 'info',
-                                                                                    'en revision muestreo' => 'info',
-                                                                                    'en revision analisis' => 'info',
-                                                                                    'finalizado' => 'success',
-                                                                                    'muestreado' => 'success',
-                                                                                    'analizado' => 'success',
-                                                                                    'suspension' => 'danger',
-                                                                                    default => 'secondary'
-                                                                                };
-                                                                            @endphp
-                                                                            <p class="mb-0 badge bg-{{ $badgeClass }} ms-2">
-                                                                                {{ ucfirst($tarea->instancia->cotio_estado) }}
-                                                                            </p>
+                                                                        data-descripcion="{{ $descripcion }}" onchange="toggleTareas(this)"
+                                                                        @if($instancia->active_muestreo && $instancia->cotio_estado !== 'completado')
+                                                                        checked @endif @if(($instancia->enable_ot && !in_array($canalParaFiltrar ?? '', ['consultoria', 'asp', 'clarke_fire'])) || $instancia->cotio_estado === 'completado') disabled @endif />
+
+
+                                                                    <!-- Información principal -->
+                                                                    <div class="d-flex flex-column">
+                                                                        <div class="d-flex align-items-center flex-wrap gap-2">
+                                                                            <a href="{{ route('muestras.ver', [
+                                            'cotizacion' => $cotizacion->coti_num,
+                                            'item' => $categoria->original_item,
+                                            'instance' => $instancia->instance_number,
+                                            'canal' => $canalParaFiltrar ?? null
+                                        ]) }}"
+                                                                                class="text-decoration-none d-inline-flex align-items-center flex-wrap {{ $categoria->enable_ot ? 'text-dark' : 'text-white'}}">
+                                                                                <strong @if($instancia->es_priori) style="color: #FFC107;" @endif>
+                                                                                    @if($instancia->es_priori)
+                                                                                        <x-heroicon-o-star style="width: 18px; height: 18px;" />
+                                                                                    @endif
+                                                                                    {{ $descripcion }}
+                                                                                </strong>
+                                                                                <span class="ms-2">(muestra {{ $instancia->instance_number }} /
+                                                                                    {{ $categoria->cotio_cantidad ?? '-' }})</span>
+                                                                                @if($instancia->active_ot)
+                                                                                    <span class="ms-2">(Esta muestra se encuentra en una Orden de
+                                                                                        Trabajo)</span>
+                                                                                @endif
+                                                                            </a>
+
+                                                                            @if($tieneNotaInterna)
+                                                                                <button type="button"
+                                                                                    class="btn btn-sm {{ $categoria->enable_ot ? 'btn-outline-dark' : 'btn-outline-light' }} p-1"
+                                                                                    data-bs-toggle="modal"
+                                                                                    data-bs-target="#notaInternaModal{{ $instancia->id }}"
+                                                                                    title="Ver nota interna">
+                                                                                    <x-heroicon-o-document-text style="width: 18px; height: 18px;"
+                                                                                        class="{{ $categoria->enable_ot ? 'text-dark' : 'text-white' }}" />
+                                                                                </button>
+                                                                            @endif
                                                                         </div>
-                                                                        @if($tarea->instancia->resultado)
-                                                                            <span class="badge bg-primary ms-2">Resultado: {{ $tarea->instancia->resultado }}</span>
+
+                                                                        @if($instancia->active_muestreo && $instancia->fecha_muestreo)
+                                                                            <div class="d-flex flex-column mt-1">
+                                                                                <small class="text-light">
+                                                                                    Coordinado el: {{ $instancia->fecha_muestreo->format('d/m/Y H:i') }}
+                                                                                    @if($instancia->coordinador)
+                                                                                        por {{ $instancia->coordinador->usu_descripcion }}
+                                                                                    @endif
+                                                                                </small>
+                                                                                <small class="text-light">
+                                                                                    Fecha de inicio:
+                                                                                    {{ $instancia->fecha_inicio_muestreo ? $instancia->fecha_inicio_muestreo->format('d/m/Y H:i') : 'No definida' }}
+                                                                                </small>
+                                                                            </div>
+                                                                        @endif
+
+                                                                        <!-- Mostrar responsables asignados -->
+                                                                        @if($responsables->isNotEmpty())
+                                                                            <div class="mt-1">
+                                                                                <small class="text-light">Muestreadores:</small>
+                                                                                <div class="d-flex flex-wrap gap-1">
+                                                                                    @foreach($responsables as $responsable)
+                                                                                        <span class="badge bg-info">
+                                                                                            {{ $responsable->usu_descripcion }}
+                                                                                            @if($instancia->enable_ot == false)
+                                                                                                <button type="button"
+                                                                                                    class="btn-close btn-close-white btn-sm ms-1"
+                                                                                                    style="font-size: 0.5rem;"
+                                                                                                    onclick="removerResponsable(event, {{ $instancia->id }}, '{{ $responsable->usu_codigo }}')"
+                                                                                                    title="Remover muestreador">
+                                                                                                </button>
+                                                                                            @endif
+                                                                                        </span>
+                                                                                    @endforeach
+                                                                                </div>
+                                                                            </div>
                                                                         @endif
                                                                     </div>
                                                                 </div>
-                                                                
-                                                                @if(filter_var($tarea->instancia->active_muestreo, FILTER_VALIDATE_BOOLEAN) && $tarea->instancia->fecha_muestreo)
-                                                                    <small class="text-muted">
-                                                                        {{ $tarea->instancia->fecha_muestreo->format('d/m/Y H:i') }}
-                                                                        @if($tarea->instancia->coordinador)
-                                                                            <br><small>por {{ $tarea->instancia->coordinador->usu_descripcion }}</small>
+
+                                                                <!-- Acciones adicionales -->
+                                                                @php
+                                                                    $mostrarRecoordinar = in_array($instancia->cotio_estado, ['coordinado muestreo', 'suspension']) && $instancia->enable_ot == false;
+                                                                    $userRol = trim(Auth::user()->rol ?? '');
+                                                                    $instanciaEstado = trim($instancia->cotio_estado ?? '');
+                                                                    $mostrarSuspender = ($userRol == 'coordinador_muestreo' && $instanciaEstado == 'coordinado muestreo');
+                                                                    // El coordinador de muestreo puede enviar a OT, pero no debería poder quitarla
+                                                                    $mostrarQuitarOT = (!$requiereMuestreo && $instancia->enable_ot && $userRol !== 'coordinador_muestreo');
+                                                                    $mostrarDebeMuestreo = ($requiereMuestreo && !$instancia->enable_ot);
+                                                                    $mostrarEditar = ($userRol === 'coordinador_muestreo');
+                                                                @endphp
+                                                                <div class="d-flex align-items-center justify-content-end gap-2 mt-2 mt-md-0">
+                                                                    {{-- Estado --}}
+                                                                    <p class="mb-0 badge bg-{{ $badgeClass }}">
+                                                                        {{ ucfirst($instancia->cotio_estado) }}
+                                                                    </p>
+
+                                                                    {{-- QR --}}
+                                                                    <a href="#" class="text-decoration-none" title="Generar CT para esta muestra"
+                                                                        data-url="{{ route('qr.universal', [
+                                            'cotio_numcoti' => $cotizacion->coti_num,
+                                            'cotio_item' => $categoria->original_item,
+                                            'cotio_subitem' => 0,
+                                            'instance' => $instancia->instance_number
+                                        ]) }}" data-coti="{{ $cotizacion->coti_num }}"
+                                                                        data-categoria="{{ $descripcion }}"
+                                                                        data-instance="{{ $instancia->instance_number }}"
+                                                                        data-fechaMuestreo="{{ $instancia->fecha_muestreo }}"
+                                                                        onclick="generateQr(this)">
+                                                                        <x-heroicon-o-qr-code class="text-white"
+                                                                            style="width: 24px; height: 24px;" />
+                                                                    </a>
+
+                                                                    {{-- Menú hamburguesa (oculta opciones por muestra) --}}
+                                                                    <div class="dropdown">
+                                                                        <button type="button" class="btn btn-sm btn-outline-light dropdown-toggle"
+                                                                            data-bs-toggle="dropdown" aria-expanded="false" title="Opciones">
+                                                                            <i class="fas fa-bars"></i>
+                                                                        </button>
+                                                                        <div class="dropdown-menu dropdown-menu-end p-2" style="min-width: 170px;">
+                                                                            {{-- Editar (acceso a tareas completas) --}}
+                                                                            @if($mostrarEditar)
+                                                                                                                <a href="{{ route('tareas.all.show', [
+                                                                                    'cotio_numcoti' => $instancia->cotio_numcoti,
+                                                                                    'cotio_item' => $instancia->cotio_item,
+                                                                                    'cotio_subitem' => 0,
+                                                                                    'instance' => $instancia->instance_number,
+                                                                                    'canal' => $canalParaFiltrar ?? null
+                                                                                ]) }}" class="btn btn-sm w-100 btn-outline-primary"
+                                                                                                                    style="text-align: center;"
+                                                                                                                    title="Editar / Cargar datos en vista completa">
+                                                                                                                    <i class="fas fa-edit me-1"></i> Editar
+                                                                                                                </a>
+                                                                            @endif
+
+                                                                            {{-- Recoordinar --}}
+                                                                            <button type="button"
+                                                                                class="btn btn-sm w-100 {{ $mostrarRecoordinar ? 'btn-outline-warning' : 'btn-outline-light opacity-50' }}"
+                                                                                style="{{ $mostrarRecoordinar ? '' : 'display: none;' }}"
+                                                                                @if($mostrarRecoordinar) data-bs-toggle="modal"
+                                                                                    data-bs-target="#recoordinarModal"
+                                                                                    data-instancia="{{ $instancia->id }}"
+                                                                                    data-cotizacion="{{ $cotizacion->coti_num }}"
+                                                                                    data-item="{{ $instancia->cotio_item }}"
+                                                                                    data-descripcion="{{ $categoria->cotio_descripcion ?? $instancia->cotio_descripcion ?? '' }}"
+                                                                                data-instance="{{ $instancia->instance_number }}" @else disabled
+                                                                                aria-disabled="true" @endif>
+                                                                                Recoordinar
+                                                                            </button>
+
+                                                                            {{-- Suspender --}}
+                                                                            <button type="button"
+                                                                                class="btn btn-sm w-100 mt-2 {{ $mostrarSuspender ? 'btn-warning' : 'btn-outline-light opacity-50' }}"
+                                                                                style="{{ $mostrarSuspender ? '' : 'display: none;' }}"
+                                                                                @if($mostrarSuspender) data-bs-toggle="modal"
+                                                                                data-bs-target="#suspenderModal{{ $instancia->id }}" @else disabled
+                                                                                aria-disabled="true" @endif>
+                                                                                <i class="fas fa-pause me-1"></i> Suspender
+                                                                            </button>
+
+                                                                            {{-- Acción OT / Muestreo (3er botón) --}}
+                                                                            @if($mostrarQuitarOT)
+                                                                                <button type="button"
+                                                                                    onclick="quitarDirectoAOT({ cotio_numcoti: {{ $instancia->cotio_numcoti }}, cotio_item: '{{ $instancia->cotio_item }}', instance_number: {{ $instancia->instance_number }} })"
+                                                                                    class="btn btn-danger btn-sm w-100 mt-2" data-bs-toggle="tooltip"
+                                                                                    data-bs-placement="bottom"
+                                                                                                title="Quitar esta muestra de la Orden de Trabajo"
+                                                                                            >
+                                                                                                Quitar de OT
+                                                                                            </button>
+                                                                            @elseif($mostrarDebeMuestreo)
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            class="btn btn-sm btn-outline-light opacity-50 w-100 mt-2"
+                                                                                            disabled
+                                                                                            title="Esta muestra debe pasar por muestreo"
+                                                                                            aria-disabled="true"
+                                                                                        >
+                                                                                            Debe pasar por muestreo
+                                                                                        </button>
+                                                                                    @endif
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <!-- Cuerpo de la tarjeta -->
+                                                                    <div class="card-body">
+                                                                        @if(count($tareasItem) > 0)
+                                                                            <ul class="list-group">
+                                                                                @foreach($tareasItem as $tarea)
+                                                                                    <li class="list-group-item">
+                                                                                        <div class="d-flex justify-content-between align-items-center">
+                                                                                            <div class="d-flex align-items-center">
+                                                                                                <!-- Checkbox de análisis -->
+                                                                                                <input 
+                                                                                                    type="checkbox"
+                                                                                                    class="form-check-input tarea-checkbox me-2" 
+                                                                                                    name="cotio_items[]"
+                                                                                                    value="{{ $tarea->original_item }}-{{ $tarea->cotio_subitem }}-{{ $instancia->instance_number }}"
+                                                                                                    data-item="{{ $tarea->original_item }}"
+                                                                                                    data-subitem="{{ $tarea->cotio_subitem }}"
+                                                                                                    data-instance="{{ $instancia->instance_number }}"
+                                                                                                    onchange="actualizarEstadoTarea(this)"
+                                                                                                    @if(filter_var($tarea->instancia->active_muestreo, FILTER_VALIDATE_BOOLEAN) && $tarea->instancia->cotio_estado !== 'completado' && $instancia->cotio_estado !== 'completado') checked @endif
+                                                                                                    @if(($instancia->enable_ot && !in_array($canalParaFiltrar ?? '', ['consultoria', 'asp', 'clarke_fire'])) || $tarea->instancia->cotio_estado === 'completado' || $instancia->cotio_estado === 'completado') disabled @endif
+                                                                                                />
+
+
+
+                                                                                                <div class="d-flex gap-2 align-items-start justify-content-center">
+                                                                                                    {{ $tarea->cotio_descripcion }}
+                                                                                                    <div>
+                                                                                                        @php
+                                                                                                            $estado = $tarea->instancia->cotio_estado;
+                                                                                                            $badgeClass = match ($estado) {
+                                                                                                                'pendiente' => 'warning',
+                                                                                                                'coordinado muestreo' => 'warning',
+                                                                                                                'coordinado analisis' => 'warning',
+                                                                                                                'en proceso' => 'info',
+                                                                                                                'en revision muestreo' => 'info',
+                                                                                                                'en revision analisis' => 'info',
+                                                                                                                'finalizado' => 'success',
+                                                                                                                'muestreado' => 'success',
+                                                                                                                'analizado' => 'success',
+                                                                                                                'suspension' => 'danger',
+                                                                                                                default => 'secondary'
+                                                                                                            };
+                                                                                                        @endphp
+                                                                                                        <p class="mb-0 badge bg-{{ $badgeClass }} ms-2">
+                                                                                                            {{ ucfirst($tarea->instancia->cotio_estado) }}
+                                                                                                        </p>
+                                                                                                    </div>
+                                                                                                    @if($tarea->instancia->resultado)
+                                                                                                        <span class="badge bg-primary ms-2">Resultado: {{ $tarea->instancia->resultado }}</span>
+                                                                                                    @endif
+                                                                                                </div>
+                                                                                            </div>
+
+                                                                                            @if(filter_var($tarea->instancia->active_muestreo, FILTER_VALIDATE_BOOLEAN) && $tarea->instancia->fecha_muestreo)
+                                                                                                <small class="text-muted">
+                                                                                                    {{ $tarea->instancia->fecha_muestreo->format('d/m/Y H:i') }}
+                                                                                                    @if($tarea->instancia->coordinador)
+                                                                                                        <br><small>por {{ $tarea->instancia->coordinador->usu_descripcion }}</small>
+                                                                                                    @endif
+                                                                                                </small>
+                                                                                            @endif
+                                                                                        </div>
+                                                                                    </li>
+                                                                                @endforeach
+                                                                            </ul>
+                                                                        @else
+                                                                            <p class="text-muted">No hay análisis en esta muestra</p>
                                                                         @endif
-                                                                    </small>
-                                                                @endif
+                                                                    </div>
+                                                                </div>
                                                             </div>
-                                                        </li>
-                                                    @endforeach
-                                                </ul>
-                                            @else
-                                                <p class="text-muted">No hay análisis en esta muestra</p>
-                                            @endif
-                                        </div>
+                                    @endif
+                                @endforeach
+                            @endif
+                        </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Botón flotante para aplicar cambios -->
+    <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 11">
+        <div class="d-flex gap-2">
+            @if(in_array($canalParaFiltrar ?? '', ['consultoria', 'asp', 'clarke_fire']))
+                <button 
+                    id="btn-asignacion-masiva" 
+                    class="btn btn-success shadow" 
+                    onclick="mostrarModalFacturacion()"
+                    disabled
+                >
+                   Pasar a facturación
+                </button>
+            @else
+                <button 
+                    id="btn-asignacion-masiva" 
+                    class="btn btn-success shadow" 
+                    onclick="mostrarModalAsignacion()"
+                    disabled
+                >
+                   Pasar a muestreo
+                </button>
+            @endif
+        </div>
+    </div>
+
+
+
+
+
+
+    <div class="modal fade" id="pasarFacturacionModal" tabindex="-1" aria-labelledby="pasarFacturacionModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <form id="pasarFacturacionForm" action="{{ route('muestras.pasar-facturacion') }}" method="POST" enctype="multipart/form-data">
+                @csrf
+                <input type="hidden" name="cotio_numcoti" value="{{ $cotizacion->coti_num }}">
+                <input type="hidden" id="items_seleccionados_facturacion" name="items_seleccionados">
+
+                <div class="modal-content">
+                    <div class="modal-header bg-success text-white">
+                        <h5 class="modal-title" id="pasarFacturacionModalLabel">Pasar a Facturación</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p>Las muestras seleccionadas serán enviadas directamente a facturación.</p>
+
+                        <div class="mb-3">
+                            <label for="informe_file" class="form-label">Subir informe (Opcional)</label>
+                            <input class="form-control" type="file" id="informe_file" name="informe_file" accept=".pdf,.doc,.docx,.xls,.xlsx">
+                            <small class="text-muted">Si subes un archivo, este estará disponible en la sección de informes.</small>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-success">Confirmar y Pasar a Facturación</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        function mostrarModalFacturacion() {
+            const checkboxes = document.querySelectorAll('.categoria-checkbox:checked:not([data-persisted]), .tarea-checkbox:checked:not([data-persisted])');
+
+            const items = Array.from(checkboxes).map(checkbox => {
+                return checkbox.classList.contains('categoria-checkbox') 
+                    ? { 
+                        item: checkbox.dataset.item, 
+                        subitem: '0', 
+                        instance: checkbox.dataset.instance, 
+                        descripcion: checkbox.closest('.card-header').querySelector('strong').textContent.trim()
+                    }
+                    : { 
+                        item: checkbox.dataset.item, 
+                        subitem: checkbox.dataset.subitem, 
+                        instance: checkbox.dataset.instance, 
+                        descripcion: checkbox.closest('.list-group-item').querySelector('.d-flex.gap-2').childNodes[0].textContent.trim()
+                    };
+            });
+
+            if (items.length === 0) {
+                Swal.fire({
+                    title: 'Selección requerida',
+                    text: 'Por favor seleccione al menos una muestra o análisis',
+                    icon: 'warning'
+                });
+                return;
+            }
+
+            document.getElementById('items_seleccionados_facturacion').value = JSON.stringify(items);
+            const modal = new bootstrap.Modal(document.getElementById('pasarFacturacionModal'));
+            modal.show();
+        }
+    </script>
+
+    <div class="modal fade" id="asignacionMasivaModal" tabindex="-1" aria-labelledby="asignacionMasivaModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <form id="asignacionMasivaForm" action="{{ route('muestras.asignacion-masiva') }}" method="POST">
+                @csrf
+                <input type="hidden" name="cotio_numcoti" value="{{ $cotizacion->coti_num }}">
+                <input type="hidden" id="items_seleccionados" name="items_seleccionados">
+                <input type="hidden" id="parametros_seleccionados" name="parametros_seleccionados">
+                <input type="hidden" name="pasar_a_muestreo" value="1">
+
+                <div class="modal-content">
+                    <div class="modal-header bg-success text-white">
+                        <h5 class="modal-title" id="asignacionMasivaModalLabel">Asignación de elementos</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="responsables_muestreo" class="form-label">Responsables de Muestreo</label>
+                                    <select class="form-select select2-multiple" id="responsables_muestreo" name="responsables_muestreo[]" multiple="multiple">
+                                        @foreach($usuarios as $usuario)
+                                            <option value="{{ $usuario->usu_codigo }}">
+                                                {{ $usuario->usu_descripcion }} ({{ $usuario->usu_codigo }})
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                    <small class="text-muted">Seleccione uno o más responsables</small>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="herramientas" class="form-label">Herramientas/Equipos</label>
+                                    <select class="form-select select2-multiple" id="herramientas" name="herramientas[]" multiple="multiple">
+                                        @foreach($inventario as $item)
+                                            <option value="{{ $item->id }}">
+                                                {{ $item->equipamiento }} ({{ $item->marca_modelo }}) - {{ $item->n_serie_lote }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                    <small class="text-muted">Seleccione múltiples herramientas</small>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="vehiculo" class="form-label">Vehículo</label>
+                                    <select class="form-select" id="vehiculo" name="vehiculo">
+                                        <option value="">-- Sin cambios --</option>
+                                        @foreach($vehiculos as $vehiculo)
+                                            <option value="{{ $vehiculo->id }}">
+                                                {{ $vehiculo->marca }} {{ $vehiculo->modelo }} {{ $vehiculo->patente }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="fecha_inicio_muestreo" class="form-label">Fecha y Hora de Inicio</label>
+                                    <input 
+                                        type="datetime-local" 
+                                        class="form-control" 
+                                        id="fecha_inicio_muestreo" 
+                                        name="fecha_inicio_muestreo"
+                                        required
+                                    >
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="fecha_fin_muestreo" class="form-label">Fecha y Hora de Fin</label>
+                                    <input 
+                                        type="datetime-local" 
+                                        class="form-control" 
+                                        id="fecha_fin_muestreo" 
+                                        name="fecha_fin_muestreo"
+                                        required
+                                    >
+                                </div>
+                            </div>
+
+                            <!-- Campo de Frecuencia -->
+                            <div class="col-md-6" id="frecuencia-container" style="display: none;">
+                                <div class="mb-3">
+                                    <div class="form-check">
+                                        <input type="hidden" name="habilitar_frecuencia" value="0">
+                                        <input 
+                                            type="checkbox" 
+                                            class="form-check-input" 
+                                            id="habilitar_frecuencia" 
+                                            name="habilitar_frecuencia"
+                                            value="1"
+                                        >
+                                        <label class="form-check-label" for="habilitar_frecuencia">
+                                            Habilitar coordinación frecuente
+                                        </label>
                                     </div>
                                 </div>
-                            @endif
-                        @endforeach
-                        @endif
-                    </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Botón flotante para aplicar cambios -->
-<div class="position-fixed bottom-0 end-0 p-3" style="z-index: 11">
-    <div class="d-flex gap-2">
-        <button 
-            id="btn-asignacion-masiva" 
-            class="btn btn-success shadow" 
-            onclick="mostrarModalAsignacion()"
-            disabled
-        >
-           Pasar a muestreo
-        </button>
-    </div>
-</div>
-
-
-
-
-
-
-<div class="modal fade" id="asignacionMasivaModal" tabindex="-1" aria-labelledby="asignacionMasivaModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-        <form id="asignacionMasivaForm" action="{{ route('muestras.asignacion-masiva') }}" method="POST">
-            @csrf
-            <input type="hidden" name="cotio_numcoti" value="{{ $cotizacion->coti_num }}">
-            <input type="hidden" id="items_seleccionados" name="items_seleccionados">
-            <input type="hidden" id="parametros_seleccionados" name="parametros_seleccionados">
-            <input type="hidden" name="pasar_a_muestreo" value="1">
-        
-            <div class="modal-content">
-                <div class="modal-header bg-success text-white">
-                    <h5 class="modal-title" id="asignacionMasivaModalLabel">Asignación de elementos</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="row">
-                        <div class="col-md-6">
-                            <div class="mb-3">
-                                <label for="responsables_muestreo" class="form-label">Responsables de Muestreo</label>
-                                <select class="form-select select2-multiple" id="responsables_muestreo" name="responsables_muestreo[]" multiple="multiple">
-                                    @foreach($usuarios as $usuario)
-                                        <option value="{{ $usuario->usu_codigo }}">
-                                            {{ $usuario->usu_descripcion }} ({{ $usuario->usu_codigo }})
-                                        </option>
-                                    @endforeach
-                                </select>
-                                <small class="text-muted">Seleccione uno o más responsables</small>
+                                <div class="mb-3" id="frecuencia-opciones" style="display: none;">
+                                    <label for="frecuencia" class="form-label">Frecuencia</label>
+                                    <select class="form-select" id="frecuencia" name="frecuencia">
+                                        <option value="">-- Seleccione frecuencia --</option>
+                                        <option value="diario">Diario</option>
+                                        <option value="semanal">Semanal</option>
+                                        <option value="quincenal">Quincenal</option>
+                                        <option value="mensual">Mensual</option>
+                                        <option value="trimestral">Trimestral</option>
+                                        <option value="cuatrimestral">Cuatrimestral</option>
+                                        <option value="semestral">Semestral</option>
+                                        <option value="anual">Anual</option>
+                                    </select>
+                                </div>
                             </div>
-        
-                            <div class="mb-3">
-                                <label for="herramientas" class="form-label">Herramientas/Equipos</label>
-                                <select class="form-select select2-multiple" id="herramientas" name="herramientas[]" multiple="multiple">
-                                    @foreach($inventario as $item)
-                                        <option value="{{ $item->id }}">
-                                            {{ $item->equipamiento }} ({{ $item->marca_modelo }}) - {{ $item->n_serie_lote }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                                <small class="text-muted">Seleccione múltiples herramientas</small>
+
+                            <!-- Variables requeridas -->
+                            <div class="col-md-12">
+                                <div class="mb-3">
+                                    <label class="form-label">Variables a Completar</label>
+                                    <div id="variables-container">
+                                        <!-- Las variables se cargarán dinámicamente con JavaScript -->
+                                    </div>
+                                </div>
                             </div>
-                        </div>
-        
-                        <div class="col-md-6">
-                            <div class="mb-3">
-                                <label for="vehiculo" class="form-label">Vehículo</label>
-                                <select class="form-select" id="vehiculo" name="vehiculo">
-                                    <option value="">-- Sin cambios --</option>
-                                    @foreach($vehiculos as $vehiculo)
-                                        <option value="{{ $vehiculo->id }}">
-                                            {{ $vehiculo->marca }} {{ $vehiculo->modelo }} {{ $vehiculo->patente }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                            </div>
-                        </div>
-        
-                        <div class="col-md-6">
-                            <div class="mb-3">
-                                <label for="fecha_inicio_muestreo" class="form-label">Fecha y Hora de Inicio</label>
-                                <input 
-                                    type="datetime-local" 
-                                    class="form-control" 
-                                    id="fecha_inicio_muestreo" 
-                                    name="fecha_inicio_muestreo"
-                                    required
-                                >
-                            </div>
-        
-                            <div class="mb-3">
-                                <label for="fecha_fin_muestreo" class="form-label">Fecha y Hora de Fin</label>
-                                <input 
-                                    type="datetime-local" 
-                                    class="form-control" 
-                                    id="fecha_fin_muestreo" 
-                                    name="fecha_fin_muestreo"
-                                    required
-                                >
-                            </div>
-                        </div>
-        
-                        <!-- Campo de Frecuencia -->
-                        <div class="col-md-6" id="frecuencia-container" style="display: none;">
-                            <div class="mb-3">
-                                <div class="form-check">
-                                    <input type="hidden" name="habilitar_frecuencia" value="0">
-                                    <input 
-                                        type="checkbox" 
-                                        class="form-check-input" 
-                                        id="habilitar_frecuencia" 
-                                        name="habilitar_frecuencia"
-                                        value="1"
-                                    >
-                                    <label class="form-check-label" for="habilitar_frecuencia">
-                                        Habilitar coordinación frecuente
+
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label" for="es_priori">
+                                        <x-heroicon-o-star style="width: 20px; height: 20px; color: #ffc107;" />
+                                        Marcar como Prioridad
                                     </label>
-                                </div>
-                            </div>
-                            <div class="mb-3" id="frecuencia-opciones" style="display: none;">
-                                <label for="frecuencia" class="form-label">Frecuencia</label>
-                                <select class="form-select" id="frecuencia" name="frecuencia">
-                                    <option value="">-- Seleccione frecuencia --</option>
-                                    <option value="diario">Diario</option>
-                                    <option value="semanal">Semanal</option>
-                                    <option value="quincenal">Quincenal</option>
-                                    <option value="mensual">Mensual</option>
-                                    <option value="trimestral">Trimestral</option>
-                                    <option value="cuatrimestral">Cuatrimestral</option>
-                                    <option value="semestral">Semestral</option>
-                                    <option value="anual">Anual</option>
-                                </select>
-                            </div>
-                        </div>
-        
-                        <!-- Variables requeridas -->
-                        <div class="col-md-12">
-                            <div class="mb-3">
-                                <label class="form-label">Variables a Completar</label>
-                                <div id="variables-container">
-                                    <!-- Las variables se cargarán dinámicamente con JavaScript -->
+                                    <input type="checkbox" name="es_priori" id="es_priori" value="1" class="form-check-input" style="width: 20px; height: 20px;">
                                 </div>
                             </div>
                         </div>
-
-                        <div class="col-md-6">
-                            <div class="mb-3">
-                                <label class="form-label" for="es_priori">
-                                    <x-heroicon-o-star style="width: 20px; height: 20px; color: #ffc107;" />
-                                    Marcar como Prioridad
-                                </label>
-                                <input type="checkbox" name="es_priori" id="es_priori" value="1" class="form-check-input" style="width: 20px; height: 20px;">
-                            </div>
-                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-success">Aplicar Asignación</button>
                     </div>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="submit" class="btn btn-success">Aplicar Asignación</button>
-                </div>
-            </div>
-        </form>        
-    </div>
-</div>
-
-
-<!-- Modal de Recoordinación -->
-<div class="modal fade" id="recoordinarModal" tabindex="-1" aria-labelledby="recoordinarModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content border-0 shadow-sm">
-            <div class="modal-header bg-primary text-white">
-                <h5 class="modal-title" id="recoordinarModalLabel">Recoordinar Muestra</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body p-4">
-                <form id="recoordinarForm">
-                    @csrf
-                    <input type="hidden" name="instancia_id" id="instancia_id">
-                    <input type="hidden" name="cotio_numcoti" id="cotio_numcoti">
-                    <input type="hidden" name="cotio_item" id="cotio_item">
-                    <input type="hidden" name="instance_number" id="instance_number">
-
-                    <div class="row mb-4">
-                        <div class="col-md-6">
-                            <label for="fecha_inicio_muestreo" class="form-label fw-semibold">Fecha Inicio Muestreo</label>
-                            <input type="datetime-local" class="form-control rounded-3" id="fecha_inicio_muestreo" name="fecha_inicio_muestreo">
-                        </div>
-                        <div class="col-md-6">
-                            <label for="fecha_fin_muestreo" class="form-label fw-semibold">Fecha Fin Muestreo</label>
-                            <input type="datetime-local" class="form-control rounded-3" id="fecha_fin_muestreo" name="fecha_fin_muestreo">
-                        </div>
-                    </div>
-
-                    <div class="mb-4">
-                        <label for="responsables_muestreo" class="form-label fw-semibold">Responsables de Muestreo</label>
-                        <select class="form-select select2 rounded-3" id="responsables_muestreo" name="responsables_muestreo[]" multiple>
-                            @foreach($usuarios as $responsable)
-                                <option value="{{ $responsable->usu_codigo }}">{{ $responsable->usu_descripcion }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-
-                    <div class="mb-4">
-                        <label for="vehiculo_asignado" class="form-label fw-semibold">Vehículo</label>
-                        <select class="form-select rounded-3" id="vehiculo_asignado" name="vehiculo_asignado">
-                            <option value="">Seleccione un vehículo</option>
-                            @foreach($vehiculos as $vehiculo)
-                                <option value="{{ $vehiculo->id }}">{{ $vehiculo->patente }} - {{ $vehiculo->modelo }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-
-                    <div class="mb-4">
-                        <label for="herramientas" class="form-label fw-semibold">Herramientas de Muestreo</label>
-                        <select class="form-select select2 rounded-3" id="herramientas" name="herramientas[]" multiple>
-                            @foreach($inventario as $herramienta)
-                                <option value="{{ $herramienta->id }}">
-                                    {{ $herramienta->equipamiento }} ({{ $herramienta->marca_modelo }}) - {{ $herramienta->n_serie_lote }}
-                                </option>
-                            @endforeach
-                        </select>
-                    </div>
-
-                    <div class="mb-4">
-                        <label class="form-label fw-semibold">Variables a Completar</label>
-                        <div id="variables-container-recoordinacion" class="variables-main-container border rounded-3 p-3 bg-light">
-                            <!-- Dynamic content -->
-                        </div>
-                    </div>
-
-                    <div class="mb-4">
-                        <label for="es_priori_recoordinar" class="form-label fw-semibold">
-                            <x-heroicon-o-star style="width: 20px; height: 20px; color: #ffc107;" />
-                            Marcar como Prioridad
-                        </label>
-                        <input type="checkbox" name="es_priori" id="es_priori_recoordinar" class="form-check-input" style="width: 20px; height: 20px;">
-                    </div>
-
-                    {{-- <div class="mb-4">
-                        <label for="cotio_observaciones_suspension" class="form-label fw-semibold">Observaciones</label>
-                        <textarea class="form-control rounded-3" id="cotio_observaciones_suspension" name="cotio_observaciones_suspension" rows="3"></textarea>
-                    </div> --}}
-                </form>
-            </div>
-            <div class="modal-footer bg-light">
-                <button type="button" class="btn btn-outline-secondary rounded-3" data-bs-dismiss="modal">Cancelar</button>
-                <button type="button" class="btn btn-primary rounded-3" id="guardarRecoordinacion">Guardar Cambios</button>
-            </div>
+            </form>        
         </div>
     </div>
-</div>
 
 
-
-
-
-
-
-<!-- Modal para suspender muestra -->
-@foreach($agrupadas as $item)
-    @php
-        $instancia = $item['instancia'];
-        $categoria = $item['categoria'];
-    @endphp
-    @if(trim($instancia->cotio_estado ?? '') == 'coordinado muestreo' && trim(Auth::user()->rol ?? '') == 'coordinador_muestreo')
-    <div class="modal fade" id="suspenderModal{{ $instancia->id }}" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Suspender Muestra</h5>
+    <!-- Modal de Recoordinación -->
+    <div class="modal fade" id="recoordinarModal" tabindex="-1" aria-labelledby="recoordinarModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content border-0 shadow-sm">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title" id="recoordinarModalLabel">Recoordinar Muestra</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <div class="modal-body">
-                    <p>¿Estás seguro de suspender esta muestra?</p>
-                    <form id="suspenderForm{{ $instancia->id }}" method="POST" action="{{ route('asignar.suspension-muestra', [
-                        'cotio_numcoti' => $instancia->cotio_numcoti,
-                        'cotio_item' => $instancia->cotio_item,
-                        'instance_number' => $instancia->instance_number
-                    ]) }}">
+                <div class="modal-body p-4">
+                    <form id="recoordinarForm">
                         @csrf
-                        
-                        <div class="mb-3">
-                            <label for="observacion{{ $instancia->id }}" class="form-label">Observación de suspensión</label>
-                            <input type="text" class="form-control" id="observacion{{ $instancia->id }}" 
-                                   name="cotio_observaciones_suspension" 
-                                   placeholder="Ingrese la razón de la suspensión" required>
+                        <input type="hidden" name="instancia_id" id="instancia_id">
+                        <input type="hidden" name="cotio_numcoti" id="cotio_numcoti">
+                        <input type="hidden" name="cotio_item" id="cotio_item">
+                        <input type="hidden" name="instance_number" id="instance_number">
+
+                        <div class="row mb-4">
+                            <div class="col-md-6">
+                                <label for="fecha_inicio_muestreo" class="form-label fw-semibold">Fecha Inicio Muestreo</label>
+                                <input type="datetime-local" class="form-control rounded-3" id="fecha_inicio_muestreo" name="fecha_inicio_muestreo">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="fecha_fin_muestreo" class="form-label fw-semibold">Fecha Fin Muestreo</label>
+                                <input type="datetime-local" class="form-control rounded-3" id="fecha_fin_muestreo" name="fecha_fin_muestreo">
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <label for="responsables_muestreo" class="form-label fw-semibold">Responsables de Muestreo</label>
+                            <select class="form-select select2 rounded-3" id="responsables_muestreo" name="responsables_muestreo[]" multiple>
+                                @foreach($usuarios as $responsable)
+                                    <option value="{{ $responsable->usu_codigo }}">{{ $responsable->usu_descripcion }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        <div class="mb-4">
+                            <label for="vehiculo_asignado" class="form-label fw-semibold">Vehículo</label>
+                            <select class="form-select rounded-3" id="vehiculo_asignado" name="vehiculo_asignado">
+                                <option value="">Seleccione un vehículo</option>
+                                @foreach($vehiculos as $vehiculo)
+                                    <option value="{{ $vehiculo->id }}">{{ $vehiculo->patente }} - {{ $vehiculo->modelo }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        <div class="mb-4">
+                            <label for="herramientas" class="form-label fw-semibold">Herramientas de Muestreo</label>
+                            <select class="form-select select2 rounded-3" id="herramientas" name="herramientas[]" multiple>
+                                @foreach($inventario as $herramienta)
+                                    <option value="{{ $herramienta->id }}">
+                                        {{ $herramienta->equipamiento }} ({{ $herramienta->marca_modelo }}) - {{ $herramienta->n_serie_lote }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        <div class="mb-4">
+                            <label class="form-label fw-semibold">Variables a Completar</label>
+                            <div id="variables-container-recoordinacion" class="variables-main-container border rounded-3 p-3 bg-light">
+                                <!-- Dynamic content -->
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <label for="es_priori_recoordinar" class="form-label fw-semibold">
+                                <x-heroicon-o-star style="width: 20px; height: 20px; color: #ffc107;" />
+                                Marcar como Prioridad
+                            </label>
+                            <input type="checkbox" name="es_priori" id="es_priori_recoordinar" class="form-check-input" style="width: 20px; height: 20px;">
+                        </div>
+
+                        <div class="mb-4 d-none" id="motivoSuspensionGroup">
+                            <label for="motivoSuspension" class="form-label fw-semibold">Motivo de suspensión (muestreador)</label>
+                            <textarea class="form-control rounded-3" id="motivoSuspension" rows="3" readonly></textarea>
                         </div>
                     </form>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="submit" class="btn btn-danger" form="suspenderForm{{ $instancia->id }}">Suspender</button>
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-outline-secondary rounded-3" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-primary rounded-3" id="guardarRecoordinacion">Guardar Cambios</button>
                 </div>
             </div>
         </div>
     </div>
-    @endif
-@endforeach
 
-<script>
-document.addEventListener('DOMContentLoaded', function() {
+
+
+
+
+
+
+    <!-- Modal para suspender muestra -->
     @foreach($agrupadas as $item)
         @php
             $instancia = $item['instancia'];
+            $categoria = $item['categoria'];
         @endphp
-        @if(!empty($instancia) && $instancia->cotio_estado == 'coordinado muestreo')
-        const form{{ $instancia->id }} = document.getElementById('suspenderForm{{ $instancia->id }}');
-        const textarea{{ $instancia->id }} = document.getElementById('observacion{{ $instancia->id }}');
-        
-        if (form{{ $instancia->id }}) {
-            form{{ $instancia->id }}.addEventListener('submit', function(event) {
-                if (!textarea{{ $instancia->id }}.value.trim()) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    textarea{{ $instancia->id }}.classList.add('is-invalid');
-                } else {
-                    textarea{{ $instancia->id }}.classList.remove('is-invalid');
-                }
-                
-                form{{ $instancia->id }}.classList.add('was-validated');
-            });
-            
-            document.getElementById('suspenderModal{{ $instancia->id }}').addEventListener('hidden.bs.modal', function() {
-                form{{ $instancia->id }}.classList.remove('was-validated');
-                textarea{{ $instancia->id }}.classList.remove('is-invalid');
-            });
-        }
+        @if(trim($instancia->cotio_estado ?? '') == 'coordinado muestreo' && trim(Auth::user()->rol ?? '') == 'coordinador_muestreo')
+            <div class="modal fade" id="suspenderModal{{ $instancia->id }}" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Suspender Muestra</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p>¿Estás seguro de suspender esta muestra?</p>
+                            <form id="suspenderForm{{ $instancia->id }}" method="POST" action="{{ route('asignar.suspension-muestra', [
+                    'cotio_numcoti' => $instancia->cotio_numcoti,
+                    'cotio_item' => $instancia->cotio_item,
+                    'instance_number' => $instancia->instance_number
+                ]) }}">
+                                @csrf
+
+                                <div class="mb-3">
+                                    <label for="observacion{{ $instancia->id }}" class="form-label">Observación de suspensión</label>
+                                    <input type="text" class="form-control" id="observacion{{ $instancia->id }}" 
+                                           name="cotio_observaciones_suspension" 
+                                           placeholder="Ingrese la razón de la suspensión" required>
+                                </div>
+                            </form>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                            <button type="submit" class="btn btn-danger" form="suspenderForm{{ $instancia->id }}">Suspender</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
         @endif
     @endforeach
-});
-</script>
+
+    <!-- Modal de nota interna -->
+    @foreach($agrupadas as $item)
+        @php
+            $instancia = $item['instancia'];
+            $categoria = $item['categoria'];
+
+            $notasInternas = [];
+            if (!empty($categoria->cotio_nota_contenido)) {
+                try {
+                    $notasParsed = json_decode($categoria->cotio_nota_contenido, true);
+                    if (is_array($notasParsed)) {
+                        $notasInternas = collect($notasParsed)->filter(function ($nota) {
+                            return isset($nota['tipo']) && $nota['tipo'] === 'interna';
+                        })->values()->toArray();
+                    } else {
+                        // Formato antiguo: nota simple
+                        if (!empty($categoria->cotio_nota_tipo) && $categoria->cotio_nota_tipo === 'interna') {
+                            $notasInternas = [['tipo' => 'interna', 'contenido' => $categoria->cotio_nota_contenido]];
+                        }
+                    }
+                } catch (\Exception $e) {
+                    // No es JSON, es formato antiguo
+                    if (!empty($categoria->cotio_nota_tipo) && $categoria->cotio_nota_tipo === 'interna') {
+                        $notasInternas = [['tipo' => 'interna', 'contenido' => $categoria->cotio_nota_contenido]];
+                    }
+                }
+            }
+            // Fallback: si la nota es interna pero el JSON no trae tipo por ítem
+            if (empty($notasInternas) && !empty($categoria->cotio_nota_tipo) && $categoria->cotio_nota_tipo === 'interna') {
+                $notasInternas = [['tipo' => 'interna', 'contenido' => $categoria->cotio_nota_contenido]];
+            }
+        @endphp
+
+        @if(!empty($notasInternas))
+            <div class="modal fade" id="notaInternaModal{{ $instancia->id }}" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content border-0 shadow-sm">
+                        <div class="modal-header bg-warning">
+                            <h5 class="modal-title text-dark">
+                                Nota interna - {{ $categoria->cotio_descripcion }} (muestra {{ $instancia->instance_number }})
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            @foreach($notasInternas as $nota)
+                                <div class="mb-3" style="white-space: pre-wrap;">
+                                    {{ $nota['contenido'] ?? '' }}
+                                </div>
+                            @endforeach
+                        </div>
+                        <div class="modal-footer bg-light">
+                            <button type="button" class="btn btn-outline-secondary rounded-3" data-bs-dismiss="modal">Cerrar</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        @endif
+    @endforeach
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        @foreach($agrupadas as $item)
+            @php
+                $instancia = $item['instancia'];
+            @endphp
+            @if(!empty($instancia) && $instancia->cotio_estado == 'coordinado muestreo')
+                const form{{ $instancia->id }} = document.getElementById('suspenderForm{{ $instancia->id }}');
+                const textarea{{ $instancia->id }} = document.getElementById('observacion{{ $instancia->id }}');
+
+                if (form{{ $instancia->id }}) {
+                    form{{ $instancia->id }}.addEventListener('submit', function(event) {
+                        if (!textarea{{ $instancia->id }}.value.trim()) {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            textarea{{ $instancia->id }}.classList.add('is-invalid');
+                        } else {
+                            textarea{{ $instancia->id }}.classList.remove('is-invalid');
+                        }
+
+                        form{{ $instancia->id }}.classList.add('was-validated');
+                    });
+
+                    document.getElementById('suspenderModal{{ $instancia->id }}').addEventListener('hidden.bs.modal', function() {
+                        form{{ $instancia->id }}.classList.remove('was-validated');
+                        textarea{{ $instancia->id }}.classList.remove('is-invalid');
+                    });
+                }
+            @endif
+        @endforeach
+    });
+    </script>
 
 @endsection
 
@@ -939,7 +1179,7 @@ document.addEventListener('DOMContentLoaded', function() {
         );
     }
 
-    function mostrarModalAsignacion() {
+    window.mostrarModalAsignacion = function() {
         const checkboxes = document.querySelectorAll('.categoria-checkbox:checked:not([data-persisted]), .tarea-checkbox:checked:not([data-persisted])');
         
         const items = Array.from(checkboxes).map(checkbox => {
@@ -1168,7 +1408,7 @@ document.addEventListener('DOMContentLoaded', function() {
         modal.modal('show');
     }
 
-    function updateParametrosSeleccionados() {
+    window.updateParametrosSeleccionados = function() {
         const items = JSON.parse(document.getElementById('items_seleccionados').value || '[]');
         const parametrosSeleccionados = [];
 
@@ -1335,8 +1575,6 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
     });
-
-    document.getElementById('btn-asignacion-masiva').addEventListener('click', mostrarModalAsignacion);
     
     document.getElementById('asignacionMasivaForm').addEventListener('submit', function(e) {
         e.preventDefault();
@@ -1510,7 +1748,19 @@ document.addEventListener('DOMContentLoaded', function() {
                 $('#fecha_inicio_muestreo').val(data.fecha_inicio_muestreo);
                 $('#fecha_fin_muestreo').val(data.fecha_fin_muestreo);
                 $('#vehiculo_asignado').val(data.vehiculo_asignado).trigger('change');
-                $('#cotio_observaciones_suspension').val(data.cotio_observaciones_suspension);
+                
+                // Mostrar motivo de suspensión si existe
+                const motivoGroup = document.getElementById('motivoSuspensionGroup');
+                const motivoTextarea = document.getElementById('motivoSuspension');
+                if (motivoGroup && motivoTextarea) {
+                    if (data.cotio_observaciones_suspension) {
+                        motivoTextarea.value = data.cotio_observaciones_suspension;
+                        motivoGroup.classList.remove('d-none');
+                    } else {
+                        motivoTextarea.value = '';
+                        motivoGroup.classList.add('d-none');
+                    }
+                }
                 
                 // Establecer el checkbox de prioridad
                 $('#es_priori_recoordinar').prop('checked', data.es_priori == 1);
@@ -1806,6 +2056,82 @@ const quitarDirectoAOT = (instancia) => {
 
 </script>
 
+<script>
+function cancelarMuestreo(cotiNum) {
+    Swal.fire({
+        title: '¿Cancelar muestreo?',
+        text: 'Esta acción implica que la cotización volverá al módulo de ventas.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Sí, cancelar',
+        cancelButtonText: 'No',
+        reverseButtons: true
+    }).then(async (result) => {
+        if (!result.isConfirmed) return;
+
+        const motivoRes = await Swal.fire({
+            title: 'Razones de cancelación',
+            input: 'textarea',
+            inputLabel: 'Motivo',
+            inputPlaceholder: 'Ingrese las razones de cancelación...',
+            inputAttributes: {
+                'aria-label': 'Razones de cancelación'
+            },
+            showCancelButton: true,
+            confirmButtonText: 'Guardar'
+        });
+
+        if (!motivoRes.isConfirmed) return;
+
+        const razon = (motivoRes.value || '').toString().trim();
+        if (!razon) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Falta el motivo',
+                text: 'Debe ingresar las razones de cancelación.'
+            });
+            return;
+        }
+
+        try {
+            const csrf = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+            const response = await fetch(`/muestras/${cotiNum}/cancelar-muestreo`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrf,
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({ razon_cancelada: razon })
+            });
+
+            const data = await response.json().catch(() => ({}));
+
+            if (!response.ok || !data.success) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'No se pudo cancelar',
+                    text: data.message || 'Ocurrió un error al cancelar el muestreo.'
+                });
+                return;
+            }
+
+            Swal.fire({
+                icon: 'success',
+                title: 'Cotización cancelada',
+                text: 'La cotización volvió al módulo de ventas.'
+            });
+        } catch (e) {
+            console.error(e);
+            Swal.fire({
+                icon: 'error',
+                title: 'Error de conexión',
+                text: 'No se pudo conectar con el servidor.'
+            });
+        }
+    });
+}
+</script>
 
 
 <style>
@@ -1952,6 +2278,9 @@ const quitarDirectoAOT = (instancia) => {
                     <div style="width: 100%; max-width: 60%; border: 1px solid #dee2e6; padding: 10px; border-radius: 8px; margin: 10px auto;">
                         <p></p>
                     </div>
+                    <div style="width: 100%; max-width: 60%; border: 1px solid #dee2e6; padding: 10px; border-radius: 8px; margin: 10px auto;">
+                        <p></p>
+                    </div>
                     <div class="modal-footer justify-content-center">
                         <button onclick="printQr('${url}', '${coti}', '${categoria}', '${instance}', '${fechaMuestreo}')" class="btn btn-primary">
                             Imprimir CT 
@@ -2040,6 +2369,9 @@ const quitarDirectoAOT = (instancia) => {
                     </p>
                     <div class="qr-wrapper">
                         <div id="qr"></div>
+                        <div style="width: 100%; max-width: 90%; border: 1px solid #dee2e6; padding: 10px; border-radius: 8px; margin: 10px auto;">
+                            <p></p>
+                        </div>
                         <div style="width: 100%; max-width: 90%; border: 1px solid #dee2e6; padding: 10px; border-radius: 8px; margin: 10px auto;">
                             <p></p>
                         </div>

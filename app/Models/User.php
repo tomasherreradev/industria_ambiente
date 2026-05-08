@@ -18,7 +18,18 @@ class User extends Authenticatable
     ];
 
     protected $fillable = [
-        'usu_codigo', 'usu_descripcion', 'usu_clave', 'usu_nivel', 'usu_estado', 'sector_codigo', 'sector_trabajo', 'rol', 'dni', 'email', 'departamento', 'sector_trabajo'
+        'usu_codigo',
+        'usu_descripcion',
+        'usu_clave',
+        'usu_nivel',
+        'usu_estado',
+        'sector_codigo',
+        'sector_trabajo',
+        'rol',
+        'dni',
+        'email',
+        'departamento',
+        'current_session_id',
     ];
 
     // public function getAuthPassword()

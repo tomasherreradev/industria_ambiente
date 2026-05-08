@@ -34,13 +34,20 @@ class Cotio extends Model
         'limite_cuantificacion',
         'ley_aplicacion',
         'cotio_nota_tipo',
-        'cotio_nota_contenido'
+        'cotio_nota_contenido',
+        'req_cadena_custodia',
+        'req_prot_mapba',
+        'lleva_muestreo',
+        'cotio_canal_especial',
+        'de_agrupador',
+
     ];
     
     protected $casts = [
         'cotio_precio' => 'decimal:2',
         'limite_deteccion' => 'decimal:6',
-        'limite_cuantificacion' => 'decimal:6'
+        'limite_cuantificacion' => 'decimal:6',
+        'de_agrupador' => 'boolean',
     ];
     
     public $timestamps = false;
@@ -140,6 +147,12 @@ class Cotio extends Model
         return $this->belongsTo(Coti::class, 'cotio_numcoti');
     }
 
+    /** Alias legacy usado en eager loads (`muestra.cotizado`, `tarea.cotizado`). */
+    public function cotizado()
+    {
+        return $this->cotizacion();
+    }
+
     
 
 
@@ -147,6 +160,14 @@ class Cotio extends Model
     public function responsable()
     {
         return $this->belongsTo(User::class, 'cotio_responsable_codigo', 'usu_codigo');
+    }
+
+    /**
+     * Relación con el ítem del catálogo (CotioItems)
+     */
+    public function itemCatalogo()
+    {
+        return $this->belongsTo(CotioItems::class, 'cotio_codigoprod', 'id');
     }
 
     /**
@@ -209,9 +230,138 @@ class Cotio extends Model
         return $this->getAttribute($keyName);
     }
 
+    /**
+     * Normaliza una fila de nota desde JSON u orígenes heterogéneos (claves en inglés, etc.).
+     */
+    private static function normalizarFilaNotaArray(array $nota): ?array
+    {
+        $tipoRaw = $nota['tipo'] ?? $nota['type'] ?? $nota['nota_tipo'] ?? null;
+        $tipo = ($tipoRaw !== null && $tipoRaw !== '') ? trim((string) $tipoRaw) : null;
 
+        $cont = $nota['contenido'] ?? $nota['nota_contenido'] ?? $nota['text'] ?? $nota['body'] ?? $nota['mensaje'] ?? '';
+        if (is_array($cont)) {
+            $cont = json_encode($cont, JSON_UNESCAPED_UNICODE);
+        }
+        $cont = trim((string) $cont);
 
+        if ($tipo === null && $cont === '') {
+            return null;
+        }
 
+        return [
+            'tipo' => $tipo,
+            'contenido' => $cont,
+        ];
+    }
+
+    private static function esTipoImprimible(?string $tipo): bool
+    {
+        $t = strtolower(trim((string) $tipo));
+
+        return in_array($t, ['imprimible', 'nota_imprimible', 'printable', 'print'], true);
+    }
+
+    /**
+     * Lista de notas: [ ['tipo' => ..., 'contenido' => ...], ... ].
+     * Soporta: array JSON, un solo objeto, JSON doblemente codificado, texto plano con cotio_nota_tipo.
+     */
+    public function parsedNotasList(): array
+    {
+        $raw = $this->cotio_nota_contenido;
+        if ($raw === null || trim((string) $raw) === '') {
+            return [];
+        }
+
+        $str = trim((string) $raw);
+        $decoded = json_decode($str, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            if (!empty($this->cotio_nota_tipo)) {
+                return [['tipo' => $this->cotio_nota_tipo, 'contenido' => $str]];
+            }
+
+            return [];
+        }
+
+        if (is_string($decoded)) {
+            $inner = json_decode($decoded, true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                $decoded = $inner;
+            }
+        }
+
+        if (!is_array($decoded)) {
+            if (!empty($this->cotio_nota_tipo)) {
+                return [['tipo' => $this->cotio_nota_tipo, 'contenido' => $str]];
+            }
+
+            return [];
+        }
+
+        if ($decoded === []) {
+            return [];
+        }
+
+        $list = [];
+        if (array_is_list($decoded)) {
+            $list = $decoded;
+        } elseif (
+            isset($decoded['tipo'])
+            || isset($decoded['contenido'])
+            || isset($decoded['type'])
+            || isset($decoded['nota_contenido'])
+            || isset($decoded['text'])
+        ) {
+            $list = [$decoded];
+        } else {
+            $list = array_values($decoded);
+        }
+
+        $out = [];
+        foreach ($list as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $norm = self::normalizarFilaNotaArray($row);
+            if ($norm !== null) {
+                $out[] = $norm;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Solo notas de tipo imprimible; si la fila JSON no trae tipo, se usa cotio_nota_tipo de la fila cotio.
+     */
+    public function notasImprimiblesList(): array
+    {
+        $defaultTipo = strtolower(trim((string) ($this->cotio_nota_tipo ?? '')));
+
+        return collect($this->parsedNotasList())
+            ->filter(function ($nota) use ($defaultTipo) {
+                if (!is_array($nota)) {
+                    return false;
+                }
+                $tipoNota = isset($nota['tipo']) && $nota['tipo'] !== null && $nota['tipo'] !== ''
+                    ? strtolower(trim((string) $nota['tipo']))
+                    : '';
+                $effective = $tipoNota !== '' ? $tipoNota : $defaultTipo;
+
+                if (!self::esTipoImprimible($effective)) {
+                    return false;
+                }
+
+                return trim((string) ($nota['contenido'] ?? '')) !== '';
+            })
+            ->map(function ($nota) {
+                return [
+                    'tipo' => $nota['tipo'] ?? 'imprimible',
+                    'contenido' => (string) ($nota['contenido'] ?? ''),
+                ];
+            })
+            ->values()
+            ->all();
+    }
 
    public static function actualizarEstadoCategoria($cotio_numcoti, $cotio_item)
 {

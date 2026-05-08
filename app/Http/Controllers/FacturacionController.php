@@ -14,8 +14,13 @@ use App\Models\Matriz;
 use App\Models\Factura;
 use App\Models\Clientes;
 use App\Models\Divis;
+use App\Support\CotizacionClienteEtiqueta;
+use App\Support\CotizacionPrecioEnsayo;
+use App\Support\CotizacionReferenciasFacturacion;
+use App\Services\Afip\AfipDirectWsfeClient;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Afip;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -23,6 +28,13 @@ use Barryvdh\DomPDF\Facade\Pdf;
 
 class FacturacionController extends Controller
 {
+    /**
+     * CUIT de testing del Afip SDK: en homologación permite usar solo AFIPSDK_ACCESS_TOKEN sin certificado/clave.
+     *
+     * @see https://docs.afipsdk.com/
+     */
+    private const AFIP_CUIT_SDK_SOLO_TOKEN = '20409378472';
+
 public function index(Request $request)
 {
     $query = Factura::with('cotizacion')
@@ -180,33 +192,21 @@ public function facturar($coti_num)
                             ->where('facturado', true)
                             ->get();
                         
-                        $precioAnalisisYaFacturados = 0.0;
-                        foreach ($analisisYaFacturados as $analisisFacturado) {
-                            // Obtener el precio del análisis desde el tarifario
-                            // El tarifario tiene estructura: $analisisTarifario[$cotio_item][$cotio_subitem]['precio']
-                            $precioAnalisis = $analisisTarifario[$analisisFacturado->cotio_item][$analisisFacturado->cotio_subitem]['precio'] ?? 0.0;
-                            
-                            // Si no se encuentra en el tarifario, intentar calcularlo desde la tarea
-                            if ($precioAnalisis == 0.0) {
-                                $tareaAnalisis = $tareas->where('cotio_item', $analisisFacturado->cotio_item)
-                                    ->where('cotio_subitem', $analisisFacturado->cotio_subitem)
-                                    ->first();
-                                if ($tareaAnalisis) {
-                                    $precioAnalisis = $this->calcularImporteDesdeTarea($tareaAnalisis);
-                                }
-                            }
-                            
-                            $precioAnalisisYaFacturados += $precioAnalisis;
-                            
-                            Log::info('Análisis ya facturado encontrado para ajuste de precio de muestra', [
-                                'analisis_id' => $analisisFacturado->id,
-                                'cotio_item' => $analisisFacturado->cotio_item,
-                                'cotio_subitem' => $analisisFacturado->cotio_subitem,
-                                'precio_analisis' => $precioAnalisis,
-                                'precio_acumulado' => $precioAnalisisYaFacturados,
-                                'tarifario_disponible' => isset($analisisTarifario[$analisisFacturado->cotio_item][$analisisFacturado->cotio_subitem])
-                            ]);
-                        }
+                        $cantLineaEnsayo = (float) ($muestrasTarifario[$item]['cantidad'] ?? 1);
+                        $precioAnalisisYaFacturados = $this->sumaPreciosAnalisisFacturadosRepartida(
+                            $analisisYaFacturados,
+                            $analisisTarifario,
+                            $tareas,
+                            $cantLineaEnsayo
+                        );
+
+                        Log::info('Análisis ya facturados (importe prorrateado por cantidad línea ensayo) para ajuste de precio de muestra', [
+                            'cotio_item' => $item,
+                            'instance_number' => $instanceNumber,
+                            'cantidad_linea_ensayo' => $cantLineaEnsayo,
+                            'precio_analisis_ya_facturados' => $precioAnalisisYaFacturados,
+                            'cantidad_analisis_facturados' => $analisisYaFacturados->count(),
+                        ]);
                         
                         // El precio de la muestra debe ser el total menos los análisis ya facturados
                         $precioBrutoMuestraAjustado = max(0.0, $precioBrutoMuestra - $precioAnalisisYaFacturados);
@@ -257,12 +257,81 @@ public function facturar($coti_num)
         }
     }
 
+    $refsFacturacionBloqueo = CotizacionReferenciasFacturacion::mensajeSiNoPuedeFacturar($cotizacion);
+    $refsFacturacion = [
+        'remito' => CotizacionReferenciasFacturacion::textoPrimerRemitoParaFactura($cotizacion),
+        'oc' => trim((string) ($cotizacion->coti_oc_referencia ?? '')),
+        'oc_obligatorio' => (bool) ($cotizacion->coti_oc_requerido_factura ?? false),
+        'filas' => CotizacionReferenciasFacturacion::rowsFromModel($cotizacion),
+        'puede_facturar' => $refsFacturacionBloqueo === null,
+        'mensaje_bloqueo' => $refsFacturacionBloqueo,
+    ];
+
+    $cuotasInfo = null;
+    if ($cotizacion->coti_cuotas) {
+        $facturas = Factura::where('cotizacion_id', $coti_num)->get();
+        $cuotasFacturadas = [];
+        
+        foreach ($facturas as $f) {
+            $itemsData = $f->items;
+            if (is_string($itemsData)) {
+                $itemsData = json_decode($itemsData, true);
+            }
+            
+            $listaItems = $itemsData['items'] ?? [];
+            foreach ($listaItems as $item) {
+                if (($item['tipo'] ?? '') === 'cuota') {
+                    // Intentar extraer el número de cuota de la descripción o buscar un campo específico
+                    // Por ahora, usaremos la descripción: "Cuota X de Y"
+                    if (preg_match('/Cuota (\d+) de/', $item['descripcion'], $matches)) {
+                        $cuotasFacturadas[] = (int) $matches[1];
+                    }
+                }
+            }
+        }
+        
+        // Determinar fecha de inicio de cuotas: aprobación o fecha de alta como fallback
+        $fechaInicioCuotas = $cotizacion->coti_fechaaprobado
+            ?? $cotizacion->coti_fechaalta
+            ?? now();
+
+        // monto_indiv guardado por el JS ya incluye el interés → es la fuente de verdad.
+        // coti_cuota_monto_total puede estar desactualizado respecto al total real,
+        // por lo que NO se usa para recomputar el monto individual.
+        $cuotaCant    = max(1, (int) $cotizacion->coti_cuota_cant);
+        $cuotaIndiv   = (float) ($cotizacion->coti_cuota_monto_indiv ?? 0);
+        $cuotaInteres = (float) ($cotizacion->coti_cuota_interes ?? 0);
+
+        // Total efectivo a cobrar = lo que el cliente paga realmente (indiv × cant)
+        $cuotaTotalEfectivo = $cuotaIndiv * $cuotaCant;
+
+        // Monto base (sin interés): back-calculado solo para mostrar el desglose
+        $cuotaMontoBase = $cuotaInteres > 0
+            ? round($cuotaTotalEfectivo / (1 + $cuotaInteres / 100), 2)
+            : $cuotaTotalEfectivo;
+
+        $cuotasInfo = [
+            'total'             => $cuotaCant,
+            'billed_list'       => $cuotasFacturadas,
+            'facturadas'        => count($cuotasFacturadas),
+            'monto_base'        => $cuotaMontoBase,
+            'interes'           => $cuotaInteres,
+            'monto_con_interes' => $cuotaTotalEfectivo,
+            'monto_indiv'       => $cuotaIndiv,
+            'descripcion'       => $cotizacion->coti_cuota_desc,
+            'proxima'           => empty($cuotasFacturadas) ? 1 : max($cuotasFacturadas) + 1,
+            'fecha_inicio'      => $fechaInicioCuotas,
+        ];
+    }
+
     return view('facturacion.show', compact(
-        'cotizacion', 
-        'tareas', 
-        'usuarios', 
+        'cotizacion',
+        'tareas',
+        'usuarios',
         'agrupadas',
-        'resumenMontos'
+        'resumenMontos',
+        'refsFacturacion',
+        'cuotasInfo'
     ));
 }
 
@@ -357,18 +426,34 @@ public function generarFacturaArca(Request $request, $coti_num)
             'cotizacion_id' => 'required|numeric',
             'muestras' => 'array|nullable',
             'analisis' => 'array|nullable',
+            'cuotas' => 'array|nullable',
             'muestras.*' => 'numeric|exists:cotio_instancias,id',
             'analisis.*' => 'numeric|exists:cotio_instancias,id',
+            'cuotas.*' => 'numeric',
         ], [
             'analisis.*.numeric' => 'El ID del análisis :index debe ser un número.',
             'analisis.*.exists' => 'El ID del análisis :index no existe en la base de datos.',
             'muestras.*.numeric' => 'El ID de la muestra :index debe ser un número.',
             'muestras.*.exists' => 'El ID de la muestra :index no existe en la base de datos.',
+            'cuotas.*.numeric' => 'El número de cuota :index debe ser un número.',
         ]);
 
         $cotizacion = Coti::with(['cliente'])->findOrFail($coti_num);
+
+        $bloqueoRefs = CotizacionReferenciasFacturacion::mensajeSiNoPuedeFacturar($cotizacion);
+        if ($bloqueoRefs) {
+            return redirect()->back()->with('error', $bloqueoRefs);
+        }
+
         $muestrasSeleccionadas = $request->input('muestras', []);
         $analisisSeleccionados = $request->input('analisis', []);
+        $cuotasSeleccionadas = $request->input('cuotas', []);
+        $observaciones = $request->input('observaciones');
+
+        // Si se seleccionaron cuotas, priorizar esa lógica
+        if (!empty($cuotasSeleccionadas)) {
+            return $this->generarFacturaCuotas($request, $cotizacion, $cuotasSeleccionadas, $observaciones);
+        }
 
         // Cargar instancias de muestras (solo las que NO están facturadas)
         $muestras = CotioInstancia::whereIn('id', $muestrasSeleccionadas)
@@ -387,7 +472,11 @@ public function generarFacturaArca(Request $request, $coti_num)
             return redirect()->back()->with('error', 'No se seleccionaron muestras ni análisis válidos.');
         }
 
-        $resumenFinanciero = $this->construirResumenFinanciero($cotizacion);
+        $tareasParaResumen = $cotizacion->tareas()
+            ->orderBy('cotio_item')
+            ->orderBy('cotio_subitem')
+            ->get();
+        $resumenFinanciero = $this->construirResumenFinanciero($cotizacion, $tareasParaResumen);
         $muestrasTarifario = $resumenFinanciero['muestras'];
         $analisisTarifario = $resumenFinanciero['analisis'];
         $descuentoFactor = $resumenFinanciero['descuento_factor'];
@@ -403,7 +492,7 @@ public function generarFacturaArca(Request $request, $coti_num)
 
         Log::info('Aplicando descuentos durante facturación (prioridad: cotización, luego cliente)', [
             'cotizacion' => $cotizacion->coti_num,
-            'cliente' => optional($cotizacion->cliente)->cli_descripcion ?? $cotizacion->coti_empresa,
+            'cliente' => optional($cotizacion->cliente)->cli_descripcion ?? CotizacionClienteEtiqueta::datosFacturacionFiscales($cotizacion)['razon_social'],
             'descuento_total_porcentaje' => $descuentoPorcentaje,
             'descuento_global_porcentaje' => $descuentoGlobalPorcentaje,
             'descuento_sector_porcentaje' => $descuentoSectorPorcentaje,
@@ -476,11 +565,13 @@ public function generarFacturaArca(Request $request, $coti_num)
                 ->where('facturado', true)
                 ->get();
             
-            $precioAnalisisYaFacturados = 0.0;
-            foreach ($analisisYaFacturados as $analisisFacturado) {
-                $precioAnalisis = $analisisTarifario[$analisisFacturado->cotio_item][$analisisFacturado->cotio_subitem]['precio'] ?? 0.0;
-                $precioAnalisisYaFacturados += $precioAnalisis;
-            }
+            $cantLineaEnsayo = (float) ($muestrasTarifario[$muestra->cotio_item]['cantidad'] ?? 1);
+            $precioAnalisisYaFacturados = $this->sumaPreciosAnalisisFacturadosRepartida(
+                $analisisYaFacturados,
+                $analisisTarifario,
+                $tareasParaResumen,
+                $cantLineaEnsayo
+            );
             
             // El precio de la muestra debe ser el total menos los análisis ya facturados
             $precioBaseAjustado = max(0.0, $precioBase - $precioAnalisisYaFacturados);
@@ -591,14 +682,15 @@ public function generarFacturaArca(Request $request, $coti_num)
             'aumento_monto' => $aumentoMontoTotalSeleccionado,
         ];
 
-        // Preparar datos del cliente
+        // Titular fiscal: ficha del cliente (cli_*), no sucursal ni empresa relacionada
+        $fiscal = CotizacionClienteEtiqueta::datosFacturacionFiscales($cotizacion);
         $clienteData = [
-            'razon_social' => $cotizacion->coti_empresa ?? env('EMPRESA_RAZON_SOCIAL', 'Cliente Prueba'),
-            'cuit' => $cotizacion->coti_cuit ?? env('AFIP_CUIT', '20111111112'),
-            'domicilio' => $cotizacion->coti_direccioncli ?? env('EMPRESA_DOMICILIO', 'Domicilio Prueba'),
-            'localidad' => $cotizacion->coti_localidad ?? 'CABA',
-            'provincia' => $cotizacion->coti_partido ?? 'Buenos Aires',
-            'email' => $cotizacion->coti_mail ?? 'pruebas@afip.com',
+            'razon_social' => $fiscal['razon_social'] !== '' ? $fiscal['razon_social'] : env('EMPRESA_RAZON_SOCIAL', 'Cliente Prueba'),
+            'cuit' => $fiscal['cuit'] !== '' ? $fiscal['cuit'] : config('afip.cuit', '20111111112'),
+            'domicilio' => $fiscal['domicilio'] !== '' ? $fiscal['domicilio'] : env('EMPRESA_DOMICILIO', 'Domicilio Prueba'),
+            'localidad' => $fiscal['localidad'] !== '' ? $fiscal['localidad'] : 'CABA',
+            'provincia' => $fiscal['provincia'] !== '' ? $fiscal['provincia'] : 'Buenos Aires',
+            'email' => $fiscal['email'] !== '' ? $fiscal['email'] : 'pruebas@afip.com',
         ];
 
         // Generar factura con ARCA/AFIP
@@ -612,33 +704,41 @@ public function generarFacturaArca(Request $request, $coti_num)
 
         $resultadoFactura = $this->integrarConArca($clienteData, $items, $montoTotal, $cotizacion);
 
-        if ($resultadoFactura['success']) {
-            try {
-                // Obtener la primera muestra para la descripción e instancia
-                $muestraPrincipal = $muestras->first();
-                
-                $factura = $this->guardarFacturacion([
-                    'cotizacion_id' => $coti_num,
-                    'cotio_descripcion' => $muestraPrincipal ? $muestraPrincipal->cotio_descripcion : 'Muestra no especificada',
-                    'instance_number' => $muestraPrincipal ? $muestraPrincipal->instance_number : 0,
-                    'numero_factura' => $resultadoFactura['numero_factura'],
-                    'cae' => $resultadoFactura['cae'],
-                    'fecha_vencimiento_cae' => $resultadoFactura['fecha_vencimiento'],
-                    'monto_total' => $montoTotal,
-                    'items' => [
-                        'items' => $items,
-                        'resumen' => $resumenDescuento,
-                    ],
-                    'estado' => 'aprobada',
-                    'muestras_ids' => $muestrasSeleccionadas,
-                    'analisis_ids' => $analisisSeleccionados
-                ]);
-        
-                return redirect()->back()->with('success', 'Factura generada exitosamente: ' . $resultadoFactura['numero_factura']);
-            } catch (\Exception $e) {
-                Log::error('Error al guardar factura después de generarla en AFIP: ' . $e->getMessage());
-                return redirect()->back()->with('success', 'Factura generada en AFIP: ' . $resultadoFactura['numero_factura'] . ' (Error al guardar en BD: ' . $e->getMessage() . ')');
+        if (! ($resultadoFactura['success'] ?? false)) {
+            $err = (string) ($resultadoFactura['error'] ?? 'No se pudo generar la factura en AFIP.');
+            if (! empty($resultadoFactura['detalle'])) {
+                $err .= ' ' . (string) $resultadoFactura['detalle'];
             }
+
+            return redirect()->back()->with('error', $err);
+        }
+
+        try {
+            // Obtener la primera muestra para la descripción e instancia
+            $muestraPrincipal = $muestras->first();
+            
+            $factura = $this->guardarFacturacion([
+                'cotizacion_id' => $coti_num,
+                'cotio_descripcion' => $muestraPrincipal ? $muestraPrincipal->cotio_descripcion : 'Muestra no especificada',
+                'instance_number' => $muestraPrincipal ? $muestraPrincipal->instance_number : 0,
+                'numero_factura' => $resultadoFactura['numero_factura'],
+                'cae' => $resultadoFactura['cae'],
+                'fecha_vencimiento_cae' => $resultadoFactura['fecha_vencimiento'],
+                'monto_total' => $montoTotal,
+                'items' => [
+                    'items' => $items,
+                    'resumen' => $resumenDescuento,
+                ],
+                'estado' => 'aprobada',
+                'muestras_ids' => $muestrasSeleccionadas,
+                'analisis_ids' => $analisisSeleccionados,
+                'observaciones' => $observaciones
+            ]);
+    
+            return redirect()->back()->with('success', 'Factura generada exitosamente: ' . $resultadoFactura['numero_factura']);
+        } catch (\Exception $e) {
+            Log::error('Error al guardar factura después de generarla en AFIP: ' . $e->getMessage());
+            return redirect()->back()->with('success', 'Factura generada en AFIP: ' . $resultadoFactura['numero_factura'] . ' (Error al guardar en BD: ' . $e->getMessage() . ')');
         }
     } catch (\Illuminate\Validation\ValidationException $e) {
         Log::error('Errores de validación: ' . json_encode($e->errors()));
@@ -649,14 +749,147 @@ public function generarFacturaArca(Request $request, $coti_num)
     }
 }
 
-private function guardarFacturacion($data)
+protected function generarFacturaCuotas(Request $request, $cotizacion, $cuotasSeleccionadas, $observaciones = null)
+{
+    // Verificar si alguna de las cuotas ya fue facturada (evitar duplicados)
+    $facturas = Factura::where('cotizacion_id', $cotizacion->coti_num)->get();
+    $cuotasFacturadas = [];
+    foreach ($facturas as $f) {
+        $itemsData = $f->items;
+        if (is_string($itemsData)) {
+            $itemsData = json_decode($itemsData, true);
+        }
+        $listaItems = $itemsData['items'] ?? [];
+        foreach ($listaItems as $item) {
+            if (($item['tipo'] ?? '') === 'cuota') {
+                if (preg_match('/Cuota (\d+) de/', $item['descripcion'], $matches)) {
+                    $cuotasFacturadas[] = (int) $matches[1];
+                }
+            }
+        }
+    }
+
+    foreach ($cuotasSeleccionadas as $numCuota) {
+        if (in_array((int) $numCuota, $cuotasFacturadas)) {
+            return redirect()->back()->with('error', "La cuota {$numCuota} ya ha sido facturada.");
+        }
+    }
+
+    $items = [];
+    $montoTotal = 0;
+    $montoTotalBruto = 0;
+
+    // monto_indiv ya tiene el interés incluido (lo calcula el JS al guardar)
+    $totalCuotas      = max(1, (int) ($cotizacion->coti_cuota_cant ?? 1));
+    $montoCuota       = (float) ($cotizacion->coti_cuota_monto_indiv ?? 0);
+    $descripcionCuota = $cotizacion->coti_cuota_desc ?? 'Cuota';
+
+    $mesesEs = [
+        1 => 'Enero', 2 => 'Febrero', 3 => 'Marzo', 4 => 'Abril',
+        5 => 'Mayo', 6 => 'Junio', 7 => 'Julio', 8 => 'Agosto',
+        9 => 'Septiembre', 10 => 'Octubre', 11 => 'Noviembre', 12 => 'Diciembre',
+    ];
+    $fechaBase = \Carbon\Carbon::parse(
+        $cotizacion->coti_fechaaprobado ?? $cotizacion->coti_fechaalta ?? now()
+    );
+
+    // Validar que ninguna cuota seleccionada sea de un período futuro
+    $hoyInicio = Carbon::now()->startOfMonth();
+    foreach ($cuotasSeleccionadas as $numCuota) {
+        $fechaCuota = $fechaBase->copy()->addMonths((int) $numCuota - 1)->startOfMonth();
+        if ($fechaCuota->gt($hoyInicio)) {
+            $nombreMes = $mesesEs[(int) $fechaCuota->format('n')];
+            $anio      = $fechaCuota->format('Y');
+            return redirect()->back()->with(
+                'error',
+                "La cuota {$numCuota} ({$nombreMes} {$anio}) corresponde a un período futuro y no puede facturarse todavía."
+            );
+        }
+    }
+
+    foreach ($cuotasSeleccionadas as $numCuota) {
+        $fechaCuota = $fechaBase->copy()->addMonths((int) $numCuota - 1);
+        $nombreMes = $mesesEs[(int) $fechaCuota->format('n')];
+        $anio = $fechaCuota->format('Y');
+        $items[] = [
+            'tipo' => 'cuota',
+            'descripcion' => "Cuota {$numCuota} de {$totalCuotas} - {$nombreMes} {$anio}" . ($descripcionCuota ? " ({$descripcionCuota})" : ''),
+            'cantidad' => 1,
+            'precio_unitario' => $montoCuota,
+            'subtotal' => $montoCuota,
+            'precio_unitario_bruto' => $montoCuota,
+            'subtotal_bruto' => $montoCuota,
+            'descuento_porcentaje' => 0,
+            'descuento_monto_item' => 0,
+        ];
+        $montoTotal += $montoCuota;
+        $montoTotalBruto += $montoCuota;
+    }
+
+    $resumenDescuento = [
+        'total_bruto' => $montoTotalBruto,
+        'total_neto' => $montoTotal,
+        'descuento_porcentaje' => 0,
+        'descuento_monto' => 0,
+        'aumento_porcentaje' => 0,
+        'aumento_monto' => 0,
+    ];
+
+    $fiscal = CotizacionClienteEtiqueta::datosFacturacionFiscales($cotizacion);
+    $clienteData = [
+        'razon_social' => $fiscal['razon_social'] !== '' ? $fiscal['razon_social'] : env('EMPRESA_RAZON_SOCIAL', 'Cliente Prueba'),
+        'cuit' => $fiscal['cuit'] !== '' ? $fiscal['cuit'] : config('afip.cuit', '20111111112'),
+        'domicilio' => $fiscal['domicilio'] !== '' ? $fiscal['domicilio'] : env('EMPRESA_DOMICILIO', 'Domicilio Prueba'),
+        'localidad' => $fiscal['localidad'] !== '' ? $fiscal['localidad'] : 'CABA',
+        'provincia' => $fiscal['provincia'] !== '' ? $fiscal['provincia'] : 'Buenos Aires',
+        'email' => $fiscal['email'] !== '' ? $fiscal['email'] : 'pruebas@afip.com',
+    ];
+
+    $resultadoFactura = $this->integrarConArca($clienteData, $items, $montoTotal, $cotizacion);
+
+    if (! ($resultadoFactura['success'] ?? false)) {
+        $err = (string) ($resultadoFactura['error'] ?? 'No se pudo generar la factura en AFIP.');
+        if (! empty($resultadoFactura['detalle'])) {
+            $err .= ' ' . (string) $resultadoFactura['detalle'];
+        }
+        return redirect()->back()->with('error', $err);
+    }
+
+    try {
+        $factura = $this->guardarFacturacion([
+            'cotizacion_id' => $cotizacion->coti_num,
+            'cotio_descripcion' => "Facturación de cuotas: " . implode(', ', $cuotasSeleccionadas),
+            'instance_number' => 0,
+            'numero_factura' => $resultadoFactura['numero_factura'],
+            'cae' => $resultadoFactura['cae'],
+            'fecha_vencimiento_cae' => $resultadoFactura['fecha_vencimiento'],
+            'monto_total' => $montoTotal,
+            'items' => [
+                'items' => $items,
+                'resumen' => $resumenDescuento,
+            ],
+            'estado' => 'aprobada',
+            'cuotas_nums' => $cuotasSeleccionadas,
+            'observaciones' => $observaciones
+        ]);
+
+        return redirect()->back()->with('success', 'Factura de cuotas generada exitosamente: ' . $resultadoFactura['numero_factura']);
+    } catch (\Exception $e) {
+        Log::error('Error al guardar factura de cuotas: ' . $e->getMessage());
+        return redirect()->back()->with('success', 'Factura de cuotas generada en AFIP: ' . $resultadoFactura['numero_factura'] . ' (Error al guardar en BD: ' . $e->getMessage() . ')');
+    }
+}
+
+protected function guardarFacturacion(array $data)
 {
     try {
         Log::info('Intentando guardar factura con datos:', $data);
 
-        // Obtener la cotización para extraer datos del cliente
-        $cotizacion = Coti::find($data['cotizacion_id']);
-        // dd($cotizacion);
+        // Obtener la cotización para extraer datos del cliente (fiscal = ficha cli, no sucursal/emp. rel.)
+        $cotizacion = Coti::with('cliente')->find($data['cotizacion_id']);
+        $fiscalGuardar = $cotizacion
+            ? CotizacionClienteEtiqueta::datosFacturacionFiscales($cotizacion)
+            : ['razon_social' => '', 'cuit' => '', 'domicilio' => '', 'localidad' => '', 'provincia' => '', 'email' => ''];
         
         // Procesar fecha de vencimiento CAE
         $fechaVencimiento = null;
@@ -697,15 +930,16 @@ private function guardarFacturacion($data)
             'cotizacion_id' => (int) $data['cotizacion_id'],
             'cotio_descripcion' => $data['cotio_descripcion'] ?? 'Muestra no especificada',
             'instance_number' => $data['instance_number'] ?? 0,
-            'cliente_razon_social' => $cotizacion->coti_empresa ?? 'Cliente no especificado',
-            'cliente_cuit' => $cotizacion->coti_cuit ?? '00-00000000-0',
+            'cliente_razon_social' => ($fiscalGuardar['razon_social'] ?? '') !== '' ? $fiscalGuardar['razon_social'] : 'Cliente no especificado',
+            'cliente_cuit' => ($fiscalGuardar['cuit'] ?? '') !== '' ? $fiscalGuardar['cuit'] : '00-00000000-0',
             'numero_factura' => (string) $data['numero_factura'],
             'cae' => (string) $data['cae'],
             'fecha_emision' => now(),
             'fecha_vencimiento_cae' => $fechaVencimiento,
             'monto_total' => (float) $data['monto_total'],
             'items' => $items,
-            'estado' => (string) $data['estado']
+            'estado' => (string) $data['estado'],
+            'observaciones' => $data['observaciones'] ?? null
         ];
 
         Log::info('Datos preparados para crear factura:', $facturaData);
@@ -845,27 +1079,19 @@ private function guardarFacturacion($data)
 private function obtenerDatosDescuento(?Coti $cotizacion): array
 {
     $cliente = $cotizacion?->cliente;
-    $sectorCodigoOriginal = $cotizacion?->coti_sector ?? optional($cliente)->cli_codigocrub;
+    $sectorCodigoOriginal = $cotizacion?->coti_sector;
     $sectorCodigo = $this->normalizarCodigoSector($sectorCodigoOriginal);
 
-    // Prioridad: primero descuentos de la cotización, luego del cliente
-    // Descuento global: usar el de la cotización si existe, sino el del cliente
+    // Solo usar descuentos de la cotización (global)
     $descuentoGlobal = 0.0;
-    if ($cotizacion && isset($cotizacion->coti_descuentoglobal) && $cotizacion->coti_descuentoglobal > 0) {
+    if ($cotizacion && $cotizacion->coti_descuentoglobal !== null) {
         $descuentoGlobal = (float) $cotizacion->coti_descuentoglobal;
-    } elseif ($cliente) {
-        $descuentoGlobal = (float) ($cliente->cli_descuentoglobal ?? 0.0);
     }
 
-    // Descuento sector: usar el de la cotización si existe, sino el del cliente
+    // Descuento sector: solo usar el configurado en la cotización
     $descuentoSector = 0.0;
     if ($cotizacion && $sectorCodigo) {
         $descuentoSector = $this->obtenerDescuentoSectorCotizacion($cotizacion, $sectorCodigo);
-    }
-    
-    // Si no hay descuento de sector en la cotización, usar el del cliente
-    if ($descuentoSector == 0.0 && $cliente) {
-        $descuentoSector = $this->obtenerDescuentoSector($cliente, $sectorCodigo);
     }
 
     $descuentoGlobal = max(0.0, min($descuentoGlobal, 100.0));
@@ -1064,6 +1290,49 @@ private function calcularImporteDesdeTarea($tarea): float
     return $precio * $cantidad;
 }
 
+/**
+ * Suma importes tarifario de análisis ya facturados para una instancia de muestra.
+ * Los importes en cotio son por línea de cotización; si la línea ensayo tiene cantidad > 1,
+ * se prorratean (misma base que CotizacionPrecioEnsayo::importeEnsayoMasAnalitos).
+ *
+ * @param  \Illuminate\Support\Collection|\Traversable|array|null  $analisisYaFacturados
+ * @param  \Illuminate\Support\Collection|null  $tareas
+ */
+private function sumaPreciosAnalisisFacturadosRepartida($analisisYaFacturados, array $analisisTarifario, $tareas, float $cantidadLineaEnsayo): float
+{
+    if ($analisisYaFacturados === null) {
+        return 0.0;
+    }
+    if (is_array($analisisYaFacturados)) {
+        $analisisYaFacturados = collect($analisisYaFacturados);
+    }
+    if ($analisisYaFacturados instanceof \Illuminate\Support\Collection && $analisisYaFacturados->isEmpty()) {
+        return 0.0;
+    }
+    if (! is_iterable($analisisYaFacturados)) {
+        return 0.0;
+    }
+
+    $cant = $cantidadLineaEnsayo > 0 ? $cantidadLineaEnsayo : 1.0;
+    $suma = 0.0;
+    $tareasColl = $tareas instanceof \Illuminate\Support\Collection ? $tareas : null;
+
+    foreach ($analisisYaFacturados as $analisisFacturado) {
+        $itemK = (int) ($analisisFacturado->cotio_item ?? 0);
+        $subK = (int) ($analisisFacturado->cotio_subitem ?? 0);
+        $precioAnalisis = (float) ($analisisTarifario[$itemK][$subK]['precio'] ?? 0.0);
+        if ($precioAnalisis == 0.0 && $tareasColl) {
+            $tareaAnalisis = $tareasColl->where('cotio_item', $itemK)->where('cotio_subitem', $subK)->first();
+            if ($tareaAnalisis) {
+                $precioAnalisis = $this->calcularImporteDesdeTarea($tareaAnalisis);
+            }
+        }
+        $suma += $precioAnalisis / $cant;
+    }
+
+    return $suma;
+}
+
 private function construirResumenFinanciero(Coti $cotizacion, $tareas = null): array
 {
     $tareasCollection = $tareas instanceof \Illuminate\Support\Collection ? $tareas : collect($tareas ?? $cotizacion->tareas);
@@ -1082,21 +1351,53 @@ private function construirResumenFinanciero(Coti $cotizacion, $tareas = null): a
 
         $componentesDelEnsayo = $componentes->where('cotio_item', $ensayo->cotio_item);
 
-        $precioUnitario = $componentesDelEnsayo->sum(function ($componente) {
+        $precioSoloComponentes = $componentesDelEnsayo->sum(function ($componente) {
+            if ($componente->de_agrupador) {
+                return 0;
+            }
             return $this->calcularImporteDesdeTarea($componente);
         });
+
+        $esNuevaLogica = $tareasCollection->contains(function($t) {
+            return (bool)($t->de_agrupador ?? false);
+        });
+
+        $nullableCotio = null;
+        if ($ensayo->cotio_precio !== null && $ensayo->cotio_precio !== '') {
+            $nullableCotio = (float) $ensayo->cotio_precio;
+        }
+        $precioAdicionalUnitario = CotizacionPrecioEnsayo::resolverPrecioExtraEnsayoDesdeCotioRow(
+            $nullableCotio,
+            (float) $precioSoloComponentes,
+            $esNuevaLogica
+        );
+        $subtotalMuestra = CotizacionPrecioEnsayo::importeEnsayoMasAnalitos(
+            $cantidad,
+            (float) $precioSoloComponentes,
+            $ensayo->cotio_precio ?? null,
+            $esNuevaLogica
+        );
+        $precioUnitarioEfectivo = $cantidad > 0 ? ($subtotalMuestra / $cantidad) : $subtotalMuestra;
 
         $muestrasInfo[$ensayo->cotio_item] = [
             'descripcion' => $ensayo->cotio_descripcion,
             'cantidad' => $cantidad,
-            'precio_unitario' => $precioUnitario,
-            'subtotal' => $precioUnitario * $cantidad,
+            'precio_unitario' => $precioUnitarioEfectivo,
+            'subtotal' => $subtotalMuestra,
+            'precio_adicional_unitario' => $precioAdicionalUnitario,
+            'subtotal_analitos' => (float) $precioSoloComponentes,
+            'subtotal_adicional' => $precioAdicionalUnitario * $cantidad,
         ];
 
         foreach ($componentesDelEnsayo as $componente) {
+            $precioComp = $this->calcularImporteDesdeTarea($componente);
+            if ($componente->de_agrupador) {
+                $precioComp = 0.0;
+            }
             $analisisInfo[$componente->cotio_item][$componente->cotio_subitem] = [
                 'descripcion' => $componente->cotio_descripcion,
-                'precio' => $this->calcularImporteDesdeTarea($componente),
+                'precio' => $precioComp,
+                'de_agrupador' => $componente->de_agrupador,
             ];
         }
     }
@@ -1159,6 +1460,225 @@ private function construirResumenFinanciero(Coti $cotizacion, $tareas = null): a
     ];
 }
 
+/**
+ * Solo dígitos para CUIT / DocNro AFIP.
+ */
+private function afipSoloDigitos(?string $valor): string
+{
+    return preg_replace('/\D/', '', (string) $valor);
+}
+
+/**
+ * CUIT del emisor (laboratorio) para el SDK Afip: 11 dígitos. Se envía en el TA (app.afipsdk.com).
+ *
+ * @return array{cuit_int: int, cuit_log: string}
+ */
+private function afipResolverCuitEmisorParaSdk(): array
+{
+    $digits = $this->afipSoloDigitos((string) config('afip.cuit', '20409378472'));
+    if (strlen($digits) !== 11) {
+        throw new \InvalidArgumentException('AFIP_CUIT debe tener exactamente 11 dígitos (CUIT emisor registrado en Afip SDK).');
+    }
+
+    return [
+        'cuit_int' => (int) $digits,
+        'cuit_log' => $digits,
+    ];
+}
+
+/**
+ * Dígito verificador de CUIT (11 dígitos) sobre la base de 10 dígitos iniciales.
+ */
+private function afipCuitCalcularDigitoVerificador(string $base10): int
+{
+    if (strlen($base10) !== 10 || ! ctype_digit($base10)) {
+        throw new \InvalidArgumentException('afipCuitCalcularDigitoVerificador: se esperaban 10 dígitos numéricos.');
+    }
+
+    $pesos = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
+    $suma = 0;
+    for ($i = 0; $i < 10; $i++) {
+        $suma += ((int) $base10[$i]) * $pesos[$i];
+    }
+    $mod = $suma % 11;
+    $dv = 11 - $mod;
+    if ($dv === 11) {
+        return 0;
+    }
+    if ($dv === 10) {
+        return 9;
+    }
+
+    return $dv;
+}
+
+/**
+ * Lleva un CUIT del cliente (ficha/cotización) a 11 dígitos con DV correcto, si es posible.
+ * Cubre: 6–8 dígitos (DNI/cuerpo), 9 (tipo+cuerpo sin DV o 20 + 8 sin prefijo fijo en tipo),
+ * 10 (sin DV), 11 (corrige DV si estaba mal), y >11 (carga duplicada: primeros 11).
+ */
+private function afipNormalizarCuitReceptor11(?string $cuitRaw): ?string
+{
+    $d = $this->afipSoloDigitos((string) $cuitRaw);
+    if ($d === '') {
+        return null;
+    }
+    if (strlen($d) > 11) {
+        $d = substr($d, 0, 11);
+    }
+
+    if (strlen($d) === 11) {
+        $b10 = substr($d, 0, 10);
+        $esperado = $this->afipCuitCalcularDigitoVerificador($b10);
+        if ((int) $d[10] === $esperado) {
+            return $d;
+        }
+
+        return $b10 . (string) $esperado;
+    }
+    if (strlen($d) === 10) {
+        $b10 = $d;
+
+        return $b10 . (string) $this->afipCuitCalcularDigitoVerificador($b10);
+    }
+    if (strlen($d) === 8) {
+        $b10 = '20' . $d;
+
+        return $b10 . (string) $this->afipCuitCalcularDigitoVerificador($b10);
+    }
+    if (strlen($d) === 7) {
+        $b10 = '20' . str_pad($d, 8, '0', STR_PAD_LEFT);
+
+        return $b10 . (string) $this->afipCuitCalcularDigitoVerificador($b10);
+    }
+    if (strlen($d) === 9) {
+        $tipo = substr($d, 0, 2);
+        $tiposCuit = ['20', '23', '24', '27', '30', '33', '34'];
+        if (in_array($tipo, $tiposCuit, true)) {
+            $cuerpo = str_pad(substr($d, 2), 8, '0', STR_PAD_LEFT);
+            if (strlen($cuerpo) !== 8) {
+                return null;
+            }
+            $b10 = $tipo . $cuerpo;
+        } else {
+            $b10 = '20' . str_pad(substr($d, 0, 8), 8, '0', STR_PAD_LEFT);
+        }
+
+        return $b10 . (string) $this->afipCuitCalcularDigitoVerificador($b10);
+    }
+    if (strlen($d) >= 1 && strlen($d) <= 6) {
+        $b10 = '20' . str_pad($d, 8, '0', STR_PAD_LEFT);
+        if (strlen($b10) === 10) {
+            return $b10 . (string) $this->afipCuitCalcularDigitoVerificador($b10);
+        }
+    }
+
+    return null;
+}
+
+/**
+ * DocNro receptor (DocTipo 80) a partir de CUIT de 11 dígitos. Nunca usar 0 en FECAE.
+ */
+private function afipDocNroReceptorDesdeCuit11(?string $cuit11): int
+{
+    if ($cuit11 === null || strlen($cuit11) !== 11 || ! ctype_digit($cuit11)) {
+        return 0;
+    }
+
+    return (int) $cuit11;
+}
+
+/**
+ * Ruta absoluta a un archivo de certificado/clave configurado en .env.
+ */
+private function afipResolverRutaArchivo(string $ruta): string
+{
+    $ruta = trim(str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $ruta));
+    if ($ruta === '') {
+        return '';
+    }
+    if (preg_match('#^[A-Za-z]:[/\\\\]#', $ruta) || str_starts_with($ruta, DIRECTORY_SEPARATOR)) {
+        return $ruta;
+    }
+
+    return base_path($ruta);
+}
+
+/**
+ * Lee PEM de certificado y clave, u omite ambos en modo desarrollo con el CUIT de testing del SDK.
+ *
+ * @return array{cert: string|null, key: string|null, modo_sin_certificado?: true}|array{success: false, error: string, detalle: string}
+ */
+private function afipCargarCertYKeyDesdeEnv(): array
+{
+    // Usar config(), no env(): con config:cache, env() devuelve null fuera de config/ y falla el modo solo-token.
+    $certRel = config('afip.cert_path');
+    $keyRel = config('afip.key_path');
+    $certVacio = ! is_string($certRel) || trim($certRel) === '';
+    $keyVacio = ! is_string($keyRel) || trim($keyRel) === '';
+
+    $production = (bool) config('afip.production', false);
+    $cuitEmisor = $this->afipSoloDigitos((string) config('afip.cuit', ''));
+
+    if (! $production
+        && $cuitEmisor === self::AFIP_CUIT_SDK_SOLO_TOKEN
+        && $certVacio
+        && $keyVacio) {
+        return [
+            'cert' => null,
+            'key' => null,
+            'modo_sin_certificado' => true,
+        ];
+    }
+
+    if ($certVacio || $keyVacio) {
+        return [
+            'success' => false,
+            'error' => 'Faltan AFIP_CERT_PATH y/o AFIP_KEY_PATH en .env.',
+            'detalle' => 'Con un CUIT propio el certificado es obligatorio incluso en homologación. '
+                .'Para probar solo con token, usá AFIP_CUIT='.self::AFIP_CUIT_SDK_SOLO_TOKEN.', AFIP_PRODUCTION=false '
+                .'y no definas rutas de certificado ni clave.',
+        ];
+    }
+
+    $certPath = $this->afipResolverRutaArchivo($certRel);
+    $keyPath = $this->afipResolverRutaArchivo($keyRel);
+
+    if ($certPath === '' || ! is_file($certPath) || ! is_readable($certPath)) {
+        return [
+            'success' => false,
+            'error' => 'Certificado AFIP no encontrado o ilegible.',
+            'detalle' => $certPath !== '' ? $certPath : $certRel,
+        ];
+    }
+    if ($keyPath === '' || ! is_file($keyPath) || ! is_readable($keyPath)) {
+        return [
+            'success' => false,
+            'error' => 'Clave privada AFIP no encontrada o ilegible.',
+            'detalle' => $keyPath !== '' ? $keyPath : $keyRel,
+        ];
+    }
+
+    $cert = @file_get_contents($certPath);
+    $key = @file_get_contents($keyPath);
+    if ($cert === false || trim($cert) === '') {
+        return [
+            'success' => false,
+            'error' => 'No se pudo leer el certificado PEM.',
+            'detalle' => $certPath,
+        ];
+    }
+    if ($key === false || trim($key) === '') {
+        return [
+            'success' => false,
+            'error' => 'No se pudo leer la clave privada PEM.',
+            'detalle' => $keyPath,
+        ];
+    }
+
+    return ['cert' => $cert, 'key' => $key];
+}
+
 private function integrarConArca($clienteData, $items, $montoTotal, $cotizacion)
 {
     try {
@@ -1168,33 +1688,113 @@ private function integrarConArca($clienteData, $items, $montoTotal, $cotizacion)
             'entorno' => 'homologacion',
             'precios' => 'reales_bd'
         ]);
-        
-        $afip = new Afip([
-            'CUIT' => 20409378472,
-            'production' => false, // Siempre en false para homologación
-            'res_folder' => __DIR__ . '/afip_res',
-            'access_token' => env('AFIPSDK_ACCESS_TOKEN'),
+
+        $tokenSdk = config('afip.access_token');
+        if (! is_string($tokenSdk) || trim($tokenSdk) === '') {
+            return [
+                'success' => false,
+                'error' => 'Falta configurar AFIPSDK_ACCESS_TOKEN en .env.',
+                'detalle' => 'Sin token, el SDK no puede obtener el Ticket de Acceso (wsfe).',
+            ];
+        }
+
+        $emisor = $this->afipResolverCuitEmisorParaSdk();
+
+        $pem = $this->afipCargarCertYKeyDesdeEnv();
+        if (isset($pem['success']) && $pem['success'] === false) {
+            return [
+                'success' => false,
+                'error' => $pem['error'],
+                'detalle' => $pem['detalle'] ?? null,
+            ];
+        }
+
+        $productionAfip = (bool) config('afip.production', false);
+
+        $opcionesAfip = [
+            'CUIT' => $emisor['cuit_log'],
+            'production' => $productionAfip,
+            'access_token' => $tokenSdk,
             'debug' => true,
+        ];
+        if (empty($pem['modo_sin_certificado'])) {
+            $opcionesAfip['cert'] = $pem['cert'];
+            $opcionesAfip['key'] = $pem['key'];
+        }
+
+        $afip = new Afip($opcionesAfip);
+
+        Log::info('AFIP SDK emisor (auth TA)', [
+            'cuit_emisor' => $emisor['cuit_log'],
+            'production' => $productionAfip,
+            'sin_certificado_sdk' => ! empty($pem['modo_sin_certificado']),
         ]);
 
         $neto = round($montoTotal / 1.21, 2);
         $iva = round($montoTotal - $neto, 2);
-        $docNro = preg_replace('/\D/', '', $clienteData['cuit']);
+
+        // AFIP: para comprobantes clase 'A' (CbteTipo=1) exige DocTipo=80 (CUIT).
+        // Se normaliza desde la ficha (6–11 dígitos, DV, tipos 20/27/30, etc.) en
+        // {@see afipNormalizarCuitReceptor11()}.
+        $cuitRaw = (string) ($clienteData['cuit'] ?? '');
+        $cuitDigits = $this->afipSoloDigitos($cuitRaw);
+        $cuit11 = $this->afipNormalizarCuitReceptor11($cuitRaw);
+
+        $docTipo = 80; // Clase A => CUIT
+        $docNro = $this->afipDocNroReceptorDesdeCuit11($cuit11);
+        if ($docNro <= 0) {
+            $hint = $cuitDigits === ''
+                ? ' El CUIT en la ficha no tiene dígitos; revisá el campo o los guiones (solo se envían números).'
+                : '';
+
+            return [
+                'success' => false,
+                'error' => 'CUIT del receptor fiscal inválido para factura clase A (DocTipo 80).',
+                'detalle' => 'Normalice el CUIT del cliente a 11 dígitos o complete la ficha fiscal (cli_cuit / coti_cuit).'
+                    . $hint
+                    . (strlen($cuitDigits) > 0 ? ' Dígitos detectados: ' . strlen($cuitDigits) . '.' : ''),
+            ];
+        }
+
+        Log::info('AFIP DocNro/DocTipo (receptor) para FECAESolicitar', [
+            'cuit_raw' => $cuitRaw,
+            'cuitDigits' => $cuitDigits,
+            'cuit11' => $cuit11,
+            'docTipo' => $docTipo,
+            'docNro' => $docNro,
+        ]);
+
+        // Determinar divisa para AFIP
+        $divisaCodigo = $cotizacion->divisa_codigo ?? 'PES';
+        // Mapear código interno a código AFIP
+        switch ($divisaCodigo) {
+            case 'USD':
+                $monId = 'DOL';
+                break;
+            default:
+                $monId = 'PES';
+                break;
+        }
+        // Por ahora cotización fija 1; se puede parametrizar luego
+        $monCotiz = 1;
+
+        $ptoVta = max(1, min(9999, (int) config('afip.punto_venta', 1)));
+        $cbteTipo = max(1, (int) config('afip.cbte_tipo', 1));
 
         $facturaData = [
-            'CbteTipo' => 1,
-            'PtoVta' => 1,
+            'CbteTipo' => $cbteTipo,
+            'PtoVta' => $ptoVta,
             'Concepto' => 1,
-            'DocTipo' => $clienteData['cuit'] === '00000000000' ? 99 : 80,
-            'DocNro' => (float) $docNro,
+            'DocTipo' => (int) $docTipo,
+            'DocNro' => (int) $docNro,
             'CondicionIVAReceptorId' => 1, // Consumidor Final
             'CbteFch' => date('Ymd'),
-            'ImpTotal' => number_format($montoTotal, 2, '.', ''),
+            'ImpTotal' => number_format((float) $montoTotal, 2, '.', ''),
             'ImpTotConc' => 0,
-            'ImpNeto' => number_format($neto, 2, '.', ''),
-            'ImpIVA' => number_format($iva, 2, '.', ''),
-            'MonId' => 'PES',
-            'MonCotiz' => 1,
+            'ImpNeto' => number_format((float) $neto, 2, '.', ''),
+            'ImpIVA' => number_format((float) $iva, 2, '.', ''),
+            'MonId' => $monId,
+            'MonCotiz' => (int) $monCotiz,
             'Iva' => [
                 [
                     'Id' => 5,
@@ -1208,22 +1808,49 @@ private function integrarConArca($clienteData, $items, $montoTotal, $cotizacion)
         foreach ($items as $item) {
             $unitPrice = round($item['precio_unitario'] / 1.21, 2);
             $importe = round($item['subtotal'] / 1.21, 2);
+            $qty = (int) ($item['cantidad'] ?? 1);
+            if ($qty < 1) {
+                $qty = 1;
+            }
 
             $facturaData['Detalles'][] = [
-                'Qty' => (int) $item['cantidad'],
-                'ProDs' => substr($item['descripcion'], 0, 250),
+                'Qty' => $qty,
+                'ProDs' => substr((string) ($item['descripcion'] ?? ''), 0, 250),
                 'ProUMed' => 7,
-                'ProPrecioUnit' => number_format($unitPrice, 2, '.', ''),
-                'ProImporteItem' => number_format($importe, 2, '.', ''),
+                'ProPrecioUnit' => number_format((float) $unitPrice, 2, '.', ''),
+                'ProImporteItem' => number_format((float) $importe, 2, '.', ''),
                 'ProBonif' => 0,
             ];
+        }
+
+        if ((bool) config('afip.direct_wsfe', false)) {
+            if (! empty($pem['modo_sin_certificado'])) {
+                return [
+                    'success' => false,
+                    'error' => 'AFIP_DIRECT_WSFE requiere certificado y clave PEM.',
+                    'detalle' => 'El modo directo usa WSAA local (firma con tu .key). Con solo token (CUIT 20409378472 sin PEM) tenés que usar el proxy del SDK. Si app.afipsdk.com falla, generá PEM (php artisan afip:create-cert-dev), configurá AFIP_CERT_PATH/AFIP_KEY_PATH, tu CUIT y AFIP_DIRECT_WSFE=true.',
+                ];
+            }
+            if (! extension_loaded('soap')) {
+                return [
+                    'success' => false,
+                    'error' => 'AFIP_DIRECT_WSFE requiere la extensión PHP soap.',
+                    'detalle' => 'Habilitá extension=soap en php.ini del PHP que usa php artisan serve.',
+                ];
+            }
+
+            return $this->integrarConArcaWsfeDirecto($facturaData, $emisor, $pem, $productionAfip);
         }
 
         $wsfe = $afip->ElectronicBilling;
         
         // Paso 1: Obtener el último comprobante autorizado para conocer el número y la fecha
         try {
-            $ultimoNumero = $wsfe->GetLastVoucher($facturaData['PtoVta'], $facturaData['CbteTipo']);
+            $ultimoNumeroRaw = $wsfe->GetLastVoucher((int) $facturaData['PtoVta'], (int) $facturaData['CbteTipo']);
+            $ultimoNumero = is_numeric($ultimoNumeroRaw) ? (int) $ultimoNumeroRaw : 0;
+            if ($ultimoNumero < 0) {
+                $ultimoNumero = 0;
+            }
             $proximoNumero = $ultimoNumero + 1;
             
             Log::info('Último comprobante autorizado', [
@@ -1264,8 +1891,8 @@ private function integrarConArca($clienteData, $items, $montoTotal, $cotizacion)
             }
             
             // Paso 4: Establecer el número del comprobante explícitamente
-            $facturaData['CbteDesde'] = $proximoNumero;
-            $facturaData['CbteHasta'] = $proximoNumero;
+            $facturaData['CbteDesde'] = (int) $proximoNumero;
+            $facturaData['CbteHasta'] = (int) $proximoNumero;
             
             Log::info('Datos del comprobante a generar', [
                 'PtoVta' => $facturaData['PtoVta'],
@@ -1281,6 +1908,16 @@ private function integrarConArca($clienteData, $items, $montoTotal, $cotizacion)
                 'mensaje' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
+
+            $msg = $e->getMessage();
+            $detalle = 'No se pudo consultar el último comprobante autorizado en AFIP.';
+            if (str_contains($msg, 'GetServiceTA')
+                || str_contains($msg, 'NumberFormatException')
+                || str_contains($msg, 'BigInteger')
+                || str_contains($msg, 'afip/auth')) {
+                $detalle = 'Fallo al obtener el Ticket de Acceso (Afip SDK → app.afipsdk.com). Suele deberse a AFIPSDK_ACCESS_TOKEN, a AFIP_CUIT (11 dígitos, mismo CUIT que el certificado en el panel del SDK) o al entorno de homologación; no indica que DocNro del receptor esté vacío en esta llamada. '
+                    .'Si el error persiste, probá AFIP_DIRECT_WSFE=true con AFIP_CERT_PATH y AFIP_KEY_PATH (WSAA+WSFE directo a ARCA, requiere extension soap).';
+            }
             
             // Si no se puede obtener el último comprobante, intentar con CreateNextVoucher como fallback
             Log::info('Intentando con CreateNextVoucher como fallback');
@@ -1301,8 +1938,8 @@ private function integrarConArca($clienteData, $items, $montoTotal, $cotizacion)
             
             return [
                 'success' => false,
-                'error' => 'Error al obtener último comprobante autorizado: ' . $e->getMessage(),
-                'detalle' => 'No se pudo consultar el último comprobante autorizado en AFIP.'
+                'error' => 'Error al obtener último comprobante autorizado: ' . $msg,
+                'detalle' => $detalle,
             ];
         }
         
@@ -1356,11 +1993,90 @@ private function integrarConArca($clienteData, $items, $montoTotal, $cotizacion)
 }
 
 /**
+ * WSAA + WSFEv1 contra ARCA sin app.afipsdk.com (AFIP_DIRECT_WSFE=true).
+ *
+ * @param  array{cert: string, key: string}  $pem
+ * @param  array{cuit_int: int, cuit_log: string}  $emisor
+ */
+private function integrarConArcaWsfeDirecto(array $facturaData, array $emisor, array $pem, bool $productionAfip): array
+{
+    Log::info('AFIP WSFE directo (WSAA + SoapClient, sin proxy Afip SDK)', [
+        'cuit_emisor' => $emisor['cuit_log'],
+        'production' => $productionAfip,
+    ]);
+
+    try {
+        $direct = AfipDirectWsfeClient::fromConfig($emisor['cuit_log'], $pem['cert'], $pem['key']);
+
+        $ultimoNumeroRaw = $direct->getLastVoucher((int) $facturaData['PtoVta'], (int) $facturaData['CbteTipo']);
+        $ultimoNumero = is_numeric($ultimoNumeroRaw) ? (int) $ultimoNumeroRaw : 0;
+        if ($ultimoNumero < 0) {
+            $ultimoNumero = 0;
+        }
+        $proximoNumero = $ultimoNumero + 1;
+
+        Log::info('Último comprobante autorizado (WSFE directo)', [
+            'PtoVta' => $facturaData['PtoVta'],
+            'CbteTipo' => $facturaData['CbteTipo'],
+            'ultimo_numero' => $ultimoNumero,
+            'proximo_numero' => $proximoNumero,
+        ]);
+
+        $fechaUltimoComprobante = null;
+        if ($ultimoNumero > 0) {
+            try {
+                $infoUltimoComprobante = $direct->getVoucherInfo($ultimoNumero, (int) $facturaData['PtoVta'], (int) $facturaData['CbteTipo']);
+                if ($infoUltimoComprobante && isset($infoUltimoComprobante->CbteFch)) {
+                    $fechaUltimoComprobante = $infoUltimoComprobante->CbteFch;
+                }
+            } catch (\Throwable $e) {
+                Log::warning('No se pudo obtener información del último comprobante (WSFE directo): '.$e->getMessage());
+            }
+        }
+
+        $fechaActual = $facturaData['CbteFch'];
+        if ($fechaUltimoComprobante && $fechaUltimoComprobante > $fechaActual) {
+            $facturaData['CbteFch'] = $fechaUltimoComprobante;
+        }
+
+        $facturaData['CbteDesde'] = (int) $proximoNumero;
+        $facturaData['CbteHasta'] = (int) $proximoNumero;
+
+        $result = $direct->createVoucher($facturaData);
+
+        if (isset($result['CAE'])) {
+            return [
+                'success' => true,
+                'numero_factura' => sprintf('%04d-%08d', $facturaData['PtoVta'], $proximoNumero),
+                'cae' => $result['CAE'],
+                'fecha_vencimiento' => $result['CAEFchVto'] ?? null,
+            ];
+        }
+
+        return [
+            'success' => false,
+            'error' => 'Error al generar factura: respuesta incompleta (WSFE directo).',
+        ];
+    } catch (\Throwable $e) {
+        Log::error('Error en WSFE directo (WSAA/ARCA)', [
+            'mensaje' => $e->getMessage(),
+            'trace' => $e->getTraceAsString(),
+        ]);
+
+        return [
+            'success' => false,
+            'error' => 'Error en facturación AFIP (WSFE directo): '.$e->getMessage(),
+            'detalle' => 'Comprobá PEM, CUIT, AFIP_PRODUCTION, wsfe autorizado en homologación y extension=soap.',
+        ];
+    }
+}
+
+/**
  * Ver detalle de una factura específica
  */
 public function verFactura($id)
 {
-    $factura = Factura::with('cotizacion')->findOrFail($id);
+    $factura = Factura::with(['cotizacion.cliente'])->findOrFail($id);
     
     $normalizado = $this->normalizarItemsFactura($factura->items);
 
@@ -1370,92 +2086,6 @@ public function verFactura($id)
         'resumenItems' => $normalizado['resumen'],
     ]);
 }
-
-// public function descargar(Factura $factura)
-// {
-//     try {
-//         Log::info('Descargando factura', [
-//             'factura_id' => $factura->id,
-//             'numero_factura' => $factura->numero_factura,
-//             'cae' => $factura->cae
-//         ]);
-
-//         // Verificar si ya tenemos un PDF guardado localmente
-//         $fileName = 'Factura_' . str_replace(['-', '/', '\\'], '_', $factura->numero_factura) . '.pdf';
-//         $filePath = storage_path('app/facturas/' . $fileName);
-
-//         // Si el PDF ya existe, descargarlo directamente
-//         if (file_exists($filePath)) {
-//             Log::info('PDF encontrado en cache, descargando archivo existente', ['file' => $fileName]);
-//             return response()->download($filePath, $fileName);
-//         }
-
-//         // Si no existe, generar nuevo PDF
-//         Log::info('Generando nuevo PDF para factura', ['factura_id' => $factura->id]);
-
-//         // Crear directorio si no existe
-//         $directory = storage_path('app/facturas');
-//         if (!file_exists($directory)) {
-//             mkdir($directory, 0755, true);
-//         }
-
-//         // Generar PDF usando DomPDF
-//         $items = [];
-//         if (is_string($factura->items)) {
-//             $items = json_decode($factura->items, true) ?? [];
-//         } elseif (is_array($factura->items)) {
-//             $items = $factura->items;
-//         }
-
-//         $pdf = Pdf::loadView('facturacion.template_afip', [
-//             'factura' => $factura,
-//             'cotizacion' => $factura->cotizacion,
-//             'items' => $items,
-//             'fecha' => $factura->fecha_emision->format('d/m/Y')
-//         ]);
-
-//         // Configurar opciones del PDF
-//         $pdf->setPaper('A4', 'portrait');
-//         $pdf->setOptions([
-//             'isHtml5ParserEnabled' => true,
-//             'isPhpEnabled' => true,
-//             'defaultFont' => 'Arial'
-//         ]);
-
-//         // Guardar el PDF en storage
-//         $pdfContent = $pdf->output();
-//         file_put_contents($filePath, $pdfContent);
-
-//         // Actualizar la referencia en la base de datos
-//         $factura->update(['pdf_url' => $fileName]);
-
-//         Log::info('PDF generado exitosamente', [
-//             'factura_id' => $factura->id,
-//             'archivo' => $fileName,
-//             'tamaño' => strlen($pdfContent) . ' bytes'
-//         ]);
-
-//         // Descargar el archivo
-//         return response()->download($filePath, $fileName);
-
-//     } catch (\Exception $e) {
-//         Log::error('Error al generar/descargar factura: ' . $e->getMessage(), [
-//             'factura_id' => $factura->id,
-//             'numero_factura' => $factura->numero_factura,
-//             'error_trace' => $e->getTraceAsString()
-//         ]);
-        
-//         // Devuelve JSON si es una solicitud AJAX/fetch
-//         if (request()->wantsJson() || request()->ajax()) {
-//             return response()->json([
-//                 'error' => 'No se pudo generar el PDF: ' . $e->getMessage()
-//             ], 500);
-//         }
-        
-//         return back()->with('error', 'No se pudo generar el PDF: ' . $e->getMessage());
-//     }
-// }
-
 
 public function descargar(Factura $factura)
 {
@@ -1488,14 +2118,20 @@ public function descargar(Factura $factura)
         }
         $html = file_get_contents($htmlPath);
 
+        $factura->loadMissing(['cotizacion.cliente']);
+        $cot = $factura->cotizacion;
+        $fiscalBill = $cot ? CotizacionClienteEtiqueta::datosFacturacionFiscales($cot) : [
+            'razon_social' => '', 'cuit' => '', 'domicilio' => '', 'localidad' => '', 'provincia' => '', 'email' => '',
+        ];
+
         // Preparar los datos para reemplazar los placeholders
         $normalizado = $this->normalizarItemsFactura($factura->items);
         $items = $normalizado['items'];
-        $total = $factura->monto_total ?? 0;
+        $total = (float) ($factura->monto_total ?? 0);
         $neto = round($total / 1.21, 2);
         $iva = round($total - $neto, 2);
 
-        // Generar la tabla de ítems
+        // Tabla de ítems (4 columnas, estilo factura impresa)
         $itemsTable = '';
         if ($items && is_array($items)) {
             foreach ($items as $index => $item) {
@@ -1505,62 +2141,177 @@ public function descargar(Factura $factura)
 
                 $descripcion = htmlspecialchars($item['descripcion'] ?? 'N/A');
                 $identificacion = !empty($item['identificacion'])
-                    ? "<br><small style=\"color: #666;\">ID: " . htmlspecialchars($item['identificacion']) . "</small>"
+                    ? '<br><small style="color:#444;">ID: ' . htmlspecialchars($item['identificacion']) . '</small>'
                     : '';
                 $resultado = !empty($item['resultado'])
-                    ? "<br><small style=\"color: #666;\">Resultado: " . htmlspecialchars($item['resultado']) . "</small>"
+                    ? '<br><small style="color:#444;">' . htmlspecialchars($item['resultado']) . '</small>'
                     : '';
 
-                $tipoRaw = $item['tipo'] ?? 'unidad';
-                $tipo = match ($tipoRaw) {
-                    'muestra' => 'Muestra',
-                    'analisis' => 'Análisis',
-                    default => ucfirst($tipoRaw),
-                };
+                $cantidad = (float) ($item['cantidad'] ?? 1);
+                $precioUnitario = (float) ($item['precio_unitario'] ?? 0);
+                $subtotalItem = (float) ($item['subtotal'] ?? ($precioUnitario * $cantidad));
 
-                $cantidad = $item['cantidad'] ?? 1;
-                $precioUnitario = $item['precio_unitario'] ?? 0;
-                $subtotalItem = $item['subtotal'] ?? $precioUnitario;
-
-                $itemsTable .= "
-                    <tr>
-                        <td>" . ($index + 1) . "</td>
-                        <td>$descripcion$identificacion$resultado</td>
-                        <td>" . $cantidad . "</td>
-                        <td>$tipo</td>
-                        <td>" . number_format($precioUnitario, 2, ',', '.') . "</td>
-                        <td>0,00</td>
-                        <td>0,00</td>
-                        <td>" . number_format($subtotalItem, 2, ',', '.') . "</td>
-                    </tr>";
+                $itemsTable .= '<tr>'
+                    . '<td class="c-cant">' . htmlspecialchars(number_format($cantidad, 2, ',', '.')) . '</td>'
+                    . '<td class="c-desc">' . $descripcion . $identificacion . $resultado . '</td>'
+                    . '<td class="c-pu">' . htmlspecialchars(number_format($precioUnitario, 2, ',', '.')) . '</td>'
+                    . '<td class="c-pt">' . htmlspecialchars(number_format($subtotalItem, 2, ',', '.')) . '</td>'
+                    . '</tr>';
             }
-        } else {
-            $itemsTable = '<tr><td colspan="8" style="text-align: center;">No hay ítems registrados</td></tr>';
         }
+        if ($itemsTable === '') {
+            $itemsTable = '<tr><td colspan="4" style="text-align:center;padding:0.12in;">No hay ítems registrados</td></tr>';
+        }
+
+        $locPart = trim(implode(' ', array_filter([
+            trim((string) ($fiscalBill['localidad'] ?? '')),
+            trim((string) ($fiscalBill['provincia'] ?? '')),
+        ])));
+        $refRemito = $cot ? CotizacionReferenciasFacturacion::textoPrimerRemitoParaFactura($cot) : '';
+        $remitoRef = $refRemito !== '' ? htmlspecialchars($refRemito, ENT_QUOTES, 'UTF-8') : '—';
+        $refsExtraHtml = $cot ? CotizacionReferenciasFacturacion::htmlReferenciasExtraParaFactura($cot) : '';
+        $lineaRefsCotizacion = $refsExtraHtml !== '' ? '<br>' . $refsExtraHtml : '';
+
+        $condicionesVenta = '—';
+        if ($cot && trim((string) ($cot->coti_cond_pago ?? '')) !== '') {
+            $condicionesVenta = htmlspecialchars(trim((string) $cot->coti_cond_pago));
+        }
+
+        $fechaVtoCae = $factura->fecha_vencimiento_cae
+            ? Carbon::parse($factura->fecha_vencimiento_cae)->format('d/m/Y')
+            : 'N/A';
+        $fechaEmisionFmt = $factura->fecha_emision ? $factura->fecha_emision->format('d/m/Y') : 'N/A';
+
+        $fechaVtoPagoFmt = trim((string) env('FACTURA_FECHA_VTO_PAGO', ''));
+        if ($fechaVtoPagoFmt !== '') {
+            $fechaVtoPagoFmt = htmlspecialchars($fechaVtoPagoFmt, ENT_QUOTES, 'UTF-8');
+        } else {
+            $diasVto = env('FACTURA_VTO_PAGO_DIAS');
+            if ($diasVto !== null && $diasVto !== '' && is_numeric($diasVto) && $factura->fecha_emision) {
+                $fechaVtoPagoFmt = Carbon::parse($factura->fecha_emision)->addDays((int) $diasVto)->format('d/m/Y');
+            } else {
+                $fechaVtoPagoFmt = $fechaVtoCae;
+            }
+        }
+
+        $leyendaCambioRaw = trim((string) env('FACTURA_LEYENDA_TIPO_CAMBIO', ''));
+        $leyendaTipoCambioBlock = $leyendaCambioRaw !== ''
+            ? '<p class="leyenda-cambio">' . htmlspecialchars($leyendaCambioRaw, ENT_QUOTES, 'UTF-8') . '</p>'
+            : '';
+
+        $tipoLetra = strtoupper(substr(trim((string) env('FACTURA_TIPO_LETRA', 'A')), 0, 1));
+        $codigoAfipRaw = trim((string) env('FACTURA_CODIGO_COMPROBANTE', ''));
+        if ($codigoAfipRaw === '') {
+            $codigoAfipRaw = $tipoLetra === 'B' ? '6' : ($tipoLetra === 'C' ? '11' : '1');
+        }
+
+        $cotizDisplay = $cot?->coti_num !== null ? (string) $cot->coti_num : (string) ($factura->cotizacion_id ?? '—');
+        $otNumerosRaw = trim((string) env('FACTURA_OT_NUMEROS', ''));
+        if ($otNumerosRaw !== '') {
+            $otNumerosFmt = preg_replace('/\s*,\s*/', ' ', $otNumerosRaw);
+            $lineaCotizOt = 'Cotiz.: ' . htmlspecialchars($cotizDisplay, ENT_QUOTES, 'UTF-8')
+                . ' OTs: ' . htmlspecialchars($otNumerosFmt, ENT_QUOTES, 'UTF-8');
+        } else {
+            $otSingle = trim((string) env('FACTURA_OT_NUMERO', ''));
+            $lineaCotizOt = 'Cotiz.: ' . htmlspecialchars($cotizDisplay, ENT_QUOTES, 'UTF-8')
+                . ' OT: ' . htmlspecialchars($otSingle !== '' ? $otSingle : '—', ENT_QUOTES, 'UTF-8');
+        }
+
+        $fechaTrabajo = $fechaEmisionFmt;
+        if ($cot?->coti_fechaaprobado) {
+            $fechaTrabajo = Carbon::parse($cot->coti_fechaaprobado)->format('j/n/Y');
+        }
+
+        $ocVal = trim((string) ($cot?->coti_oc_referencia ?? ''));
+        if ($ocVal === '') {
+            $ocVal = trim((string) env('FACTURA_OC_NUMERO', ''));
+        }
+        $solVal = trim((string) ($cot?->coti_responsable ?? $cot?->coti_contacto ?? ''));
+        if ($solVal === '') {
+            $solVal = trim((string) env('FACTURA_SOLICITANTE', ''));
+        }
+        $lineaOcSolic = '<span class="lbl">OC:</span> ' . htmlspecialchars($ocVal !== '' ? $ocVal : '—', ENT_QUOTES, 'UTF-8')
+            . ' &nbsp; <span class="lbl">SOLIC.:</span> ' . htmlspecialchars($solVal !== '' ? $solVal : '—', ENT_QUOTES, 'UTF-8');
+
+        $codCli = trim((string) ($cot?->coti_codigocli ?? ''));
+        $cotiCodigoClienteBloque = $codCli !== ''
+            ? ' <span class="cli-cod">(' . htmlspecialchars($codCli, ENT_QUOTES, 'UTF-8') . ')</span>'
+            : '';
+
+        $cotiTel = trim((string) ($cot?->coti_telefono ?? ''));
+        $cotiTelefonoHtml = $cotiTel !== '' ? htmlspecialchars($cotiTel, ENT_QUOTES, 'UTF-8') : '—';
+
+        $zonaCli = trim((string) env('FACTURA_CLIENTE_ZONA', ''));
+        if ($zonaCli === '' && $cot) {
+            $zonaCli = trim((string) ($cot->coti_sector ?? ''));
+        }
+        $clienteZona = $zonaCli !== '' ? htmlspecialchars($zonaCli, ENT_QUOTES, 'UTF-8') : '—';
+
+        $facturaClienteEnv = static function (string $key, string $empty = '—'): string {
+            $v = trim((string) env($key, ''));
+
+            return $v !== '' ? htmlspecialchars($v, ENT_QUOTES, 'UTF-8') : $empty;
+        };
+
+        $empresaLogoHtml = $this->buildFacturaLogoImgHtml();
+        $qrCodeHtml = $this->buildFacturaQrImgHtml($factura->qr_code ?? null);
+        $afipLogoHtml = $this->buildFacturaAfipLogoImgHtml();
 
         // Reemplazar placeholders
         $replacements = [
             '{{numero_factura}}' => htmlspecialchars($factura->numero_factura ?? 'N/A'),
-            '{{empresa_nombre}}' => htmlspecialchars(env('EMPRESA_NOMBRE', 'Industria y Ambiente')),
+            '{{empresa_nombre}}' => htmlspecialchars(env('EMPRESA_NOMBRE', 'Industria y Ambiente S.A.')),
+            '{{empresa_subtitulo}}' => htmlspecialchars(env('EMPRESA_SUBTITULO', 'Laboratorio de Análisis Industriales y Ambientales. Ingeniería Industrial y Ambiental.')),
             '{{empresa_direccion}}' => htmlspecialchars(env('EMPRESA_DIRECCION', 'Dirección del Laboratorio')),
+            '{{empresa_contacto_linea}}' => nl2br(htmlspecialchars(env('EMPRESA_CONTACTO_LINEA', "Tel: —\r\nLa Tablada - Buenos Aires\r\nEmail: —\r\nWeb: —"), ENT_QUOTES, 'UTF-8')),
             '{{empresa_cuit}}' => htmlspecialchars(env('EMPRESA_CUIT', '20-12345678-9')),
-            '{{empresa_iibb}}' => htmlspecialchars(env('EMPRESA_IIBB', '12345432')),
-            '{{empresa_fecha_inicio}}' => htmlspecialchars(env('EMPRESA_FECHA_INICIO', '01/01/2020')),
+            '{{empresa_iibb}}' => htmlspecialchars(env('EMPRESA_IIBB', '—')),
+            '{{empresa_fecha_inicio}}' => htmlspecialchars(env('EMPRESA_FECHA_INICIO', '01/10/1999')),
+            '{{empresa_condicion_iva}}' => htmlspecialchars(env('EMPRESA_CONDICION_IVA', 'Responsable Inscripto')),
+            '{{tipo_comprobante}}' => htmlspecialchars($tipoLetra),
+            '{{titulo_factura}}' => htmlspecialchars('Factura ' . $tipoLetra, ENT_QUOTES, 'UTF-8'),
+            '{{codigo_comprobante_afip}}' => htmlspecialchars($codigoAfipRaw, ENT_QUOTES, 'UTF-8'),
             '{{punto_venta}}' => htmlspecialchars(substr($factura->numero_factura ?? '0000-00000000', 0, 4)),
             '{{comp_nro}}' => htmlspecialchars(substr($factura->numero_factura ?? '0000-00000000', 5)),
-            '{{fecha_emision}}' => $factura->fecha_emision ? $factura->fecha_emision->format('d/m/Y') : 'N/A',
-            '{{periodo_desde}}' => $factura->fecha_emision ? $factura->fecha_emision->format('d/m/Y') : 'N/A',
-            '{{periodo_hasta}}' => $factura->fecha_emision ? $factura->fecha_emision->format('d/m/Y') : 'N/A',
-            '{{fecha_vencimiento_cae}}' => $factura->fecha_vencimiento_cae ? \Carbon\Carbon::parse($factura->fecha_vencimiento_cae)->format('d/m/Y') : 'N/A',
-            '{{coti_cuit}}' => htmlspecialchars($factura->cotizacion->coti_cuit ?? 'N/A'),
-            '{{coti_empresa}}' => htmlspecialchars($factura->cotizacion->coti_empresa ?? 'N/A'),
-            '{{coti_direccioncli}}' => htmlspecialchars($factura->cotizacion->coti_direccioncli ?? 'N/A'),
+            '{{fecha_emision}}' => $fechaEmisionFmt,
+            '{{periodo_desde}}' => $fechaEmisionFmt,
+            '{{periodo_hasta}}' => $fechaEmisionFmt,
+            '{{fecha_vencimiento_cae}}' => $fechaVtoCae,
+            '{{fecha_vencimiento_pago}}' => $fechaVtoPagoFmt,
+            '{{coti_num}}' => htmlspecialchars((string) ($factura->cotizacion_id ?? ($cot?->coti_num ?? '—'))),
+            '{{coti_cuit}}' => htmlspecialchars($fiscalBill['cuit'] !== '' ? $fiscalBill['cuit'] : 'N/A'),
+            '{{coti_empresa}}' => htmlspecialchars($fiscalBill['razon_social'] !== '' ? $fiscalBill['razon_social'] : 'N/A'),
+            '{{coti_direccioncli}}' => htmlspecialchars($fiscalBill['domicilio'] !== '' ? $fiscalBill['domicilio'] : 'N/A'),
+            '{{coti_localidad_partido}}' => htmlspecialchars($locPart !== '' ? $locPart : '—'),
+            '{{coti_condicion_iva}}' => htmlspecialchars(env('FACTURA_CLIENTE_CONDICION_IVA', 'Responsable Inscripto')),
+            '{{coti_telefono}}' => $cotiTelefonoHtml,
+            '{{coti_codigo_cliente_bloque}}' => $cotiCodigoClienteBloque,
+            '{{cliente_zona}}' => $clienteZona,
+            '{{cliente_mov}}' => $facturaClienteEnv('FACTURA_CLIENTE_MOV'),
+            '{{cliente_origen}}' => $facturaClienteEnv('FACTURA_CLIENTE_ORIGEN'),
+            '{{cliente_r}}' => $facturaClienteEnv('FACTURA_CLIENTE_R'),
+            '{{cliente_v}}' => $facturaClienteEnv('FACTURA_CLIENTE_V'),
+            '{{linea_cotiz_ot}}' => $lineaCotizOt,
+            '{{linea_oc_solic}}' => $lineaOcSolic,
+            '{{linea_refs_cotizacion}}' => $lineaRefsCotizacion,
+            '{{fecha_trabajo}}' => $fechaTrabajo,
+            '{{condiciones_venta}}' => $condicionesVenta,
+            '{{remito_o_ref}}' => $remitoRef,
             '{{items_table}}' => $itemsTable,
             '{{neto}}' => number_format($neto, 2, ',', '.'),
             '{{iva}}' => number_format($iva, 2, ',', '.'),
             '{{total}}' => number_format($total, 2, ',', '.'),
+            '{{iva_alicuota}}' => htmlspecialchars((string) env('FACTURA_IVA_ALICUOTA', '21')),
+            '{{moneda_simbolo}}' => htmlspecialchars(env('FACTURA_MONEDA_SIMBOLO', '$')),
+            '{{leyenda_tipo_cambio_block}}' => $leyendaTipoCambioBlock,
             '{{cae}}' => htmlspecialchars($factura->cae ?? 'N/A'),
-            '{{qr_code}}' => htmlspecialchars($factura->qr_code ?? '')
+            '{{qr_code}}' => htmlspecialchars($factura->qr_code ?? ''),
+            '{{empresa_logo_html}}' => $empresaLogoHtml,
+            '{{qr_code_html}}' => $qrCodeHtml,
+            '{{afip_logo_html}}' => $afipLogoHtml,
+            '{{observaciones_block}}' => !empty($factura->observaciones) 
+                ? '<div style="margin-top: 15px; padding: 10px; border: 1px solid #000; font-size: 9.5px;"><strong>Notas:</strong><br>' . nl2br(htmlspecialchars($factura->observaciones)) . '</div>'
+                : '',
         ];
         $html = str_replace(array_keys($replacements), array_values($replacements), $html);
 
@@ -1577,57 +2328,71 @@ public function descargar(Factura $factura)
             'marginBottom' => 0.4
         ];
 
-        // Crear PDF con Afip SDK
-        $accessToken = env('AFIPSDK_ACCESS_TOKEN');
-        if (empty($accessToken)) {
-            throw new \Exception('Variable AFIPSDK_ACCESS_TOKEN no configurada. No es posible generar el PDF.');
-        }
+        $soloDomPdf = filter_var(env('FACTURA_PDF_SOLO_DOMPDF', false), FILTER_VALIDATE_BOOLEAN);
 
-        $afip = new Afip([
-            'CUIT' => env('AFIP_CUIT'),
-            'production' => env('AFIP_PRODUCTION', false),
-            'access_token' => $accessToken,
-            'debug' => true,
-        ]);
-        try {
-            $res = $afip->ElectronicBilling->CreatePDF([
-                'html' => $html,
-                'file_name' => $fileName,
-                'options' => $options
-            ]);
-            Log::debug('CreatePDF response:', ['response' => $res]);
-        } catch (\Exception $e) {
-            throw new \Exception('Error en CreatePDF: ' . $e->getMessage());
-        }
-
-        // Verificar si el archivo es una URL
-        if (!isset($res['file'])) {
-            throw new \Exception('No se generó el archivo PDF. Respuesta: ' . json_encode($res));
-        }
-
-        // Si es una URL, descargar el archivo
-        if (filter_var($res['file'], FILTER_VALIDATE_URL)) {
-            $pdfContent = @file_get_contents($res['file']);
-            if ($pdfContent === false) {
-                throw new \Exception('No se pudo descargar el PDF desde ' . $res['file']);
-            }
+        if ($soloDomPdf) {
+            $pdfContent = $this->generarPdfFacturaDomPdf($html);
             if (!file_put_contents($filePath, $pdfContent)) {
                 throw new \Exception('No se pudo guardar el PDF en ' . $filePath);
             }
+            Log::info('PDF generado solo con DomPDF (FACTURA_PDF_SOLO_DOMPDF)', ['factura_id' => $factura->id]);
         } else {
-            // Si es un archivo local, moverlo
-            if (!file_exists($res['file'])) {
-                throw new \Exception('El archivo PDF local no existe: ' . $res['file']);
+            // Crear PDF con Afip SDK (devuelve URL S3 o ruta local)
+            $accessToken = config('afip.access_token');
+            if (empty($accessToken)) {
+                throw new \Exception('Variable AFIPSDK_ACCESS_TOKEN no configurada. No es posible generar el PDF.');
             }
-            if (!rename($res['file'], $filePath)) {
-                throw new \Exception('No se pudo mover el archivo PDF de ' . $res['file'] . ' a ' . $filePath);
+
+            $afip = new Afip([
+                'CUIT' => config('afip.cuit'),
+                'production' => (bool) config('afip.production', false),
+                'access_token' => $accessToken,
+                'debug' => true,
+            ]);
+            try {
+                $res = $afip->ElectronicBilling->CreatePDF([
+                    'html' => $html,
+                    'file_name' => $fileName,
+                    'options' => $options
+                ]);
+                Log::debug('CreatePDF response:', ['response' => $res]);
+            } catch (\Exception $e) {
+                throw new \Exception('Error en CreatePDF: ' . $e->getMessage());
+            }
+
+            if (!isset($res['file'])) {
+                throw new \Exception('No se generó el archivo PDF. Respuesta: ' . json_encode($res));
+            }
+
+            if (filter_var($res['file'], FILTER_VALIDATE_URL)) {
+                $pdfContent = $this->descargarPdfDesdeUrl($res['file']);
+                if ($pdfContent === null) {
+                    Log::warning('No se pudo descargar el PDF desde S3 del SDK AFIP; usando DomPDF', [
+                        'url' => $res['file'],
+                        'factura_id' => $factura->id,
+                    ]);
+                    $pdfContent = $this->generarPdfFacturaDomPdf($html);
+                }
+                if ($pdfContent === '' || strncmp($pdfContent, '%PDF', 4) !== 0) {
+                    throw new \Exception('El resultado no es un PDF válido (S3/DomPDF).');
+                }
+                if (!file_put_contents($filePath, $pdfContent)) {
+                    throw new \Exception('No se pudo guardar el PDF en ' . $filePath);
+                }
+            } else {
+                if (!file_exists($res['file'])) {
+                    throw new \Exception('El archivo PDF local no existe: ' . $res['file']);
+                }
+                if (!rename($res['file'], $filePath)) {
+                    throw new \Exception('No se pudo mover el archivo PDF de ' . $res['file'] . ' a ' . $filePath);
+                }
             }
         }
 
         // Actualizar la referencia en la base de datos
         $factura->update(['pdf_url' => $fileName]);
 
-        Log::info('PDF generado exitosamente con Afip SDK', [
+        Log::info('PDF de factura listo para descarga', [
             'factura_id' => $factura->id,
             'archivo' => $fileName,
             'tamaño' => filesize($filePath) . ' bytes'
@@ -1652,6 +2417,71 @@ public function descargar(Factura $factura)
     }
 }
 
+/**
+ * Logo en base64 para el PDF (DomPDF / CreatePDF no resuelven bien rutas locales).
+ */
+private function buildFacturaLogoImgHtml(int $maxHeightPx = 88): string
+{
+    $path = public_path('assets/img/logo_facturacion.png');
+    if (!is_readable($path)) {
+        return '';
+    }
+    $raw = @file_get_contents($path);
+    if ($raw === false || $raw === '') {
+        return '';
+    }
+    $src = 'data:image/png;base64,' . base64_encode($raw);
+
+    return '<img src="' . $src . '" alt="" style="max-height:' . $maxHeightPx . 'px;width:auto;display:block;">';
+}
+
+/**
+ * Imagen QR para el pie (URL, data URI o PNG en base64).
+ */
+private function buildFacturaQrImgHtml(?string $qr): string
+{
+    $qr = trim((string) $qr);
+    if ($qr === '') {
+        return '';
+    }
+    $style = 'width:118px;height:118px;display:block;';
+    if (str_starts_with($qr, 'data:image')) {
+        return '<img src="' . htmlspecialchars($qr, ENT_QUOTES, 'UTF-8') . '" alt="QR" style="' . $style . '">';
+    }
+    if (str_starts_with($qr, 'http://') || str_starts_with($qr, 'https://')) {
+        return '<img src="' . htmlspecialchars($qr, ENT_QUOTES, 'UTF-8') . '" alt="QR" style="' . $style . '">';
+    }
+    if (preg_match('/^[A-Za-z0-9+\/=\r\n]+$/', $qr) && strlen($qr) > 60) {
+        $clean = preg_replace('/\s+/', '', $qr);
+
+        return '<img src="data:image/png;base64,' . htmlspecialchars($clean, ENT_QUOTES, 'UTF-8') . '" alt="QR" style="' . $style . '">';
+    }
+
+    return '';
+}
+
+/**
+ * Logo AFIP para el pie (opcional): colocar PNG en public/assets/img/afip_logo.png o logo_afip.png.
+ */
+private function buildFacturaAfipLogoImgHtml(int $maxHeightPx = 40): string
+{
+    foreach (['afip_logo.png', 'logo_afip.png'] as $name) {
+        $path = public_path('assets/img/' . $name);
+        if (!is_readable($path)) {
+            continue;
+        }
+        $raw = @file_get_contents($path);
+        if ($raw === false || $raw === '') {
+            continue;
+        }
+        $mime = str_ends_with(strtolower($name), '.png') ? 'image/png' : 'image/jpeg';
+        $src = 'data:' . $mime . ';base64,' . base64_encode($raw);
+
+        return '<img src="' . $src . '" alt="AFIP" style="max-height:' . $maxHeightPx . 'px;width:auto;display:inline-block;">';
+    }
+
+    return '';
+}
 
 private function urlPdfValida($url)
 {
@@ -1660,6 +2490,77 @@ private function urlPdfValida($url)
         return strpos($headers[0], '200') !== false;
     } catch (\Exception $e) {
         return false;
+    }
+}
+
+/**
+ * PDF local con DomPDF (mismo HTML que se envía al SDK AFIP).
+ */
+private function generarPdfFacturaDomPdf(string $html): string
+{
+    $pdf = Pdf::loadHTML($html);
+    $pdf->setPaper('A4', 'portrait');
+    $pdf->setOptions([
+        'isHtml5ParserEnabled' => true,
+        'isRemoteEnabled' => true,
+        'defaultFont' => 'DejaVu Sans',
+    ]);
+
+    return $pdf->output();
+}
+
+/**
+ * Descarga el PDF desde la URL del bucket S3 del AFIP SDK.
+ * En producción suele fallar file_get_contents (allow_url_fopen, SSL, IPv6, firewall).
+ */
+private function descargarPdfDesdeUrl(string $url): ?string
+{
+    $verifySsl = filter_var(env('FACTURA_PDF_SSL_VERIFY', true), FILTER_VALIDATE_BOOLEAN);
+
+    $guzzleOptions = [
+        'curl' => [
+            CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+        ],
+    ];
+    if (!$verifySsl) {
+        $guzzleOptions['verify'] = false;
+    }
+
+    try {
+        $response = Http::timeout(120)
+            ->connectTimeout(30)
+            ->withOptions($guzzleOptions)
+            ->withHeaders([
+                'User-Agent' => 'Mozilla/5.0 (compatible; FacturacionApp/1.0)',
+                'Accept' => 'application/pdf,application/octet-stream,*/*',
+            ])
+            ->get($url);
+
+        if (!$response->successful()) {
+            Log::warning('HTTP no exitoso al descargar PDF de factura', [
+                'url' => $url,
+                'status' => $response->status(),
+                'body_preview' => substr($response->body(), 0, 200),
+            ]);
+
+            return null;
+        }
+
+        $body = $response->body();
+        if ($body === '' || strncmp($body, '%PDF', 4) !== 0) {
+            Log::warning('Respuesta al descargar PDF no es un archivo PDF', [
+                'url' => $url,
+                'bytes' => strlen($body),
+            ]);
+
+            return null;
+        }
+
+        return $body;
+    } catch (\Throwable $e) {
+        Log::warning('Excepción al descargar PDF de factura: ' . $e->getMessage(), ['url' => $url]);
+
+        return null;
     }
 }
 
@@ -1689,7 +2590,10 @@ private function calcularMontoPendientes(): float
                 }
 
                 // Calcular resumen financiero para esta cotización (una sola vez)
-                $tareas = $cotizacion->tareas;
+                $tareas = $cotizacion->tareas()
+                    ->orderBy('cotio_item')
+                    ->orderBy('cotio_subitem')
+                    ->get();
                 $resumenFinanciero = $this->construirResumenFinanciero($cotizacion, $tareas);
                 $muestrasTarifario = $resumenFinanciero['muestras'];
                 $descuentoFactor = $resumenFinanciero['descuento_factor'];
@@ -1734,4 +2638,98 @@ private function calcularMontoPendientes(): float
 
 
 
+    public function guardarNotas(Request $request, $coti_num)
+    {
+        try {
+            $cotizacion = Coti::findOrFail($coti_num);
+            $cotizacion->update([
+                'coti_notas_facturacion' => $request->input('observaciones')
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Notas guardadas correctamente'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al guardar notas: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function updateReferencias(Request $request, $coti_num)
+    {
+        try {
+            $cotizacion = Coti::findOrFail($coti_num);
+            
+            $updateData = [];
+            if ($request->has('coti_oc_referencia')) {
+                $updateData['coti_oc_referencia'] = $request->input('coti_oc_referencia');
+            }
+            if ($request->has('coti_refs_facturacion_json')) {
+                $updateData['coti_refs_facturacion_json'] = $request->input('coti_refs_facturacion_json');
+            }
+
+            if (!empty($updateData)) {
+                $cotizacion->update($updateData);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Referencias actualizadas correctamente'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al actualizar referencias: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function updateNotasFactura(Request $request, $id)
+    {
+        try {
+            $factura = Factura::findOrFail($id);
+            $factura->update([
+                'observaciones' => $request->input('observaciones')
+            ]);
+            
+            if ($factura->pdf_url) {
+                $filePath = storage_path('app/facturas/' . $factura->pdf_url);
+                if (file_exists($filePath)) {
+                    @unlink($filePath);
+                }
+                $factura->update(['pdf_url' => null]);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Notas de la factura actualizadas correctamente'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al actualizar notas: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function exportarIvaVentas(Request $request)
+    {
+        $request->validate([
+            'fecha_desde' => 'required|date',
+            'fecha_hasta' => 'required|date|after_or_equal:fecha_desde',
+        ]);
+
+        $fechaDesde = $request->fecha_desde;
+        $fechaHasta = $request->fecha_hasta;
+
+        $fileName = 'IVA_VENTAS_' . str_replace('-', '', $fechaDesde) . '_' . str_replace('-', '', $fechaHasta) . '.xlsx';
+
+        return \Maatwebsite\Excel\Facades\Excel::download(
+            new \App\Exports\IvaVentasExport($fechaDesde, $fechaHasta),
+            $fileName
+        );
+    }
 }

@@ -183,7 +183,11 @@
                                                 @if($muestra)
                                                         {{ $muestra->cotio_descripcion ?? 'N/A' }} (#{{ $muestra->otn ? $muestra->otn : $muestra->instance_number ?? 'N/A' }})
                                                         <span class="text-muted small">
-                                                            <strong>Cotización:</strong> <a href="{{ route('cotizaciones.ver-detalle', $muestra->cotio_numcoti) }}" class="text-muted">{{ $muestra->cotio_numcoti ?? 'N/A' }}</a>
+                                                            <strong>Cotización:</strong> 
+                                                        <a href="{{ route('cotizaciones.ver-detalle', $muestra->cotio_numcoti) }}" class="text-muted">{{ $muestra->cotio_numcoti ?? 'N/A' }}</a>
+                                                        @if($muestra->cotizacion && $muestra->cotizacion->coti_cuotas)
+                                                                    <span class="badge bg-[#0dcaf0] text-white px-1 py-0 rounded-pill ms-1" style="font-size: 0.6rem; background-color: #0dcaf0;">CUOTAS</span>
+                                                        @endif
                                                         </span>
                                                 @else
                                                     'N/A'
@@ -230,6 +234,9 @@
                                                             <td class="ps-4 fw-bold">
                                                                 @if($muestra && $muestra->cotizacion)
                                                                     <a href="/cotizaciones/{{ $muestra->cotizacion->coti_num }}" class="text-primary">#{{ $muestra->cotizacion->coti_num ?? 'N/A' }}</a>
+                                                                    @if($muestra->cotizacion->coti_cuotas)
+                                                                                <span class="badge bg-[#0dcaf0] text-white px-1 py-0 rounded-pill ms-1" style="font-size: 0.6rem; background-color: #0dcaf0;">CUOTAS</span>
+                                                                    @endif
                                                                 @else
                                                                     N/A
                                                                 @endif
@@ -256,6 +263,9 @@
                                                         <tr>
                                                             <td class="ps-4 fw-bold">
                                                                 <a href="/cotizaciones/{{ $item->cotizacion->coti_num }}" class="text-primary">#{{ $item->cotizacion->coti_num ?? 'N/A' }}</a>
+                                                                @if($item->cotizacion && $item->cotizacion->coti_cuotas)
+                                                                    <span class="badge bg-[#0dcaf0] text-white px-1 py-0 rounded-pill ms-1" style="font-size: 0.6rem; background-color: #0dcaf0;">CUOTAS</span>
+                                                                @endif
                                                             </td>
                                                             <td>
                                                                 <a href="{{ route('categoria.verOrden', [

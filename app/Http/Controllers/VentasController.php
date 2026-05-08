@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\View;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\URL;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use App\Models\Ventas;
@@ -25,6 +27,15 @@ use App\Models\LeyNormativa;
 use App\Models\ClienteEmpresaRelacionada;
 use App\Models\ClienteRazonSocialFacturacion;
 use App\Models\CotiVersion;
+use App\Models\ClienteContacto;
+use App\Models\Divisa;
+use App\Models\User;
+use App\Models\CotioInstancia;
+use App\Support\CotizacionClienteEtiqueta;
+use App\Support\CotizacionPrecioEnsayo;
+use App\Support\CotizacionCanalEnsayo;
+use App\Support\CotizacionReferenciasFacturacion;
+use Illuminate\Validation\ValidationException;
 
 class VentasController extends Controller {
     
@@ -40,6 +51,37 @@ class VentasController extends Controller {
             return null;
         }
         return str_pad(substr($value, 0, $length), $length, $padChar, STR_PAD_RIGHT);
+    }
+
+    /**
+     * cotio.cotio_codigometodo_analisis referencia metodos_analisis.codigo (FK).
+     * Solo se puede persistir un código que exista en esa tabla; los códigos de la
+     * tabla legado `metodo` no alcanzan para la FK si no hay fila en metodos_analisis.
+     */
+    private function resolverCodigoMetodoAnalisisParaForeignKey(?string $codigoRaw): ?string
+    {
+        if ($codigoRaw === null || trim((string) $codigoRaw) === '') {
+            return null;
+        }
+        $t = trim((string) $codigoRaw);
+        $padded = $this->truncateAndPad($t, 15);
+
+        $ma = MetodoAnalisis::query()->where('codigo', $t)->first();
+        if ($ma) {
+            return $ma->codigo;
+        }
+        if ($padded !== null) {
+            $maPad = MetodoAnalisis::query()->where('codigo', $padded)->first();
+            if ($maPad) {
+                return $maPad->codigo;
+            }
+        }
+        $maTrim = MetodoAnalisis::query()->whereRaw('trim(codigo) = ?', [$t])->first();
+        if ($maTrim) {
+            return $maTrim->codigo;
+        }
+
+        return null;
     }
 
     /**
@@ -72,6 +114,30 @@ class VentasController extends Controller {
         return $sanitized;
     }
 
+    private function aplicarReferenciasFacturacionVentas(Request $request, Ventas $cotizacion): void
+    {
+        $cotizacion->coti_oc_requerido_factura = $request->boolean('coti_oc_requerido_factura');
+        $cotizacion->coti_oc_referencia = $this->sanitizeNullableString($request->coti_oc_referencia, 120);
+        $rows = CotizacionReferenciasFacturacion::parseRowsFromRequest($request);
+        $cotizacion->coti_refs_facturacion_json = count($rows) > 0 ? $rows : null;
+        CotizacionReferenciasFacturacion::sincronizarColumnasLegacyDesdeFilas($cotizacion, $rows);
+    }
+
+    /**
+     * Si la cotización queda aprobada (coti_estado A) y no hay fecha de aprobado, guarda la fecha del día.
+     * Si el usuario envió coti_fechaaprobado en el formulario, debe asignarse antes de llamar a este método.
+     */
+    private function completarCotiFechaAprobadoSiAprobada(Ventas $cotizacion): void
+    {
+        if (trim((string) ($cotizacion->coti_estado ?? '')) !== 'A') {
+            return;
+        }
+        if ($cotizacion->coti_fechaaprobado) {
+            return;
+        }
+        $cotizacion->coti_fechaaprobado = Carbon::now()->format('Y-m-d');
+    }
+
     private function parseDecimalValue($value)
     {
         if (is_null($value)) {
@@ -83,6 +149,16 @@ class VentasController extends Controller {
         }
 
         if (is_string($value)) {
+            $trim = trim($value);
+            // Formato tipo 10.500 o 10.500,50 (miles con punto, decimal con coma)
+            if (preg_match('/^\d{1,3}(\.\d{3})+(,\d+)?$/', $trim)) {
+                $trim = str_replace('.', '', $trim);
+                $trim = str_replace(',', '.', $trim);
+                if (is_numeric($trim)) {
+                    return (float) $trim;
+                }
+            }
+
             $normalized = str_replace(',', '.', $value);
             if (is_numeric($normalized)) {
                 return (float) $normalized;
@@ -95,24 +171,486 @@ class VentasController extends Controller {
 
         return null;
     }
+
+    /**
+     * Empresa relacionada del consultor: id en cliente_empresas_relacionadas.
+     * coti_cli_empresa se mantiene igual por compatibilidad con código existente.
+     *
+     * @return array{coti_empresa_rel: ?int, coti_para_empresa_rel: bool, coti_cli_empresa: ?int}
+     */
+    private function resolverIdsEmpresaRelacionadaParaGuardado(Request $request, ?Clientes $cliente): array
+    {
+        $raw = $request->input('coti_empresa_rel');
+        if ($raw === null || $raw === '') {
+            $raw = $request->input('coti_cli_empresa');
+        }
+        $id = $raw !== null && $raw !== '' ? (int) $raw : null;
+        $esConsultor = $cliente && (bool) ($cliente->es_consultor ?? false);
+
+        if (!$esConsultor || !$id || !$cliente) {
+            return [
+                'coti_empresa_rel' => null,
+                'coti_para_empresa_rel' => false,
+                'coti_cli_empresa' => null,
+            ];
+        }
+
+        $codPad = $cliente->cli_codigo;
+        $codTrim = trim((string) $cliente->cli_codigo);
+        $ok = ClienteEmpresaRelacionada::where('id', $id)
+            ->where(function ($q) use ($codPad, $codTrim) {
+                $q->where('cli_codigo', $codPad)
+                    ->orWhereRaw('TRIM(cli_codigo) = ?', [$codTrim]);
+            })
+            ->exists();
+
+        if (!$ok) {
+            return [
+                'coti_empresa_rel' => null,
+                'coti_para_empresa_rel' => false,
+                'coti_cli_empresa' => null,
+            ];
+        }
+
+        return [
+            'coti_empresa_rel' => $id,
+            'coti_para_empresa_rel' => true,
+            'coti_cli_empresa' => $id,
+        ];
+    }
+
+    /**
+     * Convierte nota_contenido del formulario/API a string persistible (JSON o texto).
+     */
+    private function normalizarNotaContenidoParaPersistencia($valor): ?string
+    {
+        if ($valor === null || $valor === '') {
+            return null;
+        }
+        if (is_array($valor)) {
+            $valor = json_encode($valor, JSON_UNESCAPED_UNICODE);
+        }
+        $str = trim((string) $valor);
+
+        return $str === '' ? null : $str;
+    }
+
+    /**
+     * Rol de coordinación por canal (consultoría / ASP / Clarke Fire), sin nivel admin ni ventas.
+     */
+    private function ventasCanalRestringidoUsuario(): ?string
+    {
+        return CotizacionCanalEnsayo::soloCanalUsuario(Auth::user());
+    }
+
+    private function denegarVentasSiUsuarioSoloCanal(): void
+    {
+        if ($this->ventasCanalRestringidoUsuario()) {
+            abort(403);
+        }
+    }
+
+    /**
+     * Cotizaciones que tienen al menos un ensayo (cotio_subitem=0) del canal indicado.
+     */
+    private function aplicarFiltroVentasPorCanalEnsayo($query, string $canal): void
+    {
+        CotizacionCanalEnsayo::aplicarWhereCotiTieneEnsayoDelCanal($query, $canal);
+    }
+
+    private function cotizacionTieneEnsayoDeCanal(int $cotiNum, string $canal): bool
+    {
+        $q = Ventas::query()->where('coti_num', $cotiNum);
+        $this->aplicarFiltroVentasPorCanalEnsayo($q, $canal);
+
+        return $q->exists();
+    }
+
+    /**
+     * Canal del ensayo persistido o inferido (matriz catálogo + descripción).
+     *
+     * @param  \Illuminate\Support\Collection<string,\App\Models\CotioItems>|array  $agrupadoresCatalogo
+     */
+    private function resolverCanalCotioEnsayo(Cotio $ensayo, $agrupadoresCatalogo): ?string
+    {
+        $v = isset($ensayo->cotio_canal_especial) ? trim((string) $ensayo->cotio_canal_especial) : '';
+        if ($v !== '') {
+            return strtolower($v);
+        }
+
+        $matrizDesc = null;
+        if ($agrupadoresCatalogo instanceof \Illuminate\Support\Collection) {
+            $descClave = Str::lower(trim($ensayo->cotio_descripcion ?? ''));
+            $agr = $agrupadoresCatalogo->get($descClave);
+            if ($agr && $agr->matrices && $agr->matrices->isNotEmpty()) {
+                $matrizDesc = trim((string) ($agr->matrices->first()->matriz_descripcion ?? ''));
+            }
+        }
+
+        return CotizacionCanalEnsayo::resolverDesdeEnsayoPayload([
+            'matriz_descripcion' => $matrizDesc,
+            'descripcion' => $ensayo->cotio_descripcion,
+        ]);
+    }
+
+    private function resolverPrecioExtraEnsayoDesdeCotioRow(?float $cotioPrecioEnsayo, float $sumaComponentesUnitaria, bool $esNuevaLogica = false): float
+    {
+        return CotizacionPrecioEnsayo::resolverPrecioExtraEnsayoDesdeCotioRow($cotioPrecioEnsayo, $sumaComponentesUnitaria, $esNuevaLogica);
+    }
+
+    /**
+     * Cotizaciones aprobadas y no canceladas (base para estados derivados Cerrada / Proceso).
+     */
+    private function baseVentasQueryCotizacionesActivasAprobadas(?string $canal): \Illuminate\Database\Eloquent\Builder
+    {
+        $q = Ventas::query();
+        if ($canal) {
+            $this->aplicarFiltroVentasPorCanalEnsayo($q, $canal);
+        }
+
+        return $q->where('coti_estado', 'LIKE', 'A%')
+            ->where(function ($w) {
+                $w->whereNull('cancelada')
+                    ->orWhere('cancelada', false);
+            });
+    }
+
+    /**
+     * Fila padre cotio (subitem 0) incluida en el resumen de ventas según canal del usuario.
+     */
+    private function ventasCotioMuestraPadreCoincideCanal(object $m, ?string $soloCanal): bool
+    {
+        if (! $soloCanal) {
+            return true;
+        }
+
+        $canalFila = strtolower(trim((string) ($m->cotio_canal_especial ?? '')));
+        $desc = mb_strtolower(trim((string) ($m->cotio_descripcion ?? '')));
+        $match = false;
+        if ($canalFila !== '') {
+            $match = ($canalFila === $soloCanal);
+        } elseif ($soloCanal === 'consultoria') {
+            $match = str_contains($desc, 'consultoria');
+        } elseif ($soloCanal === 'clarke_fire') {
+            $match = str_contains($desc, 'clarke fire')
+                || str_contains($desc, 'clarke-fire')
+                || str_contains($desc, 'clarke_fire')
+                || (str_contains($desc, 'clarke') && str_contains($desc, 'fire'));
+        } elseif ($soloCanal === 'asp') {
+            $match = str_contains($desc, 'asp');
+        }
+
+        return $match;
+    }
+
+    /**
+     * Copia de muestra alineada al detalle “Informes — aprobado / firmado” (requiere enable_inform).
+     */
+    private function ventasInstanciaCopyInformeListo(?CotioInstancia $inst): bool
+    {
+        if (! $inst || ! (bool) $inst->enable_inform) {
+            return false;
+        }
+
+        return (bool) $inst->aprobado_informe || (bool) $inst->firmado;
+    }
+
+    /**
+     * Por cotización: total de copias de muestra esperadas (cotio_cantidad) y flags Cerrada / Proceso.
+     * Debe alinearse con {@see buildDetalleMuestrasVentasAprobadas} (misma expansión por cantidad).
+     * "Proceso" operativo solo si existe al menos una {@see CotioInstancia}; si aún no hay instancias
+     * (cotización recién aprobada / lab no generó filas), se muestra como Aprobado.
+     *
+     * @return array<int, array{total:int, all_approved:bool, has_proceso:bool}>
+     */
+    private function buildInstanciaStatsForNums(array $cotiNums, ?string $soloCanal = null): array
+    {
+        $cotiNums = array_values(array_unique(array_map('intval', $cotiNums)));
+        if ($cotiNums === []) {
+            return [];
+        }
+
+        $cotios = DB::table('cotio')
+            ->whereIn('cotio_numcoti', $cotiNums)
+            ->where('cotio_subitem', 0)
+            ->orderBy('cotio_item')
+            ->get()
+            ->groupBy(fn ($r) => (int) $r->cotio_numcoti);
+
+        $instancias = CotioInstancia::query()
+            ->whereIn('cotio_numcoti', $cotiNums)
+            ->get([
+                'cotio_numcoti',
+                'cotio_item',
+                'cotio_subitem',
+                'instance_number',
+                'enable_inform',
+                'aprobado_informe',
+                'firmado',
+                'active_muestreo',
+                'active_ot',
+            ]);
+
+        $instMap = [];
+        foreach ($instancias as $inst) {
+            $k = sprintf(
+                '%d|%d|%d|%d',
+                (int) $inst->cotio_numcoti,
+                (int) $inst->cotio_item,
+                (int) $inst->cotio_subitem,
+                (int) $inst->instance_number
+            );
+            $instMap[$k] = $inst;
+        }
+
+        $out = [];
+        foreach ($cotiNums as $num) {
+            $lines = collect($cotios->get($num, collect()));
+            $expected = 0;
+            $approvedCopies = 0;
+            $hayAlgunaInstancia = false;
+
+            foreach ($lines as $m) {
+                if (! $this->ventasCotioMuestraPadreCoincideCanal($m, $soloCanal)) {
+                    continue;
+                }
+                $cantidad = max(1, (int) ($m->cotio_cantidad ?? 1));
+                for ($i = 1; $i <= $cantidad; $i++) {
+                    $expected++;
+                    $k = sprintf('%d|%d|%d|%d', $num, (int) $m->cotio_item, 0, $i);
+                    $inst = $instMap[$k] ?? null;
+                    if ($inst !== null) {
+                        $hayAlgunaInstancia = true;
+                    }
+                    if ($this->ventasInstanciaCopyInformeListo($inst)) {
+                        $approvedCopies++;
+                    }
+                }
+            }
+
+            $allApproved = $expected > 0 && $approvedCopies === $expected;
+            $hasProceso = $expected > 0 && ! $allApproved && $hayAlgunaInstancia;
+
+            $out[$num] = [
+                'total' => $expected,
+                'all_approved' => $allApproved,
+                'has_proceso' => $hasProceso,
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Números de cotización en estado derivado Cerrada (todas las instancias muestra con informe aprobado).
+     *
+     * @return int[]
+     */
+    private function cotizacionesNumsEstadoCerrada(?string $canal): array
+    {
+        $nums = $this->baseVentasQueryCotizacionesActivasAprobadas($canal)->pluck('coti_num')->all();
+        if ($nums === []) {
+            return [];
+        }
+        $stats = $this->buildInstanciaStatsForNums($nums, $canal);
+        $out = [];
+        foreach ($nums as $n) {
+            $n = (int) $n;
+            $st = $stats[$n] ?? null;
+            if ($st && $st['total'] > 0 && $st['all_approved']) {
+                $out[] = $n;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Números de cotización en estado derivado Proceso: hay muestras (por cantidad), existe al menos una instancia
+     * y no todas las copias tienen informe listo.
+     *
+     * @return int[]
+     */
+    private function cotizacionesNumsEstadoProceso(?string $canal): array
+    {
+        $nums = $this->baseVentasQueryCotizacionesActivasAprobadas($canal)->pluck('coti_num')->all();
+        if ($nums === []) {
+            return [];
+        }
+        $stats = $this->buildInstanciaStatsForNums($nums, $canal);
+        $out = [];
+        foreach ($nums as $n) {
+            $n = (int) $n;
+            $st = $stats[$n] ?? null;
+            if ($st && $st['has_proceso']) {
+                $out[] = $n;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Contadores para tarjetas del listado /ventas (respeta canal del usuario si aplica).
+     *
+     * @return array{total:int,enEspera:int,aprobadas:int,enProceso:int,rechazadas:int,suspendidas:int,cerrada:int,procesoDeriv:int}
+     */
+    private function conteosTarjetasVentas(?string $canal): array
+    {
+        $q = Ventas::query();
+        if ($canal) {
+            $this->aplicarFiltroVentasPorCanalEnsayo($q, $canal);
+        }
+
+        return [
+            'total' => (clone $q)->count(),
+            'enEspera' => (clone $q)->where('coti_estado', 'LIKE', 'E%')->count(),
+            'aprobadas' => (clone $q)->where('coti_estado', 'LIKE', 'A%')->count(),
+            'enProceso' => (clone $q)->where('coti_estado', 'LIKE', 'P%')->count(),
+            'rechazadas' => (clone $q)->where('coti_estado', 'LIKE', 'R%')->count(),
+            'suspendidas' => (clone $q)->where('coti_estado', 'LIKE', 'S%')->count(),
+            'cerrada' => count($this->cotizacionesNumsEstadoCerrada($canal)),
+            'procesoDeriv' => count($this->cotizacionesNumsEstadoProceso($canal)),
+        ];
+    }
+
+    /**
+     * Texto y clase CSS del badge de estado en el listado (incluye derivados Cerrada / Proceso).
+     *
+     * @param  array<int, array{total:int, all_approved:bool, has_proceso:bool}>  $instStats
+     * @return array{texto: string, class: string}
+     */
+    private function resolverBadgeEstadoListadoVentas(Ventas $c, array $instStats): array
+    {
+        if (! empty($c->cancelada)) {
+            return ['texto' => 'Cancelado', 'class' => 'estado-C'];
+        }
+
+        $est = trim((string) ($c->coti_estado ?? ''));
+        $letter = $est !== '' ? strtoupper($est[0]) : 'E';
+
+        if ($letter === 'S') {
+            return ['texto' => 'Suspendida', 'class' => 'estado-S'];
+        }
+        if ($letter === 'R') {
+            return ['texto' => 'Rechazado', 'class' => 'estado-R'];
+        }
+        if ($letter === 'E') {
+            return ['texto' => 'En Espera', 'class' => 'estado-E'];
+        }
+        if ($letter === 'P') {
+            return ['texto' => 'En Proceso', 'class' => 'estado-P'];
+        }
+        if ($letter === 'A') {
+            $num = (int) $c->coti_num;
+            $st = $instStats[$num] ?? null;
+            if ($st && $st['total'] > 0 && $st['all_approved']) {
+                return ['texto' => 'Cerrada', 'class' => 'estado-CERR'];
+            }
+            if ($st && $st['total'] > 0 && ! $st['all_approved']) {
+                return ['texto' => 'Proceso', 'class' => 'estado-PROC'];
+            }
+
+            return ['texto' => 'Aprobado', 'class' => 'estado-A'];
+        }
+
+        return ['texto' => 'En Espera', 'class' => 'estado-E'];
+    }
+
+    /**
+     * @return int[]
+     */
+    private function numerosCotiEnQueryFiltrada(\Illuminate\Database\Eloquent\Builder $baseQuery): array
+    {
+        return (clone $baseQuery)->pluck('coti_num')->all();
+    }
+
     public function index(Request $request)
     {
         // Obtener clientes para el filtro
         $clientes = Clientes::where('cli_estado', true)
+            ->soloPrincipales()
             ->orderBy('cli_razonsocial')
+            ->get();
+
+        // Sucursales para el filtro (dependen del cliente seleccionado)
+        $sucursales = collect();
+        if ($request->filled('cliente')) {
+            $cliCodigo = trim((string) $request->cliente);
+            $clienteSel = Clientes::whereRaw('LTRIM(RTRIM(cli_codigo)) = ?', [$cliCodigo])->first();
+            if ($clienteSel) {
+                // Relación legacy: sucursales = mismos datos de razón social sin CUIT real
+                $sucursales = $clienteSel->sucursales()
+                    ->where('cli_estado', true)
+                    ->orderBy('cli_codigo')
+                    ->get();
+            }
+        }
+
+        // Obtener vendedores para el filtro (usuarios con rol ventas activos)
+        // Nota: no depende de que las cotizaciones tengan coti_responsable cargado.
+        $vendedores = User::query()
+            ->where('usu_estado', true)
+            ->where('rol', 'ventas')
+            ->orderBy('usu_descripcion')
             ->get();
         
         // Construir query con filtros
         $query = Ventas::query();
+
+        $canalVistaVentas = $this->ventasCanalRestringidoUsuario();
+        if ($canalVistaVentas) {
+            $this->aplicarFiltroVentasPorCanalEnsayo($query, $canalVistaVentas);
+        }
         
         // Filtro por cliente
         if ($request->filled('cliente')) {
             $query->where('coti_codigocli', 'LIKE', $request->cliente . '%');
         }
+
+        // Filtro por sucursal destinataria (coti_codigosuc)
+        if ($request->filled('sucursal')) {
+            $suc = trim((string) $request->sucursal);
+            if ($suc === '_SIN_') {
+                $query->where(function ($q) {
+                    $q->whereNull('coti_codigosuc')
+                      ->orWhereRaw("LTRIM(RTRIM(coti_codigosuc)) = ''");
+                });
+            } else {
+                $query->whereRaw('LTRIM(RTRIM(coti_codigosuc)) = ?', [$suc]);
+            }
+        }
         
-        // Filtro por estado
+        // Filtro por estado (incluye derivados Cerrada / Proceso desde cotio_instancias)
         if ($request->filled('estado')) {
-            $query->where('coti_estado', 'LIKE', $request->estado . '%');
+            $est = $request->estado;
+            if ($est === '_CERRADA') {
+                $lista = $this->cotizacionesNumsEstadoCerrada($canalVistaVentas);
+                if ($lista === []) {
+                    $query->whereRaw('1 = 0');
+                } else {
+                    $query->whereIn('coti_num', $lista);
+                }
+            } elseif ($est === '_PROCESO') {
+                $lista = $this->cotizacionesNumsEstadoProceso($canalVistaVentas);
+                if ($lista === []) {
+                    $query->whereRaw('1 = 0');
+                } else {
+                    $query->whereIn('coti_num', $lista);
+                }
+            } else {
+                $query->where('coti_estado', 'LIKE', $est . '%');
+            }
+        }
+
+        // Filtro por vendedor (responsable o creador)
+        if ($request->filled('vendedor')) {
+            $vend = trim((string) $request->vendedor);
+            $query->where(function ($q) use ($vend) {
+                // En tablas legacy algunos campos vienen con padding y/o espacios.
+                $q->whereRaw('LTRIM(RTRIM(coti_responsable)) = ?', [$vend])
+                  ->orWhereRaw('LTRIM(RTRIM(coti_creador)) = ?', [$vend]);
+            });
         }
         
         // Filtro por fecha desde
@@ -126,9 +664,25 @@ class VentasController extends Controller {
         }
         
         // Ordenar y paginar
-        $cotizaciones = $query->orderBy('coti_num', 'desc')
+        $cotizaciones = $query->with(['cliente', 'empresaRelacionada', 'sucursal'])
+            ->orderByRaw('cancelada DESC, coti_num DESC')
             ->paginate(20)
             ->withQueryString(); // Mantener filtros en la paginación
+
+        CotizacionClienteEtiqueta::precargarEmpresasRelacionadas($cotizaciones->getCollection());
+
+        $ventasInstanciaStats = $this->buildInstanciaStatsForNums(
+            $cotizaciones->getCollection()->pluck('coti_num')->all(),
+            $canalVistaVentas
+        );
+        $conteosVentasTarjetas = $this->conteosTarjetasVentas($canalVistaVentas);
+        $ventasBadgesListado = [];
+        foreach ($cotizaciones as $c) {
+            $ventasBadgesListado[$c->coti_num] = $this->resolverBadgeEstadoListadoVentas($c, $ventasInstanciaStats);
+        }
+
+        // Detalle muestra/ensayo por cotización aprobada (acordeón en vista)
+        $detalleMuestrasVentas = $this->buildDetalleMuestrasVentasAprobadas($cotizaciones->getCollection(), $canalVistaVentas);
 
         // Calcular montos por estado
         Log::info('=== INICIO index ventas ===');
@@ -154,6 +708,15 @@ class VentasController extends Controller {
         } elseif ($estadoFiltro == 'R') {
             $montoMostrar = $montosPorEstado['rechazadas'];
             Log::info("Filtro R seleccionado, monto: {$montoMostrar}");
+        } elseif ($estadoFiltro == 'S') {
+            $montoMostrar = $montosPorEstado['suspendidas'] ?? $montoMostrar;
+            Log::info("Filtro S seleccionado, monto: {$montoMostrar}");
+        } elseif ($estadoFiltro === '_CERRADA') {
+            $montoMostrar = $montosPorEstado['cerradas'] ?? $montoMostrar;
+            Log::info("Filtro Cerrada (derivado), monto: {$montoMostrar}");
+        } elseif ($estadoFiltro === '_PROCESO') {
+            $montoMostrar = $montosPorEstado['procesoDeriv'] ?? $montoMostrar;
+            Log::info("Filtro Proceso (derivado), monto: {$montoMostrar}");
         } else {
             Log::info("Sin filtro de estado, monto total: {$montoMostrar}");
         }
@@ -161,7 +724,139 @@ class VentasController extends Controller {
         Log::info("Monto a mostrar en vista: {$montoMostrar}");
         Log::info('=== FIN index ventas ===');
 
-        return View::make('ventas.index', compact('cotizaciones', 'clientes', 'montosPorEstado', 'montoMostrar'));
+        return View::make('ventas.index', compact(
+            'cotizaciones',
+            'clientes',
+            'sucursales',
+            'vendedores',
+            'montosPorEstado',
+            'montoMostrar',
+            'detalleMuestrasVentas',
+            'canalVistaVentas',
+            'ventasInstanciaStats',
+            'conteosVentasTarjetas',
+            'ventasBadgesListado'
+        ));
+    }
+
+    /**
+     * Lista de filas (muestra + ensayos por copia) con estado operativo para cotizaciones aprobadas.
+     * Lab directo sin instancia se muestra como análisis pendiente (misma categoría que análisis).
+     */
+    private function buildDetalleMuestrasVentasAprobadas($cotizaciones, ?string $soloCanal = null): array
+    {
+        $aprobadas = collect($cotizaciones)->filter(function ($c) {
+            $estado = trim((string) ($c->coti_estado ?? ''));
+            return $estado !== '' && strtoupper($estado[0]) === 'A';
+        })->values();
+
+        if ($aprobadas->isEmpty()) {
+            return [];
+        }
+
+        $cotiNums = $aprobadas->pluck('coti_num')->map(fn ($n) => (int) $n)->values()->all();
+
+        $cotios = DB::table('cotio')
+            ->whereIn('cotio_numcoti', $cotiNums)
+            ->orderBy('cotio_item')
+            ->orderBy('cotio_subitem')
+            ->get()
+            ->groupBy(fn ($r) => (int) $r->cotio_numcoti);
+
+        $instancias = CotioInstancia::query()
+            ->whereIn('cotio_numcoti', $cotiNums)
+            ->get();
+
+        $instMap = [];
+        foreach ($instancias as $inst) {
+            $k = sprintf(
+                '%d|%d|%d|%d',
+                (int) $inst->cotio_numcoti,
+                (int) $inst->cotio_item,
+                (int) $inst->cotio_subitem,
+                (int) $inst->instance_number
+            );
+            $instMap[$k] = $inst;
+        }
+
+        $out = [];
+        foreach ($aprobadas as $coti) {
+            $num = (int) $coti->coti_num;
+            $lines = collect($cotios->get($num, collect()));
+            $parents = $lines->where('cotio_subitem', 0)->keyBy('cotio_item');
+            $rows = [];
+
+            foreach ($lines->where('cotio_subitem', 0)->sortBy('cotio_item') as $m) {
+                if (! $this->ventasCotioMuestraPadreCoincideCanal($m, $soloCanal)) {
+                    continue;
+                }
+                $cantidad = max(1, (int) ($m->cotio_cantidad ?? 1));
+                $esLabDirecto = $this->esLabDirectoMuestraRow($m);
+                for ($i = 1; $i <= $cantidad; $i++) {
+                    $k = sprintf('%d|%d|%d|%d', $num, (int) $m->cotio_item, 0, $i);
+                    $inst = $instMap[$k] ?? null;
+                    $rows[] = [
+                        'tipo' => 'muestra',
+                        'titulo' => trim((string) ($m->cotio_descripcion ?? '')) ?: 'Muestra',
+                        'copia' => $cantidad > 1 ? 'Copia '.$i : null,
+                        'estado' => $this->labelEstadoInstanciaVentas($inst, $esLabDirecto, 'muestra'),
+                    ];
+                }
+            }
+
+            if (count($rows) > 0) {
+                $out[$num] = $rows;
+            }
+        }
+
+        return $out;
+    }
+
+    private function esLabDirectoMuestraRow(object $cotioRow): bool
+    {
+        $lleva = $cotioRow->lleva_muestreo ?? null;
+
+        return $lleva === false || $lleva === 0 || $lleva === '0';
+    }
+
+    private function labelEstadoInstanciaVentas(?CotioInstancia $inst, bool $esLabDirecto, string $tipo): string
+    {
+        if ($inst) {
+            if ($inst->enable_inform) {
+                if ($inst->firmado) {
+                    return 'Informes — firmado';
+                }
+                if ($inst->aprobado_informe) {
+                    return 'Informes — aprobado';
+                }
+
+                return 'Informes';
+            }
+            // Para MUESTRA: priorizar el estado operativo de muestreo (no el de análisis).
+            if ($tipo === 'muestra' && ($inst->enable_muestreo || stripos((string) $inst->cotio_estado, 'muestreo') !== false)) {
+                $det = trim((string) ($inst->cotio_estado ?? ''));
+
+                return $det !== '' ? 'Muestreo — '.$det : 'Muestreo';
+            }
+            // Para ENSAYO (y fallback de muestra): mostrar estado de análisis cuando corresponde.
+            if ($inst->enable_ot) {
+                $det = trim((string) ($inst->cotio_estado_analisis ?? ''));
+
+                return $det !== '' ? 'Análisis — '.$det : 'Análisis';
+            }
+            if ($tipo !== 'muestra' && ($inst->enable_muestreo || stripos((string) $inst->cotio_estado, 'muestreo') !== false)) {
+                $det = trim((string) ($inst->cotio_estado ?? ''));
+
+                return $det !== '' ? 'Muestreo — '.$det : 'Muestreo';
+            }
+
+            return 'Pendiente';
+        }
+        if ($esLabDirecto) {
+            return 'Análisis (pendiente coordinar)';
+        }
+
+        return 'Pendiente (muestreo)';
     }
 
     /**
@@ -172,6 +867,7 @@ class VentasController extends Controller {
         Log::info('=== INICIO calcularMontosPorEstado ===');
         Log::info('Filtros recibidos:', [
             'cliente' => $request->get('cliente'),
+            'vendedor' => $request->get('vendedor'),
             'fecha_desde' => $request->get('fecha_desde'),
             'fecha_hasta' => $request->get('fecha_hasta'),
         ]);
@@ -183,6 +879,15 @@ class VentasController extends Controller {
             $baseQuery->where('coti_codigocli', 'LIKE', $request->cliente . '%');
             Log::info("Filtro cliente aplicado: {$request->cliente}");
         }
+
+        if ($request->filled('vendedor')) {
+            $vend = trim((string) $request->vendedor);
+            $baseQuery->where(function ($q) use ($vend) {
+                $q->whereRaw('LTRIM(RTRIM(coti_responsable)) = ?', [$vend])
+                  ->orWhereRaw('LTRIM(RTRIM(coti_creador)) = ?', [$vend]);
+            });
+            Log::info("Filtro vendedor aplicado: {$vend}");
+        }
         
         if ($request->filled('fecha_desde')) {
             $baseQuery->whereDate('coti_fechaalta', '>=', $request->fecha_desde);
@@ -192,6 +897,11 @@ class VentasController extends Controller {
         if ($request->filled('fecha_hasta')) {
             $baseQuery->whereDate('coti_fechaalta', '<=', $request->fecha_hasta);
             Log::info("Filtro fecha_hasta aplicado: {$request->fecha_hasta}");
+        }
+
+        $canalMontosUsuario = $this->ventasCanalRestringidoUsuario();
+        if ($canalMontosUsuario) {
+            $this->aplicarFiltroVentasPorCanalEnsayo($baseQuery, $canalMontosUsuario);
         }
 
         // Verificar cuántas cotizaciones hay en la query base
@@ -219,12 +929,33 @@ class VentasController extends Controller {
         $rechazadasMonto = $this->calcularMontoTotalCotizaciones((clone $baseQuery)->where('coti_estado', 'LIKE', 'R%'));
         Log::info("Monto rechazadas calculado: {$rechazadasMonto}");
 
+        Log::info('--- Calculando monto SUSPENDIDAS ---');
+        $suspendidasMonto = $this->calcularMontoTotalCotizaciones((clone $baseQuery)->where('coti_estado', 'LIKE', 'S%'));
+        Log::info("Monto suspendidas calculado: {$suspendidasMonto}");
+
+        $canalMontos = $this->ventasCanalRestringidoUsuario();
+        $numsCerrada = $this->cotizacionesNumsEstadoCerrada($canalMontos);
+        $numsProceso = $this->cotizacionesNumsEstadoProceso($canalMontos);
+        $numsBase = $this->numerosCotiEnQueryFiltrada($baseQuery);
+        $cerradaFiltrados = array_values(array_intersect($numsCerrada, $numsBase));
+        $procesoFiltrados = array_values(array_intersect($numsProceso, $numsBase));
+
+        $cerradasMonto = $cerradaFiltrados === []
+            ? 0.0
+            : $this->calcularMontoTotalCotizaciones((clone $baseQuery)->whereIn('coti_num', $cerradaFiltrados));
+        $procesoDerivMonto = $procesoFiltrados === []
+            ? 0.0
+            : $this->calcularMontoTotalCotizaciones((clone $baseQuery)->whereIn('coti_num', $procesoFiltrados));
+
         $resultado = [
             'total' => $totalMonto,
             'enEspera' => $enEsperaMonto,
             'aprobadas' => $aprobadasMonto,
             'enProceso' => $enProcesoMonto,
             'rechazadas' => $rechazadasMonto,
+            'suspendidas' => $suspendidasMonto,
+            'cerradas' => $cerradasMonto,
+            'procesoDeriv' => $procesoDerivMonto,
         ];
 
         Log::info('=== FIN calcularMontosPorEstado ===', $resultado);
@@ -290,15 +1021,23 @@ class VentasController extends Controller {
                     
                     Log::info("Muestra item={$muestra->cotio_item}: cantidad={$cantidadMuestra}, componentes={$componentesMuestra->count()}");
                     
-                    // Sumar precios de los componentes (cantidad siempre es 1 para componentes)
+                    // Sumar precios de los componentes (precio × cantidad por línea)
                     $precioTotalComponentes = $componentesMuestra->sum(function ($componente) {
                         $precio = $this->parseDecimalValue($componente->cotio_precio ?? 0) ?? 0;
+                        $cantidadComp = $this->parseDecimalValue($componente->cotio_cantidad ?? 1) ?? 1;
+                        if ($cantidadComp <= 0) {
+                            $cantidadComp = 1;
+                        }
                         Log::debug("  Componente subitem={$componente->cotio_subitem}: precio={$precio}");
-                        return $precio;
+                        return $precio * $cantidadComp;
                     });
 
-                    Log::info("  Precio total componentes: {$precioTotalComponentes}, cantidad muestra: {$cantidadMuestra}");
-                    $subtotalMuestra = $precioTotalComponentes * $cantidadMuestra;
+                    $cotioPrecioEnsayo = $this->parseDecimalValue($muestra->cotio_precio ?? null);
+                    $precioExtraEnsayo = $this->resolverPrecioExtraEnsayoDesdeCotioRow($cotioPrecioEnsayo, (float) $precioTotalComponentes);
+                    // Analitos una vez + adicional del ensayo × cantidad de muestras (coherente con ventas y detalle).
+                    $subtotalMuestra = $precioTotalComponentes + ($precioExtraEnsayo * $cantidadMuestra);
+
+                    Log::info("  Precio total componentes: {$precioTotalComponentes}, extra ensayo: {$precioExtraEnsayo}, cantidad muestra: {$cantidadMuestra}");
                     Log::info("  Subtotal muestra: {$subtotalMuestra}");
                     $subtotalMuestras += $subtotalMuestra;
                 }
@@ -356,6 +1095,8 @@ class VentasController extends Controller {
 
     public function create() 
     {
+        $this->denegarVentasSiUsuarioSoloCanal();
+
         // Cargar datos para los selectores
         try {
             $matrices = Matriz::orderBy('matriz_descripcion')->get();
@@ -401,11 +1142,19 @@ class VentasController extends Controller {
             ]);
         }
 
+        try {
+            $divisas = Divisa::orderBy('divisa_codigo')->get();
+        } catch (\Exception $e) {
+            Log::warning('Error cargando divisas:', ['error' => $e->getMessage()]);
+            $divisas = collect();
+        }
+
         $cotizacionConfig = [
             'modo' => 'create',
             'puedeEditar' => true,
             'ensayosIniciales' => [],
             'componentesIniciales' => [],
+            'coti_req_cadena_custodia_relacionada' => false,
         ];
 
         return View::make('ventas.create', compact(
@@ -414,13 +1163,16 @@ class VentasController extends Controller {
             'condicionesPago',
             'listasPrecios',
             'cotizacionConfig',
-            'sectoresCliente'
+            'sectoresCliente',
+            'divisas'
         ));
     }
 
     public function store(Request $request)
     {
         try {
+            $this->denegarVentasSiUsuarioSoloCanal();
+
             Log::info('=== INICIO CREACIÓN DE COTIZACIÓN ===');
             $ensayosRaw = $request->input('ensayos_data');
             $componentesRaw = $request->input('componentes_data');
@@ -447,6 +1199,11 @@ class VentasController extends Controller {
                 'coti_codigocli.required' => 'El código de cliente es obligatorio',
                 'coti_fechaalta.required' => 'La fecha de alta es obligatoria',
             ]);
+
+            $erroresRefs = CotizacionReferenciasFacturacion::validarRequest($request);
+            if ($erroresRefs !== []) {
+                throw ValidationException::withMessages($erroresRefs);
+            }
             
             Log::info('Validación completada exitosamente');
 
@@ -483,7 +1240,10 @@ class VentasController extends Controller {
             Log::info('Asignando campos principales');
             $cotizacion->coti_num = $nuevoNumero;
             $cotizacion->coti_para = $this->sanitizeNullableString($request->coti_para, null);
-            $cotizacion->coti_cli_empresa = $request->coti_cli_empresa ? (int)$request->coti_cli_empresa : null;
+            $relIds = $this->resolverIdsEmpresaRelacionadaParaGuardado($request, $cliente);
+            $cotizacion->coti_empresa_rel = $relIds['coti_empresa_rel'];
+            $cotizacion->coti_para_empresa_rel = $relIds['coti_para_empresa_rel'];
+            $cotizacion->coti_cli_empresa = $relIds['coti_cli_empresa'];
             $cotizacion->coti_descripcion = $request->coti_descripcion;
             $cotizacion->coti_codigocli = $codigoCliente;
             $cotizacion->coti_fechaalta = $request->coti_fechaalta ?: now()->format('Y-m-d');
@@ -496,6 +1256,7 @@ class VentasController extends Controller {
                 'Aprobado' => 'A    ',
                 'Rechazado' => 'R    ',
                 'En Proceso' => 'P    ',
+                'Suspendida' => 'S    ',
             ];
             
             $estadoFormulario = $request->coti_estado ?: 'En Espera';
@@ -510,8 +1271,11 @@ class VentasController extends Controller {
             // Campos de gestión
             Log::info('Asignando campos de gestión');
             $cotizacion->coti_responsable = $this->truncateAndPad($request->coti_responsable, 20);
+            // Creador: usuario que genera la cotización (solo en creación)
+            $cotizacion->coti_creador = $this->truncateAndPad(Auth::user()?->usu_codigo, 20);
             $cotizacion->coti_aprobo = $this->truncateAndPad($request->coti_aprobo, 20);
-            $cotizacion->coti_fechaaprobado = $request->coti_fechaaprobado;
+            $cotizacion->coti_fechaaprobado = $request->input('coti_fechaaprobado');
+            $this->completarCotiFechaAprobadoSiAprobada($cotizacion);
             $cotizacion->coti_fechaencurso = $request->coti_fechaencurso;
             $cotizacion->coti_fechaaltatecnica = $request->coti_fechaaltatecnica;
 
@@ -534,6 +1298,19 @@ class VentasController extends Controller {
                 'coti_empresa' => $request->coti_empresa,
                 'coti_establecimiento' => $request->coti_establecimiento,
                 'coti_contacto' => $request->coti_contacto,
+                'coti_contacto_tipo1' => $request->coti_contacto_tipo1,
+                'coti_contacto2' => $request->coti_contacto2,
+                'coti_mail2' => $request->coti_mail2,
+                'coti_telefono2' => $request->coti_telefono2,
+                'coti_contacto_tipo2' => $request->coti_contacto_tipo2,
+                'coti_contacto3' => $request->coti_contacto3,
+                'coti_mail3' => $request->coti_mail3,
+                'coti_telefono3' => $request->coti_telefono3,
+                'coti_contacto_tipo3' => $request->coti_contacto_tipo3,
+                'coti_contacto4' => $request->coti_contacto4,
+                'coti_mail4' => $request->coti_mail4,
+                'coti_telefono4' => $request->coti_telefono4,
+                'coti_contacto_tipo4' => $request->coti_contacto_tipo4,
                 'coti_direccioncli' => $request->coti_direccioncli,
                 'coti_localidad' => $request->coti_localidad,
                 'coti_partido' => $request->coti_partido,
@@ -578,6 +1355,19 @@ class VentasController extends Controller {
                 $request->coti_mail1,
                 120
             ) ?: ($cliente->cli_email ? trim($cliente->cli_email) : null);
+            $cotizacion->coti_contacto_tipo1 = $this->sanitizeNullableString($request->coti_contacto_tipo1, 30);
+            $cotizacion->coti_contacto2 = $this->sanitizeNullableString($request->coti_contacto2, 120);
+            $cotizacion->coti_mail2 = $this->sanitizeNullableString($request->coti_mail2, 120);
+            $cotizacion->coti_telefono2 = $this->sanitizeNullableString($request->coti_telefono2, 50);
+            $cotizacion->coti_contacto_tipo2 = $this->sanitizeNullableString($request->coti_contacto_tipo2, 30);
+            $cotizacion->coti_contacto3 = $this->sanitizeNullableString($request->coti_contacto3, 120);
+            $cotizacion->coti_mail3 = $this->sanitizeNullableString($request->coti_mail3, 120);
+            $cotizacion->coti_telefono3 = $this->sanitizeNullableString($request->coti_telefono3, 50);
+            $cotizacion->coti_contacto_tipo3 = $this->sanitizeNullableString($request->coti_contacto_tipo3, 30);
+            $cotizacion->coti_contacto4 = $this->sanitizeNullableString($request->coti_contacto4, 120);
+            $cotizacion->coti_mail4 = $this->sanitizeNullableString($request->coti_mail4, 120);
+            $cotizacion->coti_telefono4 = $this->sanitizeNullableString($request->coti_telefono4, 50);
+            $cotizacion->coti_contacto_tipo4 = $this->sanitizeNullableString($request->coti_contacto_tipo4, 30);
             $sectorFormulario = $this->sanitizeNullableString($request->coti_sector, 4);
             $sectorCliente = $this->sanitizeNullableString($cliente->cli_codigocrub ?? null, 4);
 
@@ -607,20 +1397,37 @@ class VentasController extends Controller {
 
             // Campos adicionales - Solo campos que existen en la tabla
             Log::info('Asignando campos adicionales');
-            $cotizacion->coti_referencia_tipo = $this->truncateAndPad($request->coti_referencia_tipo, 30);
-            $cotizacion->coti_referencia_valor = $this->sanitizeNullableString($request->coti_referencia_valor, 120);
-            $cotizacion->coti_oc_referencia = $this->sanitizeNullableString($request->coti_oc_referencia, 120);
-            $cotizacion->coti_hes_has_tipo = $this->truncateAndPad($request->coti_hes_has_tipo, 10);
-            $cotizacion->coti_hes_has_valor = $this->sanitizeNullableString($request->coti_hes_has_valor, 120);
-            $cotizacion->coti_gr_contrato_tipo = $this->truncateAndPad($request->coti_gr_contrato_tipo, 30);
-            $cotizacion->coti_gr_contrato = $this->sanitizeNullableString($request->coti_gr_contrato, 120);
-            $cotizacion->coti_otro_referencia = $this->sanitizeNullableString($request->coti_otro_referencia, 120);
+            $this->aplicarReferenciasFacturacionVentas($request, $cotizacion);
             $cotizacion->coti_notas = $request->coti_notas;
             $cotizacion->coti_codigosuc = $this->truncateAndPad($request->coti_codigosuc, 10);
             
             // Campos de descuentos / aumentos
             $cotizacion->coti_descuentoglobal = $request->filled('descuento') ? floatval($request->descuento) : 0.00;
             $cotizacion->coti_aumentoglobal = $request->filled('aumento') ? floatval($request->aumento) : 0.00;
+            // Si el checkbox está presente, es true; si no, false
+            $cotizacion->coti_mostrar_descuento = $request->has('coti_mostrar_descuento');
+            $cotizacion->divisa_codigo = $request->filled('divisa_codigo') ? $this->sanitizeNullableString($request->divisa_codigo, 10) : 'PES';
+            $cotizacion->coti_cond_pago = $request->filled('coti_cond_pago') ? $this->sanitizeNullableString($request->coti_cond_pago, 10) : null;
+            $esCuotas = ($cotizacion->coti_cond_pago === 'CUOTAS');
+            $cotizacion->coti_cuotas = $esCuotas;
+            if ($esCuotas) {
+                $cotizacion->coti_cuota_desc = $this->sanitizeNullableString($request->coti_cuota_desc, 100);
+                $cotizacion->coti_cuota_cant = $request->filled('coti_cuota_cant') ? (int) $request->coti_cuota_cant : null;
+                $cotizacion->coti_cuota_monto_total = $request->filled('coti_cuota_monto_total') ? $this->parseDecimalValue($request->coti_cuota_monto_total) : null;
+                $cotizacion->coti_cuota_monto_indiv = $request->filled('coti_cuota_monto_indiv') ? $this->parseDecimalValue($request->coti_cuota_monto_indiv) : null;
+                $interesCrear = $this->parseDecimalValue($request->coti_cuota_interes);
+                $cotizacion->coti_cuota_interes = $interesCrear !== null ? $interesCrear : 0.0;
+                $cotizacion->coti_cuota_fact_fin_mes = $request->has('coti_cuota_fact_fin_mes') && $request->coti_cuota_fact_fin_mes == '1';
+                $cotizacion->coti_cuota_fact_inicio_mes = $request->has('coti_cuota_fact_inicio_mes') && $request->coti_cuota_fact_inicio_mes == '1';
+            } else {
+                $cotizacion->coti_cuota_desc = null;
+                $cotizacion->coti_cuota_cant = null;
+                $cotizacion->coti_cuota_monto_total = null;
+                $cotizacion->coti_cuota_monto_indiv = null;
+                $cotizacion->coti_cuota_interes = null;
+                $cotizacion->coti_cuota_fact_fin_mes = null;
+                $cotizacion->coti_cuota_fact_inicio_mes = null;
+            }
             $cotizacion->coti_sector_laboratorio_pct = $request->filled('sector_laboratorio_porcentaje') ? floatval($request->sector_laboratorio_porcentaje) : 0.00;
             $cotizacion->coti_sector_higiene_pct = $request->filled('sector_higiene_porcentaje') ? floatval($request->sector_higiene_porcentaje) : 0.00;
             $cotizacion->coti_sector_microbiologia_pct = $request->filled('sector_microbiologia_porcentaje') ? floatval($request->sector_microbiologia_porcentaje) : 0.00;
@@ -637,6 +1444,7 @@ class VentasController extends Controller {
             // Campos de cadena de custodia y muestreo
             $cotizacion->coti_cadena_custodia = $request->has('coti_cadena_custodia') && $request->coti_cadena_custodia == '1';
             $cotizacion->coti_muestreo = $request->has('coti_muestreo') && $request->coti_muestreo == '1';
+            $cotizacion->coti_req_cadena_custodia_relacionada = $request->boolean('coti_req_cadena_custodia_relacionada');
             
             // Campos financieros eliminados - no existen en la tabla real
             Log::info('=== CAMPOS FINANCIEROS OMITIDOS ===');
@@ -786,9 +1594,14 @@ class VentasController extends Controller {
             abort(404, 'Invalid ID');
         }
         
-        $cotizacion = Ventas::find($id);
+        $cotizacion = Ventas::with(['cliente'])->find($id);
         if (!$cotizacion) {
             abort(404, 'Cotización not found');
+        }
+
+        $canalPreCheck = $this->ventasCanalRestringidoUsuario();
+        if ($canalPreCheck && ! $this->cotizacionTieneEnsayoDeCanal((int) $id, $canalPreCheck)) {
+            abort(403);
         }
         
         // Verificar si se solicita una versión específica
@@ -917,6 +1730,15 @@ class VentasController extends Controller {
             $sectoresCliente = collect();
         }
 
+        try {
+            $condicionesPago = CondicionPago::where('pag_estado', true)
+                ->orderBy('pag_descripcion')
+                ->get();
+        } catch (\Exception $e) {
+            Log::warning('Error cargando condiciones de pago:', ['error' => $e->getMessage()]);
+            $condicionesPago = collect();
+        }
+
         // Ahora siempre permitimos editar la cotización, incluso si está aprobada.
         $puedeEditar = true;
 
@@ -927,6 +1749,18 @@ class VentasController extends Controller {
                 return Str::lower(trim($item->cotio_descripcion));
             });
 
+        $canalRestringidoEdit = $this->ventasCanalRestringidoUsuario();
+        if ($canalRestringidoEdit) {
+            $ensayos = $ensayos->filter(function ($ensayo) use ($agrupadoresCatalogo, $canalRestringidoEdit) {
+                return $this->resolverCanalCotioEnsayo($ensayo, $agrupadoresCatalogo) === $canalRestringidoEdit;
+            })->values();
+            $itemsPermitidos = $ensayos->pluck('cotio_item')->map(fn ($i) => (int) $i)->all();
+            $componentes = $componentes->filter(function ($c) use ($itemsPermitidos) {
+                return in_array((int) $c->cotio_item, $itemsPermitidos, true);
+            })->values();
+            $puedeEditar = false;
+        }
+
         $ensayosIniciales = $ensayos->map(function ($ensayo) use ($componentes, $agrupadoresCatalogo) {
             $cantidad = $ensayo->cotio_cantidad ?? 1;
             $componentesDelEnsayo = $componentes->where('cotio_item', $ensayo->cotio_item);
@@ -935,6 +1769,9 @@ class VentasController extends Controller {
                 $cantidad = $comp->cotio_cantidad ?? 1;
                 return $precio * $cantidad;
             });
+            $cotioPrecioEnsayo = $this->parseDecimalValue($ensayo->cotio_precio ?? null);
+            $precioExtraEnsayo = $this->resolverPrecioExtraEnsayoDesdeCotioRow($cotioPrecioEnsayo, (float) $precioUnitario);
+            $precioUnitarioTotal = (float) $precioUnitario + $precioExtraEnsayo;
 
             $descripcionClave = Str::lower(trim($ensayo->cotio_descripcion ?? ''));
             $agrupador = $agrupadoresCatalogo->get($descripcionClave);
@@ -962,14 +1799,22 @@ class VentasController extends Controller {
                 'descripcion' => $ensayo->cotio_descripcion,
                 'codigo' => $agrupador ? str_pad($agrupador->id, 15, '0', STR_PAD_LEFT) : ($ensayo->cotio_codigoprod ?? ''),
                 'cantidad' => (float) $cantidad,
-                'precio' => (float) $precioUnitario,
-                'total' => (float) ($precioUnitario * $cantidad),
+                'precio_extra_ensayo' => (float) $precioExtraEnsayo,
+                'precio' => (float) $precioUnitarioTotal,
+                'total' => (float) ($precioUnitarioTotal * $cantidad),
                 'tipo' => 'ensayo',
                 'componentes_sugeridos' => $agrupador ? $agrupador->componentesAsociados->pluck('id')->values()->all() : [],
                 'nota_tipo' => $ensayo->cotio_nota_tipo ?? null,
                 'nota_contenido' => $ensayo->cotio_nota_contenido ?? null,
                 'matriz_codigo' => $matrizCodigo,
                 'matriz_descripcion' => $matrizDescripcion,
+                'canal_especial' => $this->resolverCanalCotioEnsayo($ensayo, $agrupadoresCatalogo),
+                'lleva_muestreo' => $ensayo->lleva_muestreo ?? true,
+                'req_cadena_custodia' => (bool) ($ensayo->req_cadena_custodia ?? false),
+                'req_prot_mapba' => (bool) ($ensayo->req_prot_mapba ?? false),
+                'ley_normativa_id' => ($ensayo->ley_aplicacion !== null && trim((string) $ensayo->ley_aplicacion) !== '')
+                    ? trim((string) $ensayo->ley_aplicacion)
+                    : null,
             ];
         })->values();
 
@@ -1044,9 +1889,13 @@ class VentasController extends Controller {
                 'metodo_descripcion' => $metodoTexto,
                 'unidad_medida' => $componente->cotio_codigoum ? trim($componente->cotio_codigoum) : null,
                 'limite_deteccion' => $componente->limite_deteccion ?? null,
-                'ley_normativa_id' => null,
+                'ley_normativa_id' => ($componente->ley_aplicacion !== null && trim((string) $componente->ley_aplicacion) !== '')
+                    ? trim((string) $componente->ley_aplicacion)
+                    : null,
                 'nota_tipo' => $componente->cotio_nota_tipo ?? null,
                 'nota_contenido' => $componente->cotio_nota_contenido ?? null,
+                'req_cadena_custodia' => (bool) ($componente->req_cadena_custodia ?? false),
+                'req_prot_mapba' => (bool) ($componente->req_prot_mapba ?? false),
             ];
         }
 
@@ -1055,6 +1904,7 @@ class VentasController extends Controller {
             'puedeEditar' => $puedeEditar,
             'ensayosIniciales' => $ensayosIniciales,
             'componentesIniciales' => $componentesIniciales,
+            'coti_req_cadena_custodia_relacionada' => (bool) ($cotizacion->coti_req_cadena_custodia_relacionada ?? false),
         ];
         
         $descuentoCliente = $this->calcularDescuentoCotizacion($cotizacion);
@@ -1079,6 +1929,13 @@ class VentasController extends Controller {
         
         $sectorEtiqueta = trim(optional($cotizacion->sector)->divis_descripcion ?? $cotizacion->coti_sector ?? '');
 
+        try {
+            $divisas = Divisa::orderBy('divisa_codigo')->get();
+        } catch (\Exception $e) {
+            Log::warning('Error cargando divisas:', ['error' => $e->getMessage()]);
+            $divisas = collect();
+        }
+
         return View::make('ventas.edit', compact(
             'cotizacion',
             'matrices',
@@ -1090,7 +1947,9 @@ class VentasController extends Controller {
             'descuentoGlobalCliente',
             'descuentoSectorAplicado',
             'sectorEtiqueta',
-            'sectoresCliente'
+            'sectoresCliente',
+            'divisas',
+            'condicionesPago'
         ));
     }
     
@@ -1099,6 +1958,8 @@ class VentasController extends Controller {
         if (!is_numeric($id)) {
             abort(404, 'Invalid ID');
         }
+
+        $this->denegarVentasSiUsuarioSoloCanal();
         
         try {
             $cotizacion = Ventas::find($id);
@@ -1130,11 +1991,18 @@ class VentasController extends Controller {
     public function update(Request $request, $id)
     {
         try {
+            $this->denegarVentasSiUsuarioSoloCanal();
+
             $cotizacion = Ventas::find($id);
             
             if (!$cotizacion) {
                 return redirect()->route('ventas.index')
                     ->with('error', 'Cotización no encontrada');
+            }
+
+            $erroresRefs = CotizacionReferenciasFacturacion::validarRequest($request);
+            if ($erroresRefs !== []) {
+                throw ValidationException::withMessages($erroresRefs);
             }
             
             // IMPORTANTE: Guardar versión histórica ANTES de actualizar
@@ -1218,8 +2086,14 @@ class VentasController extends Controller {
             // Actualizar campos principales
             $cotizacion->coti_descripcion = $request->coti_descripcion;
             $cotizacion->coti_para = $this->sanitizeNullableString($request->coti_para, null);
-            $cotizacion->coti_cli_empresa = $request->coti_cli_empresa ? (int)$request->coti_cli_empresa : null;
             $cotizacion->coti_codigocli = $this->truncateAndPad($request->coti_codigocli, 10);
+            $clienteCotizacion = Clientes::where('cli_codigo', $cotizacion->coti_codigocli)
+                ->where('cli_estado', true)
+                ->first();
+            $relIds = $this->resolverIdsEmpresaRelacionadaParaGuardado($request, $clienteCotizacion);
+            $cotizacion->coti_empresa_rel = $relIds['coti_empresa_rel'];
+            $cotizacion->coti_para_empresa_rel = $relIds['coti_para_empresa_rel'];
+            $cotizacion->coti_cli_empresa = $relIds['coti_cli_empresa'];
             $cotizacion->coti_fechaalta = $request->coti_fechaalta;
             $cotizacion->coti_fechafin = $request->coti_fechafin;
             
@@ -1229,6 +2103,7 @@ class VentasController extends Controller {
                 'A' => 'A    ',
                 'R' => 'R    ',
                 'P' => 'P    ',
+                'S' => 'S    ',
             ];
             
             $estadoFormulario = $request->coti_estado ?: 'E';
@@ -1241,7 +2116,8 @@ class VentasController extends Controller {
             // Campos de gestión
             $cotizacion->coti_responsable = $this->truncateAndPad($request->coti_responsable, 20);
             $cotizacion->coti_aprobo = $this->truncateAndPad($request->coti_aprobo, 20);
-            $cotizacion->coti_fechaaprobado = $request->coti_fechaaprobado;
+            $cotizacion->coti_fechaaprobado = $request->input('coti_fechaaprobado');
+            $this->completarCotiFechaAprobadoSiAprobada($cotizacion);
             $cotizacion->coti_fechaencurso = $request->coti_fechaencurso;
             $cotizacion->coti_fechaaltatecnica = $request->coti_fechaaltatecnica;
             
@@ -1256,6 +2132,19 @@ class VentasController extends Controller {
             $cotizacion->coti_codigopostal = $this->sanitizeNullableString($request->coti_codigopostal, 10);
             $cotizacion->coti_telefono = $request->coti_telefono;
             $cotizacion->coti_mail1 = $this->sanitizeNullableString($request->coti_mail1, 120);
+            $cotizacion->coti_contacto_tipo1 = $this->sanitizeNullableString($request->coti_contacto_tipo1, 30);
+            $cotizacion->coti_contacto2 = $this->sanitizeNullableString($request->coti_contacto2, 120);
+            $cotizacion->coti_mail2 = $this->sanitizeNullableString($request->coti_mail2, 120);
+            $cotizacion->coti_telefono2 = $this->sanitizeNullableString($request->coti_telefono2, 50);
+            $cotizacion->coti_contacto_tipo2 = $this->sanitizeNullableString($request->coti_contacto_tipo2, 30);
+            $cotizacion->coti_contacto3 = $this->sanitizeNullableString($request->coti_contacto3, 120);
+            $cotizacion->coti_mail3 = $this->sanitizeNullableString($request->coti_mail3, 120);
+            $cotizacion->coti_telefono3 = $this->sanitizeNullableString($request->coti_telefono3, 50);
+            $cotizacion->coti_contacto_tipo3 = $this->sanitizeNullableString($request->coti_contacto_tipo3, 30);
+            $cotizacion->coti_contacto4 = $this->sanitizeNullableString($request->coti_contacto4, 120);
+            $cotizacion->coti_mail4 = $this->sanitizeNullableString($request->coti_mail4, 120);
+            $cotizacion->coti_telefono4 = $this->sanitizeNullableString($request->coti_telefono4, 50);
+            $cotizacion->coti_contacto_tipo4 = $this->sanitizeNullableString($request->coti_contacto_tipo4, 30);
             
             // Procesar sector correctamente (debe ser 4 caracteres)
             $sectorFormulario = $this->sanitizeNullableString($request->coti_sector, 4);
@@ -1268,21 +2157,45 @@ class VentasController extends Controller {
             }
             $cotizacion->coti_sector = $sectorCandidato;
             
-            $cotizacion->coti_referencia_tipo = $this->truncateAndPad($request->coti_referencia_tipo, 30);
-            $cotizacion->coti_referencia_valor = $this->sanitizeNullableString($request->coti_referencia_valor, 120);
-            $cotizacion->coti_oc_referencia = $this->sanitizeNullableString($request->coti_oc_referencia, 120);
-            $cotizacion->coti_hes_has_tipo = $this->truncateAndPad($request->coti_hes_has_tipo, 10);
-            $cotizacion->coti_hes_has_valor = $this->sanitizeNullableString($request->coti_hes_has_valor, 120);
-            $cotizacion->coti_gr_contrato_tipo = $this->truncateAndPad($request->coti_gr_contrato_tipo, 30);
-            $cotizacion->coti_gr_contrato = $this->sanitizeNullableString($request->coti_gr_contrato, 120);
-            $cotizacion->coti_otro_referencia = $this->sanitizeNullableString($request->coti_otro_referencia, 120);
+            $this->aplicarReferenciasFacturacionVentas($request, $cotizacion);
             
             // Notas
             $cotizacion->coti_notas = $request->coti_notas;
-            
+
+            // Cancelación (manejada desde el checkbox en la vista de edición)
+            $cotizacion->cancelada = $request->boolean('cancelada');
+            if ($cotizacion->cancelada) {
+                $cotizacion->razon_cancelada = $this->sanitizeNullableString($request->razon_cancelada, 1000);
+            } else {
+                $cotizacion->razon_cancelada = null;
+            }
+
             // Campos de descuentos / aumentos
             $cotizacion->coti_descuentoglobal = $request->filled('descuento') ? floatval($request->descuento) : 0.00;
             $cotizacion->coti_aumentoglobal = $request->filled('aumento') ? floatval($request->aumento) : 0.00;
+            $cotizacion->coti_mostrar_descuento = $request->has('coti_mostrar_descuento');
+            $cotizacion->divisa_codigo = $request->filled('divisa_codigo') ? $this->sanitizeNullableString($request->divisa_codigo, 10) : ($cotizacion->divisa_codigo ?? 'PES');
+            $cotizacion->coti_cond_pago = $request->filled('coti_cond_pago') ? $this->sanitizeNullableString($request->coti_cond_pago, 10) : null;
+            $esCuotas = ($cotizacion->coti_cond_pago === 'CUOTAS');
+            $cotizacion->coti_cuotas = $esCuotas;
+            if ($esCuotas) {
+                $cotizacion->coti_cuota_desc = $this->sanitizeNullableString($request->coti_cuota_desc, 100);
+                $cotizacion->coti_cuota_cant = $request->filled('coti_cuota_cant') ? (int) $request->coti_cuota_cant : null;
+                $cotizacion->coti_cuota_monto_total = $request->filled('coti_cuota_monto_total') ? $this->parseDecimalValue($request->coti_cuota_monto_total) : null;
+                $cotizacion->coti_cuota_monto_indiv = $request->filled('coti_cuota_monto_indiv') ? $this->parseDecimalValue($request->coti_cuota_monto_indiv) : null;
+                $interesEditar = $this->parseDecimalValue($request->coti_cuota_interes);
+                $cotizacion->coti_cuota_interes = $interesEditar !== null ? $interesEditar : 0.0;
+                $cotizacion->coti_cuota_fact_fin_mes = $request->has('coti_cuota_fact_fin_mes') && $request->coti_cuota_fact_fin_mes == '1';
+                $cotizacion->coti_cuota_fact_inicio_mes = $request->has('coti_cuota_fact_inicio_mes') && $request->coti_cuota_fact_inicio_mes == '1';
+            } else {
+                $cotizacion->coti_cuota_desc = null;
+                $cotizacion->coti_cuota_cant = null;
+                $cotizacion->coti_cuota_monto_total = null;
+                $cotizacion->coti_cuota_monto_indiv = null;
+                $cotizacion->coti_cuota_interes = null;
+                $cotizacion->coti_cuota_fact_fin_mes = null;
+                $cotizacion->coti_cuota_fact_inicio_mes = null;
+            }
             $cotizacion->coti_sector_laboratorio_pct = $request->filled('sector_laboratorio_porcentaje') ? floatval($request->sector_laboratorio_porcentaje) : 0.00;
             $cotizacion->coti_sector_higiene_pct = $request->filled('sector_higiene_porcentaje') ? floatval($request->sector_higiene_porcentaje) : 0.00;
             $cotizacion->coti_sector_microbiologia_pct = $request->filled('sector_microbiologia_porcentaje') ? floatval($request->sector_microbiologia_porcentaje) : 0.00;
@@ -1299,6 +2212,7 @@ class VentasController extends Controller {
             // Campos de cadena de custodia y muestreo
             $cotizacion->coti_cadena_custodia = $request->has('coti_cadena_custodia') && $request->coti_cadena_custodia == '1';
             $cotizacion->coti_muestreo = $request->has('coti_muestreo') && $request->coti_muestreo == '1';
+            $cotizacion->coti_req_cadena_custodia_relacionada = $request->boolean('coti_req_cadena_custodia_relacionada');
 
             // Versionado simple: cada vez que se actualiza, incrementamos la versión.
             // Si no existe (migración recién aplicada), asumimos versión 1 y luego sumamos.
@@ -1316,6 +2230,10 @@ class VentasController extends Controller {
             return redirect()->route('ventas.index')
                 ->with('success', 'Cotización actualizada exitosamente');
                 
+        } catch (ValidationException $e) {
+            return redirect()->back()
+                ->withErrors($e->validator)
+                ->withInput();
         } catch (\Exception $e) {
             Log::error('Error al actualizar cotización:', [
                 'id' => $id,
@@ -1327,11 +2245,44 @@ class VentasController extends Controller {
         }
     }
 
+    public function descancelar(Request $request, $id)
+    {
+        try {
+            $this->denegarVentasSiUsuarioSoloCanal();
+
+            $user = Auth::user();
+            $hasPermission = $user && ($user->usu_nivel >= 900 || $user->hasRole('ventas'));
+            if (!$hasPermission) {
+                return redirect()->back()->with('error', 'No autorizado');
+            }
+
+            $cotizacion = Ventas::find($id);
+            if (!$cotizacion) {
+                return redirect()->back()->with('error', 'Cotización no encontrada');
+            }
+
+            $cotizacion->cancelada = false;
+            $cotizacion->razon_cancelada = null;
+            $cotizacion->save();
+
+            return redirect()->back()->with('success', 'Cancelación removida correctamente');
+        } catch (\Exception $e) {
+            Log::error('Error al descancelar cotización', [
+                'id' => $id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return redirect()->back()->with('error', 'Error al remover la cancelación');
+        }
+    }
+
     public function imprimir($id)
     {
         if (!is_numeric($id)) {
             abort(404, 'Invalid ID');
         }
+
+        $this->denegarVentasSiUsuarioSoloCanal();
 
         $cotizacion = Ventas::with([
                 'cliente.condicionPago',
@@ -1373,6 +2324,9 @@ class VentasController extends Controller {
             }
 
             $subtotalComponentes = $componentesEnsayo->sum(function ($componente) {
+                if ($componente->de_agrupador) {
+                    return 0;
+                }
                 $precio = $this->parseDecimalValue($componente->cotio_precio ?? 0) ?? 0;
                 $cantidad = $this->parseDecimalValue($componente->cotio_cantidad ?? 1) ?? 1;
 
@@ -1383,34 +2337,36 @@ class VentasController extends Controller {
                 return $precio * $cantidad;
             });
 
-            $precioUnitario = $subtotalComponentes;
+            $esNuevaLogica = $componentes->contains(function($c) {
+                return (bool)($c->de_agrupador ?? false);
+            });
+
+            $cotioPrecioEnsayo = $this->parseDecimalValue($ensayo->cotio_precio ?? null);
+            $precioExtraEnsayo = $this->resolverPrecioExtraEnsayoDesdeCotioRow($cotioPrecioEnsayo, (float) $subtotalComponentes, $esNuevaLogica);
+            
+            // Nueva lógica: Precio Unitario = Extra + Suma de componentes
+            $precioUnitario = $precioExtraEnsayo + (float) $subtotalComponentes;
+            // Importe = Cantidad de muestras * Precio Unitario Total
             $total = $precioUnitario * $cantidadEnsayo;
 
-            // Parsear notas desde JSON
-            $notas = [];
-            if (!empty($ensayo->cotio_nota_contenido)) {
-                try {
-                    $notasParsed = json_decode($ensayo->cotio_nota_contenido, true);
-                    if (is_array($notasParsed)) {
-                        $notas = $notasParsed;
-                    } else {
-                        // Formato antiguo: nota simple
-                        if (!empty($ensayo->cotio_nota_tipo)) {
-                            $notas = [['tipo' => $ensayo->cotio_nota_tipo, 'contenido' => $ensayo->cotio_nota_contenido]];
-                        }
+            $notasImprimibles = $ensayo->notasImprimiblesList();
+            $ensDesc = trim($ensayo->cotio_descripcion ?? '');
+            foreach ($componentesEnsayo as $componente) {
+                $compDesc = trim($componente->cotio_descripcion ?? '');
+                foreach ($componente->notasImprimiblesList() as $cn) {
+                    $txtComp = trim((string) ($cn['contenido'] ?? ''));
+                    if ($txtComp === '') {
+                        continue;
                     }
-                } catch (\Exception $e) {
-                    // No es JSON, es formato antiguo
-                    if (!empty($ensayo->cotio_nota_tipo)) {
-                        $notas = [['tipo' => $ensayo->cotio_nota_tipo, 'contenido' => $ensayo->cotio_nota_contenido]];
-                    }
+                    $notasImprimibles[] = [
+                        'tipo' => $cn['tipo'] ?? 'imprimible',
+                        'contenido' => $txtComp,
+                        'descripcion_contexto' => ($compDesc !== '')
+                            ? ($ensDesc !== '' ? $ensDesc . ' — ' . $compDesc : $compDesc)
+                            : $ensDesc,
+                    ];
                 }
             }
-            
-            // Filtrar solo notas imprimibles
-            $notasImprimibles = collect($notas)->filter(function($nota) {
-                return isset($nota['tipo']) && $nota['tipo'] === 'imprimible';
-            })->values()->toArray();
 
             return [
                 'item' => (int) $ensayo->cotio_item,
@@ -1419,6 +2375,9 @@ class VentasController extends Controller {
                 'precio_unitario' => $precioUnitario,
                 'total' => $total,
                 'notas' => $notasImprimibles,
+                'req_cadena_custodia' => (bool) ($ensayo->req_cadena_custodia ?? false),
+                'req_prot_mapba' => (bool) ($ensayo->req_prot_mapba ?? false),
+                'lleva_muestreo' => (bool) ($ensayo->lleva_muestreo ?? true),
                 'componentes' => $componentesEnsayo->map(function ($componente) {
                     $precio = $this->parseDecimalValue($componente->cotio_precio ?? 0) ?? 0;
                     $cantidad = $this->parseDecimalValue($componente->cotio_cantidad ?? 1) ?? 1;
@@ -1427,36 +2386,37 @@ class VentasController extends Controller {
                         $cantidad = 1;
                     }
 
-                    // Obtener nombre del método
-                    $metodoCodigo = trim($componente->cotio_codigometodo_analisis ?? $componente->cotio_codigometodo ?? '');
+                    // Obtener nombre del método de ANÁLISIS únicamente
+                    $metodoAnalisisCodigo = trim($componente->cotio_codigometodo_analisis ?? '');
                     $metodoNombre = '';
-                    
-                    if ($metodoCodigo) {
-                        // Intentar desde MetodoAnalisis
+
+                    if ($metodoAnalisisCodigo) {
                         if ($componente->metodoAnalisis) {
                             $metodoNombre = trim($componente->metodoAnalisis->nombre ?? '');
                         }
-                        // Si no, intentar desde MetodoMuestreo
-                        if (!$metodoNombre && $componente->metodoMuestreo) {
-                            $metodoNombre = trim($componente->metodoMuestreo->nombre ?? '');
-                        }
-                        // Si no, buscar en tabla metodo (legacy)
                         if (!$metodoNombre) {
-                            $metodo = Metodo::where('metodo_codigo', $metodoCodigo)->first();
-                            if ($metodo) {
-                                $metodoNombre = trim($metodo->metodo_descripcion ?? '');
+                            $metodoAnalisisObj = \App\Models\MetodoAnalisis::where('codigo', $metodoAnalisisCodigo)->first();
+                            if ($metodoAnalisisObj) {
+                                $metodoNombre = trim($metodoAnalisisObj->nombre ?? '');
                             }
+                        }
+                        // Fallback: tabla legado metodo (donde viven los códigos de CotioItems.metodo)
+                        if (!$metodoNombre) {
+                            $metodoLegado = \App\Models\Metodo::where('metodo_codigo', $componente->cotio_codigometodo_analisis)->first();
+                            $metodoNombre = $metodoLegado ? trim($metodoLegado->metodo_descripcion ?? '') : $metodoAnalisisCodigo;
                         }
                     }
 
                     return [
                         'descripcion' => trim($componente->cotio_descripcion ?? ''),
-                        'metodo' => $metodoNombre ?: $metodoCodigo,
-                        'metodo_codigo' => $metodoCodigo,
+                        'metodo' => $metodoNombre,
+                        'metodo_codigo' => $metodoAnalisisCodigo,
                         'unidad' => trim($componente->cotio_codigoum ?? ''),
                         'cantidad' => $cantidad,
                         'precio' => $precio,
                         'total' => $precio * $cantidad,
+                        'req_cadena_custodia' => (bool) ($componente->req_cadena_custodia ?? false),
+                        'req_prot_mapba' => (bool) ($componente->req_prot_mapba ?? false),
                     ];
                 })->values(),
             ];
@@ -1476,32 +2436,31 @@ class VentasController extends Controller {
                 $cantidad = 1;
             }
 
-            // Obtener nombre del método
-            $metodoCodigo = trim($componente->cotio_codigometodo_analisis ?? $componente->cotio_codigometodo ?? '');
+            // Obtener nombre del método de ANÁLISIS únicamente
+            $metodoAnalisisCodigo = trim($componente->cotio_codigometodo_analisis ?? '');
             $metodoNombre = '';
-            
-            if ($metodoCodigo) {
-                // Intentar desde MetodoAnalisis
+
+            if ($metodoAnalisisCodigo) {
                 if ($componente->metodoAnalisis) {
                     $metodoNombre = trim($componente->metodoAnalisis->nombre ?? '');
                 }
-                // Si no, intentar desde MetodoMuestreo
-                if (!$metodoNombre && $componente->metodoMuestreo) {
-                    $metodoNombre = trim($componente->metodoMuestreo->nombre ?? '');
-                }
-                // Si no, buscar en tabla metodo (legacy)
                 if (!$metodoNombre) {
-                    $metodo = Metodo::where('metodo_codigo', $metodoCodigo)->first();
-                    if ($metodo) {
-                        $metodoNombre = trim($metodo->metodo_descripcion ?? '');
+                    $metodoAnalisisObj = \App\Models\MetodoAnalisis::where('codigo', $metodoAnalisisCodigo)->first();
+                    if ($metodoAnalisisObj) {
+                        $metodoNombre = trim($metodoAnalisisObj->nombre ?? '');
                     }
+                }
+                // Fallback: tabla legado metodo (donde viven los códigos de CotioItems.metodo)
+                if (!$metodoNombre) {
+                    $metodoLegado = \App\Models\Metodo::where('metodo_codigo', $componente->cotio_codigometodo_analisis)->first();
+                    $metodoNombre = $metodoLegado ? trim($metodoLegado->metodo_descripcion ?? '') : $metodoAnalisisCodigo;
                 }
             }
 
             return [
                 'descripcion' => trim($componente->cotio_descripcion ?? ''),
-                'metodo' => $metodoNombre ?: $metodoCodigo,
-                'metodo_codigo' => $metodoCodigo,
+                'metodo' => $metodoNombre,
+                'metodo_codigo' => $metodoAnalisisCodigo,
                 'unidad' => trim($componente->cotio_codigoum ?? ''),
                 'cantidad' => $cantidad,
                 'precio' => $precio,
@@ -1509,8 +2468,36 @@ class VentasController extends Controller {
             ];
         })->values();
 
+        // Aplicar aumento global de la cotización a cada ítem/componentes del PDF
+        $aumentoPorcentaje = max(0.0, min((float) ($cotizacion->coti_aumentoglobal ?? 0.0), 100.0));
+        $factorAumento = 1.0 + ($aumentoPorcentaje / 100.0);
+
+        if ($aumentoPorcentaje > 0) {
+            $items = $items->map(function ($item) use ($factorAumento) {
+                $item['precio_unitario'] = ($item['precio_unitario'] ?? 0) * $factorAumento;
+                $item['total'] = ($item['total'] ?? 0) * $factorAumento;
+
+                if (isset($item['componentes']) && $item['componentes'] instanceof \Illuminate\Support\Collection) {
+                    $item['componentes'] = $item['componentes']->map(function ($componente) use ($factorAumento) {
+                        $componente['precio'] = ($componente['precio'] ?? 0) * $factorAumento;
+                        $componente['total'] = ($componente['total'] ?? 0) * $factorAumento;
+                        return $componente;
+                    });
+                }
+
+                return $item;
+            });
+
+            $componentesSueltos = $componentesSueltos->map(function ($componente) use ($factorAumento) {
+                $componente['precio'] = ($componente['precio'] ?? 0) * $factorAumento;
+                $componente['total'] = ($componente['total'] ?? 0) * $factorAumento;
+                return $componente;
+            });
+        }
+
         $subtotalItems = $items->sum(function ($item) {
-            return $item['total'];
+            // El 'total' ya incluye base + componentes multiplicado por cantidad de muestras
+            return (float) ($item['total'] ?? 0);
         });
 
         $totalComponentesSueltos = $componentesSueltos->sum(function ($componente) {
@@ -1518,6 +2505,25 @@ class VentasController extends Controller {
         });
 
         $subtotal = $subtotalItems + $totalComponentesSueltos;
+
+        $subtotalComponentesEnItems = $items->sum(function ($item) use ($componentesAgrupados) {
+            $itemNum = (int) $item['item'];
+            $componentesEnsayo = $componentesAgrupados->get($itemNum, collect());
+            
+            $sumaComponentesUnitaria = $componentesEnsayo->sum(function ($componente) {
+                if ($componente->de_agrupador) {
+                    return 0;
+                }
+                $precio = $this->parseDecimalValue($componente->cotio_precio ?? 0) ?? 0;
+                $cantidad = $this->parseDecimalValue($componente->cotio_cantidad ?? 1) ?? 1;
+                return $precio * ($cantidad <= 0 ? 1 : $cantidad);
+            });
+            
+            return (float) $item['cantidad'] * $sumaComponentesUnitaria;
+        });
+
+        $subtotalAdicionalEnsayos = $subtotalItems - $subtotalComponentesEnItems;
+
 
         $cliente = $cotizacion->cliente;
         $descuentoPorcentaje = max($this->calcularDescuentoCotizacion($cotizacion), 0);
@@ -1529,16 +2535,63 @@ class VentasController extends Controller {
             return $cantidad > 0 ? $cantidad : 1;
         });
 
-        $condicionPago = optional($cotizacion->condicionPago)->pag_descripcion
-            ?? optional($cliente?->condicionPago)->pag_descripcion
-            ?? 'Contra entrega';
+        // Condición de pago: priorizar la guardada en la cotización
+        $codigoCondicion = $cotizacion->coti_cond_pago ? trim($cotizacion->coti_cond_pago) : null;
+        $condicionPago = null;
 
-        // Verificar si hay empresas relacionadas usando el nuevo campo coti_cli_empresa
+        // Caso especial: "CUOTAS" usa los campos de cuotas de la cotización
+        if ($codigoCondicion === 'CUOTAS') {
+            $partes = [];
+            $descCuota = trim((string) ($cotizacion->coti_cuota_desc ?? ''));
+            $cantCuotas = $cotizacion->coti_cuota_cant;
+            $montoIndiv = $cotizacion->coti_cuota_monto_indiv;
+            $montoTotal = $cotizacion->coti_cuota_monto_total;
+
+            if ($descCuota !== '') {
+                $partes[] = $descCuota;
+            }
+
+            if (!is_null($cantCuotas)) {
+                $textoCuotas = $cantCuotas . ' cuotas';
+                if (!is_null($montoIndiv)) {
+                    $textoCuotas .= ' de $' . number_format((float) $montoIndiv, 2, ',', '.');
+                }
+                $partes[] = $textoCuotas;
+            } elseif (!is_null($montoIndiv)) {
+                $partes[] = '$' . number_format((float) $montoIndiv, 2, ',', '.');
+            }
+
+            if (!is_null($montoTotal)) {
+                $partes[] = 'Total $' . number_format((float) $montoTotal, 2, ',', '.');
+            }
+
+            if (!empty($partes)) {
+                $condicionPago = 'Cuotas: ' . implode(' | ', $partes);
+            } else {
+                $condicionPago = 'Cuotas';
+            }
+        } elseif ($codigoCondicion) {
+            // pag_codigo suele venir con padding (CHAR). La relación puede fallar si el código viene trimmeado.
+            // Resolver por query trim para respetar siempre la condición guardada en la cotización.
+            $registroCondicion = CondicionPago::whereRaw('LTRIM(RTRIM(pag_codigo)) = ?', [$codigoCondicion])->first();
+            $condicionPago = $registroCondicion ? trim((string) ($registroCondicion->pag_descripcion ?? '')) : null;
+        }
+
+        if (!$condicionPago && $cliente) {
+            $condicionPago = optional($cliente->condicionPago)->pag_descripcion;
+        }
+
+        if (!$condicionPago) {
+            $condicionPago = 'Contra entrega';
+        }
+
+        // Verificar si hay empresa relacionada (coti_empresa_rel o legado coti_cli_empresa)
         $tieneEmpresaRelacionada = false;
         $empresaRelacionada = null;
         
-        if ($cotizacion->coti_cli_empresa) {
-            $empresa = ClienteEmpresaRelacionada::find($cotizacion->coti_cli_empresa);
+        $idEmpresaRel = $cotizacion->coti_empresa_rel ?? $cotizacion->coti_cli_empresa;
+        if ($idEmpresaRel) {
+            $empresa = ClienteEmpresaRelacionada::find($idEmpresaRel);
             if ($empresa) {
                 $tieneEmpresaRelacionada = true;
                 $empresaRelacionada = [
@@ -1552,6 +2605,26 @@ class VentasController extends Controller {
             }
         }
 
+        // Sucursal como destinatario (prioridad sobre empresa relacionada cuando está seleccionada)
+        $tieneSucursal = false;
+        $sucursalDestinatario = null;
+        if (trim((string) ($cotizacion->coti_codigosuc ?? '')) !== '') {
+            $sucursal = Clientes::where('cli_codigo', trim($cotizacion->coti_codigosuc))->first();
+            if ($sucursal) {
+                $tieneSucursal = true;
+                $nombreBase = trim($sucursal->cli_razonsocial ?? $sucursal->cli_fantasia ?? 'Sucursal');
+                $sucursalDestinatario = [
+                    'razon_social' => $nombreBase . ' (sucursal)',
+                    'cuit' => $sucursal->cli_cuit ? trim($sucursal->cli_cuit) : null,
+                    'direcciones' => $sucursal->cli_direccion ? trim($sucursal->cli_direccion) : null,
+                    'localidad' => $sucursal->cli_localidad ? trim($sucursal->cli_localidad) : null,
+                    'partido' => $sucursal->cli_partido ? trim($sucursal->cli_partido) : null,
+                    'codigo_postal' => $sucursal->cli_codigopostal ? trim($sucursal->cli_codigopostal) : null,
+                    'contacto' => $sucursal->cli_contacto ? trim($sucursal->cli_contacto) : null,
+                ];
+            }
+        }
+
         // Obtener razón social de facturación predeterminada si existe
         $razonSocialPredeterminada = null;
         if ($cliente) {
@@ -1560,12 +2633,121 @@ class VentasController extends Controller {
                 ->first();
         }
 
+        // Contactos de la cotización (1 a 4) ordenados por tipo (igual que showDetalle)
+        $contactosCoti = [];
+        $contactosCoti[] = ['nombre' => trim($cotizacion->coti_contacto ?? ''), 'correo' => trim($cotizacion->coti_mail1 ?? ''), 'telefono' => trim($cotizacion->coti_telefono ?? ''), 'tipo' => trim($cotizacion->coti_contacto_tipo1 ?? '')];
+        $contactosCoti[] = ['nombre' => trim($cotizacion->coti_contacto2 ?? ''), 'correo' => trim($cotizacion->coti_mail2 ?? ''), 'telefono' => trim($cotizacion->coti_telefono2 ?? ''), 'tipo' => trim($cotizacion->coti_contacto_tipo2 ?? '')];
+        $contactosCoti[] = ['nombre' => trim($cotizacion->coti_contacto3 ?? ''), 'correo' => trim($cotizacion->coti_mail3 ?? ''), 'telefono' => trim($cotizacion->coti_telefono3 ?? ''), 'tipo' => trim($cotizacion->coti_contacto_tipo3 ?? '')];
+        $contactosCoti[] = ['nombre' => trim($cotizacion->coti_contacto4 ?? ''), 'correo' => trim($cotizacion->coti_mail4 ?? ''), 'telefono' => trim($cotizacion->coti_telefono4 ?? ''), 'tipo' => trim($cotizacion->coti_contacto_tipo4 ?? '')];
+        $contactosCoti = array_filter($contactosCoti, function ($c) {
+            return ($c['nombre'] ?? '') !== '' || ($c['correo'] ?? '') !== '' || ($c['telefono'] ?? '') !== '';
+        });
+        usort($contactosCoti, function ($a, $b) {
+            $ta = $a['tipo'] ?? '';
+            $tb = $b['tipo'] ?? '';
+            if ($ta === '' && $tb === '') return 0;
+            if ($ta === '') return 1;
+            if ($tb === '') return -1;
+            return strcasecmp($ta, $tb);
+        });
+        $contactosOrdenados = array_values($contactosCoti);
+
+        // Notas imprimibles: armar siempre desde filas Cotio (misma fuente que el detalle web),
+        // sin depender del array $items (evita desincronización con DomPDF / transformaciones).
+        $todasNotasImprimiblesItems = [];
+        $ordinalEnsayoPdf = 0;
+        foreach ($ensayos as $ensayoPdf) {
+            $ordinalEnsayoPdf++;
+            $itemNum = (int) $ensayoPdf->cotio_item;
+            $ensDesc = trim((string) ($ensayoPdf->cotio_descripcion ?? ''));
+            foreach ($ensayoPdf->notasImprimiblesList() as $n) {
+                if (!is_array($n)) {
+                    continue;
+                }
+                $textoNota = trim((string) ($n['contenido'] ?? ''));
+                if ($textoNota === '') {
+                    continue;
+                }
+                $todasNotasImprimiblesItems[] = [
+                    'item' => $itemNum,
+                    'item_ordinal' => $ordinalEnsayoPdf,
+                    'descripcion' => $ensDesc,
+                    'contenido' => $textoNota,
+                ];
+            }
+            $compsPdf = $componentesAgrupados->get($itemNum, collect());
+            if (!$compsPdf instanceof \Illuminate\Support\Collection) {
+                $compsPdf = collect($compsPdf);
+            }
+            foreach ($compsPdf as $componentePdf) {
+                $compDesc = trim((string) ($componentePdf->cotio_descripcion ?? ''));
+                foreach ($componentePdf->notasImprimiblesList() as $cn) {
+                    if (!is_array($cn)) {
+                        continue;
+                    }
+                    $txtComp = trim((string) ($cn['contenido'] ?? ''));
+                    if ($txtComp === '') {
+                        continue;
+                    }
+                    $descEtiqueta = ($compDesc !== '')
+                        ? ($ensDesc !== '' ? $ensDesc . ' — ' . $compDesc : $compDesc)
+                        : $ensDesc;
+                    $todasNotasImprimiblesItems[] = [
+                        'item' => $itemNum,
+                        'item_ordinal' => $ordinalEnsayoPdf,
+                        'descripcion' => $descEtiqueta,
+                        'contenido' => $txtComp,
+                    ];
+                }
+            }
+        }
+
+        $creadorCodigoPdf = trim((string) ($cotizacion->coti_creador ?? ''));
+        $nombreCreadorCoti = '';
+        if ($creadorCodigoPdf !== '') {
+            $nombreCreadorCoti = trim((string) (User::where('usu_codigo', $creadorCodigoPdf)->value('usu_descripcion') ?? ''));
+        }
+
+        $facturacionLocalidadLinePdf = trim((string) ($cotizacion->coti_localidad ?? ''));
+        $partidoFactPdf = trim((string) ($cotizacion->coti_partido ?? ''));
+        if ($partidoFactPdf !== '') {
+            $facturacionLocalidadLinePdf = $facturacionLocalidadLinePdf !== ''
+                ? $facturacionLocalidadLinePdf . ' - ' . $partidoFactPdf
+                : $partidoFactPdf;
+        }
+
+        $cotizacionVerUrl = null;
+        $paraPdfCtrl = trim((string) ($cotizacion->coti_para ?? ''));
+        $cliNombrePdfCtrl = trim((string) (optional($cliente)->cli_razonsocial ?? ''));
+        if ($cliNombrePdfCtrl === '') {
+            $cliNombrePdfCtrl = trim((string) (optional($cliente)->cli_fantasia ?? ''));
+        }
+        if ($cliNombrePdfCtrl === '') {
+            $cliNombrePdfCtrl = trim((string) ($cotizacion->coti_empresa ?? ''));
+        }
+        $esConsPdfCtrl = (bool) (optional($cliente)->es_consultor ?? false);
+        $paraDistintoCliPdfCtrl = $cliNombrePdfCtrl !== '' && $paraPdfCtrl !== '' && strcasecmp($paraPdfCtrl, $cliNombrePdfCtrl) !== 0;
+        $mostrarEnlaceCotPdf = ($tieneEmpresaRelacionada && $empresaRelacionada)
+            || (bool) ($cotizacion->coti_para_empresa_rel ?? false)
+            || !empty($cotizacion->coti_empresa_rel)
+            || !empty($cotizacion->coti_cli_empresa)
+            || ($esConsPdfCtrl && $paraDistintoCliPdfCtrl);
+        if ($mostrarEnlaceCotPdf) {
+            try {
+                $cotizacionVerUrl = URL::route('cotizaciones.ver-detalle', $cotizacion->coti_num);
+            } catch (\Throwable $e) {
+                $cotizacionVerUrl = url('/cotizaciones/' . $cotizacion->coti_num);
+            }
+        }
+
         $data = [
             'cotizacion' => $cotizacion,
             'items' => $items,
             'componentesSueltos' => $componentesSueltos,
             'totales' => [
                 'subtotal_items' => $subtotalItems,
+                'subtotal_adicional_ensayos' => $subtotalAdicionalEnsayos,
+                'subtotal_componentes_en_items' => $subtotalComponentesEnItems,
                 'subtotal_componentes' => $totalComponentesSueltos,
                 'subtotal' => $subtotal,
                 'descuento_porcentaje' => $descuentoPorcentaje,
@@ -1577,7 +2759,14 @@ class VentasController extends Controller {
             'fechaActual' => Carbon::now(),
             'tieneEmpresaRelacionada' => $tieneEmpresaRelacionada,
             'empresaRelacionada' => $empresaRelacionada,
+            'tieneSucursal' => $tieneSucursal,
+            'sucursalDestinatario' => $sucursalDestinatario,
             'razonSocialPredeterminada' => $razonSocialPredeterminada,
+            'contactosOrdenados' => $contactosOrdenados,
+            'nombreCreadorCoti' => $nombreCreadorCoti,
+            'todasNotasImprimiblesItems' => $todasNotasImprimiblesItems,
+            'facturacionLocalidadLinePdf' => $facturacionLocalidadLinePdf,
+            'cotizacionVerUrl' => $cotizacionVerUrl,
         ];
 
         $pdf = Pdf::loadView('ventas.pdf', $data);
@@ -1686,6 +2875,33 @@ class VentasController extends Controller {
         }
     }
 
+    /**
+     * Una empresa relacionada por id (tabla cliente_empresas_relacionadas).
+     */
+    public function obtenerEmpresaRelacionadaPorId(int $id)
+    {
+        try {
+            $emp = ClienteEmpresaRelacionada::find($id);
+            if (!$emp) {
+                return response()->json(['error' => 'No encontrada'], 404);
+            }
+
+            return response()->json([
+                'id' => $emp->id,
+                'razon_social' => trim((string) ($emp->razon_social ?? '')),
+                'cuit' => $emp->cuit ? trim((string) $emp->cuit) : null,
+                'direcciones' => $emp->direcciones ? trim((string) $emp->direcciones) : null,
+                'localidad' => $emp->localidad ? trim((string) $emp->localidad) : null,
+                'partido' => $emp->partido ? trim((string) $emp->partido) : null,
+                'contacto' => $emp->contacto ? trim((string) $emp->contacto) : null,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error obteniendo empresa relacionada por id', ['id' => $id, 'error' => $e->getMessage()]);
+
+            return response()->json(['error' => 'Error interno'], 500);
+        }
+    }
+
     // API para obtener datos de un cliente específico
     public function obtenerCliente($codigo)
     {
@@ -1705,13 +2921,34 @@ class VentasController extends Controller {
                 return response()->json(['error' => 'Cliente no encontrado'], 404);
             }
 
-            // Cargar sucursales del cliente (mismos datos de razón social y sin CUIT real)
-            $cliente->load('sucursales');
+            // Cargar sucursales, contactos y razones sociales de facturación del cliente
+            $cliente->load(['sucursales', 'contactos']);
 
             // Buscar razón social de facturación predeterminada
             $razonSocialPredeterminada = ClienteRazonSocialFacturacion::where('cli_codigo', $codigoPadded)
                 ->where('es_predeterminada', true)
                 ->first();
+
+            // Listado completo de razones sociales de facturación (para selector en solapa Empresa)
+            $razonesSociales = ClienteRazonSocialFacturacion::where('cli_codigo', $codigoPadded)
+                ->orderBy('es_predeterminada', 'desc')
+                ->orderBy('razon_social')
+                ->get()
+                ->map(function ($razon) {
+                    return [
+                        'id' => $razon->id,
+                        'razon_social' => trim($razon->razon_social),
+                        'cuit' => $razon->cuit ? trim($razon->cuit) : null,
+                        'direccion' => $razon->direccion ? trim($razon->direccion) : null,
+                        'condicion_iva' => $razon->condicion_iva ? trim($razon->condicion_iva) : null,
+                        'condicion_iva_desc' => $razon->condicion_iva_desc ? trim($razon->condicion_iva_desc) : null,
+                        'condicion_pago' => $razon->condicion_pago ? trim($razon->condicion_pago) : null,
+                        'condicion_pago_desc' => $razon->condicion_pago_desc ? trim($razon->condicion_pago_desc) : null,
+                        'tipo_factura' => $razon->tipo_factura ? trim($razon->tipo_factura) : null,
+                        'es_predeterminada' => (bool) ($razon->es_predeterminada ?? false),
+                    ];
+                })
+                ->values();
 
             // Si hay una razón social predeterminada, usar esos datos para la solapa Empresa
             // Si no, usar los datos por defecto del cliente
@@ -1728,9 +2965,12 @@ class VentasController extends Controller {
             $codigoPostalEmpresa = $cliente->cli_codigopostal ? trim($cliente->cli_codigopostal) : '';
 
             // Mapear sucursales a un formato sencillo para el front
-            $sucursalesData = $cliente->sucursales->map(function ($sucursal) {
+            $sucursalesData = $cliente->sucursales->map(function ($sucursal) use ($cliente) {
                 return [
                     'codigo' => trim($sucursal->cli_codigo),
+                    'razon_social' => $sucursal->cli_razonsocial
+                        ? trim($sucursal->cli_razonsocial)
+                        : trim($cliente->cli_razonsocial),
                     'fantasia' => $sucursal->cli_fantasia ? trim($sucursal->cli_fantasia) : '',
                     'direccion' => $sucursal->cli_direccion ? trim($sucursal->cli_direccion) : '',
                     'partido' => $sucursal->cli_partido ? trim($sucursal->cli_partido) : '',
@@ -1740,6 +2980,17 @@ class VentasController extends Controller {
                     'contacto' => $sucursal->cli_contacto ? trim($sucursal->cli_contacto) : '',
                     'telefono' => $sucursal->cli_telefono ? trim($sucursal->cli_telefono) : '',
                     'email' => $sucursal->cli_email ? trim($sucursal->cli_email) : '',
+                ];
+            })->values();
+
+            // Mapear contactos del cliente (tabla cliente_contactos)
+            $contactosData = $cliente->contactos->map(function ($contacto) {
+                return [
+                    'id' => $contacto->id,
+                    'nombre' => $contacto->nombre ? trim($contacto->nombre) : '',
+                    'telefono' => $contacto->telefono ? trim($contacto->telefono) : '',
+                    'email' => $contacto->email ? trim($contacto->email) : '',
+                    'tipo' => $contacto->tipo ? trim($contacto->tipo) : '',
                 ];
             })->values();
 
@@ -1768,8 +3019,10 @@ class VentasController extends Controller {
                 'localidad_facturacion' => $localidadEmpresa,
                 'codigo_postal_facturacion' => $codigoPostalEmpresa,
                 'tiene_razon_social_predeterminada' => $razonSocialPredeterminada !== null,
+                'razones_sociales_facturacion' => $razonesSociales,
                 // Sucursales del cliente
                 'sucursales' => $sucursalesData,
+                'contactos' => $contactosData,
             ];
             
             Log::info('Datos del cliente encontrado:', $clienteData);
@@ -1782,8 +3035,53 @@ class VentasController extends Controller {
     }
 
     /**
-     * API para obtener ensayos (muestras) disponibles
+     * API para agregar un contacto al cliente (desde cotización)
      */
+    public function agregarContactoCliente(Request $request, string $codigo)
+    {
+        $this->denegarVentasSiUsuarioSoloCanal();
+
+        $request->validate([
+            'nombre' => 'required|string|max:120',
+            'telefono' => 'nullable|string|max:30',
+            'email' => 'nullable|email|max:120',
+            'tipo' => 'nullable|string|max:30',
+        ]);
+
+        $cliente = Clientes::where('cli_codigo', trim($codigo))->first();
+        if (!$cliente) {
+            return response()->json(['error' => 'Cliente no encontrado'], 404);
+        }
+
+        $contacto = ClienteContacto::create([
+            'cli_codigo' => $cliente->cli_codigo,
+            'nombre' => $this->sanitizeNullableString($request->nombre, 120),
+            'telefono' => $request->filled('telefono') ? $this->sanitizeNullableString($request->telefono, 30) : null,
+            'email' => $request->filled('email') ? $this->sanitizeNullableString($request->email, 120) : null,
+            'tipo' => $request->filled('tipo') ? $this->sanitizeNullableString($request->tipo, 30) : null,
+        ]);
+
+        $contactosData = $cliente->contactos()->orderBy('nombre')->get()->map(function ($c) {
+            return [
+                'id' => $c->id,
+                'nombre' => $c->nombre ? trim($c->nombre) : '',
+                'telefono' => $c->telefono ? trim($c->telefono) : '',
+                'email' => $c->email ? trim($c->email) : '',
+                'tipo' => $c->tipo ? trim($c->tipo) : '',
+            ];
+        })->values();
+
+        return response()->json([
+            'contacto' => [
+                'id' => $contacto->id,
+                'nombre' => $contacto->nombre,
+                'telefono' => $contacto->telefono,
+                'email' => $contacto->email,
+                'tipo' => $contacto->tipo,
+            ],
+            'contactos' => $contactosData,
+        ]);
+    }
     public function obtenerEnsayos(Request $request)
     {
         $termino = $request->get('q', '');
@@ -1837,6 +3135,9 @@ class VentasController extends Controller {
                 $matriz = \App\Models\Matriz::where('matriz_codigo', $matrizCodigo)->first();
                 $matrizDescripcion = $matriz ? trim($matriz->matriz_descripcion) : null;
             }
+
+            $precioDefinido = $ensayo->precio !== null && $ensayo->precio !== '';
+            $precioCatalogo = $precioDefinido ? (float) $ensayo->precio : null;
             
             return [
                 'id' => $ensayo->id,
@@ -1852,8 +3153,25 @@ class VentasController extends Controller {
                 'text' => $ensayo->cotio_descripcion, // Para select2
                 // Incluye componentes del agrupador (cotio_item_component) para preselección en cotizaciones
                 'componentes_default' => $ensayo->componentesAsociados->pluck('id')->values()->all(),
+                'nota_imprimible' => $this->textoCatalogoCotioItem($ensayo->nota_imprimible ?? null),
+                'nota_interna' => $this->textoCatalogoCotioItem($ensayo->nota_interna ?? null),
+                'precio' => $precioCatalogo,
+                'precio_definido' => $precioDefinido,
             ];
         }));
+    }
+
+    /**
+     * Texto de nota por defecto del ítem de catálogo (cotio_items): null si vacío.
+     */
+    private function textoCatalogoCotioItem($valor): ?string
+    {
+        if ($valor === null) {
+            return null;
+        }
+        $t = trim((string) $valor);
+
+        return $t === '' ? null : $t;
     }
 
     /**
@@ -1923,17 +3241,23 @@ class VentasController extends Controller {
         }
 
         return response()->json($componentes->map(function($componente) {
-            // Intentar obtener el método desde la relación primero
-            $metodoCodigo = optional($componente->metodoAnalitico)->metodo_codigo 
-                ? trim(optional($componente->metodoAnalitico)->metodo_codigo) 
-                : ($componente->metodo ? trim($componente->metodo) : null);
-            
-            $metodoDescripcion = optional($componente->metodoAnalitico)->metodo_descripcion;
-            
-            // Si tenemos el código pero no la descripción, intentar cargar el método
-            if ($metodoCodigo && !$metodoDescripcion) {
-                $metodo = \App\Models\Metodo::where('metodo_codigo', trim($metodoCodigo))->first();
-                $metodoDescripcion = $metodo ? $metodo->metodo_descripcion : null;
+            // Método de ANÁLISIS: CotioItems.metodo → cotio_codigometodo_analisis
+            $metodoAnalisisCodigo = $componente->metodo ? trim($componente->metodo) : null;
+
+            // Método de MUESTREO: CotioItems.metodo_muestreo → cotio_codigometodo
+            $metodoMuestreoCodigo = $componente->metodo_muestreo ? trim($componente->metodo_muestreo) : null;
+
+            // Descripción del método de análisis
+            $metodoDescripcion = null;
+            if ($metodoAnalisisCodigo) {
+                $metodoAnalisisObj = \App\Models\MetodoAnalisis::where('codigo', $metodoAnalisisCodigo)->first();
+                if ($metodoAnalisisObj) {
+                    $metodoDescripcion = $metodoAnalisisObj->nombre ?? null;
+                }
+                if (!$metodoDescripcion) {
+                    $metodo = \App\Models\Metodo::where('metodo_codigo', $metodoAnalisisCodigo)->first();
+                    $metodoDescripcion = $metodo ? $metodo->metodo_descripcion : null;
+                }
             }
             
             // Obtener matrices relacionadas desde la tabla pivote
@@ -1952,7 +3276,8 @@ class VentasController extends Controller {
                 ? $matricesRelacionadas->first()['descripcion'] 
                 : null;
             
-            $precio = $componente->precio ?? 5000.00;
+            $precioDefinido = $componente->precio !== null;
+            $precio = $precioDefinido ? (float) $componente->precio : 5000.00;
 
             // Si es agrupador, incluir IDs de componentes asociados
             $componentesAsociadosIds = [];
@@ -1962,20 +3287,25 @@ class VentasController extends Controller {
             
             return [
                 'id' => $componente->id,
-                'codigo' => str_pad($componente->id, 15, '0', STR_PAD_LEFT), // Generar código
+                'codigo' => str_pad($componente->id, 15, '0', STR_PAD_LEFT),
                 'descripcion' => $componente->cotio_descripcion,
                 'es_muestra' => $componente->es_muestra,
-                'metodo_codigo' => $metodoCodigo,
+                'metodo_analisis_id' => $metodoAnalisisCodigo,  // CotioItems.metodo → cotio_codigometodo_analisis
+                'metodo_codigo' => $metodoMuestreoCodigo,         // CotioItems.metodo_muestreo → cotio_codigometodo
                 'metodo_descripcion' => $metodoDescripcion,
                 'unidad_medida' => $componente->unidad_medida,
                 'limites_establecidos' => $componente->limites_establecidos,
                 'precio' => $precio, // Precio por defecto 5000 si no existe
+                'precio_minimo_venta' => $precio,
+                'precio_definido' => $precioDefinido,
                 'matriz_codigo' => $matrizCodigo,
                 'matriz_descripcion' => $matrizDescripcion,
                 'matrices' => $matricesRelacionadas->values()->all(), // Todas las matrices relacionadas
                 'ley_normativa_id' => $componente->ley_normativa_id ?? null,
                 'componentes_asociados' => $componentesAsociadosIds, // IDs de componentes asociados si es agrupador
-                'text' => $componente->cotio_descripcion // Para select2
+                'text' => $componente->cotio_descripcion, // Para select2
+                'nota_imprimible' => $this->textoCatalogoCotioItem($componente->nota_imprimible ?? null),
+                'nota_interna' => $this->textoCatalogoCotioItem($componente->nota_interna ?? null),
             ];
         }));
     }
@@ -2076,20 +3406,27 @@ class VentasController extends Controller {
         foreach ($ensayosData as $ensayo) {
             // Buscar el código de producto
             $prodCodigo = $this->buscarCodigoProducto($ensayo['descripcion'] ?? '', true);
-            
+            $precioExtraForm = $this->parseDecimalValue($ensayo['precio_extra_ensayo'] ?? null);
+
             $cotioItem = [
                 'cotio_numcoti' => $cotiNum,
                 'cotio_item' => $ensayo['item'] ?? 0,
                 'cotio_subitem' => 0,
                 'cotio_codigoprod' => $prodCodigo ?: null,
                 'cotio_cantidad' => $this->parseDecimalValue($ensayo['cantidad'] ?? 1) ?? 1,
-                'cotio_precio' => null, // Los ensayos no tienen precio directo
+                'cotio_precio' => ($precioExtraForm !== null && $precioExtraForm > 0) ? $precioExtraForm : null,
                 'cotio_descripcion' => $ensayo['descripcion'] ?? '',
                 'cotio_codigoum' => null,
                 'cotio_codigometodo' => null,
                 'cotio_codigometodo_analisis' => null,
-                'cotio_nota_tipo' => !empty(trim($ensayo['nota_contenido'] ?? '')) ? ($ensayo['nota_tipo'] ?? 'imprimible') : null,
-                'cotio_nota_contenido' => !empty(trim($ensayo['nota_contenido'] ?? '')) ? trim($ensayo['nota_contenido']) : null,
+                'cotio_nota_tipo' => $this->normalizarNotaContenidoParaPersistencia($ensayo['nota_contenido'] ?? null) !== null
+                    ? ($ensayo['nota_tipo'] ?? 'imprimible')
+                    : null,
+                'cotio_nota_contenido' => $this->normalizarNotaContenidoParaPersistencia($ensayo['nota_contenido'] ?? null),
+                'req_cadena_custodia' => array_key_exists('req_cadena_custodia', $ensayo) ? (bool) $ensayo['req_cadena_custodia'] : null,
+                'req_prot_mapba' => array_key_exists('req_prot_mapba', $ensayo) ? (bool) $ensayo['req_prot_mapba'] : null,
+                'lleva_muestreo' => array_key_exists('lleva_muestreo', $ensayo) ? (bool) $ensayo['lleva_muestreo'] : true,
+                'ley_aplicacion' => !empty($ensayo['ley_normativa_id'] ?? '') ? trim((string) $ensayo['ley_normativa_id']) : null,
             ];
             
             $cotioItems[] = $cotioItem;
@@ -2127,7 +3464,9 @@ class VentasController extends Controller {
                 'cotio_numcoti' => $cotiNum,
                 'cotio_item' => $ensayoAsociado['item'] ?? 0,
                 'cotio_subitem' => $subitem,
-                'cotio_codigoprod' => $prodCodigo ?: null,
+                'cotio_codigoprod' => !empty($componente['analisis_id']) 
+                    ? $this->truncateAndPad($componente['analisis_id'], 15) 
+                    : ($prodCodigo ?: null),
                 'cotio_cantidad' => $this->parseDecimalValue($componente['cantidad'] ?? 1) ?? 1,
                 'cotio_precio' => $this->parseDecimalValue($componente['precio'] ?? null),
                 'cotio_descripcion' => $componente['descripcion'] ?? '',
@@ -2137,8 +3476,12 @@ class VentasController extends Controller {
                 'limite_deteccion' => $this->parseDecimalValue($componente['limite_deteccion'] ?? null),
                 'limite_cuantificacion' => $this->parseDecimalValue($componente['limite_cuantificacion'] ?? null),
                 'ley_aplicacion' => !empty($componente['ley_normativa_id'] ?? '') ? trim($componente['ley_normativa_id']) : null,
-                'cotio_nota_tipo' => !empty(trim($componente['nota_contenido'] ?? '')) ? ($componente['nota_tipo'] ?? 'imprimible') : null,
-                'cotio_nota_contenido' => !empty(trim($componente['nota_contenido'] ?? '')) ? trim($componente['nota_contenido']) : null,
+                'cotio_nota_tipo' => $this->normalizarNotaContenidoParaPersistencia($componente['nota_contenido'] ?? null) !== null
+                    ? ($componente['nota_tipo'] ?? 'imprimible')
+                    : null,
+                'cotio_nota_contenido' => $this->normalizarNotaContenidoParaPersistencia($componente['nota_contenido'] ?? null),
+                'req_cadena_custodia' => array_key_exists('req_cadena_custodia', $componente) ? (bool) $componente['req_cadena_custodia'] : null,
+                'req_prot_mapba' => array_key_exists('req_prot_mapba', $componente) ? (bool) $componente['req_prot_mapba'] : null,
             ];
             
             // Procesar unidad de medida
@@ -2157,11 +3500,11 @@ class VentasController extends Controller {
                 }
             }
             
-            // Procesar método de análisis (cotio_codigometodo_analisis)
+            // Procesar método de análisis (cotio_codigometodo_analisis) — solo si existe en metodos_analisis (FK)
             if (!empty($componente['metodo_analisis_id'] ?? '')) {
                 $metodoAnalisisTrim = trim($componente['metodo_analisis_id']);
                 if ($metodoAnalisisTrim !== '') {
-                    $cotioItem['cotio_codigometodo_analisis'] = $this->truncateAndPad($metodoAnalisisTrim, 15);
+                    $cotioItem['cotio_codigometodo_analisis'] = $this->resolverCodigoMetodoAnalisisParaForeignKey($metodoAnalisisTrim);
                 }
             }
             
@@ -2326,21 +3669,56 @@ class VentasController extends Controller {
                 $cotioEnsayo->cotio_numcoti = $cotiNum;
                 $cotioEnsayo->cotio_item = $ensayo['item'];
                 $cotioEnsayo->cotio_subitem = 0; // Las muestras siempre tienen subitem 0
-                $cotioEnsayo->cotio_codigoprod = $prodCodigo;
+                $idPad = !empty($ensayo['muestra_id']) ? $this->truncateAndPad($ensayo['muestra_id'], 15) : null;
+                $cotioEnsayo->cotio_codigoprod = ($idPad && DB::table('prod')->where('prod_codigo', $idPad)->exists())
+                    ? $idPad
+                    : $prodCodigo;
                 $cotioEnsayo->cotio_cantidad = $this->parseDecimalValue($ensayo['cantidad'] ?? 1) ?? 1;
-                $precioEnsayo = isset($ensayo['precio']) && $ensayo['precio'] !== ''
-                    ? $this->parseDecimalValue($ensayo['precio'])
-                    : null;
-                $cotioEnsayo->cotio_precio = ($precioEnsayo && $precioEnsayo > 0) ? $precioEnsayo : null;
+                // En BD, cotio_precio del ensayo = solo precio adicional por unidad (no incluye analitos).
+                $precioExtra = $this->parseDecimalValue($ensayo['precio_extra_ensayo'] ?? null);
+                $cotioEnsayo->cotio_precio = ($precioExtra !== null && $precioExtra > 0) ? $precioExtra : null;
                 $cotioEnsayo->cotio_descripcion = $this->truncateCotioDescripcion($ensayo['descripcion'] ?? null);
                 $cotioEnsayo->cotio_codigoum = null;
                 $cotioEnsayo->cotio_codigometodo = $metodoMuestreoCodigo; // Copiar método de muestreo desde CotioItems.metodo_muestreo
-                $cotioEnsayo->cotio_codigometodo_analisis = $metodoAnalisisCodigo; // Copiar método de análisis desde CotioItems.metodo
+                $cotioEnsayo->cotio_codigometodo_analisis = $metodoAnalisisCodigo
+                    ? $this->resolverCodigoMetodoAnalisisParaForeignKey(trim($metodoAnalisisCodigo))
+                    : null;
                 $cotioEnsayo->enable_muestreo = false;
+
+                // Lleva muestreo (bandera para decidir si pasa por muestreo o va directo a laboratorio)
+                if (array_key_exists('lleva_muestreo', $ensayo)) {
+                    $cotioEnsayo->lleva_muestreo = (bool) $ensayo['lleva_muestreo'];
+                } else {
+                    $cotioEnsayo->lleva_muestreo = true;
+                }
+
+                // Requerimientos de cadena de custodia y protocolo MAPBA
+                if (array_key_exists('req_cadena_custodia', $ensayo)) {
+                    $cotioEnsayo->req_cadena_custodia = (bool) $ensayo['req_cadena_custodia'];
+                } elseif (array_key_exists('no_requiere_custodia', $ensayo)) {
+                    $cotioEnsayo->req_cadena_custodia = !((bool) $ensayo['no_requiere_custodia']);
+                }
+
+                if (array_key_exists('req_prot_mapba', $ensayo)) {
+                    $cotioEnsayo->req_prot_mapba = (bool) $ensayo['req_prot_mapba'];
+                }
+
+                $leyNormativa = !empty($ensayo['ley_normativa_id'] ?? '') ? trim((string) $ensayo['ley_normativa_id']) : null;
+                $cotioEnsayo->ley_aplicacion = $leyNormativa ?: null;
+
+                $canalEnsayo = CotizacionCanalEnsayo::resolverDesdeEnsayoPayload([
+                    'canal_especial' => $ensayo['canal_especial'] ?? null,
+                    'matriz_descripcion' => $ensayo['matriz_descripcion'] ?? null,
+                    'descripcion' => $ensayo['descripcion'] ?? null,
+                ]);
+                $cotioEnsayo->cotio_canal_especial = $canalEnsayo;
+                if ($canalEnsayo !== null && $canalEnsayo !== 'mediciones') {
+                    $cotioEnsayo->lleva_muestreo = false;
+                }
                 
                 // Guardar datos de nota solo si hay contenido
-                $notaContenido = trim($ensayo['nota_contenido'] ?? '');
-                if (!empty($notaContenido)) {
+                $notaContenido = $this->normalizarNotaContenidoParaPersistencia($ensayo['nota_contenido'] ?? null);
+                if ($notaContenido !== null) {
                     $cotioEnsayo->cotio_nota_tipo = $ensayo['nota_tipo'] ?? 'imprimible';
                     $cotioEnsayo->cotio_nota_contenido = $notaContenido;
                 } else {
@@ -2415,16 +3793,55 @@ class VentasController extends Controller {
                 $cotioComponente->cotio_numcoti = $cotiNum;
                 $cotioComponente->cotio_item = $ensayoItemInt;
                 $cotioComponente->cotio_subitem = $componentesExistentes + 1; // Incrementar subitem
-                $cotioComponente->cotio_codigoprod = $prodCodigo;
+                $idPadComp = !empty($componente['analisis_id']) ? $this->truncateAndPad($componente['analisis_id'], 15) : null;
+                $cotioComponente->cotio_codigoprod = ($idPadComp && DB::table('prod')->where('prod_codigo', $idPadComp)->exists())
+                    ? $idPadComp
+                    : $prodCodigo;
                 $cotioComponente->cotio_cantidad = $this->parseDecimalValue($componente['cantidad'] ?? 1) ?? 1;
-                $cotioComponente->cotio_precio = $this->parseDecimalValue($componente['precio'] ?? null);
+                $precioIngresado = $this->parseDecimalValue($componente['precio'] ?? null);
+
+                // Precio mínimo de venta: desde catálogo (cotio_items.precio), fallback 5000.
+                // Solo algunos usuarios pueden autorizar bajar por debajo del mínimo.
+                $usuarioPuedeBajar = (bool) (Auth::user() && (int) (Auth::user()->usu_nivel ?? 0) >= 900);
+                $precioMinimo = 5000.0;
+                if (!empty($componente['analisis_id'])) {
+                    $item = CotioItems::find($componente['analisis_id']);
+                    if ($item && $item->precio !== null) {
+                        $precioMinimo = (float) $item->precio;
+                    }
+                } elseif (!empty($componente['descripcion'])) {
+                    $item = CotioItems::componentes()->where('cotio_descripcion', $componente['descripcion'])->first();
+                    if ($item && $item->precio !== null) {
+                        $precioMinimo = (float) $item->precio;
+                    }
+                }
+
+                if ($precioIngresado === null) {
+                    $precioIngresado = $precioMinimo;
+                } elseif (!$usuarioPuedeBajar) {
+                    $precioIngresado = max($precioMinimo, (float) $precioIngresado);
+                }
+
+                $cotioComponente->cotio_precio = $precioIngresado;
                 $cotioComponente->cotio_descripcion = $this->truncateCotioDescripcion($descripcionComponente ?: null);
+                $cotioComponente->de_agrupador = (bool) ($componente['de_agrupador'] ?? false);
                 $unidadMedida = $componente['unidad_medida'] ?? null;
                 $metodoCodigo = $componente['metodo_codigo'] ?? null;
                 $metodoAnalisis = $componente['metodo_analisis_id'] ?? null;
                 $metodoMuestreo = $componente['metodo_muestreo_id'] ?? null;
                 $limiteDeteccion = $this->parseDecimalValue($componente['limite_deteccion'] ?? null);
                 
+                // Requerimientos de cadena de custodia y protocolo MAPBA
+                if (array_key_exists('req_cadena_custodia', $componente)) {
+                    $cotioComponente->req_cadena_custodia = (bool) $componente['req_cadena_custodia'];
+                } elseif (array_key_exists('no_requiere_custodia', $componente)) {
+                    $cotioComponente->req_cadena_custodia = !((bool) $componente['no_requiere_custodia']);
+                }
+
+                if (array_key_exists('req_prot_mapba', $componente)) {
+                    $cotioComponente->req_prot_mapba = (bool) $componente['req_prot_mapba'];
+                }
+
                 // Obtener método de análisis desde CotioItems (se relaciona con tabla metodo)
                 // Primero intentar desde analisis_id si está disponible
                 if (!$metodoAnalisis && !empty($componente['analisis_id'])) {
@@ -2589,23 +4006,36 @@ class VentasController extends Controller {
                 // - cotio_codigometodo_analisis desde CotioItems.metodo
                 $cotioComponente->cotio_codigometodo = $metodoMuestreoCodigoComp;
                 
-                // Asignar método de análisis: la FK cotio_codigometodo_analisis referencia metodos_analisis.codigo
-                // Solo asignar si existe en metodos_analisis (evita violación de FK)
+                // Método de análisis: cotio_codigometodo_analisis → FK a metodos_analisis.codigo.
+                // Si CotioItems.metodo (u origen) solo existe en `metodo` (legacy) y no en metodos_analisis,
+                // se deja null para no violar la FK; las vistas usan descripción vía legado o catalogo.
                 if ($metodoAnalisis) {
                     $codigoMetodoAnalisisTrim = trim($metodoAnalisis);
-                    $metodoAnalisisRecord = MetodoAnalisis::where('codigo', $codigoMetodoAnalisisTrim)->first();
-                    if ($metodoAnalisisRecord) {
-                        $cotioComponente->cotio_codigometodo_analisis = $metodoAnalisisRecord->codigo;
-                        Log::info('Método de análisis asignado al componente (desde metodos_analisis)', [
-                            'codigo' => $metodoAnalisisRecord->codigo,
-                            'componente' => $componente['descripcion']
+                    $codigoPadded = $this->truncateAndPad($codigoMetodoAnalisisTrim, 15);
+                    $resueltoFk = $this->resolverCodigoMetodoAnalisisParaForeignKey($codigoMetodoAnalisisTrim);
+                    if ($resueltoFk !== null) {
+                        $cotioComponente->cotio_codigometodo_analisis = $resueltoFk;
+                        Log::info('Método de análisis asignado al componente (metodos_analisis)', [
+                            'codigo' => $resueltoFk,
+                            'ingresado' => $codigoMetodoAnalisisTrim,
+                            'componente' => $componente['descripcion'] ?? null,
                         ]);
                     } else {
+                        $soloLegacy = $codigoPadded
+                            && (Metodo::where('metodo_codigo', $codigoPadded)->exists()
+                                || Metodo::whereRaw('trim(metodo_codigo) = ?', [$codigoMetodoAnalisisTrim])->exists());
+                        if ($soloLegacy) {
+                            Log::warning('Método de análisis solo en tabla metodo (legacy); cotio_codigometodo_analisis null (FK a metodos_analisis)', [
+                                'codigo' => $codigoMetodoAnalisisTrim,
+                                'componente' => $componente['descripcion'] ?? null,
+                            ]);
+                        } else {
+                            Log::warning('Código de método de análisis no hallado en metodos_analisis; cotio_codigometodo_analisis null', [
+                                'codigo' => $codigoMetodoAnalisisTrim,
+                                'componente' => $componente['descripcion'] ?? null,
+                            ]);
+                        }
                         $cotioComponente->cotio_codigometodo_analisis = null;
-                        Log::warning('Código de método no existe en metodos_analisis, se guarda sin método de análisis', [
-                            'codigo' => $codigoMetodoAnalisisTrim,
-                            'componente' => $componente['descripcion']
-                        ]);
                     }
                 } else {
                     $cotioComponente->cotio_codigometodo_analisis = null;
@@ -2618,8 +4048,8 @@ class VentasController extends Controller {
                 $cotioComponente->enable_muestreo = false;
                 
                 // Guardar datos de nota solo si hay contenido
-                $notaContenido = trim($componente['nota_contenido'] ?? '');
-                if (!empty($notaContenido)) {
+                $notaContenido = $this->normalizarNotaContenidoParaPersistencia($componente['nota_contenido'] ?? null);
+                if ($notaContenido !== null) {
                     $cotioComponente->cotio_nota_tipo = $componente['nota_tipo'] ?? 'imprimible';
                     $cotioComponente->cotio_nota_contenido = $notaContenido;
                 } else {
@@ -2673,6 +4103,11 @@ class VentasController extends Controller {
                 'componentes_recibidos' => count($componentesData),
                 'componentes_guardados' => $componentesGuardados,
             ]);
+
+            // Si hay ensayos configurados como "no lleva muestreo", materializar instancias en BD
+            // y asignar OTN desde el inicio (para que no dependan de un paso de muestreo).
+            $this->materializarInstanciasDirectoLab((int) $cotiNum);
+
             Log::info('Ensayos y componentes procesados exitosamente');
 
         } catch (\Exception $e) {
@@ -2683,6 +4118,181 @@ class VentasController extends Controller {
                 'trace' => $e->getTraceAsString()
             ]);
             // No lanzar la excepción para no interrumpir la creación de la cotización
+        }
+    }
+
+    /**
+     * Para ensayos con lleva_muestreo=false (o null), crea las instancias (muestra + análisis)
+     * y asigna número de OT (otn) a la muestra desde el inicio.
+     *
+     * Nota: en /ordenes se filtra por instancias de muestra con enable_ot; estas filas se crean con
+     * enable_ot true (active_ot sigue false hasta coordinación en laboratorio).
+     */
+    private function materializarInstanciasDirectoLab(int $cotiNum): void
+    {
+        try {
+            $ensayosDirecto = Cotio::query()
+                ->where('cotio_numcoti', $cotiNum)
+                ->where('cotio_subitem', 0)
+                ->where(function ($q) {
+                    $q->where('lleva_muestreo', false)->orWhereNull('lleva_muestreo');
+                })
+                ->get();
+
+            if ($ensayosDirecto->isEmpty()) {
+                return;
+            }
+
+            $componentes = Cotio::query()
+                ->where('cotio_numcoti', $cotiNum)
+                ->where('cotio_subitem', '>', 0)
+                ->get()
+                ->groupBy('cotio_item');
+
+            $creadasMuestra = 0;
+            $creadasAnalisis = 0;
+            $otnAsignados = 0;
+
+            foreach ($ensayosDirecto as $ensayo) {
+                $item = (int) ($ensayo->cotio_item ?? 0);
+                if ($item <= 0) {
+                    continue;
+                }
+
+                $cantidad = (int) round((float) ($ensayo->cotio_cantidad ?? 1));
+                $cantidad = max(1, $cantidad);
+
+                $componentesDelItem = $componentes->get($item, collect());
+
+                for ($instance = 1; $instance <= $cantidad; $instance++) {
+                    $muestra = CotioInstancia::firstOrCreate(
+                        [
+                            'cotio_numcoti' => $cotiNum,
+                            'cotio_item' => $item,
+                            'cotio_subitem' => 0,
+                            'instance_number' => $instance,
+                        ],
+                        [
+                            'cotio_descripcion' => $ensayo->cotio_descripcion,
+                            'cotio_codigometodo' => $ensayo->cotio_codigometodo,
+                            'cotio_codigometodo_analisis' => $ensayo->cotio_codigometodo_analisis,
+                            'cotio_codigoum' => $ensayo->cotio_codigoum,
+                            // Sin muestreo: la muestra ya está en circuito laboratorio; enable_ot para /ordenes y filtros.
+                            'enable_ot' => true,
+                            'active_ot' => false,
+                            'enable_muestreo' => false,
+                            'enable_inform' => false,
+                            'cotio_estado_analisis' => null,
+                        ]
+                    );
+
+                    $tocoMuestra = false;
+                    if (!$muestra->enable_ot) {
+                        $muestra->enable_ot = true;
+                        $tocoMuestra = true;
+                    }
+                    if (!$muestra->cotio_descripcion && $ensayo->cotio_descripcion) {
+                        $muestra->cotio_descripcion = $ensayo->cotio_descripcion;
+                        $tocoMuestra = true;
+                    }
+                    if (!$muestra->cotio_codigometodo && $ensayo->cotio_codigometodo) {
+                        $muestra->cotio_codigometodo = $ensayo->cotio_codigometodo;
+                        $tocoMuestra = true;
+                    }
+                    if (!$muestra->cotio_codigometodo_analisis && $ensayo->cotio_codigometodo_analisis) {
+                        $muestra->cotio_codigometodo_analisis = $ensayo->cotio_codigometodo_analisis;
+                        $tocoMuestra = true;
+                    }
+                    if (!$muestra->cotio_codigoum && $ensayo->cotio_codigoum) {
+                        $muestra->cotio_codigoum = $ensayo->cotio_codigoum;
+                        $tocoMuestra = true;
+                    }
+
+                    if (!$muestra->otn) {
+                        $canalEspecial = trim((string) ($ensayo->cotio_canal_especial ?? ''));
+                        if (!in_array($canalEspecial, ['asp', 'clarke_fire', 'consultoria'])) {
+                            $muestra->otn = CotioInstancia::generarNumeroOT();
+                            $tocoMuestra = true;
+                            $otnAsignados++;
+                        }
+                    }
+
+                    if ($tocoMuestra) {
+                        $muestra->save();
+                    }
+                    if ($muestra->wasRecentlyCreated) {
+                        $creadasMuestra++;
+                    }
+
+                    foreach ($componentesDelItem as $comp) {
+                        $subitem = (int) ($comp->cotio_subitem ?? 0);
+                        if ($subitem <= 0) {
+                            continue;
+                        }
+
+                        $analisis = CotioInstancia::firstOrCreate(
+                            [
+                                'cotio_numcoti' => $cotiNum,
+                                'cotio_item' => $item,
+                                'cotio_subitem' => $subitem,
+                                'instance_number' => $instance,
+                            ],
+                            [
+                                'cotio_descripcion' => $comp->cotio_descripcion,
+                                'cotio_codigometodo' => $comp->cotio_codigometodo,
+                                'cotio_codigometodo_analisis' => $comp->cotio_codigometodo_analisis,
+                                'cotio_codigoum' => $comp->cotio_codigoum,
+                                'enable_ot' => true,
+                                'active_ot' => false,
+                                'enable_muestreo' => false,
+                                'enable_inform' => false,
+                                'cotio_estado_analisis' => null,
+                            ]
+                        );
+
+                        $tocoAnalisis = false;
+                        if (!$analisis->enable_ot) {
+                            $analisis->enable_ot = true;
+                            $tocoAnalisis = true;
+                        }
+                        if (!$analisis->cotio_descripcion && $comp->cotio_descripcion) {
+                            $analisis->cotio_descripcion = $comp->cotio_descripcion;
+                            $tocoAnalisis = true;
+                        }
+                        if (!$analisis->cotio_codigometodo && $comp->cotio_codigometodo) {
+                            $analisis->cotio_codigometodo = $comp->cotio_codigometodo;
+                            $tocoAnalisis = true;
+                        }
+                        if (!$analisis->cotio_codigometodo_analisis && $comp->cotio_codigometodo_analisis) {
+                            $analisis->cotio_codigometodo_analisis = $comp->cotio_codigometodo_analisis;
+                            $tocoAnalisis = true;
+                        }
+                        if (!$analisis->cotio_codigoum && $comp->cotio_codigoum) {
+                            $analisis->cotio_codigoum = $comp->cotio_codigoum;
+                            $tocoAnalisis = true;
+                        }
+                        if ($tocoAnalisis) {
+                            $analisis->save();
+                        }
+                        if ($analisis->wasRecentlyCreated) {
+                            $creadasAnalisis++;
+                        }
+                    }
+                }
+            }
+
+            Log::info('Materialización de instancias directo a laboratorio', [
+                'cotio_numcoti' => $cotiNum,
+                'ensayos_directo' => $ensayosDirecto->count(),
+                'muestras_creadas' => $creadasMuestra,
+                'analisis_creados' => $creadasAnalisis,
+                'otn_asignados' => $otnAsignados,
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('No se pudieron materializar instancias directo a laboratorio', [
+                'cotio_numcoti' => $cotiNum,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 
@@ -2836,27 +4446,19 @@ class VentasController extends Controller {
         }
 
         $cliente = $cotizacion->cliente;
-        $sectorCodigoOriginal = $cotizacion->coti_sector ?? optional($cliente)->cli_codigocrub;
+        $sectorCodigoOriginal = $cotizacion->coti_sector;
         $sectorCodigo = $this->normalizarCodigoSector($sectorCodigoOriginal);
 
-        // Prioridad: primero descuentos de la cotización, luego del cliente
-        // Descuento global: usar el de la cotización si existe, sino el del cliente
+        // Solo usar descuentos configurados en la cotización (global)
         $descuentoGlobal = 0.0;
-        if (isset($cotizacion->coti_descuentoglobal) && $cotizacion->coti_descuentoglobal > 0) {
+        if ($cotizacion->coti_descuentoglobal !== null) {
             $descuentoGlobal = (float) $cotizacion->coti_descuentoglobal;
-        } elseif ($cliente) {
-            $descuentoGlobal = (float) ($cliente->cli_descuentoglobal ?? 0.0);
         }
 
-        // Descuento sector: usar el de la cotización si existe, sino el del cliente
+        // Descuento sector: solo usar el de la cotización
         $descuentoSector = 0.0;
         if ($sectorCodigo) {
             $descuentoSector = $this->obtenerDescuentoSectorCotizacion($cotizacion, $sectorCodigo);
-        }
-        
-        // Si no hay descuento de sector en la cotización, usar el del cliente
-        if ($descuentoSector == 0.0 && $cliente) {
-            $descuentoSector = $this->obtenerDescuentoSector($cliente, $sectorCodigo);
         }
 
         return $descuentoGlobal + $descuentoSector;
@@ -3097,6 +4699,8 @@ class VentasController extends Controller {
     public function buscarParaClonar(Request $request)
     {
         try {
+            $this->denegarVentasSiUsuarioSoloCanal();
+
             $query = Ventas::query()
                 ->leftJoin('cli', 'coti.coti_codigocli', '=', 'cli.cli_codigo')
                 ->select('coti.*', 'cli.cli_razonsocial');
@@ -3126,6 +4730,7 @@ class VentasController extends Controller {
                     'Aprobado' => 'A    ',
                     'Rechazado' => 'R    ',
                     'En Proceso' => 'P    ',
+                    'Suspendida' => 'S    ',
                 ];
                 $estadoBd = $estadosMap[$request->estado] ?? $request->estado;
                 // Buscar exactamente el estado con espacios (la BD guarda con espacios fijos)
@@ -3152,6 +4757,7 @@ class VentasController extends Controller {
                         'A    ' => 'Aprobado',
                         'R    ' => 'Rechazado',
                         'P    ' => 'En Proceso',
+                        'S    ' => 'Suspendida',
                     ];
                     // Buscar el estado con espacios (como está en la BD)
                     $estadoBd = $cotizacion->coti_estado;
@@ -3182,6 +4788,8 @@ class VentasController extends Controller {
     public function obtenerParaClonar($cotiNum)
     {
         try {
+            $this->denegarVentasSiUsuarioSoloCanal();
+
             $cotizacion = Ventas::where('coti_num', $cotiNum)->first();
 
             if (!$cotizacion) {
@@ -3202,14 +4810,17 @@ class VentasController extends Controller {
                 ->get();
 
             // Mapear estado de BD a formulario
-            $estadosMap = [
-                'E    ' => 'En Espera',
-                'A    ' => 'Aprobado',
-                'R    ' => 'Rechazado',
-                'P    ' => 'En Proceso',
+            $estadoRaw = (string) ($cotizacion->coti_estado ?? '');
+            $estadoTrim = trim($estadoRaw);
+            $letter = $estadoTrim !== '' ? strtoupper($estadoTrim[0]) : 'E';
+            $porLetra = [
+                'E' => 'En Espera',
+                'A' => 'Aprobado',
+                'R' => 'Rechazado',
+                'P' => 'En Proceso',
+                'S' => 'Suspendida',
             ];
-            $estado = trim($cotizacion->coti_estado);
-            $estadoFormulario = isset($estadosMap[$estado]) ? $estadosMap[$estado] : $estado;
+            $estadoFormulario = $porLetra[$letter] ?? $estadoTrim;
 
             // Preparar datos de la cotización
             $datosCotizacion = [
@@ -3221,14 +4832,42 @@ class VentasController extends Controller {
                 'coti_codigosuc' => trim($cotizacion->coti_codigosuc ?? ''),
                 'coti_para' => $cotizacion->coti_para,
                 'coti_cli_empresa' => $cotizacion->coti_cli_empresa,
+                'coti_empresa_rel' => $cotizacion->coti_empresa_rel,
+                'coti_para_empresa_rel' => (bool) ($cotizacion->coti_para_empresa_rel ?? false),
                 'coti_contacto' => $cotizacion->coti_contacto,
                 'coti_mail1' => $cotizacion->coti_mail1,
                 'coti_telefono' => $cotizacion->coti_telefono,
+                'coti_contacto2' => $cotizacion->coti_contacto2,
+                'coti_mail2' => $cotizacion->coti_mail2,
+                'coti_telefono2' => $cotizacion->coti_telefono2,
+                'coti_contacto3' => $cotizacion->coti_contacto3,
+                'coti_mail3' => $cotizacion->coti_mail3,
+                'coti_telefono3' => $cotizacion->coti_telefono3,
+                'coti_contacto4' => $cotizacion->coti_contacto4,
+                'coti_mail4' => $cotizacion->coti_mail4,
+                'coti_telefono4' => $cotizacion->coti_telefono4,
+                'coti_contacto_tipo1' => $cotizacion->coti_contacto_tipo1,
+                'coti_contacto_tipo2' => $cotizacion->coti_contacto_tipo2,
+                'coti_contacto_tipo3' => $cotizacion->coti_contacto_tipo3,
+                'coti_contacto_tipo4' => $cotizacion->coti_contacto_tipo4,
                 'coti_sector' => trim($cotizacion->coti_sector ?? ''),
                 'coti_notas' => $cotizacion->coti_notas,
                 'descuento' => $cotizacion->coti_descuentoglobal ?? 0.00,
+                'divisa_codigo' => $cotizacion->divisa_codigo ?? 'PES',
+                'coti_cond_pago' => $cotizacion->coti_cond_pago ? trim($cotizacion->coti_cond_pago) : null,
+                'coti_cuotas' => $cotizacion->coti_cuotas ?? false,
+                'coti_cuota_desc' => $cotizacion->coti_cuota_desc,
+                'coti_cuota_cant' => $cotizacion->coti_cuota_cant,
+                'coti_cuota_monto_total' => $cotizacion->coti_cuota_monto_total,
+                'coti_cuota_monto_indiv' => $cotizacion->coti_cuota_monto_indiv,
+                'coti_cuota_interes' => $cotizacion->coti_cuota_interes !== null
+                    ? (float) $cotizacion->coti_cuota_interes
+                    : 0.0,
+                'coti_cuota_fact_fin_mes' => $cotizacion->coti_cuota_fact_fin_mes ?? false,
+                'coti_cuota_fact_inicio_mes' => $cotizacion->coti_cuota_fact_inicio_mes ?? false,
                 'coti_cadena_custodia' => $cotizacion->coti_cadena_custodia ?? false,
                 'coti_muestreo' => $cotizacion->coti_muestreo ?? false,
+                'coti_req_cadena_custodia_relacionada' => (bool) ($cotizacion->coti_req_cadena_custodia_relacionada ?? false),
                 'coti_responsable' => $cotizacion->coti_responsable,
                 'coti_fechaaprobado' => $cotizacion->coti_fechaaprobado ? $cotizacion->coti_fechaaprobado->format('Y-m-d') : null,
                 'coti_aprobo' => $cotizacion->coti_aprobo,
@@ -3241,15 +4880,33 @@ class VentasController extends Controller {
                 'coti_partido' => $cotizacion->coti_partido,
                 'coti_cuit' => $cotizacion->coti_cuit,
                 'coti_codigopostal' => $cotizacion->coti_codigopostal,
+                'coti_oc_referencia' => $cotizacion->coti_oc_referencia,
+                'coti_oc_requerido_factura' => (bool) ($cotizacion->coti_oc_requerido_factura ?? false),
+                'coti_refs_facturacion_json' => $cotizacion->coti_refs_facturacion_json,
             ];
 
             // Preparar ensayos
-            $ensayosData = $ensayos->map(function($ensayo) {
+            $ensayosData = $ensayos->map(function ($ensayo) use ($componentes) {
+                $sumaComp = $componentes->where('cotio_item', $ensayo->cotio_item)->sum(function ($c) {
+                    $p = $this->parseDecimalValue($c->cotio_precio ?? 0) ?? 0;
+                    $q = $this->parseDecimalValue($c->cotio_cantidad ?? 1) ?? 1;
+                    if ($q <= 0) {
+                        $q = 1;
+                    }
+
+                    return $p * $q;
+                });
+                $extra = $this->resolverPrecioExtraEnsayoDesdeCotioRow(
+                    $this->parseDecimalValue($ensayo->cotio_precio ?? null),
+                    (float) $sumaComp
+                );
+
                 return [
                     'item' => $ensayo->cotio_item,
                     'descripcion' => $ensayo->cotio_descripcion,
                     'cantidad' => $ensayo->cotio_cantidad ?? 1,
                     'codigo' => $ensayo->cotio_codigoprod ?? '',
+                    'precio_extra_ensayo' => $extra,
                     'no_requiere_custodia' => !$ensayo->cotio_cadena_custodia ?? false,
                     'flexible' => $ensayo->cotio_flexible ?? false,
                     'bonificado' => $ensayo->cotio_bonificado ?? false,
@@ -3258,6 +4915,9 @@ class VentasController extends Controller {
                         'tipo' => $ensayo->cotio_nota_tipo ?? 'imprimible',
                         'contenido' => $ensayo->cotio_nota_contenido
                     ]] : [],
+                    'req_cadena_custodia' => $ensayo->req_cadena_custodia ?? null,
+                    'req_prot_mapba' => $ensayo->req_prot_mapba ?? null,
+                    'lleva_muestreo' => (bool) ($ensayo->lleva_muestreo ?? true),
                 ];
             })->toArray();
 
@@ -3273,6 +4933,8 @@ class VentasController extends Controller {
                     'no_requiere_custodia' => !$componente->cotio_cadena_custodia ?? false,
                     'flexible' => $componente->cotio_flexible ?? false,
                     'bonificado' => $componente->cotio_bonificado ?? false,
+                    'req_cadena_custodia' => $componente->req_cadena_custodia ?? null,
+                    'req_prot_mapba' => $componente->req_prot_mapba ?? null,
                 ];
             })->toArray();
 

@@ -20,6 +20,8 @@ class Coti extends Model
         'coti_num',
         'coti_para',
         'coti_cli_empresa',
+        'coti_para_empresa_rel',
+        'coti_empresa_rel',
         'coti_descripcion',
         'coti_codigocli',
         'coti_fechaalta',
@@ -28,6 +30,7 @@ class Coti extends Model
         'coti_estado',
         'coti_codigomatriz',
         'coti_responsable',
+        'coti_creador',
         'coti_fechafin',
         'coti_notas',
         'coti_fechaencurso',
@@ -35,6 +38,19 @@ class Coti extends Model
         'coti_empresa',
         'coti_establecimiento',
         'coti_contacto',
+        'coti_contacto_tipo1',
+        'coti_contacto2',
+        'coti_mail2',
+        'coti_telefono2',
+        'coti_contacto_tipo2',
+        'coti_contacto3',
+        'coti_mail3',
+        'coti_telefono3',
+        'coti_contacto_tipo3',
+        'coti_contacto4',
+        'coti_mail4',
+        'coti_telefono4',
+        'coti_contacto_tipo4',
         'coti_direccioncli',
         'coti_localidad',
         'coti_partido',
@@ -47,6 +63,8 @@ class Coti extends Model
         'coti_referencia_tipo',
         'coti_referencia_valor',
         'coti_oc_referencia',
+        'coti_oc_requerido_factura',
+        'coti_refs_facturacion_json',
         'coti_hes_has_tipo',
         'coti_hes_has_valor',
         'coti_gr_contrato_tipo',
@@ -66,7 +84,21 @@ class Coti extends Model
         'coti_sector_microbiologia_observaciones',
         'coti_sector_cromatografia_observaciones',
         'coti_cadena_custodia',
-        'coti_muestreo'
+        'coti_muestreo',
+        'coti_req_cadena_custodia_relacionada',
+        'divisa_codigo',
+        'coti_cond_pago',
+        'coti_cuotas',
+        'coti_cuota_desc',
+        'coti_cuota_cant',
+        'coti_cuota_monto_total',
+        'coti_cuota_monto_indiv',
+        'coti_cuota_interes',
+        'coti_cuota_fact_fin_mes',
+        'coti_cuota_fact_inicio_mes',
+        'cancelada',
+        'razon_cancelada',
+        'coti_notas_facturacion'
     ];
 
     protected $casts = [
@@ -81,8 +113,27 @@ class Coti extends Model
         'coti_sector_microbiologia_pct' => 'decimal:2',
         'coti_sector_cromatografia_pct' => 'decimal:2',
         'coti_cadena_custodia' => 'boolean',
-        'coti_muestreo' => 'boolean'
+        'coti_muestreo' => 'boolean',
+        'coti_req_cadena_custodia_relacionada' => 'boolean',
+        'coti_cuotas' => 'boolean',
+        'coti_cuota_fact_fin_mes' => 'boolean',
+        'coti_cuota_fact_inicio_mes' => 'boolean',
+        'cancelada' => 'boolean',
+        'razon_cancelada' => 'string',
+        'coti_cuota_monto_total' => 'decimal:4',
+        'coti_cuota_monto_indiv' => 'decimal:4',
+        'coti_cuota_interes'     => 'decimal:4',
+        'coti_oc_requerido_factura' => 'boolean',
+        'coti_refs_facturacion_json' => 'array',
     ]; 
+
+    /**
+     * CHAR en SQL Server suele venir con espacios; sin trim la relación cliente no matchea.
+     */
+    public function getCotiCodigocliAttribute($value): ?string
+    {
+        return $value === null ? null : trim((string) $value);
+    }
 
     /**
      * Relación con cliente
@@ -90,6 +141,11 @@ class Coti extends Model
     public function cliente()
     {
         return $this->belongsTo(Clientes::class, 'coti_codigocli', 'cli_codigo');
+    }
+
+    public function sucursal()
+    {
+        return $this->belongsTo(Clientes::class, 'coti_codigosuc', 'cli_codigo');
     }
 
     /**
@@ -156,5 +212,44 @@ class Coti extends Model
                     ->where('cotio_subitem', 0)
                     ->where('enable_ot', true);
             });
+    }
+
+    /**
+     * Obtiene el canal especial inferido desde sus items (ensayos).
+     * Retorna 'consultoria', 'asp', 'clarke_fire' o null.
+     */
+    public function getCanalEspecialAttribute(): ?string
+    {
+        // Usar la relación 'muestras' (cotio_subitem = 0) para buscar el canal
+        foreach ($this->muestras as $muestra) {
+            $canal = strtolower(trim((string)($muestra->cotio_canal_especial ?? '')));
+            if (in_array($canal, ['consultoria', 'asp', 'clarke_fire', 'mediciones'], true)) {
+                return $canal;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Retorna la descripción de la matriz real o el nombre del canal especial si la matriz es null.
+     */
+    public function getMatrizDescripcionCalculadaAttribute(): string
+    {
+        if ($this->matriz) {
+            return trim($this->matriz->matriz_descripcion);
+        }
+
+        $canal = $this->canal_especial;
+        if ($canal) {
+            switch($canal) {
+                case 'consultoria': return 'Consultoría';
+                case 'asp':         return 'ASP';
+                case 'clarke_fire': return 'Clarke Fire';
+                case 'mediciones':  return 'Mediciones';
+                default:            return ucwords(str_replace('_', ' ', $canal));
+            }
+        }
+
+        return 'N/A';
     }
 }

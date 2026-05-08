@@ -78,27 +78,39 @@
                                         <div class="dropdown-menu w-100 shadow-sm p-0" id="clienteResultados"></div>
                                     </div>
                                     <!-- Campos hidden para datos del cliente -->
-                                    <input type="hidden" id="cliente_razon_social_hidden" name="cliente_razon_social" value="{{ $cotizacion->coti_empresa }}">
-                                    <input type="hidden" id="cliente_direccion_hidden" name="cliente_direccion" value="{{ $cotizacion->coti_direccioncli }}">
-                                    <input type="hidden" id="cliente_localidad_hidden" name="cliente_localidad" value="{{ $cotizacion->coti_localidad }}">
-                                    <input type="hidden" id="cliente_cuit_hidden" name="cliente_cuit" value="{{ $cotizacion->coti_cuit }}">
-                                    <input type="hidden" id="cliente_codigo_postal_hidden" name="cliente_codigo_postal" value="{{ $cotizacion->coti_codigopostal }}">
-                                    <input type="hidden" id="cliente_telefono_hidden" name="cliente_telefono" value="{{ $cotizacion->coti_telefono }}">
+                                    <input type="hidden" id="cliente_razon_social_hidden" name="cliente_razon_social" value="{{ optional($cotizacion->cliente)->cli_razonsocial }}">
+                                    <input type="hidden" id="cliente_direccion_hidden" name="cliente_direccion" value="{{ optional($cotizacion->cliente)->cli_direccion }}">
+                                    <input type="hidden" id="cliente_localidad_hidden" name="cliente_localidad" value="{{ optional($cotizacion->cliente)->cli_localidad }}">
+                                    <input type="hidden" id="cliente_cuit_hidden" name="cliente_cuit" value="{{ optional($cotizacion->cliente)->cli_cuit }}">
+                                    <input type="hidden" id="cliente_codigo_postal_hidden" name="cliente_codigo_postal" value="{{ optional($cotizacion->cliente)->cli_codigopostal }}">
+                                    <input type="hidden" id="cliente_telefono_hidden" name="cliente_telefono" value="{{ optional($cotizacion->cliente)->cli_telefono }}">
                                     <input type="hidden" id="cliente_correo_hidden" value="{{ $cotizacion->coti_mail1 }}">
                                     <input type="hidden" id="cliente_sector_hidden" value="{{ trim($cotizacion->coti_sector ?? '') }}">
                                     <input type="hidden" id="cliente_descuento_hidden" value="{{ number_format($descuentoCliente ?? 0, 2, '.', '') }}" data-descuento-global="{{ number_format($descuentoGlobalCliente ?? 0, 2, '.', '') }}">
                                     <input type="hidden" id="ensayos_data" name="ensayos_data">
                                     <input type="hidden" id="componentes_data" name="componentes_data">
+                                    @php
+                                        $__cotiReqRelEdit = (bool) ($cotizacion->coti_req_cadena_custodia_relacionada ?? false);
+                                        if (old('coti_req_cadena_custodia_relacionada') !== null) {
+                                            $__cotiReqRelEdit = filter_var(old('coti_req_cadena_custodia_relacionada'), FILTER_VALIDATE_BOOLEAN);
+                                        }
+                                    @endphp
+                                    <input type="hidden" name="coti_req_cadena_custodia_relacionada" id="input_coti_req_cadena_custodia_relacionada" value="{{ $__cotiReqRelEdit ? '1' : '0' }}">
                                 </div>
                                 <div class="col-md-4">
                                     <label for="cliente_nombre" class="form-label fw-semibold mb-1">&nbsp;</label>
                                     <input type="text" class="form-control form-control-sm" id="cliente_nombre" 
-                                           value="{{ $cotizacion->coti_empresa }}" placeholder="Seleccione un cliente" readonly>
+                                           value="{{ optional($cotizacion->cliente)->cli_razonsocial }}" placeholder="Seleccione un cliente" readonly>
                                 </div>
                                 <div class="col-md-2">
                                     <label for="sucursal" class="form-label fw-semibold mb-1">Sucursal:</label>
-                                    <input type="text" class="form-control form-control-sm" id="sucursal" name="coti_codigosuc"
-                                           value="{{ $cotizacion->coti_codigosuc }}">
+                                    <div id="sucursalWrapper">
+                                        <input type="text" class="form-control form-control-sm" id="sucursal" name="coti_codigosuc"
+                                               value="{{ $cotizacion->coti_codigosuc }}" placeholder="Código sucursal">
+                                        <select class="form-select form-select-sm d-none mt-1" id="sucursal_select">
+                                            <option value="">Seleccionar sucursal...</option>
+                                        </select>
+                                    </div>
                                 </div>
                                 <div class="col-md-2">
                                     <label for="numero" class="form-label fw-semibold mb-1">Nro:</label>
@@ -113,7 +125,7 @@
                                         <select class="form-control form-control-sm d-none" id="coti_para_select" name="coti_para">
                                             <option value="">Seleccionar empresa relacionada...</option>
                                         </select>
-                                        <input type="hidden" id="coti_cli_empresa" name="coti_cli_empresa" value="{{ old('coti_cli_empresa', $cotizacion->coti_cli_empresa) }}">
+                                        <input type="hidden" id="coti_empresa_rel" name="coti_empresa_rel" value="{{ old('coti_empresa_rel', $cotizacion->coti_empresa_rel ?? $cotizacion->coti_cli_empresa) }}">
                                     </div>
                                 </div>
                             </div>
@@ -139,6 +151,9 @@
                                     Empresa
                                 </button>
                             </li>
+                            @include('ventas.partials.cotizacion-empresa-relacionada-nav', [
+                                'empresaRelTabVisibleInicial' => (bool) optional($cotizacion->cliente)->es_consultor,
+                            ])
                         </ul>
 
                         <!-- Contenido de las solapas -->
@@ -203,66 +218,40 @@
                                                         $estadoActual = 'R';
                                                     } elseif(str_starts_with($estado, 'P')) {
                                                         $estadoActual = 'P';
+                                                    } elseif(str_starts_with($estado, 'S')) {
+                                                        $estadoActual = 'S';
                                                     }
                                                 @endphp
                                                 <option value="E" {{ $estadoActual == 'E' ? 'selected' : '' }}>En Espera</option>
                                                 <option value="A" {{ $estadoActual == 'A' ? 'selected' : '' }}>Aprobado</option>
                                                 <option value="R" {{ $estadoActual == 'R' ? 'selected' : '' }}>Rechazado</option>
                                                 <option value="P" {{ $estadoActual == 'P' ? 'selected' : '' }}>En Proceso</option>
+                                                <option value="S" {{ $estadoActual == 'S' ? 'selected' : '' }}>Suspendida</option>
                                             </select>
+
+                                            @if(!empty($cotizacion->cancelada))
+                                                <div class="mt-3">
+                                                    <input type="hidden" name="razon_cancelada" value="{{ $cotizacion->razon_cancelada }}">
+                                                    <div class="form-check">
+                                                        <input type="checkbox"
+                                                               class="form-check-input"
+                                                               id="canceladaToggle"
+                                                               name="cancelada"
+                                                               value="1"
+                                                               checked
+                                                               onchange="return manejarToggleCancelada(this);">
+                                                        <label class="form-check-label" for="canceladaToggle">
+                                                            <span id="canceladaLabelText">Cancelado</span>
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                            @endif
                                         </div>
-                                        <div class="col-md-2 d-flex align-items-end">
-                                            <div class="form-check">
-                                                <input class="form-check-input" type="checkbox" id="cadena_custodia" name="coti_cadena_custodia" value="1" {{ old('coti_cadena_custodia', $cotizacion->coti_cadena_custodia ?? false) ? 'checked' : '' }}>
-                                                <label class="form-check-label" for="cadena_custodia">
-                                                    Cadena de Custodia
-                                                </label>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-2 d-flex align-items-end">
-                                            <div class="form-check">
-                                                <input class="form-check-input" type="checkbox" id="muestreo" name="coti_muestreo" value="1" {{ old('coti_muestreo', $cotizacion->coti_muestreo ?? false) ? 'checked' : '' }}>
-                                                <label class="form-check-label" for="muestreo">
-                                                    Muestreo
-                                                </label>
-                                            </div>
-                                        </div>
+                                        <!-- Muestreo ahora se configura por ensayo, no a nivel general -->
                                     </div>
 
-                                    <!-- Comentarios -->
-                                    <div class="row mb-4">
-                                        <div class="col-md-3">
-                                            <label for="contacto" class="form-label">Contacto:</label>
-                                            <input type="text" class="form-control" id="contacto" name="coti_contacto"
-                                                   value="{{ old('coti_contacto', $cotizacion->coti_contacto) }}" placeholder="Nombre del contacto principal">
-                                        </div>
-                                        <div class="col-md-3">
-                                            <label for="correo" class="form-label">Correo:</label>
-                                            <input type="email" class="form-control" id="correo" name="coti_mail1"
-                                                   value="{{ old('coti_mail1', $cotizacion->coti_mail1) }}" placeholder="correo@cliente.com">
-                                        </div>
-                                        <div class="col-md-3">
-                                            <label for="telefono" class="form-label">Teléfono:</label>
-                                            <input type="text" class="form-control" id="telefono" name="coti_telefono" 
-                                                   value="{{ old('coti_telefono', $cotizacion->coti_telefono) }}" placeholder="+54 9 11 1234-5678">
-                                        </div>
-                                        <div class="col-md-3">
-                                            <label for="sector" class="form-label">Sector:</label>
-                                            <select class="form-select" id="sector" name="coti_sector">
-                                                <option value="">Seleccionar sector...</option>
-                                                    @foreach($sectoresCliente as $sector)
-                                                        @php
-                                                            $codigoSector = trim($sector->divis_codigo);
-                                                            $sectorActual = trim($cotizacion->coti_sector ?? '');
-                                                        @endphp
-                                                        <option value="{{ $codigoSector }}" 
-                                                                {{ trim((string) old('coti_sector', $sectorActual)) === $codigoSector ? 'selected' : '' }}>
-                                                            {{ trim($sector->divis_descripcion) }}
-                                                    </option>
-                                                @endforeach
-                                            </select>
-                                        </div>
-                                    </div>
+                                    <!-- Contactos del cliente -->
+                                    @include('ventas.partials.cotizacion-contactos', ['cotizacion' => $cotizacion])
 
                                     <div class="row mb-4">
                                         <div class="col-md-12">
@@ -281,13 +270,96 @@
                                                     <label for="descuento" class="form-label">Descuento Global %</label>
                                                     <input type="number" step="0.01" class="form-control" id="descuento" name="descuento" 
                                                            value="{{ old('descuento', $cotizacion->coti_descuentoglobal ?? '0.00') }}" placeholder="0.00">
+                                                    <div class="form-check mt-2">
+                                                        <input class="form-check-input" type="checkbox" id="coti_mostrar_descuento" name="coti_mostrar_descuento" value="1"
+                                                               {{ old('coti_mostrar_descuento', $cotizacion->coti_mostrar_descuento ?? true) ? 'checked' : '' }}>
+                                                        <label class="form-check-label" for="coti_mostrar_descuento">
+                                                            Mostrar en el presupuesto
+                                                        </label>
+                                                    </div>
                                                 </div>
                                                 <div class="col-md-3">
                                                     <label for="aumento" class="form-label">Aumento Global %</label>
                                                     <input type="number" step="0.01" class="form-control" id="aumento" name="aumento" 
                                                            value="{{ old('aumento', $cotizacion->coti_aumentoglobal ?? '0.00') }}" placeholder="0.00">
                                                 </div>
+                                                <div class="col-md-3">
+                                                    <label for="divisa_codigo" class="form-label">Divisa</label>
+                                                    <select class="form-select" id="divisa_codigo" name="divisa_codigo">
+                                                        @forelse(($divisas ?? []) as $divisa)
+                                                            <option value="{{ $divisa->divisa_codigo }}" {{ old('divisa_codigo', $cotizacion->divisa_codigo ?? 'PES') === $divisa->divisa_codigo ? 'selected' : '' }}>
+                                                                {{ $divisa->divisa_desc }} ({{ $divisa->divisa_codigo }})
+                                                            </option>
+                                                        @empty
+                                                            <option value="PES" {{ ($cotizacion->divisa_codigo ?? 'PES') === 'PES' ? 'selected' : '' }}>Pesos (PES)</option>
+                                                            <option value="USD" {{ ($cotizacion->divisa_codigo ?? 'PES') === 'USD' ? 'selected' : '' }}>Dólares (USD)</option>
+                                                        @endforelse
+                                                    </select>
+                                                </div>
                                             </div>
+
+                                            <div class="row mb-3">
+                                                <div class="col-md-6">
+                                                    <label for="coti_cond_pago" class="form-label">Condición de pago</label>
+                                                    <select class="form-select" id="coti_cond_pago" name="coti_cond_pago">
+                                                        <option value="">Seleccionar...</option>
+                                                        @foreach($condicionesPago ?? [] as $cond)
+                                                            @php $codCond = trim($cond->pag_codigo); $actual = trim($cotizacion->coti_cond_pago ?? ''); @endphp
+                                                            <option value="{{ $codCond }}" {{ old('coti_cond_pago', $actual) === $codCond ? 'selected' : '' }}>
+                                                                {{ $codCond }} - {{ trim($cond->pag_descripcion) }}
+                                                            </option>
+                                                        @endforeach
+                                                    </select>
+                                                    <small class="text-muted">Se completa con la del cliente al seleccionarlo; puede cambiarse solo para esta cotización.</small>
+                                                </div>
+                                            </div>
+
+                                            <div id="cuotasPanel" class="row mb-3 border rounded p-3 bg-light {{ ($cotizacion->coti_cuotas ?? false) || trim($cotizacion->coti_cond_pago ?? '') === 'CUOTAS' ? '' : 'd-none' }}">
+                                                <h6 class="mb-2">Detalle cuotas</h6>
+                                                <div class="col-md-3">
+                                                    <label for="coti_cuota_desc" class="form-label">Descripción</label>
+                                                    <input type="text" class="form-control form-control-sm" id="coti_cuota_desc" name="coti_cuota_desc" value="{{ old('coti_cuota_desc', $cotizacion->coti_cuota_desc) }}" placeholder="Ej: 6 cuotas sin interés">
+                                                </div>
+                                                <div class="col-md-2">
+                                                    <label for="coti_cuota_cant" class="form-label">Cantidad</label>
+                                                    <input type="number" class="form-control form-control-sm" id="coti_cuota_cant" name="coti_cuota_cant" value="{{ old('coti_cuota_cant', $cotizacion->coti_cuota_cant ?? 1) }}" min="1">
+                                                </div>
+                                                <div class="col-md-2">
+                                                    <label for="coti_cuota_interes" class="form-label">
+                                                        Interés (%)
+                                                        <span class="text-muted" title="Porcentaje de interés total aplicado sobre el monto antes de dividir en cuotas. Ej: 10 = 10%" style="cursor:help;">&#9432;</span>
+                                                    </label>
+                                                    <div class="input-group input-group-sm">
+                                                        <input type="number" step="0.01" min="0" class="form-control form-control-sm" id="coti_cuota_interes" name="coti_cuota_interes" value="{{ old('coti_cuota_interes', $cotizacion->coti_cuota_interes ?? 0) }}" placeholder="0.00">
+                                                        <span class="input-group-text">%</span>
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-2">
+                                                    <label for="coti_cuota_monto_total" class="form-label">
+                                                        Monto total
+                                                        <span class="text-muted" title="Se completa automáticamente con el total de la cotización" style="cursor:help;">&#9432;</span>
+                                                    </label>
+                                                    <input type="number" step="0.01" class="form-control form-control-sm bg-light" id="coti_cuota_monto_total" name="coti_cuota_monto_total" value="{{ old('coti_cuota_monto_total', $cotizacion->coti_cuota_monto_total) }}" placeholder="0.00" readonly title="Se sincroniza automáticamente con el total de la cotización">
+                                                </div>
+                                                <div class="col-md-2">
+                                                    <label for="coti_cuota_monto_indiv" class="form-label">
+                                                        Monto individual
+                                                        <span class="text-muted" title="(Total × (1 + Interés%)) ÷ cantidad de cuotas" style="cursor:help;">&#9432;</span>
+                                                    </label>
+                                                    <input type="number" step="0.01" class="form-control form-control-sm bg-light" id="coti_cuota_monto_indiv" name="coti_cuota_monto_indiv" value="{{ old('coti_cuota_monto_indiv', $cotizacion->coti_cuota_monto_indiv) }}" placeholder="0.00" readonly title="Se calcula: (monto total × (1 + interés%)) ÷ cantidad de cuotas">
+                                                </div>
+                                                <div class="col-md-3 d-flex align-items-end gap-3">
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="checkbox" id="coti_cuota_fact_fin_mes" name="coti_cuota_fact_fin_mes" value="1" {{ old('coti_cuota_fact_fin_mes', $cotizacion->coti_cuota_fact_fin_mes) ? 'checked' : '' }}>
+                                                        <label class="form-check-label" for="coti_cuota_fact_fin_mes">Fact. fin de mes</label>
+                                                    </div>
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="checkbox" id="coti_cuota_fact_inicio_mes" name="coti_cuota_fact_inicio_mes" value="1" {{ old('coti_cuota_fact_inicio_mes', $cotizacion->coti_cuota_fact_inicio_mes) ? 'checked' : '' }}>
+                                                        <label class="form-check-label" for="coti_cuota_fact_inicio_mes">Fact. inicio de mes</label>
+                                                    </div>
+                                                </div>
+                                            </div>
+
                                         </div>
                                     </div>
 
@@ -318,8 +390,8 @@
                                                             <th style="width: 150px;">Método</th>
                                                             <th style="width: 120px;">Detalle</th>
                                                             <th style="width: 80px;">Cantidad</th>
-                                                            <th style="width: 100px;">Prec. Unit</th>
-                                                            <th style="width: 100px;">Total</th>
+                                                            <th style="width: 118px;" class="text-end" title="En analitos: precio unitario. En el ensayo: solo cargo adicional por u.m.">P. unit.</th>
+                                                            <th style="width: 118px;" class="text-end" title="En analitos: precio × cantidad. En el ensayo: adicional × cantidad del ensayo (el total general suma también los analitos).">Importe</th>
                                                             <th style="width: 60px;">Acciones</th>
                                                         </tr>
                                                     </thead>
@@ -332,7 +404,7 @@
                                                             </td>
                                                             <td></td>
                                                         </tr>
-                                                        <tr>
+                                                        <tr class="d-none" id="filaAumentoGlobal">
                                                             <td colspan="7" class="text-end text-muted">Aumento global cliente (<span id="aumentoGlobalPorcentaje">0.00%</span>):</td>
                                                             <td class="text-success fw-semibold">
                                                                 +<span id="aumentoGlobalMonto">0.00</span>
@@ -347,7 +419,9 @@
                                                             <td></td>
                                                         </tr>
                                                         <tr>
-                                                            <td colspan="7" class="text-end fw-bold">Total final:</td>
+                                                            <td colspan="7" class="text-end fw-bold">
+                                                                Total final (<span id="divisaLabel"></span>):
+                                                            </td>
                                                             <td class="fw-bold">
                                                                 <span id="totalConAjustes">0.00</span>
                                                             </td>
@@ -403,11 +477,37 @@
                             <!-- Solapa Empresa -->
                             <div class="tab-pane fade" id="empresa" role="tabpanel">
                                 <div class="p-4">
+                                    @php
+                                        $clienteBaseCodigo = trim($cotizacion->coti_codigocli ?? '');
+                                        $clienteBaseNombre = trim(optional($cotizacion->cliente)->cli_razonsocial ?? '');
+                                    @endphp
+                                    <div class="row mb-2">
+                                        <div class="col-md-12">
+                                            <small class="text-muted">
+                                                Cliente principal:
+                                                <strong>{{ $clienteBaseCodigo }}</strong>
+                                                @if($clienteBaseNombre)
+                                                    - {{ $clienteBaseNombre }}
+                                                @endif
+                                            </small>
+                                        </div>
+                                    </div>
+                                    <div class="row mb-3">
+                                        <div class="col-md-12">
+                                            <label for="razon_social_facturacion_select" class="form-label">Razón social de facturación</label>
+                                            <select class="form-select form-select-sm d-none" id="razon_social_facturacion_select">
+                                                <option value="">Seleccionar razón social de facturación...</option>
+                                            </select>
+                                            <small class="form-text text-muted d-none" id="razon_social_facturacion_help">
+                                                Al seleccionar una razón social se actualizarán la empresa, CUIT y dirección.
+                                            </small>
+                                        </div>
+                                    </div>
                                     <div class="row">
                                         <div class="col-md-6">
                                             <div class="mb-3">
-                                            <label for="empresa_nombre" class="form-label">Empresa:</label>
-                                            <input type="text" class="form-control" id="empresa_nombre" name="coti_empresa" 
+                                                <label for="empresa_nombre" class="form-label">Empresa:</label>
+                                                <input type="text" class="form-control" id="empresa_nombre" name="coti_empresa" 
                                                        value="{{ $cotizacion->coti_empresa }}">
                                             </div>
                                             <div class="mb-3">
@@ -446,6 +546,8 @@
                                     </div>
                                 </div>
                             </div>
+
+                            @include('ventas.partials.cotizacion-empresa-relacionada-pane')
                         </div>
 
                         <!-- Botones de acción -->
@@ -665,6 +767,7 @@ document.addEventListener('DOMContentLoaded', function() {
             'ensayosIniciales' => [],
             'componentesIniciales' => [],
         ];
+        $configuracionCotizacion['puedeBajarPrecio'] = auth()->user() && ((int) (auth()->user()->usu_nivel ?? 0) >= 900);
     @endphp
     window.cotizacionConfig = @json($configuracionCotizacion);
     
@@ -674,6 +777,32 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 
 @include('ventas.partials.cotizacion-scripts')
+
+@php $idEmpresaRelEdicion = $cotizacion->coti_empresa_rel ?? $cotizacion->coti_cli_empresa; @endphp
+@if(optional($cotizacion->cliente)->es_consultor && !empty($idEmpresaRelEdicion))
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var cotiEmpresaRelInicial = {
+        coti_cli_empresa: {{ (int) $idEmpresaRelEdicion }},
+        coti_empresa_rel: {{ (int) $idEmpresaRelEdicion }},
+        coti_empresa: @json($cotizacion->coti_empresa),
+        coti_para: @json($cotizacion->coti_para),
+        coti_direccioncli: @json($cotizacion->coti_direccioncli),
+        coti_localidad: @json($cotizacion->coti_localidad),
+        coti_partido: @json($cotizacion->coti_partido),
+        coti_cuit: @json($cotizacion->coti_cuit),
+        coti_contacto: @json($cotizacion->coti_contacto),
+    };
+    function aplicarResumenEmpresaRelInicial() {
+        if (window.cotizacionScripts && typeof window.cotizacionScripts.sincronizarResumenEmpresaRelacionadaDesdeCotiData === 'function') {
+            window.cotizacionScripts.sincronizarResumenEmpresaRelacionadaDesdeCotiData(cotiEmpresaRelInicial);
+        }
+    }
+    aplicarResumenEmpresaRelInicial();
+    setTimeout(aplicarResumenEmpresaRelInicial, 150);
+});
+</script>
+@endif
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
@@ -812,10 +941,11 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('descripcion').value = cotiData.coti_descripcion || '';
         if (cotiData.coti_para !== undefined) {
             const cotiParaInput = document.getElementById('coti_para');
-            const cotiCliEmpresaHidden = document.getElementById('coti_cli_empresa');
+            const cotiEmpresaRelHidden = document.getElementById('coti_empresa_rel');
             if (cotiParaInput) cotiParaInput.value = cotiData.coti_para || '';
-            if (cotiCliEmpresaHidden) {
-                cotiCliEmpresaHidden.value = (cotiData.coti_cli_empresa !== null && cotiData.coti_cli_empresa !== undefined) ? cotiData.coti_cli_empresa : '';
+            if (cotiEmpresaRelHidden) {
+                const idRel = cotiData.coti_empresa_rel ?? cotiData.coti_cli_empresa;
+                cotiEmpresaRelHidden.value = (idRel !== null && idRel !== undefined && idRel !== '') ? String(idRel) : '';
             }
         }
         document.getElementById('fecha_alta').value = cotiData.coti_fechaalta || '';
@@ -827,10 +957,18 @@ document.addEventListener('DOMContentLoaded', function() {
                 'E': 'E',
                 'A': 'A',
                 'R': 'R',
-                'P': 'P'
+                'P': 'P',
+                'S': 'S'
             };
             const estadoValue = estadoMap[estado.charAt(0)] || 'E';
             document.getElementById('estado').value = estadoValue;
+        }
+        const hRelVer = document.getElementById('input_coti_req_cadena_custodia_relacionada');
+        if (hRelVer && typeof cotiData.coti_req_cadena_custodia_relacionada !== 'undefined') {
+            hRelVer.value = cotiData.coti_req_cadena_custodia_relacionada ? '1' : '0';
+        }
+        if (window.cotizacionScripts && typeof window.cotizacionScripts.syncCotiReqCadenaRelCheckboxesFromHidden === 'function') {
+            window.cotizacionScripts.syncCotiReqCadenaRelCheckboxesFromHidden();
         }
         document.getElementById('contacto').value = cotiData.coti_contacto || '';
         document.getElementById('correo').value = cotiData.coti_mail1 || '';
@@ -885,7 +1023,30 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('partido').value = cotiData.coti_partido || '';
         document.getElementById('cuit_cliente').value = cotiData.coti_cuit || '';
         document.getElementById('codigo_postal_cliente').value = cotiData.coti_codigopostal || '';
-        
+
+        if (typeof window.cotizacionRefsFacturacionCargarDesdeDatos === 'function') {
+            window.cotizacionRefsFacturacionCargarDesdeDatos({
+                coti_oc_referencia: cotiData.coti_oc_referencia || '',
+                coti_oc_requerido_factura: !!cotiData.coti_oc_requerido_factura,
+                coti_refs_facturacion_json: cotiData.coti_refs_facturacion_json || '',
+            });
+        }
+
+        if (window.cotizacionScripts && typeof window.cotizacionScripts.sincronizarResumenEmpresaRelacionadaDesdeCotiData === 'function') {
+            window.cotizacionScripts.sincronizarResumenEmpresaRelacionadaDesdeCotiData(cotiData);
+        }
+
+        function resolverPrecioExtraEnsayoDesdeCotio(cotioPrecio, sumaComp) {
+            const cot = parseFloat(cotioPrecio);
+            const suma = parseFloat(sumaComp) || 0;
+            const c = isNaN(cot) ? 0 : cot;
+            if (c <= 0) return 0;
+            if (suma <= 0.00001) return Math.max(0, c);
+            if (Math.abs(c - suma) < 0.02) return 0;
+            if (c > suma && c > (suma * 4.0 + 0.0001)) return Math.max(0, c - suma);
+            return Math.max(0, c);
+        }
+
         // Cargar items (ensayos y componentes)
         // Procesar cotioData para separar ensayos y componentes
         // IMPORTANTE: Mantener el orden y estructura original de la versión
@@ -941,6 +1102,11 @@ document.addEventListener('DOMContentLoaded', function() {
                     componentes_sugeridos: [],
                     nota_tipo: item.cotio_nota_tipo || null,
                     nota_contenido: item.cotio_nota_contenido || null,
+                    req_cadena_custodia: !!item.req_cadena_custodia,
+                    req_prot_mapba: !!item.req_prot_mapba,
+                    ley_normativa_id: item.ley_aplicacion ? String(item.ley_aplicacion).trim() : null,
+                    lleva_muestreo: typeof item.lleva_muestreo !== 'undefined' ? !!item.lleva_muestreo : true,
+                    _cotio_precio_ensayo_row: item.cotio_precio,
                 });
             } else {
                 // Es un componente
@@ -975,6 +1141,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     ley_normativa_id: item.ley_aplicacion ? item.ley_aplicacion.trim() : null,
                     nota_tipo: item.cotio_nota_tipo || null,
                     nota_contenido: item.cotio_nota_contenido || null,
+                    req_cadena_custodia: !!item.req_cadena_custodia,
+                    req_prot_mapba: !!item.req_prot_mapba,
                 });
             }
         });
@@ -990,8 +1158,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 return coincide;
             });
             console.log(`[Versión] Ensayo ${ensayo.item} (${ensayo.descripcion}) tiene ${componentesEnsayo.length} componentes asociados`);
-            ensayo.precio = componentesEnsayo.reduce((sum, comp) => sum + (comp.precio * comp.cantidad), 0);
-            ensayo.total = ensayo.precio * ensayo.cantidad;
+            const sumaComp = componentesEnsayo.reduce((sum, comp) => sum + (comp.precio * comp.cantidad), 0);
+            const extra = resolverPrecioExtraEnsayoDesdeCotio(ensayo._cotio_precio_ensayo_row, sumaComp);
+            delete ensayo._cotio_precio_ensayo_row;
+            ensayo.precio_extra_ensayo = extra;
+            ensayo.precio = extra;
+            ensayo.total = extra * ensayo.cantidad;
         });
         
         // Cargar items en el state del script de cotización
@@ -1058,6 +1230,36 @@ document.addEventListener('DOMContentLoaded', function() {
         setTimeout(intentarCargarItems, 500);
     }
 });
+</script>
+
+<script>
+    function manejarToggleCancelada(checkbox) {
+        const labelTextEl = document.getElementById('canceladaLabelText');
+        if (!labelTextEl) return true;
+
+        if (checkbox.checked) {
+            labelTextEl.textContent = 'Cancelado';
+            return true;
+        }
+
+        Swal.fire({
+            icon: 'warning',
+            title: '¿Quitar cancelación?',
+            text: 'Si confirma, al guardar la cotización se marcará como activa nuevamente.',
+            showCancelButton: true,
+            confirmButtonText: 'Sí, quitar',
+            cancelButtonText: 'Cancelar'
+        }).then((result) => {
+            if (!result.isConfirmed) {
+                // Si canceló el diálogo, revertimos visualmente el checkbox.
+                checkbox.checked = true;
+                labelTextEl.textContent = 'Cancelado';
+                return;
+            }
+        });
+
+        return true;
+    }
 </script>
 @endsection
 

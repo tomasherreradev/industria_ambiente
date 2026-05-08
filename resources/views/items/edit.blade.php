@@ -28,6 +28,8 @@
                     @enderror
                 </div>
 
+                @php $esAgrupadorItem = old('es_muestra', $item->es_muestra); @endphp
+                <div class="js-campos-no-agrupador {{ $esAgrupadorItem ? 'd-none' : '' }}">
                 <div class="mb-3">
                     <label for="limites_establecidos" class="form-label">Límites establecidos</label>
                     <input type="text" name="limites_establecidos" id="limites_establecidos" value="{{ old('limites_establecidos', $item->limites_establecidos) }}" class="form-control @error('limites_establecidos') is-invalid @enderror" placeholder="Ej: No especifica, 6,5 <3, etc">
@@ -50,6 +52,7 @@
                         <div class="text-danger small mt-1">{{ $message }}</div>
                     @enderror
                 </div>
+                </div>
 
                 <div class="mb-3">
                     <label for="matrices" class="form-label">Matrices</label>
@@ -69,7 +72,7 @@
                     @enderror
                 </div>
 
-                <div class="mb-3">
+                <div class="mb-3 js-campos-no-agrupador {{ $esAgrupadorItem ? 'd-none' : '' }}">
                     <label for="unidad_medida" class="form-label">Unidad de medida</label>
                     <input type="text" name="unidad_medida" id="unidad_medima" value="{{ old('unidad_medida', $item->unidad_medida) }}" class="form-control @error('unidad_medida') is-invalid @enderror" placeholder="Ej: mg/L, µg/L, etc">
                     @error('unidad_medida')
@@ -79,12 +82,62 @@
 
                 <div class="mb-3">
                     <label for="precio" class="form-label">Precio</label>
-                    <input type="number" name="precio" id="precio" value="{{ old('precio', $item->precio ? number_format($item->precio, 2, '.', '') : '') }}" step="0.01" min="0" class="form-control @error('precio') is-invalid @enderror" placeholder="Ej: 5000 o 5000.50">
-                    <small class="text-muted">Puedes ingresar valores con o sin decimales. Se guardará con 2 decimales.</small>
+                    <input type="number" name="precio" id="precio" value="{{ old('precio', $item->precio ? number_format($item->precio, 2, '.', '') : '') }}" step="any" min="0" class="form-control @error('precio') is-invalid @enderror" placeholder="Ej: 5000 o 5000.50">
+                    <small class="text-muted">Podés ingresar cualquier cantidad de decimales; al guardar se redondea a 2.</small>
                     @error('precio')
                         <div class="invalid-feedback">{{ $message }}</div>
                     @enderror
                 </div>
+
+                <div class="mb-3">
+                    <label for="nota_imprimible" class="form-label">Nota imprimible (por defecto)</label>
+                    <textarea name="nota_imprimible" id="nota_imprimible" rows="3" class="form-control @error('nota_imprimible') is-invalid @enderror" placeholder="Texto sugerido para la nota que verá el cliente en la cotización / PDF">{{ old('nota_imprimible', $item->nota_imprimible) }}</textarea>
+                    <small class="text-muted">Válido para componentes y agrupadores: se puede precargar al usar este ítem en cotizaciones.</small>
+                    @error('nota_imprimible')
+                        <div class="invalid-feedback">{{ $message }}</div>
+                    @enderror
+                </div>
+                <div class="mb-3">
+                    <label for="nota_interna" class="form-label">Nota interna (por defecto)</label>
+                    <textarea name="nota_interna" id="nota_interna" rows="3" class="form-control @error('nota_interna') is-invalid @enderror" placeholder="Texto de uso interno (no impreso en cotización al cliente)">{{ old('nota_interna', $item->nota_interna) }}</textarea>
+                    @error('nota_interna')
+                        <div class="invalid-feedback">{{ $message }}</div>
+                    @enderror
+                </div>
+
+                <div class="card mb-3 border-info">
+                    <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+                        <span class="fw-bold">Notas Predeterminadas para el Informe (PDF)</span>
+                        <button type="button" class="btn btn-sm btn-light" id="btn-agregar-nota">
+                            <i class="bi bi-plus-lg"></i> Agregar Nota
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div id="notas-predeterminadas-container">
+                            @php
+                                $notasPredeterminadas = old('notas_predeterminadas', $item->notasPredeterminadas->map(fn($n) => ['titulo' => $n->titulo, 'contenido' => $n->contenido])->toArray());
+                            @endphp
+                            @foreach($notasPredeterminadas as $index => $nota)
+                                <div class="nota-item mb-3 p-3 border rounded bg-light" data-index="{{ $index }}">
+                                    <div class="d-flex justify-content-between mb-2">
+                                        <h6 class="mb-0">Nota #<span class="nota-numero">{{ $index + 1 }}</span></h6>
+                                        <button type="button" class="btn btn-sm btn-outline-danger btn-quitar-nota">Eliminar</button>
+                                    </div>
+                                    <div class="mb-2">
+                                        <label class="form-label small">Título (opcional)</label>
+                                        <input type="text" name="notas_predeterminadas[{{ $index }}][titulo]" class="form-control form-control-sm" value="{{ $nota['titulo'] ?? '' }}">
+                                    </div>
+                                    <div>
+                                        <label class="form-label small">Contenido</label>
+                                        <textarea name="notas_predeterminadas[{{ $index }}][contenido]" rows="3" class="form-control form-control-sm" required>{{ $nota['contenido'] ?? '' }}</textarea>
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                        <small class="text-muted">Estas notas aparecerán automáticamente en el informe cuando se use esta determinación.</small>
+                    </div>
+                </div>
+
                 <div class="form-check form-switch mb-3">
                     <input class="form-check-input" type="checkbox" role="switch" id="es_muestra" name="es_muestra" value="1" {{ old('es_muestra', $item->es_muestra) ? 'checked' : '' }}>
                     <label class="form-check-label" for="es_muestra">Es agrupador</label>
@@ -149,6 +202,16 @@
                             <option value="{{ $componente->id }}"
                                 data-precio="{{ number_format($componente->precio ?? 0, 2, '.', '') }}"
                                 data-matriz="{{ $matrizDisplay }}"
+                                @php
+                                    $matricesCodigos = collect($componente->matrices->pluck('matriz_codigo')->all())
+                                        ->merge([(string) ($componente->matriz_codigo ?? '')])
+                                        ->map(fn($c) => trim((string) $c))
+                                        ->filter()
+                                        ->unique()
+                                        ->values()
+                                        ->all();
+                                @endphp
+                                data-matrices='@json($matricesCodigos)'
                                 data-metodo="{{ $metodoDisplay }}"
                                 data-limites_establecidos="{{ $componente->limites_establecidos ?? 'Sin límites' }}"
                                 data-unidad="{{ $componente->unidad_medida ?? 's/u' }}"
@@ -161,6 +224,15 @@
                     @error('componentes')
                         <div class="text-danger small mt-1">{{ $message }}</div>
                     @enderror
+
+                    <div class="mt-3">
+                        <div class="d-flex align-items-center justify-content-between">
+                            <div class="fw-semibold">Orden de componentes</div>
+                            <div class="text-muted small">Arrastrá y soltá para reordenar</div>
+                        </div>
+                        <ul class="list-group mt-2" id="componentes_orden_lista"></ul>
+                        <div id="componentes_orden_inputs"></div>
+                    </div>
                 </div>
 
                 <div class="d-flex gap-2 align-items-center">
@@ -218,6 +290,10 @@
         const agrupadorCheck = document.getElementById('es_muestra');
         const wrapper = document.getElementById('componentes_wrapper');
         const select = $('#componentes');
+        const ordenLista = document.getElementById('componentes_orden_lista');
+        const ordenInputs = document.getElementById('componentes_orden_inputs');
+        const ordenState = [];
+        const initialOrder = @json(old('componentes_orden', $item->componentesAsociados->pluck('id')->values()->all()));
 
         function formatComponenteOption(option) {
             if (!option.id) {
@@ -263,9 +339,139 @@
                 placeholder: select.data('placeholder') || 'Selecciona los componentes',
                 templateResult: formatComponenteOption,
                 templateSelection: formatComponenteSelection,
+                matcher: function(params, data) {
+                    // Mantener placeholder/grupos
+                    if (!data.id || !data.element) {
+                        return data;
+                    }
+
+                    // Filtrar por matrices del agrupador (si hay seleccionadas)
+                    const matricesSel = getSelectedMatrices();
+                    const okMatriz = componenteComparteMatriz(data.element, matricesSel);
+                    if (!okMatriz) {
+                        return null;
+                    }
+
+                    // Búsqueda por texto (comportamiento default)
+                    const term = (params.term || '').toString().trim().toLowerCase();
+                    if (!term) return data;
+                    const text = (data.text || '').toString().toLowerCase();
+                    return text.includes(term) ? data : null;
+                },
                 escapeMarkup: function(markup) {
                     return markup;
                 }
+            });
+        }
+
+        function getSelectedIds() {
+            const val = select.val() || [];
+            return val.map(v => parseInt(v, 10)).filter(n => Number.isFinite(n));
+        }
+
+        function ensureOrdenState(selectedIds) {
+            const selectedSet = new Set(selectedIds);
+
+            for (let i = ordenState.length - 1; i >= 0; i--) {
+                if (!selectedSet.has(ordenState[i])) {
+                    ordenState.splice(i, 1);
+                }
+            }
+
+            selectedIds.forEach(id => {
+                if (!ordenState.includes(id)) {
+                    ordenState.push(id);
+                }
+            });
+        }
+
+        function buildOrdenUI() {
+            if (!ordenLista || !ordenInputs) return;
+
+            ordenLista.innerHTML = '';
+            ordenInputs.innerHTML = '';
+
+            ordenState.forEach(id => {
+                const opt = select.find('option[value="' + id + '"]');
+                const text = opt.length ? opt.text().trim() : ('ID ' + id);
+
+                const li = document.createElement('li');
+                li.className = 'list-group-item d-flex align-items-center justify-content-between componentes-orden-item';
+                li.dataset.id = String(id);
+                li.innerHTML = `
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="componentes-orden-handle" title="Arrastrar">≡</span>
+                        <span>${text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span>
+                    </div>
+                `;
+                ordenLista.appendChild(li);
+
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'componentes_orden[]';
+                input.value = String(id);
+                ordenInputs.appendChild(input);
+            });
+        }
+
+        function syncOrdenFromSelect() {
+            if (!select.length) return;
+            const selectedIds = getSelectedIds();
+            ensureOrdenState(selectedIds);
+            buildOrdenUI();
+        }
+
+        function applyInitialOrder() {
+            if (!Array.isArray(initialOrder) || !initialOrder.length) return;
+            const selected = getSelectedIds();
+            const selectedSet = new Set(selected);
+            const ordered = initialOrder
+                .map(v => parseInt(v, 10))
+                .filter(n => Number.isFinite(n) && selectedSet.has(n));
+
+            // Seed state con el orden guardado y luego completar con nuevos
+            ordenState.length = 0;
+            ordered.forEach(id => ordenState.push(id));
+            ensureOrdenState(selected);
+            buildOrdenUI();
+        }
+
+        if (select.length) {
+            select.on('change', function() {
+                syncOrdenFromSelect();
+            });
+        }
+
+        // Drag & drop del orden
+        if (ordenLista) {
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js';
+            script.onload = function() {
+                Sortable.create(ordenLista, {
+                    animation: 150,
+                    handle: '.componentes-orden-handle',
+                    onEnd: function() {
+                        const newOrder = Array.from(ordenLista.querySelectorAll('li'))
+                            .map(li => parseInt(li.dataset.id, 10))
+                            .filter(n => Number.isFinite(n));
+                        ordenState.length = 0;
+                        newOrder.forEach(id => ordenState.push(id));
+                        buildOrdenUI();
+                    }
+                });
+            };
+            document.head.appendChild(script);
+
+            ordenLista.addEventListener('click', function(e) {
+                const btn = e.target.closest('.js-orden-quitar');
+                if (!btn) return;
+                const li = btn.closest('li');
+                if (!li) return;
+                const id = parseInt(li.dataset.id, 10);
+                if (!Number.isFinite(id)) return;
+
+                const current = getSelectedIds().filter(x => x !== id).map(String);
+                select.val(current).trigger('change');
             });
         }
 
@@ -278,17 +484,68 @@
             });
         }
 
+        function getSelectedMatrices() {
+            const val = selectMatrices.length ? (selectMatrices.val() || []) : [];
+            return val.map(v => (v || '').toString().trim()).filter(Boolean);
+        }
+
+        function componenteComparteMatriz(optionEl, matricesSeleccionadas) {
+            if (!optionEl) return false;
+            if (!matricesSeleccionadas || matricesSeleccionadas.length === 0) return true;
+            const raw = optionEl.getAttribute('data-matrices') || '[]';
+            let mats = [];
+            try { mats = JSON.parse(raw) || []; } catch (e) { mats = []; }
+            const set = new Set(mats.map(m => (m || '').toString().trim()).filter(Boolean));
+            return matricesSeleccionadas.some(m => set.has(m));
+        }
+
+        function filtrarComponentesPorMatriz() {
+            if (!select.length) return;
+            const isAgrupador = agrupadorCheck && agrupadorCheck.checked;
+            if (!isAgrupador) return;
+
+            const matricesSel = getSelectedMatrices();
+            const selectedIds = (select.val() || []).map(v => v.toString());
+            const toUnselect = [];
+
+            selectedIds.forEach(id => {
+                const opt = select.find('option[value="' + id + '"]')[0];
+                if (!opt) return;
+                if (!componenteComparteMatriz(opt, matricesSel)) {
+                    toUnselect.push(id);
+                }
+            });
+
+            if (toUnselect.length) {
+                const remaining = selectedIds.filter(id => !toUnselect.includes(id));
+                select.val(remaining).trigger('change');
+            } else {
+                // Forzar refresco de resultados / chips
+                select.trigger('change.select2');
+            }
+        }
+
         const agregableWrapper = document.getElementById('agregable_a_comps_wrapper');
 
-        function toggleComponentes() {
-            if (!wrapper) return;
+        function toggleCamposNoAgrupador() {
             const isAgrupador = agrupadorCheck && agrupadorCheck.checked;
+            document.querySelectorAll('.js-campos-no-agrupador').forEach(function(el) {
+                el.classList.toggle('d-none', !!isAgrupador);
+            });
+        }
+
+        function toggleComponentes() {
+            const isAgrupador = agrupadorCheck && agrupadorCheck.checked;
+            toggleCamposNoAgrupador();
+            if (!wrapper) return;
             
             if (isAgrupador) {
                 wrapper.classList.remove('d-none');
                 if (agregableWrapper) {
                     agregableWrapper.classList.remove('d-none');
                 }
+                syncOrdenFromSelect();
+                filtrarComponentesPorMatriz();
             } else {
                 wrapper.classList.add('d-none');
                 if (agregableWrapper) {
@@ -304,7 +561,59 @@
             agrupadorCheck.addEventListener('change', toggleComponentes);
         }
 
+        if (selectMatrices.length) {
+            selectMatrices.on('change', function() {
+                filtrarComponentesPorMatriz();
+            });
+        }
+
         toggleComponentes();
+        applyInitialOrder();
+
+        // Lógica para notas predeterminadas
+        const container = document.getElementById('notas-predeterminadas-container');
+        const btnAgregar = document.getElementById('btn-agregar-nota');
+        let notaIndex = {{ count($notasPredeterminadas ?? []) }};
+
+        if (btnAgregar && container) {
+            btnAgregar.addEventListener('click', function() {
+                const div = document.createElement('div');
+                div.className = 'nota-item mb-3 p-3 border rounded bg-light';
+                div.dataset.index = notaIndex;
+                div.innerHTML = `
+                    <div class="d-flex justify-content-between mb-2">
+                        <h6 class="mb-0">Nota #<span class="nota-numero">${notaIndex + 1}</span></h6>
+                        <button type="button" class="btn btn-sm btn-outline-danger btn-quitar-nota">Eliminar</button>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small">Título (opcional)</label>
+                        <input type="text" name="notas_predeterminadas[${notaIndex}][titulo]" class="form-control form-control-sm">
+                    </div>
+                    <div>
+                        <label class="form-label small">Contenido</label>
+                        <textarea name="notas_predeterminadas[${notaIndex}][contenido]" rows="3" class="form-control form-control-sm" required></textarea>
+                    </div>
+                `;
+                container.appendChild(div);
+                notaIndex++;
+            });
+
+            container.addEventListener('click', function(e) {
+                if (e.target.classList.contains('btn-quitar-nota')) {
+                    e.target.closest('.nota-item').remove();
+                    actualizarNumeracionNotas();
+                }
+            });
+        }
+
+        function actualizarNumeracionNotas() {
+            const items = container.querySelectorAll('.nota-item');
+            items.forEach((item, idx) => {
+                item.querySelector('.nota-numero').textContent = idx + 1;
+                // Opcional: renombrar los inputs para mantener consistencia, 
+                // aunque PHP los recibirá igual si son desordenados si tienen el índice correcto.
+            });
+        }
     });
     </script>
 
@@ -329,6 +638,19 @@
     }
     .select2-results__option--highlighted .componente-option-item .text-muted {
         color: rgba(255, 255, 255, 0.8);
+    }
+
+    .componentes-orden-handle {
+        cursor: grab;
+        user-select: none;
+        font-weight: 700;
+        color: #6c757d;
+        width: 1.25rem;
+        display: inline-flex;
+        justify-content: center;
+    }
+    .componentes-orden-item:active .componentes-orden-handle {
+        cursor: grabbing;
     }
     </style>
 </div>

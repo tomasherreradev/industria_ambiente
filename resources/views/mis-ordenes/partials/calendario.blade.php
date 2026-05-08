@@ -111,6 +111,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     title: `
                         <strong>${info.event.extendedProps.empresa}</strong><br>
                         ${info.event.extendedProps.descripcion}<br>
+                        <small>OT: ${info.event.extendedProps.otn != null && info.event.extendedProps.otn !== '' ? info.event.extendedProps.otn : '—'}</small><br>
                         <small>Estado: ${info.event.extendedProps.estado}</small>
                         ${info.event.extendedProps.analisis_count > 0 ? 
                           `<br><small>Análisis: ${info.event.extendedProps.analisis_count}</small>` : ''}

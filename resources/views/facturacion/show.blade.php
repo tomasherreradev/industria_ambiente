@@ -79,7 +79,7 @@
             padding: 0.3rem 0.5rem;
             border-radius: 4px;
         }
-        .facturar-btn {
+        .facturar-btn, .facturar-btn-group {
             padding: 0.5rem 1rem;
             font-size: 0.9rem;
             border-radius: 20px;
@@ -87,6 +87,13 @@
             position: fixed;
             bottom: 20px;
             right: 20px;
+            z-index: 1000;
+        }
+        .facturar-btn-blocked {
+            padding: 0.5rem 1rem;
+            font-size: 0.9rem;
+            border-radius: 20px;
+            width: 100%;
         }
         .facturar-btn:disabled {
             opacity: 0.5;
@@ -143,6 +150,7 @@
 <div class="container">
     <a href="{{ url('/facturacion') }}" class="back-btn">← Volver a Facturación</a>
     <h2 class="title">Cotización <span class="text-primary">{{ $cotizacion->coti_num }}</span></h2>
+    <p class="text-muted mb-3">Divisa: {{ $cotizacion->divisa_codigo ?? 'PES' }}</p>
 
     @if (session('success'))
         <div class="alert alert-success">{{ session('success') }}</div>
@@ -152,10 +160,74 @@
         <div class="alert alert-danger">{{ session('error') }}</div>
     @endif
 
+    @isset($refsFacturacion)
+        <div class="card border-secondary mb-4 shadow-sm">
+            <div class="card-header bg-light py-2 d-flex flex-wrap align-items-center justify-content-between gap-2">
+                <div>
+                    <span class="fw-semibold mb-0">Referencias para facturación</span>
+                    <small class="text-muted ms-2">Mismos datos que se imprimen en la factura</small>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modalEditarRefs">
+                    <i class="fas fa-edit me-1"></i>Editar Referencias
+                </button>
+            </div>
+            <div class="card-body py-3">
+                @if (empty($refsFacturacion['puede_facturar']) && !empty($refsFacturacion['mensaje_bloqueo']))
+                    <div class="alert alert-warning py-2 mb-3">{{ $refsFacturacion['mensaje_bloqueo'] }}</div>
+                @endif
+                <div class="row g-3 small">
+                    <div class="col-md-4">
+                        <span class="text-muted d-block text-uppercase" style="font-size: 0.7rem; letter-spacing: 0.06em;">Remito (1.ª línea)</span>
+                        <span class="fw-semibold">{{ ($refsFacturacion['remito'] ?? '') !== '' ? $refsFacturacion['remito'] : '—' }}</span>
+                    </div>
+                    <div class="col-md-5">
+                        <span class="text-muted d-block text-uppercase" style="font-size: 0.7rem; letter-spacing: 0.06em;">Orden de compra (O.C.)</span>
+                        <span class="fw-semibold">{{ ($refsFacturacion['oc'] ?? '') !== '' ? $refsFacturacion['oc'] : '—' }}</span>
+                        @if (!empty($refsFacturacion['oc_obligatorio']))
+                            <span class="badge bg-dark ms-1">Obligatoria para facturar</span>
+                        @endif
+                    </div>
+                </div>
+                @php $filasRefs = $refsFacturacion['filas'] ?? []; @endphp
+                @if (count($filasRefs) > 0)
+                    <hr class="my-3">
+                    <span class="text-muted d-block mb-2 small">Referencias adicionales (hasta 4)</span>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered align-middle mb-0 bg-white">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width:110px;">Tipo</th>
+                                    <th>Valor</th>
+                                    <th style="width:140px;">Oblig. facturar</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach ($filasRefs as $fila)
+                                    <tr>
+                                        <td class="fw-medium">{{ $fila['tipo'] ?? '' }}</td>
+                                        <td>{{ ($fila['valor'] ?? '') !== '' ? $fila['valor'] : '—' }}</td>
+                                        <td>
+                                            @if (!empty($fila['obligatorio_factura']))
+                                                <span class="badge bg-warning text-dark">Sí</span>
+                                            @else
+                                                <span class="text-muted">No</span>
+                                            @endif
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @endif
+            </div>
+        </div>
+    @endisset
+
     @include('cotizaciones.info')
 
     @php
-        $formatCurrency = fn($value) => '$' . number_format(($value ?? 0), 2, ',', '.');
+        $divisaCodigo = $cotizacion->divisa_codigo ?? 'PES';
+        $formatCurrency = fn($value) => $divisaCodigo . ' ' . number_format(($value ?? 0), 2, ',', '.');
         $formatPercent = fn($value) => number_format(($value ?? 0), 2, ',', '.') . '%';
     @endphp
 
@@ -206,7 +278,123 @@
         </div>
     @endif
 
-    <div class="samples">
+    @if(isset($cuotasInfo))
+        @php
+            $mesesEs = [
+                1 => 'Enero', 2 => 'Febrero', 3 => 'Marzo', 4 => 'Abril',
+                5 => 'Mayo', 6 => 'Junio', 7 => 'Julio', 8 => 'Agosto',
+                9 => 'Septiembre', 10 => 'Octubre', 11 => 'Noviembre', 12 => 'Diciembre',
+            ];
+            $fechaBase = $cuotasInfo['fecha_inicio'] instanceof \Carbon\Carbon
+                ? $cuotasInfo['fecha_inicio']
+                : \Carbon\Carbon::parse($cuotasInfo['fecha_inicio']);
+        @endphp
+        <div class="card mb-4 border-info shadow-sm">
+            <div class="card-header bg-info text-white py-2">
+                <h5 class="mb-0"><i class="fas fa-calendar-alt me-2"></i>Facturación por Cuotas</h5>
+            </div>
+            <div class="card-body">
+                @php
+                    $tieneInteres = ($cuotasInfo['interes'] ?? 0) > 0;
+                @endphp
+                <div class="row g-3 mb-3 small">
+                    <div class="col-auto">
+                        <span class="text-muted">Cuotas:</span>
+                        <strong class="ms-1">{{ $cuotasInfo['total'] }}</strong>
+                        <span class="text-muted ms-2">({{ $cuotasInfo['facturadas'] }} facturadas)</span>
+                    </div>
+                    <div class="col-auto">
+                        <span class="text-muted">Monto base:</span>
+                        <strong class="ms-1">{{ $formatCurrency($cuotasInfo['monto_base']) }}</strong>
+                    </div>
+                    @if($tieneInteres)
+                    <div class="col-auto">
+                        <span class="text-muted">Interés:</span>
+                        <strong class="ms-1 text-warning">{{ number_format($cuotasInfo['interes'], 2, ',', '.') }}%</strong>
+                    </div>
+                    <div class="col-auto">
+                        <span class="text-muted">Total con interés:</span>
+                        <strong class="ms-1 text-success">{{ $formatCurrency($cuotasInfo['monto_con_interes']) }}</strong>
+                    </div>
+                    @endif
+                    <div class="col-auto">
+                        <span class="text-muted">Valor por cuota:</span>
+                        <strong class="ms-1">{{ $formatCurrency($cuotasInfo['monto_indiv']) }}</strong>
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 50px;">Sel.</th>
+                                <th>Cuota</th>
+                                <th>Período</th>
+                                <th>Importe</th>
+                                <th>Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @php $hoyInicio = \Carbon\Carbon::now()->startOfMonth(); @endphp
+                            @for($i = 1; $i <= $cuotasInfo['total']; $i++)
+                                @php
+                                    $yaFacturada  = in_array($i, $cuotasInfo['billed_list'] ?? []);
+                                    $fechaCuota   = $fechaBase->copy()->addMonths($i - 1);
+                                    $nombreMes    = $mesesEs[(int) $fechaCuota->format('n')];
+                                    $anio         = $fechaCuota->format('Y');
+                                    // Futura = el mes de la cuota todavía no llegó
+                                    $esFutura     = $fechaCuota->startOfMonth()->gt($hoyInicio);
+                                    $deshabilitada = $yaFacturada || $esFutura;
+                                @endphp
+                                <tr class="{{ $yaFacturada ? 'table-light text-muted' : ($esFutura ? 'table-light' : '') }}">
+                                    <td>
+                                        <input 
+                                            type="checkbox" 
+                                            class="checkbox cuota-checkbox" 
+                                            name="cuotas[]" 
+                                            value="{{ $i }}"
+                                            @if($deshabilitada) disabled @endif
+                                            onchange="handleCuotaChange(this)"
+                                        >
+                                    </td>
+                                    <td>
+                                        <span class="fw-semibold">Cuota {{ $i }} de {{ $cuotasInfo['total'] }}</span>
+                                        @if($cuotasInfo['descripcion'])
+                                            <small class="text-muted d-block">{{ $cuotasInfo['descripcion'] }}</small>
+                                        @endif
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-secondary fs-6">{{ $nombreMes }} {{ $anio }}</span>
+                                    </td>
+                                    <td class="fw-bold">{{ $formatCurrency($cuotasInfo['monto_indiv']) }}</td>
+                                    <td>
+                                        @if($yaFacturada)
+                                            <span class="badge bg-success"><i class="fas fa-check me-1"></i>Facturada</span>
+                                        @elseif($esFutura)
+                                            <span class="badge bg-light text-secondary border" title="Solo se puede facturar el mes actual o meses anteriores">
+                                                <i class="fas fa-lock me-1"></i>No disponible aún
+                                            </span>
+                                        @else
+                                            <span class="badge bg-warning text-dark">Pendiente</span>
+                                        @endif
+                                    </td>
+                                </tr>
+                            @endfor
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    @endif
+
+        @if($cotizacion->coti_cuotas)
+            <div class="alert alert-info border-info mb-4">
+                <i class="fas fa-info-circle me-2"></i>
+                <strong>Atención:</strong> Esta cotización está configurada para <strong>facturación por cuotas</strong>. 
+                Utilice la sección superior para seleccionar las cuotas a facturar. Las muestras y análisis individuales están deshabilitados.
+            </div>
+        @endif
+
         @if($tareas->isEmpty())
             <div class="alert alert-warning">No hay muestras registradas.</div>
         @else
@@ -230,7 +418,7 @@
                                     id="sample-{{ $instancia->id }}"
                                     data-instancia="{{ $instancia->id }}"
                                     onchange="toggleAllTasks(this, {{ $instancia->id }})"
-                                    @if($facturada) disabled @endif
+                                    @if($facturada || $cotizacion->coti_cuotas) disabled @endif
                                 >
                                 <label class="sample-label" for="sample-{{ $instancia->id }}">
                                     Muestra (#{{$instancia->instance_number }})
@@ -335,7 +523,7 @@
                                                             data-instancia="{{ $instancia->id }}"
                                                             data-analisis-id="{{ $analisis->instancia->id }}"
                                                             onchange="checkSampleStatus({{ $instancia->id }})"
-                                                            @if($analisis->instancia->facturado) disabled @endif
+                                                            @if($analisis->instancia->facturado || $cotizacion->coti_cuotas) disabled @endif
                                                         >
                                                         <h6 class="mb-0 ms-2">{{ $analisis->instancia->cotio_descripcion ?? 'Sin descripción' }}</h6>
                                                         @if($analisis->instancia->facturado)
@@ -391,10 +579,168 @@
     <form id="facturarForm" action="{{ route('facturacion.facturar', ['cotizacion' => $cotizacion->coti_num]) }}" method="POST">
         @csrf
         <input type="hidden" name="cotizacion_id" value="{{ $cotizacion->coti_num }}">
-        <button id="btnFacturar" type="submit" class="btn btn-primary facturar-btn" disabled>
-            <i class="fas fa-receipt me-1"></i>Facturar
-        </button>
+        
+        <div class="mb-3 container">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <label for="observaciones" class="form-label fw-bold mb-0">Notas en la Factura:</label>
+                <button type="button" id="btnGuardarNotas" class="btn btn-sm btn-outline-success">
+                    <i class="fas fa-save me-1"></i>Guardar Notas
+                </button>
+            </div>
+            <textarea name="observaciones" id="observaciones" class="form-control" rows="3" placeholder="Escribe aquí las notas que aparecerán en la factura...">{{ $cotizacion->coti_notas_facturacion }}</textarea>
+        </div>
+
+        @if (!empty($refsFacturacion['puede_facturar']))
+            <button id="btnFacturar" type="submit" class="btn btn-primary facturar-btn" disabled>
+                <i class="fas fa-receipt me-1"></i>Facturar
+            </button>
+        @else
+            <div class="d-flex flex-column align-items-end facturar-btn-group">
+                <button type="button" class="btn btn-outline-danger mb-2" data-bs-toggle="modal" data-bs-target="#modalEditarRefs">
+                    <i class="fas fa-plus me-1"></i>Cargar O.C
+                </button>
+                <button id="btnFacturar" type="button" class="btn btn-secondary facturar-btn-blocked" onclick="alert('{{ $refsFacturacion['mensaje_bloqueo'] }}')">
+                    <i class="fas fa-receipt me-1"></i>Facturar (Bloqueado)
+                </button>
+            </div>
+        @endif
     </form>
+    
+    <!-- Modal Editar Referencias -->
+    <div class="modal fade" id="modalEditarRefs" tabindex="-1" aria-labelledby="modalEditarRefsLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="modalEditarRefsLabel">Editar Referencias de Facturación</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="formEditarRefs">
+                        <div class="mb-3">
+                            <label for="modal_coti_oc_referencia" class="form-label">Orden de Compra (O.C.)</label>
+                            <input type="text" class="form-control" id="modal_coti_oc_referencia" name="coti_oc_referencia" value="{{ $refsFacturacion['oc'] ?? '' }}">
+                            @if (!empty($refsFacturacion['oc_obligatorio']))
+                                <div class="form-text text-danger">Esta referencia es obligatoria para facturar.</div>
+                            @endif
+                        </div>
+
+                        <hr class="my-4">
+                        <div id="modalRefsContainer">
+                            @foreach ($filasRefs as $idx => $fila)
+                                <div class="row g-2 mb-2 ref-row">
+                                    <div class="col-md-4">
+                                        <label class="small text-muted">Tipo</label>
+                                        <input type="text" class="form-control form-control-sm ref-tipo" value="{{ $fila['tipo'] ?? '' }}" readonly>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="small text-muted">Valor</label>
+                                        <input type="text" class="form-control form-control-sm ref-valor" value="{{ $fila['valor'] ?? '' }}">
+                                        @if (!empty($fila['obligatorio_factura']))
+                                            <div class="form-text text-danger mt-0" style="font-size: 0.7rem;">Obligatoria</div>
+                                        @endif
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                        <input type="hidden" name="coti_refs_facturacion_json" id="modal_coti_refs_facturacion_json">
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-primary" id="btnGuardarRefs">Guardar Cambios</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('btnGuardarNotas').addEventListener('click', function() {
+            const observations = document.getElementById('observaciones').value;
+            const btn = this;
+            const originalHtml = btn.innerHTML;
+            
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Guardando...';
+
+            fetch("{{ route('facturacion.guardar-notas', ['cotizacion' => $cotizacion->coti_num]) }}", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                },
+                body: JSON.stringify({ observaciones: observations })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    btn.classList.remove('btn-outline-success');
+                    btn.classList.add('btn-success');
+                    btn.innerHTML = '<i class="fas fa-check me-1"></i>Guardado';
+                    setTimeout(() => {
+                        btn.classList.remove('btn-success');
+                        btn.classList.add('btn-outline-success');
+                        btn.innerHTML = originalHtml;
+                        btn.disabled = false;
+                    }, 2000);
+                } else {
+                    alert('Error: ' + data.message);
+                    btn.innerHTML = originalHtml;
+                    btn.disabled = false;
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error al conectar con el servidor');
+                btn.innerHTML = originalHtml;
+                btn.disabled = false;
+            });
+        });
+
+        document.getElementById('btnGuardarRefs').addEventListener('click', function() {
+            const oc = document.getElementById('modal_coti_oc_referencia').value;
+            const rows = [];
+            document.querySelectorAll('#modalRefsContainer .ref-row').forEach(row => {
+                rows.push({
+                    tipo: row.querySelector('.ref-tipo').value,
+                    valor: row.querySelector('.ref-valor').value,
+                    obligatorio_factura: row.innerHTML.includes('Obligatoria')
+                });
+            });
+
+            const btn = this;
+            const originalHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Guardando...';
+
+            fetch("{{ route('facturacion.update-referencias', ['cotizacion' => $cotizacion->coti_num]) }}", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                },
+                body: JSON.stringify({
+                    coti_oc_referencia: oc,
+                    coti_refs_facturacion_json: JSON.stringify(rows)
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    alert('Error: ' + data.message);
+                    btn.innerHTML = originalHtml;
+                    btn.disabled = false;
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error al conectar con el servidor');
+                btn.innerHTML = originalHtml;
+                btn.disabled = false;
+            });
+        });
+    </script>
 </div>
 
 <script>
@@ -409,7 +755,24 @@
         icon.textContent = content.classList.contains('open') ? '▼' : '▶';
     }
 
+    function handleCuotaChange(checkbox) {
+        if (checkbox.checked) {
+            // Deseleccionar todas las muestras y análisis
+            document.querySelectorAll('.sample-checkbox, .analysis-checkbox').forEach(cb => {
+                cb.checked = false;
+            });
+        }
+        updateFacturarButton();
+        updateHiddenInputs();
+    }
+
     function toggleAllTasks(checkbox, instanciaId) {
+        if (checkbox.checked) {
+            // Deseleccionar todas las cuotas
+            document.querySelectorAll('.cuota-checkbox').forEach(cb => {
+                cb.checked = false;
+            });
+        }
         const taskCheckboxes = document.querySelectorAll(`.analysis-checkbox[data-instancia="${instanciaId}"]:not(:disabled)`);
         taskCheckboxes.forEach(taskCheckbox => {
             // Solo marcar/desmarcar análisis que NO están facturados (no disabled)
@@ -421,6 +784,14 @@
 
     function checkSampleStatus(instanciaId) {
         const sampleCheckbox = document.getElementById(`sample-${instanciaId}`);
+        
+        if (sampleCheckbox.checked) {
+             // Deseleccionar todas las cuotas
+             document.querySelectorAll('.cuota-checkbox').forEach(cb => {
+                cb.checked = false;
+            });
+        }
+
         // Solo considerar análisis NO facturados (no disabled)
         const taskCheckboxes = document.querySelectorAll(`.analysis-checkbox[data-instancia="${instanciaId}"]:not(:disabled)`);
         const anyChecked = Array.from(taskCheckboxes).some(cb => cb.checked);
@@ -436,8 +807,10 @@
 
     function updateFacturarButton() {
         const btnFacturar = document.getElementById('btnFacturar');
+        if (!btnFacturar || btnFacturar.type === 'button') return; // Bloqueado por backend
+
         // Solo considerar checkboxes que no están deshabilitados
-        const anyChecked = document.querySelectorAll('.sample-checkbox:checked:not(:disabled), .analysis-checkbox:checked:not(:disabled)').length > 0;
+        const anyChecked = document.querySelectorAll('.sample-checkbox:checked:not(:disabled), .analysis-checkbox:checked:not(:disabled), .cuota-checkbox:checked:not(:disabled)').length > 0;
         btnFacturar.disabled = !anyChecked;
         btnFacturar.classList.toggle('btn-primary', anyChecked);
         btnFacturar.classList.toggle('btn-secondary', !anyChecked);
@@ -445,7 +818,16 @@
 
     function updateHiddenInputs() {
         const form = document.getElementById('facturarForm');
-        form.querySelectorAll('input[name="muestras[]"], input[name="analisis[]"]').forEach(input => input.remove());
+        form.querySelectorAll('input[name="muestras[]"], input[name="analisis[]"], input[name="cuotas[]"]').forEach(input => input.remove());
+
+        // Recopilar cuotas seleccionadas
+        document.querySelectorAll('.cuota-checkbox:checked:not(:disabled)').forEach(checkbox => {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'cuotas[]';
+            input.value = checkbox.value;
+            form.appendChild(input);
+        });
 
         const selectedMuestras = new Set();
         const analisisDeMuestrasSeleccionadas = new Set();
@@ -518,6 +900,9 @@
         });
         document.querySelectorAll('.analysis-checkbox').forEach(checkbox => {
             checkbox.addEventListener('change', () => checkSampleStatus(checkbox.dataset.instancia));
+        });
+        document.querySelectorAll('.cuota-checkbox').forEach(checkbox => {
+            checkbox.addEventListener('change', () => handleCuotaChange(checkbox));
         });
         
         // Verificar estado inicial de cada muestra

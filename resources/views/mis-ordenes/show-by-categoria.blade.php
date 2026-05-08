@@ -1,19 +1,43 @@
 @extends('layouts.app')
-<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 
 {{-- @dd($instancia); --}}
 
 @section('content')
+@php
+    $normalizeStr = function($str) {
+        $str = mb_strtolower($str, 'UTF-8');
+        // Quitar paréntesis y su contenido (ej: "Dióxido de Azufre (SO2)" -> "dióxido de azufre")
+        $str = preg_replace('/\s*\(.*\)\s*/u', '', $str);
+        // Quitar acentos básicos
+        $search  = ['á', 'é', 'í', 'ó', 'ú', 'ñ', 'ü'];
+        $replace = ['a', 'e', 'i', 'o', 'u', 'n', 'u'];
+        $str = str_replace($search, $replace, $str);
+        // Quitar cualquier caracter que no sea letra o número para máxima compatibilidad
+        $str = preg_replace('/[^a-z0-9]/u', '', $str);
+        return trim($str);
+    };
+
+    $medicionesMapa = $instancia->valoresVariables->mapWithKeys(function($v) use ($normalizeStr) {
+        return [$normalizeStr($v->variable) => $v->valor];
+    });
+
+    $analisisNormSet = $analisis->map(function($a) use ($normalizeStr) {
+        return $normalizeStr($a->cotio_descripcion);
+    })->filter()->unique()->values()->toArray();
+@endphp
 <div class="container py-4">
     <!-- Encabezado -->
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1 class="mb-0">
             Detalle de Muestra
-            @if($instanceNumber)
-                <span class="fs-5 text-muted">(Muestra #{{ $instancia->instance_number }})</span>
+            @if($instanceNumber && $instancia)
+                <span class="fs-5 text-muted">(Muestra #{{ $instancia->instance_number }} · OT {{ $instancia->otn ?? '—' }})</span>
+            @elseif($instanceNumber)
+                <span class="fs-5 text-muted">(Muestra #{{ $instanceNumber }})</span>
             @endif
         </h1>
-        <a href="{{ url()->previous() }}" class="btn btn-outline-secondary">
+        {{-- Tras guardar + reload, url()->previous() suele ser la misma página; el listado estable es mis-ordenes --}}
+        <a href="{{ route('mis-ordenes') }}" class="btn btn-outline-secondary">
             <i class="fas fa-arrow-left"></i> Volver
         </a>
     </div>
@@ -21,6 +45,17 @@
     @if(session('success'))
         <div class="alert alert-success alert-dismissible fade show" role="alert">
             {{ session('success') }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    @endif
+
+    @if(isset($instancia) && $instancia && $errors->any())
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            <ul class="mb-0">
+                @foreach($errors->all() as $err)
+                    <li>{{ $err }}</li>
+                @endforeach
+            </ul>
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
     @endif
@@ -76,6 +111,7 @@
             <div class="row">
                 <div class="col-md-4">
                     <p><strong>Cotización:</strong> {{ $instancia->cotio_numcoti ?? 'N/A' }}</p>
+                    <p><strong>N° OT:</strong> {{ $instancia->otn ?? '—' }}</p>
                 </div>
                 <div class="col-md-4">
                     <p><strong>Fecha Inicio:</strong> 
@@ -101,6 +137,25 @@
             </div>
             
             @php
+                $leyNormativa = $instancia->muestra->leyNormativa ?? null;
+                $variablesLey = $leyNormativa ? $leyNormativa->variables : collect();
+
+                // Crear un mapa de Descripción -> Variable de la Ley
+                // Esto es necesario porque cotio no guarda el ID del catálogo (cotio_item_id),
+                // solo la descripción y el código de producto (que a veces es genérico o de ERP).
+                $mapVariablePorDescripcion = collect();
+                if ($variablesLey->isNotEmpty()) {
+                    $catalogIdsEnLey = $variablesLey->pluck('cotio_item_id')->filter()->unique()->toArray();
+                    $itemsCatalogo = \App\Models\CotioItems::whereIn('id', $catalogIdsEnLey)->get();
+                    
+                    foreach ($itemsCatalogo as $itemCat) {
+                        $variable = $variablesLey->firstWhere('cotio_item_id', $itemCat->id);
+                        if ($variable) {
+                            $mapVariablePorDescripcion[trim(strtolower($itemCat->cotio_descripcion))] = $variable;
+                        }
+                    }
+                }
+
                 // Parsear notas internas desde la categoría (ensayo)
                 $notasInternas = [];
                 
@@ -242,9 +297,17 @@
                                 </thead>
                                 <tbody>
                                     @foreach($instancia->valoresVariables as $valorVariable)
-                                        <tr>
-                                            <td>{{ $valorVariable->variable }}</td>
-                                            <td>{{ $valorVariable->valor }}</td>
+                                        @php
+                                            $isUsed = in_array($normalizeStr($valorVariable->variable), $analisisNormSet);
+                                        @endphp
+                                        <tr @if($isUsed) class="table-info" title="Este valor se utiliza en los resultados de análisis" @endif>
+                                            <td>
+                                                {{ $valorVariable->variable }}
+                                                @if($isUsed)
+                                                    <i class="fas fa-check-circle text-info ms-1" style="font-size: 0.8rem;"></i>
+                                                @endif
+                                            </td>
+                                            <td @if($isUsed) class="fw-bold text-info" @endif>{{ $valorVariable->valor }}</td>
                                         </tr>
                                     @endforeach
                                 </tbody>
@@ -279,10 +342,10 @@
                                 <button class="accordion-button collapsed bg-light" type="button" data-bs-toggle="collapse" 
                                     data-bs-target="#collapse{{ $item->cotio_subitem }}" aria-expanded="false" 
                                     aria-controls="collapse{{ $item->cotio_subitem }}">
-                                    <div class="d-flex justify-content-between w-100 pe-3">
-                                        <div class="d-flex align-items-center">
+                                    <div class="d-flex flex-column flex-md-row justify-content-between w-100 pe-md-3 align-items-start align-items-md-center">
+                                        <div class="d-flex align-items-center mb-2 mb-md-0">
                                             <span class="badge bg-primary me-2">#{{ $item->cotio_subitem }}</span>
-                                            {{ $item->cotio_descripcion }}
+                                            <span class="fw-bold">{{ $item->cotio_descripcion }}</span>
                                             @if($item->request_review)
                                                 <div class="bg-warning rounded-pill ms-2 d-flex align-items-center justify-content-center" style="width: 1.8rem; height: 1.8rem;"
                                                 data-bs-toggle="tooltip" 
@@ -292,27 +355,40 @@
                                                 </div>
                                             @endif
                                         </div>
-                                        <div>
-                                            @php
-                                                $estado = strtolower($item->cotio_estado_analisis ?? 'pendiente');
-                                                $badgeClassAnalisis = match ($estado) {
-                                                    'coordinado muestreo' => 'warning',
-                                                    'pendiente' => 'warning',
-                                                    'coordinado analisis' => 'warning',
-                                                    'en proceso' => 'info',
-                                                    'en revision muestreo' => 'info',
-                                                    'en revision analisis' => 'info',
-                                                    'finalizado' => 'success',
-                                                    'muestreado' => 'success',
-                                                    'analizado' => 'success',
-                                                    'suspension' => 'danger',
-                                                    default => 'secondary'
-                                                };
-                                            @endphp
-                                            <span class="badge bg-{{ $badgeClassAnalisis }} me-2">
-                                                {{ ucfirst($estado) }}
-                                            </span>
-                                            <span class="text-muted small">Resultado Final: {{ $item->resultado_final ?? 'N/A' }} </span>
+                                        <div class="d-flex align-items-center w-100 w-md-auto justify-content-between justify-content-md-end">
+                                            <div class="text-md-center" style="min-width: 130px;">
+                                                @php
+                                                    $estado = strtolower($item->cotio_estado_analisis ?? 'pendiente');
+                                                    $badgeClassAnalisis = match ($estado) {
+                                                        'coordinado muestreo' => 'warning',
+                                                        'pendiente' => 'warning',
+                                                        'coordinado analisis' => 'warning',
+                                                        'en proceso' => 'info',
+                                                        'en revision muestreo' => 'info',
+                                                        'en revision analisis' => 'info',
+                                                        'finalizado' => 'success',
+                                                        'muestreado' => 'success',
+                                                        'analizado' => 'success',
+                                                        'suspension' => 'danger',
+                                                        default => 'secondary'
+                                                    };
+                                                @endphp
+                                                <span class="badge bg-{{ $badgeClassAnalisis }}">
+                                                    {{ ucfirst($estado) }}
+                                                </span>
+                                            </div>
+                                            <div class="ms-md-3 text-muted small text-end text-md-start" style="min-width: 160px;">
+                                                @php
+                                                    $descNorm = $normalizeStr($item->cotio_descripcion);
+                                                    $valorSincronizado = $medicionesMapa->get($descNorm);
+                                                    $esSincronizado = !is_null($valorSincronizado);
+                                                    $resultadoAMostrar = $esSincronizado ? $valorSincronizado : ($item->resultado_final ?? 'N/A');
+                                                @endphp
+                                                <span>Res: <span class="fw-bold text-dark">{{ $resultadoAMostrar }}</span></span>
+                                                @if($esSincronizado)
+                                                    <span class="text-info d-block" style="font-size: 0.7rem;">(Campo)</span>
+                                                @endif
+                                            </div>
                                         </div>
                                     </div>
                                 </button>
@@ -320,7 +396,50 @@
                             <div id="collapse{{ $item->cotio_subitem }}" class="accordion-collapse collapse" 
                                 aria-labelledby="heading{{ $item->cotio_subitem }}" data-bs-parent="#analisisAccordion">
                                 <div class="accordion-body pt-3">
-                             
+                                    @php
+                                        $fiItem = $item->analista_fecha_inicio;
+                                        $ffItem = $item->analista_fecha_fin;
+                                        $txtItemFechas = null;
+                                        if ($fiItem && $ffItem) {
+                                            $txtItemFechas = $fiItem->format('d/m/Y') . ' – ' . $ffItem->format('d/m/Y');
+                                        } elseif ($fiItem) {
+                                            $txtItemFechas = 'Desde ' . $fiItem->format('d/m/Y');
+                                        } elseif ($ffItem) {
+                                            $txtItemFechas = 'Hasta ' . $ffItem->format('d/m/Y');
+                                        }
+
+                                        $variableLey = $variablesLey->first(function($v) use ($item) {
+                                            $itemProdCode = trim((string)($item->tarea->cotio_codigoprod ?? ''));
+                                            $varCatalogId = trim((string)($v->cotio_item_id ?? ''));
+                                            return $itemProdCode !== '' && (int)$itemProdCode === (int)$varCatalogId;
+                                        });
+
+                                        // Si no se encontró por código, intentar por descripción usando el mapa
+                                        if (!$variableLey) {
+                                            $variableLey = $mapVariablePorDescripcion->get(trim(strtolower($item->cotio_descripcion)));
+                                        }
+                                    @endphp
+                                    <div class="mb-3 pb-2 border-bottom">
+                                        @if($leyNormativa)
+                                            <div class="mb-2">
+                                                <small class="text-muted d-block"><strong>Ley Aplicable:</strong> {{ $leyNormativa->nombre }}</small>
+                                                @if($variableLey)
+                                                    <div class="alert alert-info py-1 px-2 mt-1 mb-0 d-inline-block">
+                                                        <small><strong>Valor Límite:</strong> {{ $variableLey->pivot->valor_limite ?? 'N/A' }} {{ $variableLey->pivot->unidad_medida ?? '' }}</small>
+                                                    </div>
+                                                @else
+                                                    <small class="text-muted">No se encontró límite específico en esta ley para este análisis.</small>
+                                                @endif
+                                            </div>
+                                        @endif
+                                        <small class="text-muted d-block"><strong>Fechas análisis (informe PDF):</strong> {{ $txtItemFechas ?? 'Sin cargar; en el informe se usará la fecha de carga de resultado si existe.' }}</small>
+                                        @if($item->puede_editar_fechas_informe ?? false)
+                                            <button type="button" class="btn btn-sm btn-outline-secondary mt-2" data-bs-toggle="modal" data-bs-target="#fechasInformeAnalisisModal{{ $item->cotio_subitem }}">
+                                                <i class="fas fa-calendar-alt me-1"></i> Cargar / editar fechas
+                                            </button>
+                                        @endif
+                                    </div>
+
                                     @if($instancia->cotio_estado_analisis != 'analizado' && ($item->cotio_estado_analisis == 'coordinado analisis' || $item->cotio_estado_analisis == 'en revision analisis'))
                                         <div class="d-flex justify-content-end mb-3">
                                             <button class="btn btn-sm btn-outline-primary me-2" data-bs-toggle="modal" 
@@ -374,6 +493,31 @@
                         @csrf
                         @method('PUT')
                         
+                        @php
+                            $variableLeyModal = $variablesLey->first(function($v) use ($item) {
+                                $itemProdCode = trim((string)($item->tarea->cotio_codigoprod ?? ''));
+                                $varCatalogId = trim((string)($v->cotio_item_id ?? ''));
+                                return $itemProdCode !== '' && (int)$itemProdCode === (int)$varCatalogId;
+                            });
+                            
+                            // Fallback por descripción
+                            if (!$variableLeyModal) {
+                                $variableLeyModal = $mapVariablePorDescripcion->get(trim(strtolower($item->cotio_descripcion)));
+                            }
+                        @endphp
+
+                        @if($variableLeyModal)
+                            <div class="alert alert-info mb-3">
+                                <div class="d-flex align-items-center">
+                                    <i class="fas fa-info-circle me-2"></i>
+                                    <div>
+                                        <strong>Referencia Ley ({{ $leyNormativa->codigo }}):</strong> 
+                                        Valor Límite: <span class="fw-bold">{{ $variableLeyModal->pivot->valor_limite ?? 'N/A' }}</span> 
+                                        {{ $variableLeyModal->pivot->unidad_medida ?? '' }}
+                                    </div>
+                                </div>
+                            </div>
+                        @endif
 
                         <div class="d-flex justify-content-between flex-md-row flex-column">
                             <div class="mb-3">
@@ -418,10 +562,26 @@
                         </div>
           
                         
+                        @php
+                            $descNormModal = $normalizeStr($item->cotio_descripcion);
+                            $valorSincronizadoModal = $medicionesMapa->get($descNormModal);
+                            $esSincronizadoModal = !is_null($valorSincronizadoModal);
+                            $resultadoFinalModal = $esSincronizadoModal ? $valorSincronizadoModal : ($item->resultado_final ?? '');
+                        @endphp
+                        
                         <div class="mb-3">
-                            <label for="resultado_final" class="form-label">Resultado Final</label>
-                            <textarea class="form-control" name="resultado_final" rows="4" value="{{ $item->resultado_final }}"
-                                placeholder="Ingrese los resultados del análisis">{{ $item->resultado_final ?? '' }}</textarea>
+                            <label for="resultado_final" class="form-label">
+                                Resultado Final
+                                @if($esSincronizadoModal)
+                                    <span class="badge bg-info ms-2"><i class="fas fa-sync-alt me-1"></i> Sincronizado con Campo</span>
+                                @endif
+                            </label>
+                            <textarea class="form-control" name="resultado_final" rows="4" 
+                                @if($esSincronizadoModal) readonly @endif
+                                placeholder="{{ $esSincronizadoModal ? 'Valor sincronizado con medición de campo' : 'Ingrese los resultados del análisis' }}">{{ $resultadoFinalModal }}</textarea>
+                            @if($esSincronizadoModal)
+                                <div class="form-text text-info">Este valor proviene de las mediciones de campo y no puede ser modificado por el analista.</div>
+                            @endif
                         </div>
                         <div style="display: flex; gap: 1rem; align-items: center;">
                             <label for="u_med_resultado" class="form-label">Unidad de medición</label>
@@ -485,6 +645,42 @@
         </div>
     </div>
     @endforeach
+
+    @foreach($analisis as $item)
+        @if($item->puede_editar_fechas_informe ?? false)
+        <div class="modal fade" id="fechasInformeAnalisisModal{{ $item->cotio_subitem }}" tabindex="-1" aria-labelledby="fechasInformeAnalisisLabel{{ $item->cotio_subitem }}" aria-hidden="true" data-subitem="{{ $item->cotio_subitem }}">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <form method="post" action="{{ route('instancias.update-analista-fechas-analisis', $item) }}">
+                        @csrf
+                        @method('PUT')
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="fechasInformeAnalisisLabel{{ $item->cotio_subitem }}">Fechas informe · {{ $item->cotio_descripcion }}</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p class="text-muted small">Opcional. Si quedan vacías, el PDF usa la fecha de carga de resultado (comportamiento actual).</p>
+                            <div class="mb-3">
+                                <label class="form-label" for="analista_fecha_inicio_{{ $item->cotio_subitem }}">Inicio del análisis</label>
+                                <input type="date" class="form-control" id="analista_fecha_inicio_{{ $item->cotio_subitem }}" name="analista_fecha_inicio"
+                                    value="{{ $item->analista_fecha_inicio ? $item->analista_fecha_inicio->format('Y-m-d') : '' }}">
+                            </div>
+                            <div class="mb-0">
+                                <label class="form-label" for="analista_fecha_fin_{{ $item->cotio_subitem }}">Finalización del análisis</label>
+                                <input type="date" class="form-control" id="analista_fecha_fin_{{ $item->cotio_subitem }}" name="analista_fecha_fin"
+                                    value="{{ $item->analista_fecha_fin ? $item->analista_fecha_fin->format('Y-m-d') : '' }}">
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                            <button type="submit" class="btn btn-primary">Guardar</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        @endif
+    @endforeach
 </div>
 
 <style>
@@ -509,10 +705,6 @@
         width: 100% !important;
     }
 </style>
-
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
-<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 
 <script>
     document.addEventListener('DOMContentLoaded', function () {
@@ -547,8 +739,19 @@
                 e.preventDefault();
                 try {
                     const result = await submitAjax(onlyUrl);
-                    Swal.fire({ icon: 'success', title: 'Guardado', text: result.message || 'Guardado correctamente', timer: 1200, showConfirmButton: false });
-                    setTimeout(() => window.location.reload(), 1200);
+                    await Swal.fire({
+                        icon: 'success',
+                        title: 'Guardado',
+                        text: result.message || 'Guardado correctamente',
+                        timer: 1200,
+                        showConfirmButton: false,
+                        didClose: function () {
+                            if (window.limpiarResiduosSweetAlert2) {
+                                window.limpiarResiduosSweetAlert2();
+                            }
+                        },
+                    });
+                    window.location.reload();
                 } catch (err) {
                     Swal.fire({ icon: 'error', title: 'Error', text: err.message || 'No se pudo guardar' });
                 }
@@ -567,7 +770,18 @@
                 if (!isConfirmed) return;
                 try {
                     const result = await submitAjax(updateUrl);
-                    Swal.fire({ icon: 'success', title: 'Enviado', text: result.message || 'Guardado y enviado correctamente', timer: 1200, showConfirmButton: false });
+                    await Swal.fire({
+                        icon: 'success',
+                        title: 'Enviado',
+                        text: result.message || 'Guardado y enviado correctamente',
+                        timer: 1200,
+                        showConfirmButton: false,
+                        didClose: function () {
+                            if (window.limpiarResiduosSweetAlert2) {
+                                window.limpiarResiduosSweetAlert2();
+                            }
+                        },
+                    });
                     window.location.reload();
                 } catch (err) {
                     Swal.fire({ icon: 'error', title: 'Error', text: err.message || 'No se pudo enviar' });
@@ -672,13 +886,22 @@
                                 title: '¡Guardado!',
                                 text: 'Herramientas actualizadas correctamente',
                                 timer: 1500,
-                                showConfirmButton: false
-                            });
-                            setTimeout(() => {
+                                showConfirmButton: false,
+                                didClose: function () {
+                                    if (window.limpiarResiduosSweetAlert2) {
+                                        window.limpiarResiduosSweetAlert2();
+                                    }
+                                },
+                            }).then(function () {
                                 const modal = bootstrap.Modal.getInstance(herramientasModal);
-                                modal.hide();
+                                if (modal) {
+                                    modal.hide();
+                                }
+                                if (window.limpiarResiduosSweetAlert2) {
+                                    window.limpiarResiduosSweetAlert2();
+                                }
                                 location.reload();
-                            }, 1500);
+                            });
                         } else {
                             Swal.fire({
                                 icon: 'error',
@@ -708,23 +931,28 @@
     document.addEventListener('DOMContentLoaded', function() {
         const form = document.getElementById('suspensionForm');
         const textarea = document.getElementById('cotio_observaciones_suspension');
-        
-        form.addEventListener('submit', function(event) {
-            if (!textarea.value.trim()) {
-                event.preventDefault();
-                event.stopPropagation();
-                textarea.classList.add('is-invalid');
-            } else {
+        const suspenderModal = document.getElementById('suspenderModal');
+
+        if (form && textarea) {
+            form.addEventListener('submit', function(event) {
+                if (!textarea.value.trim()) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    textarea.classList.add('is-invalid');
+                } else {
+                    textarea.classList.remove('is-invalid');
+                }
+
+                form.classList.add('was-validated');
+            });
+        }
+
+        if (suspenderModal && form && textarea) {
+            suspenderModal.addEventListener('hidden.bs.modal', function() {
+                form.classList.remove('was-validated');
                 textarea.classList.remove('is-invalid');
-            }
-            
-            form.classList.add('was-validated');
-        });
-        
-        document.getElementById('suspenderModal').addEventListener('hidden.bs.modal', function() {
-            form.classList.remove('was-validated');
-            textarea.classList.remove('is-invalid');
-        });
+            });
+        }
     });
 
 
@@ -797,82 +1025,6 @@
 </script>
 
 
-
-<script>
-    $(document).ready(function() {
-        // Inicializar select2
-        $('.select2-herramientas').select2({
-            placeholder: "Seleccione herramientas",
-            allowClear: true
-        });
-    
-
-    
-        // Disparar evento change al abrir el modal para mostrar las herramientas ya seleccionadas
-$('#editHerramientasModal').on('shown.bs.modal', function() {
-    $('.select2-herramientas').trigger('change');
-});
-
-// Evento para guardar con Fetch
-document.getElementById('guardarHerramientasBtn').addEventListener('click', function() {
-    const instanciaId = {{ $instancia->id }};
-    const selectElement = document.querySelector('.select2-herramientas');
-    const selectedOptions = Array.from(selectElement.selectedOptions);
-    
-    // Preparar los datos para enviar
-    const herramientasData = {
-        herramientas: selectedOptions.map(option => option.value),
-        cantidades: {},
-        observaciones: {}
-    };
-    
-    // Obtener cantidades y observaciones de los inputs generados
-    selectedOptions.forEach(option => {
-        const herramientaId = option.value;
-        herramientasData.cantidades[herramientaId] = document.getElementById(`cantidad-${herramientaId}`).value;
-        herramientasData.observaciones[herramientaId] = document.getElementById(`observaciones-${herramientaId}`).value;
-    });
-    
-    // Configurar el token CSRF
-    const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
-    
-    // Realizar la petición Fetch
-    fetch(`/instancias/${instanciaId}/herramientas`, {
-        method: 'PUT',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': csrfToken,
-            'Accept': 'application/json'
-        },
-        body: JSON.stringify(herramientasData)
-    })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error('Error en la respuesta del servidor');
-        }
-        return response.json();
-    })
-    .then(data => {
-        if (data.success) {
-            // Mostrar mensaje de éxito y cerrar el modal
-            alert(data.message);
-            $('#editHerramientasModal').modal('hide');
-            
-            // Opcional: Recargar la página o actualizar la UI según sea necesario
-            // location.reload();
-        } else {
-            throw new Error(data.message || 'Error al guardar los cambios');
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('Ocurrió un error al guardar los cambios: ' + error.message);
-    });
-});
-    });
-</script>
-
-
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // Function to calculate the average for a specific modal
@@ -884,6 +1036,10 @@ document.addEventListener('DOMContentLoaded', function() {
         const resultado2Input = modal.querySelector('input[name="resultado_2"]');
         const resultado3Input = modal.querySelector('input[name="resultado_3"]');
         const resultadoFinalTextarea = modal.querySelector('textarea[name="resultado_final"]');
+        const inputsNumericos = [resultadoInput, resultado2Input, resultado3Input].filter(Boolean);
+        if (!resultadoFinalTextarea || inputsNumericos.length === 0) {
+            return;
+        }
 
         // Improved function to extract numbers with small decimal values
         function extractNumber(value) {
@@ -914,9 +1070,9 @@ document.addEventListener('DOMContentLoaded', function() {
         function updateAverage() {
             try {
                 // Get values and convert to numbers
-                const val1 = extractNumber(resultadoInput.value);
-                const val2 = extractNumber(resultado2Input.value);
-                const val3 = extractNumber(resultado3Input.value);
+                const val1 = resultadoInput ? extractNumber(resultadoInput.value) : NaN;
+                const val2 = resultado2Input ? extractNumber(resultado2Input.value) : NaN;
+                const val3 = resultado3Input ? extractNumber(resultado3Input.value) : NaN;
 
                 // Filter valid numbers (not NaN)
                 const validValues = [val1, val2, val3].filter(val => !isNaN(val));
@@ -955,7 +1111,7 @@ document.addEventListener('DOMContentLoaded', function() {
             debounceTimer = setTimeout(updateAverage, debounceTime);
         }
 
-        [resultadoInput, resultado2Input, resultado3Input].forEach(input => {
+        inputsNumericos.forEach(input => {
             input.addEventListener('input', debouncedUpdate);
             input.addEventListener('paste', debouncedUpdate);
             input.addEventListener('change', updateAverage);
@@ -1022,6 +1178,75 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
 @endsection
+
+@push('scripts')
+<script>
+    $(document).ready(function() {
+        $('.select2-herramientas').select2({
+            placeholder: "Seleccione herramientas",
+            allowClear: true
+        });
+
+        $('#editHerramientasModal').on('shown.bs.modal', function() {
+            $('.select2-herramientas').trigger('change');
+        });
+
+        const guardarHerramientasBtn = document.getElementById('guardarHerramientasBtn');
+        if (guardarHerramientasBtn) {
+            guardarHerramientasBtn.addEventListener('click', function() {
+                const instanciaId = {{ $instancia->id }};
+                const selectElement = document.querySelector('.select2-herramientas');
+                if (!selectElement) {
+                    return;
+                }
+                const selectedOptions = Array.from(selectElement.selectedOptions);
+
+                const herramientasData = {
+                    herramientas: selectedOptions.map(option => option.value),
+                    cantidades: {},
+                    observaciones: {}
+                };
+
+                selectedOptions.forEach(option => {
+                    const herramientaId = option.value;
+                    herramientasData.cantidades[herramientaId] = document.getElementById(`cantidad-${herramientaId}`).value;
+                    herramientasData.observaciones[herramientaId] = document.getElementById(`observaciones-${herramientaId}`).value;
+                });
+
+                const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+
+                fetch(`/instancias/${instanciaId}/herramientas`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': csrfToken,
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify(herramientasData)
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Error en la respuesta del servidor');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        alert(data.message);
+                        $('#editHerramientasModal').modal('hide');
+                    } else {
+                        throw new Error(data.message || 'Error al guardar los cambios');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Ocurrió un error al guardar los cambios: ' + error.message);
+                });
+            });
+        }
+    });
+</script>
+@endpush
 
 
 

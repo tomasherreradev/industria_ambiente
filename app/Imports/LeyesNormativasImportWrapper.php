@@ -71,4 +71,9 @@ class LeyesNormativasImportWrapper implements WithMultipleSheets, SkipsUnknownSh
     {
         return $this->dataImport->getVariablesAsociadas();
     }
+
+    public function getVariablesActualizadas(): int
+    {
+        return $this->dataImport->getVariablesActualizadas();
+    }
 }

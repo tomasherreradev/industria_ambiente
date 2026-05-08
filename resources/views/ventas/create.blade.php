@@ -80,6 +80,10 @@
                                     <!-- Campos hidden para ensayos y componentes -->
                                     <input type="hidden" id="ensayos_data" name="ensayos_data">
                                     <input type="hidden" id="componentes_data" name="componentes_data">
+                                    @php
+                                        $__cotiReqRelCreate = filter_var(old('coti_req_cadena_custodia_relacionada', false), FILTER_VALIDATE_BOOLEAN);
+                                    @endphp
+                                    <input type="hidden" name="coti_req_cadena_custodia_relacionada" id="input_coti_req_cadena_custodia_relacionada" value="{{ $__cotiReqRelCreate ? '1' : '0' }}">
                                 </div>
                                 <div class="col-md-4">
                                     <label for="cliente_nombre" class="form-label fw-semibold mb-1">&nbsp;</label>
@@ -110,7 +114,7 @@
                                         <select class="form-control form-control-sm d-none" id="coti_para_select" name="coti_para">
                                             <option value="">Seleccionar empresa relacionada...</option>
                                         </select>
-                                        <input type="hidden" id="coti_cli_empresa" name="coti_cli_empresa" value="{{ old('coti_cli_empresa') }}">
+                                        <input type="hidden" id="coti_empresa_rel" name="coti_empresa_rel" value="{{ old('coti_empresa_rel', old('coti_cli_empresa')) }}">
                                     </div>
                                 </div>
                             </div>
@@ -136,6 +140,7 @@
                                     Empresa
                                 </button>
                             </li>
+                            @include('ventas.partials.cotizacion-empresa-relacionada-nav')
                             <li class="nav-item" role="presentation">
                                 <button class="nav-link disabled" type="button">Documentos</button>
                             </li>
@@ -201,59 +206,15 @@
                                                 <option value="Aprobado">Aprobado</option>
                                                 <option value="Rechazado">Rechazado</option>
                                                 <option value="En Proceso">En Proceso</option>
+                                                <option value="Suspendida">Suspendida</option>
                                             </select>
                                         </div>
-                                        <div class="col-md-2 d-flex align-items-end">
-                                            <div class="form-check">
-                                                <input class="form-check-input" type="checkbox" id="cadena_custodia" name="coti_cadena_custodia" value="1" {{ old('coti_cadena_custodia') ? 'checked' : '' }}>
-                                                <label class="form-check-label" for="cadena_custodia">
-                                                    Cadena de Custodia
-                                                </label>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-2 d-flex align-items-end">
-                                            <div class="form-check">
-                                                <input class="form-check-input" type="checkbox" id="muestreo" name="coti_muestreo" value="1" {{ old('coti_muestreo') ? 'checked' : '' }}>
-                                                <label class="form-check-label" for="muestreo">
-                                                    Muestreo
-                                                </label>
-                                            </div>
-                                        </div>
+                         
+                                        <!-- Muestreo ahora se configura por ensayo, no a nivel general -->
                                     </div>
 
-                                    <!-- Comentarios -->
-                                    <div class="row mb-4">
-                                        <div class="col-md-3">
-                                            <label for="contacto" class="form-label">Contacto:</label>
-                                            <input type="text" class="form-control" id="contacto" name="coti_contacto"
-                                                   value="{{ old('coti_contacto') }}" placeholder="Nombre del contacto principal">
-                                        </div>
-                                        <div class="col-md-3">
-                                            <label for="correo" class="form-label">Correo:</label>
-                                            <input type="email" class="form-control" id="correo" name="coti_mail1"
-                                                   value="{{ old('coti_mail1') }}" placeholder="correo@cliente.com">
-                                        </div>
-                                        <div class="col-md-3">
-                                            <label for="telefono" class="form-label">Teléfono:</label>
-                                            <input type="text" class="form-control" id="telefono" name="coti_telefono"
-                                                   value="{{ old('coti_telefono') }}" placeholder="+54 9 11 1234-5678">
-                                        </div>
-                                        <div class="col-md-3">
-                                            <label for="sector" class="form-label">Sector:</label>
-                                            <select class="form-select" id="sector" name="coti_sector">
-                                                <option value="">Seleccionar sector...</option>
-                                                    @foreach($sectoresCliente as $sector)
-                                                        @php
-                                                            $codigoSector = trim($sector->divis_codigo);
-                                                        @endphp
-                                                        <option value="{{ $codigoSector }}" 
-                                                                {{ trim((string) old('coti_sector')) === $codigoSector ? 'selected' : '' }}>
-                                                            {{ trim($sector->divis_descripcion) }}
-                                                    </option>
-                                                @endforeach
-                                            </select>
-                                        </div>
-                                    </div>
+                                    <!-- Contactos del cliente -->
+                                    @include('ventas.partials.cotizacion-contactos')
 
                                     <div class="row mb-4">
                                         <div class="col-md-12">
@@ -272,11 +233,91 @@
                                                     <label for="descuento" class="form-label">Descuento Global %</label>
                                                     <input type="number" step="0.01" class="form-control" id="descuento" name="descuento" 
                                                            value="{{ old('descuento', '0.00') }}" placeholder="0.00">
+                                                    <div class="form-check mt-2">
+                                                        <input class="form-check-input" type="checkbox" id="coti_mostrar_descuento" name="coti_mostrar_descuento" value="1" checked>
+                                                        <label class="form-check-label" for="coti_mostrar_descuento">
+                                                            Mostrar en el presupuesto
+                                                        </label>
+                                                    </div>
                                                 </div>
                                                 <div class="col-md-3">
                                                     <label for="aumento" class="form-label">Aumento Global %</label>
                                                     <input type="number" step="0.01" class="form-control" id="aumento" name="aumento" 
                                                            value="{{ old('aumento', '0.00') }}" placeholder="0.00">
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <label for="divisa_codigo" class="form-label">Divisa</label>
+                                                    <select class="form-select" id="divisa_codigo" name="divisa_codigo">
+                                                        @forelse(($divisas ?? []) as $divisa)
+                                                            <option value="{{ $divisa->divisa_codigo }}" {{ old('divisa_codigo', 'PES') === $divisa->divisa_codigo ? 'selected' : '' }}>
+                                                                {{ $divisa->divisa_desc }} ({{ $divisa->divisa_codigo }})
+                                                            </option>
+                                                        @empty
+                                                            <option value="PES" selected>Pesos (PES)</option>
+                                                            <option value="USD">Dólares (USD)</option>
+                                                        @endforelse
+                                                    </select>
+                                                </div>
+                                            </div>
+
+                                            <div class="row mb-3">
+                                                <div class="col-md-6">
+                                                    <label for="coti_cond_pago" class="form-label">Condición de pago</label>
+                                                    <select class="form-select" id="coti_cond_pago" name="coti_cond_pago">
+                                                        <option value="">Seleccionar...</option>
+                                                        @foreach($condicionesPago ?? [] as $cond)
+                                                            <option value="{{ trim($cond->pag_codigo) }}" {{ old('coti_cond_pago') === trim($cond->pag_codigo) ? 'selected' : '' }}>
+                                                                {{ trim($cond->pag_codigo) }} - {{ trim($cond->pag_descripcion) }}
+                                                            </option>
+                                                        @endforeach
+                                                    </select>
+                                                    <small class="text-muted">Se completa con la del cliente al seleccionarlo; puede cambiarse solo para esta cotización.</small>
+                                                </div>
+                                            </div>
+
+                                            <div id="cuotasPanel" class="row mb-3 border rounded p-3 bg-light d-none">
+                                                <h6 class="mb-2">Detalle cuotas</h6>
+                                                <div class="col-md-3">
+                                                    <label for="coti_cuota_desc" class="form-label">Descripción</label>
+                                                    <input type="text" class="form-control form-control-sm" id="coti_cuota_desc" name="coti_cuota_desc" value="{{ old('coti_cuota_desc') }}" placeholder="Ej: 6 cuotas sin interés">
+                                                </div>
+                                                <div class="col-md-2">
+                                                    <label for="coti_cuota_cant" class="form-label">Cantidad</label>
+                                                    <input type="number" class="form-control form-control-sm" id="coti_cuota_cant" name="coti_cuota_cant" value="{{ old('coti_cuota_cant', 1) }}" min="1">
+                                                </div>
+                                                <div class="col-md-2">
+                                                    <label for="coti_cuota_interes" class="form-label">
+                                                        Interés (%)
+                                                        <span class="text-muted" title="Porcentaje de interés total aplicado sobre el monto de la cotización antes de dividir en cuotas. Ej: 10 = 10%" style="cursor:help;">&#9432;</span>
+                                                    </label>
+                                                    <div class="input-group input-group-sm">
+                                                        <input type="number" step="0.01" min="0" class="form-control form-control-sm" id="coti_cuota_interes" name="coti_cuota_interes" value="{{ old('coti_cuota_interes', 0) }}" placeholder="0.00">
+                                                        <span class="input-group-text">%</span>
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-2">
+                                                    <label for="coti_cuota_monto_total" class="form-label">
+                                                        Monto total
+                                                        <span class="text-muted" title="Se completa automáticamente con el total de la cotización" style="cursor:help;">&#9432;</span>
+                                                    </label>
+                                                    <input type="number" step="0.01" class="form-control form-control-sm bg-light" id="coti_cuota_monto_total" name="coti_cuota_monto_total" value="{{ old('coti_cuota_monto_total') }}" placeholder="0.00" readonly title="Se sincroniza automáticamente con el total de la cotización">
+                                                </div>
+                                                <div class="col-md-2">
+                                                    <label for="coti_cuota_monto_indiv" class="form-label">
+                                                        Monto individual
+                                                        <span class="text-muted" title="(Total × (1 + Interés%)) ÷ cantidad de cuotas" style="cursor:help;">&#9432;</span>
+                                                    </label>
+                                                    <input type="number" step="0.01" class="form-control form-control-sm bg-light" id="coti_cuota_monto_indiv" name="coti_cuota_monto_indiv" value="{{ old('coti_cuota_monto_indiv') }}" placeholder="0.00" readonly title="Se calcula: (monto total × (1 + interés%)) ÷ cantidad de cuotas">
+                                                </div>
+                                                <div class="col-md-3 d-flex align-items-end gap-3">
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="checkbox" id="coti_cuota_fact_fin_mes" name="coti_cuota_fact_fin_mes" value="1" {{ old('coti_cuota_fact_fin_mes') ? 'checked' : '' }}>
+                                                        <label class="form-check-label" for="coti_cuota_fact_fin_mes">Fact. fin de mes</label>
+                                                    </div>
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="checkbox" id="coti_cuota_fact_inicio_mes" name="coti_cuota_fact_inicio_mes" value="1" {{ old('coti_cuota_fact_inicio_mes') ? 'checked' : '' }}>
+                                                        <label class="form-check-label" for="coti_cuota_fact_inicio_mes">Fact. inicio de mes</label>
+                                                    </div>
                                                 </div>
                                             </div>
 
@@ -310,8 +351,8 @@
                                                             <th style="width: 150px;">Método</th>
                                                             <th style="width: 120px;">Detalle</th>
                                                             <th style="width: 80px;">Cantidad</th>
-                                                            <th style="width: 100px;">Prec. Unit</th>
-                                                            <th style="width: 100px;">Total</th>
+                                                            <th style="width: 118px;" class="text-end" title="En analitos: precio unitario. En el ensayo: solo cargo adicional por u.m.">P. unit.</th>
+                                                            <th style="width: 118px;" class="text-end" title="En analitos: precio × cantidad. En el ensayo: adicional × cantidad del ensayo (el total general suma también los analitos).">Importe</th>
                                                             <th style="width: 60px;">Acciones</th>
                                                         </tr>
                                                     </thead>
@@ -324,7 +365,7 @@
                                                             </td>
                                                             <td></td>
                                                         </tr>
-                                                        <tr>
+                                                        <tr class="d-none" id="filaAumentoGlobal">
                                                             <td colspan="7" class="text-end text-muted">Aumento global cliente (<span id="aumentoGlobalPorcentaje">0.00%</span>):</td>
                                                             <td class="text-success fw-semibold">
                                                                 +<span id="aumentoGlobalMonto">0.00</span>
@@ -339,7 +380,9 @@
                                                             <td></td>
                                                         </tr>
                                                         <tr>
-                                                            <td colspan="7" class="text-end fw-bold">Total final:</td>
+                                                            <td colspan="7" class="text-end fw-bold">
+                                                                Total final (<span id="divisaLabel"></span>):
+                                                            </td>
                                                             <td class="fw-bold">
                                                                 <span id="totalConAjustes">0.00</span>
                                                             </td>
@@ -390,11 +433,22 @@
                             <!-- Solapa Empresa -->
                             <div class="tab-pane fade" id="empresa" role="tabpanel">
                                 <div class="p-4">
+                                    <div class="row mb-3">
+                                        <div class="col-md-12">
+                                            <label for="razon_social_facturacion_select" class="form-label">Razón social de facturación</label>
+                                            <select class="form-select form-select-sm d-none" id="razon_social_facturacion_select">
+                                                <option value="">Seleccionar razón social de facturación...</option>
+                                            </select>
+                                            <small class="form-text text-muted d-none" id="razon_social_facturacion_help">
+                                                Al seleccionar una razón social se actualizarán la empresa, CUIT y dirección.
+                                            </small>
+                                        </div>
+                                    </div>
                                     <div class="row">
                                         <div class="col-md-6">
                                             <div class="mb-3">
-                                            <label for="empresa_nombre" class="form-label">Empresa:</label>
-                                            <input type="text" class="form-control" id="empresa_nombre" name="coti_empresa" 
+                                                <label for="empresa_nombre" class="form-label">Empresa:</label>
+                                                <input type="text" class="form-control" id="empresa_nombre" name="coti_empresa" 
                                                        value="{{ old('coti_empresa') }}">
                                             </div>
                                             <div class="mb-3">
@@ -433,6 +487,8 @@
                                     </div>
                                 </div>
                             </div>
+
+                            @include('ventas.partials.cotizacion-empresa-relacionada-pane')
                         </div>
 
                         <!-- Botones de acción -->
@@ -493,9 +549,28 @@
                             <div class="form-check mt-4">
                                 <input class="form-check-input" type="checkbox" id="no_requiere_custodia">
                                 <label class="form-check-label" for="no_requiere_custodia">
-                                    No Requiere Cadena de Custodia
+                                    NO requiere cadena de custodia
                                 </label>
                             </div>
+                            <div class="form-check mt-2">
+                                <input class="form-check-input" type="checkbox" id="req_prot_mapba">
+                                <label class="form-check-label" for="req_prot_mapba">
+                                    Requiere Protocolo Oficial MAPBA Res 41/14
+                                </label>
+                            </div>
+                            <div class="form-check mt-2">
+                                <input class="form-check-input" type="checkbox" id="ensayo_chk_req_cadena_relacionada">
+                                <label class="form-check-label" for="ensayo_chk_req_cadena_relacionada">
+                                    Requiere cadena de custodia relada
+                                </label>
+                            </div>
+                            <div class="form-check mt-3">
+                                <input class="form-check-input" type="checkbox" id="ensayo_no_lleva_muestreo">
+                                <label class="form-check-label" for="ensayo_no_lleva_muestreo">
+                                    No lleva muestreo
+                                </label>
+                            </div>
+                            <small class="text-muted d-block">Si no lo tilda, se usa la regla automática (p. ej. consultoría / ASP / Clarke Fire → sin muestreo; Mediciones → con muestreo).</small>
                         </div>
                     </div>
 
@@ -504,13 +579,18 @@
                             <label for="cantidad_ensayo" class="form-label">Cantidad:</label>
                             <input type="number" class="form-control" id="cantidad_ensayo" name="cantidad" value="3" min="1">
                         </div>
+                        <div class="col-md-3">
+                            <label for="ensayo_precio_extra" class="form-label">Precio adic. ensayo (u.m.)</label>
+                            <input type="number" class="form-control" id="ensayo_precio_extra" name="ensayo_precio_extra" value="0" min="0" step="0.01" placeholder="0.00">
+                            <small class="text-muted">Suma por unidad de ensayo, aparte de los analitos.</small>
+                        </div>
                         <div class="col-md-2">
                             <div class="form-check mt-4">
                                 <input class="form-check-input" type="checkbox" id="flexible">
                                 <label class="form-check-label" for="flexible">Flexible</label>
                             </div>
                         </div>
-                        <div class="col-md-8">
+                        <div class="col-md-5">
                             <div class="form-check mt-4">
                                 <input class="form-check-input" type="checkbox" id="bonificado">
                                 <label class="form-check-label" for="bonificado">Bonificado</label>
@@ -598,7 +678,13 @@
                             <div class="form-check mt-4">
                                 <input class="form-check-input" type="checkbox" id="comp_no_requiere_custodia">
                                 <label class="form-check-label" for="comp_no_requiere_custodia">
-                                    No Requiere Cadena de Custodia
+                                    NO requiere cadena de custodia
+                                </label>
+                            </div>
+                            <div class="form-check mt-2">
+                                <input class="form-check-input" type="checkbox" id="comp_req_prot_mapba">
+                                <label class="form-check-label" for="comp_req_prot_mapba">
+                                    Requiere Protocolo Oficial MAPBA Res 41/14
                                 </label>
                             </div>
                         </div>
@@ -634,6 +720,20 @@
                         {{-- <div class="col-md-8">
                             <label class="form-label">Precio de lista</label>
                         </div> --}}
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="comp_nota_imprimible_texto" class="form-label">Nota imprimible</label>
+                            <textarea class="form-control" id="comp_nota_imprimible_texto" name="comp_nota_imprimible_texto" rows="3" placeholder="Texto que verá el cliente (se sugiere desde el ítem de catálogo)"></textarea>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="comp_nota_interna_texto" class="form-label">Nota interna</label>
+                            <textarea class="form-control" id="comp_nota_interna_texto" name="comp_nota_interna_texto" rows="3" placeholder="Uso interno (se sugiere desde el ítem de catálogo)"></textarea>
+                        </div>
+                        <div class="col-12">
+                            <small class="text-muted">Con un solo análisis seleccionado puede editar aquí; con varios, cada ítem usa las notas por defecto de su determinación.</small>
+                        </div>
                     </div>
 
                     {{-- Notas para componentes - COMENTADO
@@ -717,11 +817,147 @@
                             </select>
                         </div>
                     </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="edit_comp_req_cadena_custodia">
+                                <label class="form-check-label" for="edit_comp_req_cadena_custodia">
+                                    Requiere Cadena de Custodia
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="edit_comp_req_prot_mapba">
+                                <label class="form-check-label" for="edit_comp_req_prot_mapba">
+                                    Requiere Protocolo Oficial MAPBA Res 41/14
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="edit_comp_nota_imprimible" class="form-label">Nota imprimible</label>
+                            <textarea class="form-control" id="edit_comp_nota_imprimible" name="edit_comp_nota_imprimible" rows="3" placeholder="Texto para el cliente en cotización / PDF"></textarea>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="edit_comp_nota_interna" class="form-label">Nota interna</label>
+                            <textarea class="form-control" id="edit_comp_nota_interna" name="edit_comp_nota_interna" rows="3" placeholder="Uso interno"></textarea>
+                        </div>
+                    </div>
                 </form>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
                 <button type="button" class="btn btn-primary" id="btnGuardarComponenteEditado">Guardar Cambios</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Editar Ensayo -->
+<div class="modal fade" id="modalEditarEnsayo" tabindex="-1" aria-labelledby="modalEditarEnsayoLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title" id="modalEditarEnsayoLabel">Editar Ensayo</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="formEditarEnsayo">
+                    <input type="hidden" id="edit_ensayo_item_id">
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-12">
+                            <label for="edit_ensayo_muestra" class="form-label">Seleccionar Muestra/Ensayo <span class="text-danger">*</span></label>
+                            <select class="form-select" id="edit_ensayo_muestra" name="edit_ensayo_muestra" required>
+                                <option value="">Seleccionar muestra...</option>
+                            </select>
+                            <small class="text-muted">Seleccione el tipo de muestra que desea analizar</small>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label for="edit_ensayo_codigo" class="form-label">Código:</label>
+                            <input type="text" class="form-control" id="edit_ensayo_codigo" name="edit_ensayo_codigo" 
+                                   placeholder="Se generará automáticamente" readonly>
+                        </div>
+                        <div class="col-md-2">
+                            <label for="edit_ensayo_cantidad" class="form-label">Cantidad:</label>
+                            <input type="number" class="form-control" id="edit_ensayo_cantidad" name="edit_ensayo_cantidad" value="1" min="1" step="1">
+                        </div>
+                        <div class="col-md-3">
+                            <label for="edit_ensayo_precio_extra" class="form-label">Precio adic. ensayo (u.m.)</label>
+                            <input type="number" class="form-control" id="edit_ensayo_precio_extra" name="edit_ensayo_precio_extra" value="0" min="0" step="0.01" placeholder="0.00">
+                            <small class="text-muted">Aparte del total de analitos.</small>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="form-check mt-4">
+                                <input class="form-check-input" type="checkbox" id="edit_ensayo_lleva_muestreo">
+                                <label class="form-check-label" for="edit_ensayo_lleva_muestreo">
+                                    No lleva muestreo
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="edit_ensayo_no_requiere_cadena_custodia">
+                                <label class="form-check-label" for="edit_ensayo_no_requiere_cadena_custodia">
+                                    NO requiere cadena de custodia
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="edit_ensayo_req_prot_mapba">
+                                <label class="form-check-label" for="edit_ensayo_req_prot_mapba">
+                                    Requiere Protocolo Oficial MAPBA Res 41/14
+                                </label>
+                            </div>
+                            <div class="form-check mt-2">
+                                <input class="form-check-input" type="checkbox" id="edit_ensayo_chk_req_cadena_relacionada">
+                                <label class="form-check-label" for="edit_ensayo_chk_req_cadena_relacionada">
+                                    Requiere cadena de custodia relada
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="edit_ensayo_ley_normativa" class="form-label">Ley/Normativa:</label>
+                            <select class="form-select" id="edit_ensayo_ley_normativa" name="edit_ensayo_ley_normativa">
+                                <option value="">Seleccionar normativa...</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Sección de Notas Múltiples -->
+                    <div class="row mb-3">
+                        <div class="col-md-12">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <label class="form-label mb-0 fw-semibold">Notas:</label>
+                                <button type="button" class="btn btn-sm btn-outline-primary" id="btnAgregarNotaEditEnsayo">
+                                    <x-heroicon-o-plus style="width: 14px; height: 14px;" class="me-1" />
+                                    Agregar Nota
+                                </button>
+                            </div>
+                            <div id="notasEditEnsayoContainer">
+                                <!-- Las notas se agregarán dinámicamente aquí -->
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="btnGuardarEnsayoEditado">Guardar Cambios</button>
             </div>
         </div>
     </div>
@@ -766,6 +1002,7 @@
                                     <option value="Aprobado">Aprobado</option>
                                     <option value="Rechazado">Rechazado</option>
                                     <option value="En Proceso">En Proceso</option>
+                                    <option value="Suspendida">Suspendida</option>
                                 </select>
                             </div>
                             <div class="col-md-3">
@@ -827,6 +1064,7 @@
             'ensayosIniciales' => [],
             'componentesIniciales' => [],
         ];
+        $configuracionCotizacion['puedeBajarPrecio'] = auth()->user() && ((int) (auth()->user()->usu_nivel ?? 0) >= 900);
     @endphp
     window.cotizacionConfig = @json($configuracionCotizacion);
 </script>
@@ -981,7 +1219,8 @@
                 'En Espera': 'warning',
                 'Aprobado': 'success',
                 'Rechazado': 'danger',
-                'En Proceso': 'info'
+                'En Proceso': 'info',
+                'Suspendida': 'secondary'
             }[cot.coti_estado] || 'secondary';
 
             return `
@@ -1075,8 +1314,91 @@
     function rellenarFormulario(data) {
         const { cotizacion, ensayos, componentes } = data;
 
+        // Algunos datos (sucursal/contactos) pueden ser sobreescritos por la carga asíncrona
+        // del cliente luego de setear el código. Guardamos una copia para re-aplicarlos.
+        const clonSuc = (cotizacion.coti_codigosuc || '').toString();
+        const clonContactos = {
+            c1: { nombre: cotizacion.coti_contacto || '', correo: cotizacion.coti_mail1 || '', tel: cotizacion.coti_telefono || '', tipo: cotizacion.coti_contacto_tipo1 || '' },
+            c2: { nombre: cotizacion.coti_contacto2 || '', correo: cotizacion.coti_mail2 || '', tel: cotizacion.coti_telefono2 || '', tipo: cotizacion.coti_contacto_tipo2 || '' },
+            c3: { nombre: cotizacion.coti_contacto3 || '', correo: cotizacion.coti_mail3 || '', tel: cotizacion.coti_telefono3 || '', tipo: cotizacion.coti_contacto_tipo3 || '' },
+            c4: { nombre: cotizacion.coti_contacto4 || '', correo: cotizacion.coti_mail4 || '', tel: cotizacion.coti_telefono4 || '', tipo: cotizacion.coti_contacto_tipo4 || '' },
+        };
+
+        const aplicarSucursalYContactos = () => {
+            try {
+                const sucEl = document.getElementById('sucursal');
+                if (sucEl) sucEl.value = clonSuc;
+                const sucSel = document.getElementById('sucursal_select');
+                if (sucSel) {
+                    const valor = clonSuc;
+                    if (valor) {
+                        // Si aún no están cargadas las opciones, agregamos una opción temporal
+                        // para que el valor quede seleccionado igual.
+                        if (!Array.from(sucSel.options || []).some(o => String(o.value).trim() === String(valor).trim())) {
+                            const opt = document.createElement('option');
+                            opt.value = valor;
+                            opt.textContent = valor;
+                            sucSel.appendChild(opt);
+                        }
+                        sucSel.value = valor;
+                    }
+                    // Mostrar el select si el flujo de UI lo usa
+                    sucSel.classList.remove('d-none');
+                    // Disparar change para que cualquier listener actualice UI/estado
+                    sucSel.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+
+                const c1 = document.getElementById('contacto');
+                const m1 = document.getElementById('correo');
+                const t1 = document.getElementById('telefono');
+                const tipo1 = document.getElementById('coti_contacto_tipo1');
+                if (c1) c1.value = clonContactos.c1.nombre || '';
+                if (m1) m1.value = clonContactos.c1.correo || '';
+                if (t1) t1.value = clonContactos.c1.tel || '';
+                if (tipo1) tipo1.value = clonContactos.c1.tipo || '';
+
+                const ensureBlockVisible = (idx) => {
+                    const block = document.getElementById(`contacto-block-${idx}`);
+                    if (block) block.classList.remove('d-none');
+                };
+                const setExtra = (idx, data) => {
+                    const c = document.getElementById(`contacto${idx}`);
+                    const m = document.getElementById(`correo${idx}`);
+                    const t = document.getElementById(`telefono${idx}`);
+                    const tipo = document.getElementById(`coti_contacto_tipo${idx}`);
+                    if (c) c.value = data.nombre || '';
+                    if (m) m.value = data.correo || '';
+                    if (t) t.value = data.tel || '';
+                    if (tipo) tipo.value = data.tipo || '';
+                };
+
+                if (clonContactos.c2.nombre || clonContactos.c2.correo || clonContactos.c2.tel || clonContactos.c2.tipo) {
+                    ensureBlockVisible(2);
+                    setExtra(2, clonContactos.c2);
+                }
+                if (clonContactos.c3.nombre || clonContactos.c3.correo || clonContactos.c3.tel || clonContactos.c3.tipo) {
+                    ensureBlockVisible(3);
+                    setExtra(3, clonContactos.c3);
+                }
+                if (clonContactos.c4.nombre || clonContactos.c4.correo || clonContactos.c4.tel || clonContactos.c4.tipo) {
+                    ensureBlockVisible(4);
+                    setExtra(4, clonContactos.c4);
+                }
+            } catch (e) {
+                console.warn('No se pudo aplicar sucursal/contactos del clon:', e);
+            }
+        };
+
         // Rellenar campos básicos
         if (cotizacion.coti_codigocli) {
+            // Poner sucursal/contactos ANTES de disparar la carga del cliente para que el script
+            // que preselecciona sucursal tenga el valor ya disponible.
+            aplicarSucursalYContactos();
+
+            // Señal global para que el script del cliente no pise el clon
+            window.__clonCotizacionOverride = { sucursal: clonSuc, contactos: clonContactos };
+            window.__clonCotizacionOverrideActive = true;
+
             document.getElementById('cliente_codigo').value = cotizacion.coti_codigocli;
             // Disparar evento para cargar datos del cliente
             const evento = new Event('input', { bubbles: true });
@@ -1102,12 +1424,29 @@
             }
         }
 
+        const hRelClon = document.getElementById('input_coti_req_cadena_custodia_relacionada');
+        if (hRelClon) {
+            const rel = cotizacion.coti_req_cadena_custodia_relacionada === true
+                || cotizacion.coti_req_cadena_custodia_relacionada === 1
+                || cotizacion.coti_req_cadena_custodia_relacionada === '1';
+            hRelClon.value = rel ? '1' : '0';
+        }
+        if (window.cotizacionScripts && typeof window.cotizacionScripts.syncCotiReqCadenaRelCheckboxesFromHidden === 'function') {
+            window.cotizacionScripts.syncCotiReqCadenaRelCheckboxesFromHidden();
+        }
+
         if (cotizacion.coti_codigosuc) {
             document.getElementById('sucursal').value = cotizacion.coti_codigosuc;
         }
 
         if (cotizacion.coti_para) {
             document.getElementById('coti_para').value = cotizacion.coti_para;
+        }
+
+        const hidEmpRelClon = document.getElementById('coti_empresa_rel');
+        if (hidEmpRelClon) {
+            const vRel = cotizacion.coti_empresa_rel ?? cotizacion.coti_cli_empresa;
+            hidEmpRelClon.value = (vRel !== null && vRel !== undefined && vRel !== '') ? String(vRel) : '';
         }
 
         if (cotizacion.coti_contacto) {
@@ -1121,6 +1460,67 @@
         if (cotizacion.coti_telefono) {
             document.getElementById('telefono').value = cotizacion.coti_telefono;
         }
+
+        // Copiar contactos adicionales (2 a 4) de la cotización original
+        if (cotizacion.coti_contacto2 || cotizacion.coti_mail2 || cotizacion.coti_telefono2 || cotizacion.coti_contacto_tipo2) {
+            const block2 = document.getElementById('contacto-block-2');
+            if (block2) {
+                block2.classList.remove('d-none');
+            }
+            const c2 = document.getElementById('contacto2');
+            const m2 = document.getElementById('correo2');
+            const t2 = document.getElementById('telefono2');
+            const tipo2 = document.getElementById('coti_contacto_tipo2');
+            if (c2) c2.value = cotizacion.coti_contacto2 || '';
+            if (m2) m2.value = cotizacion.coti_mail2 || '';
+            if (t2) t2.value = cotizacion.coti_telefono2 || '';
+            if (tipo2) tipo2.value = cotizacion.coti_contacto_tipo2 || '';
+        }
+
+        if (cotizacion.coti_contacto3 || cotizacion.coti_mail3 || cotizacion.coti_telefono3 || cotizacion.coti_contacto_tipo3) {
+            const block3 = document.getElementById('contacto-block-3');
+            if (block3) {
+                block3.classList.remove('d-none');
+            }
+            const c3 = document.getElementById('contacto3');
+            const m3 = document.getElementById('correo3');
+            const t3 = document.getElementById('telefono3');
+            const tipo3 = document.getElementById('coti_contacto_tipo3');
+            if (c3) c3.value = cotizacion.coti_contacto3 || '';
+            if (m3) m3.value = cotizacion.coti_mail3 || '';
+            if (t3) t3.value = cotizacion.coti_telefono3 || '';
+            if (tipo3) tipo3.value = cotizacion.coti_contacto_tipo3 || '';
+        }
+
+        if (cotizacion.coti_contacto4 || cotizacion.coti_mail4 || cotizacion.coti_telefono4 || cotizacion.coti_contacto_tipo4) {
+            const block4 = document.getElementById('contacto-block-4');
+            if (block4) {
+                block4.classList.remove('d-none');
+            }
+            const c4 = document.getElementById('contacto4');
+            const m4 = document.getElementById('correo4');
+            const t4 = document.getElementById('telefono4');
+            const tipo4 = document.getElementById('coti_contacto_tipo4');
+            if (c4) c4.value = cotizacion.coti_contacto4 || '';
+            if (m4) m4.value = cotizacion.coti_mail4 || '';
+            if (t4) t4.value = cotizacion.coti_telefono4 || '';
+            if (tipo4) tipo4.value = cotizacion.coti_contacto_tipo4 || '';
+        }
+
+        // Re-aplicar varias veces hasta que termine la carga asíncrona del cliente
+        // (carga de sucursales/contactos registrados suele sobreescribir campos).
+        aplicarSucursalYContactos();
+        let intentosClon = 0;
+        const maxIntentosClon = 30; // ~6s
+        const t = setInterval(() => {
+            intentosClon++;
+            aplicarSucursalYContactos();
+            const sucSel = document.getElementById('sucursal_select');
+            const yaSeleccionoSucursal = !clonSuc || (sucSel && String(sucSel.value || '').trim() === String(clonSuc).trim());
+            if (yaSeleccionoSucursal || intentosClon >= maxIntentosClon) {
+                clearInterval(t);
+            }
+        }, 200);
 
         if (cotizacion.coti_sector) {
             const sectorSelect = document.getElementById('sector');
@@ -1137,8 +1537,44 @@
             document.getElementById('descuento').value = cotizacion.descuento;
         }
 
+        // Al clonar, nunca copiar aumento global: siempre iniciar en 0
+        if (document.getElementById('aumento')) {
+            document.getElementById('aumento').value = '0.00';
+        }
+
+        if (cotizacion.divisa_codigo) {
+            const divisaSelect = document.getElementById('divisa_codigo');
+            if (divisaSelect) divisaSelect.value = cotizacion.divisa_codigo;
+        }
+
+        if (cotizacion.coti_cond_pago) {
+            const condPagoSelect = document.getElementById('coti_cond_pago');
+            if (condPagoSelect) {
+                condPagoSelect.value = cotizacion.coti_cond_pago;
+                condPagoSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        }
+        const cuotasPanel = document.getElementById('cuotasPanel');
+        if (cuotasPanel && cotizacion.coti_cuotas) {
+            const desc = document.getElementById('coti_cuota_desc');
+            const cant = document.getElementById('coti_cuota_cant');
+            const total = document.getElementById('coti_cuota_monto_total');
+            const indiv = document.getElementById('coti_cuota_monto_indiv');
+            const finMes = document.getElementById('coti_cuota_fact_fin_mes');
+            const inicioMes = document.getElementById('coti_cuota_fact_inicio_mes');
+            const interes = document.getElementById('coti_cuota_interes');
+            if (desc) desc.value = cotizacion.coti_cuota_desc || '';
+            if (cant) cant.value = cotizacion.coti_cuota_cant || 1;
+            if (interes) interes.value = cotizacion.coti_cuota_interes ?? 0;
+            if (total) total.value = cotizacion.coti_cuota_monto_total ?? '';
+            if (indiv) indiv.value = cotizacion.coti_cuota_monto_indiv ?? '';
+            if (finMes) finMes.checked = !!cotizacion.coti_cuota_fact_fin_mes;
+            if (inicioMes) inicioMes.checked = !!cotizacion.coti_cuota_fact_inicio_mes;
+        }
+
         if (cotizacion.coti_cadena_custodia) {
-            document.getElementById('cadena_custodia').checked = true;
+            const el = document.getElementById('cadena_custodia');
+            if (el) el.checked = true;
         }
 
         if (cotizacion.coti_muestreo) {
@@ -1195,6 +1631,14 @@
             document.getElementById('codigo_postal_cliente').value = cotizacion.coti_codigopostal;
         }
 
+        if (typeof window.cotizacionRefsFacturacionCargarDesdeDatos === 'function') {
+            window.cotizacionRefsFacturacionCargarDesdeDatos({
+                coti_oc_referencia: cotizacion.coti_oc_referencia || '',
+                coti_oc_requerido_factura: !!cotizacion.coti_oc_requerido_factura,
+                coti_refs_facturacion_json: cotizacion.coti_refs_facturacion_json || '',
+            });
+        }
+
         // Guardar datos de ensayos y componentes en sessionStorage para que se carguen después
         if (ensayos && ensayos.length > 0) {
             sessionStorage.setItem('ensayosParaClonar', JSON.stringify(ensayos));
@@ -1248,6 +1692,11 @@
                         componentes_sugeridos: [],
                         nota_tipo: ensayo.notas && ensayo.notas.length > 0 ? ensayo.notas[0].tipo : null,
                         nota_contenido: ensayo.notas && ensayo.notas.length > 0 ? ensayo.notas[0].contenido : null,
+                        req_cadena_custodia: !!ensayo.req_cadena_custodia,
+                        req_prot_mapba: !!ensayo.req_prot_mapba,
+                        lleva_muestreo: typeof ensayo.lleva_muestreo !== 'undefined' ? !!ensayo.lleva_muestreo : true,
+                        precio_extra_ensayo: Math.max(0, parseFloat(ensayo.precio_extra_ensayo) || 0),
+                        ley_normativa_id: ensayo.ley_normativa_id || ensayo.ley_normativa || null,
                     };
                     state.ensayos.push(ensayoNormalizado);
                 });

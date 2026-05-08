@@ -9,6 +9,52 @@ class FirmaDigitalService
 {
     protected string $endpoint = "https://test.firmador.alpha2000.com.ar/api/FirmaDigital/PostFirmarDocumentoFirmaDigital";
 
+    private function mascararToken(?string $token): ?string
+    {
+        if (!$token) {
+            return $token;
+        }
+        $len = strlen($token);
+        if ($len <= 8) {
+            return str_repeat('*', $len);
+        }
+        return substr($token, 0, 4) . str_repeat('*', max(0, $len - 8)) . substr($token, -4);
+    }
+
+    private function sanitizarPayloadFirma(array $payload, int $pdfSize, string $hashSha256Hex): array
+    {
+        // Nunca loguear el PDF en base64. Solo metadatos.
+        if (array_key_exists('DocumentoBase64', $payload)) {
+            $payload['DocumentoBase64'] = '[REDACTED]';
+        }
+
+        // Sanitizar datos potencialmente sensibles dentro de Personas
+        if (isset($payload['Personas']) && is_array($payload['Personas'])) {
+            foreach ($payload['Personas'] as $i => $persona) {
+                if (!is_array($persona)) {
+                    continue;
+                }
+                if (isset($persona['PinEncriptado']) && $persona['PinEncriptado'] !== '') {
+                    $payload['Personas'][$i]['PinEncriptado'] = '[REDACTED]';
+                }
+                if (isset($persona['NroSerieCertificado']) && $persona['NroSerieCertificado'] !== '') {
+                    $payload['Personas'][$i]['NroSerieCertificado'] = '[REDACTED]';
+                }
+                if (isset($persona['CuadroVisibleFirma_ImagenBase64']) && $persona['CuadroVisibleFirma_ImagenBase64'] !== '') {
+                    $payload['Personas'][$i]['CuadroVisibleFirma_ImagenBase64'] = '[REDACTED]';
+                }
+            }
+        }
+
+        // Agregar metadatos de depuración útiles
+        $payload['_debug'] = [
+            'pdf_size_bytes' => $pdfSize,
+            'hash_sha256_hex' => $hashSha256Hex,
+        ];
+
+        return $payload;
+    }
+
     public function firmarDocumento($pdfBinary, $cuil, $cuitOrg)
     {
         Log::info("🔄 Iniciando proceso de firma digital", [
@@ -25,48 +71,65 @@ class FirmaDigitalService
             // Calcular hash SHA256
             $hash = hash('sha256', $pdfBinary);
 
+            // Modo de firma:
+            // - persona_fisica: SOLO enviar CUIL (no enviar CuitOrganizacion)
+            // - organizacion: enviar CUIL + CuitOrganizacion si corresponde
+            $modoFirma = (string) (env('FIRMA_DIGITAL_MODO', 'persona_fisica') ?? 'persona_fisica');
+            $modoFirma = strtolower(trim($modoFirma));
+            if (!in_array($modoFirma, ['persona_fisica', 'organizacion'], true)) {
+                $modoFirma = 'persona_fisica';
+            }
+
+            $baseUrl = rtrim((string) (config('app.url') ?: url('/')), '/');
+
             // Payload según documentación oficial
-            $payload = 
-            [
+            $persona = [
+                "CodigoUnicoIdentificacion" => $cuil ?? '20000000019', // CUIL de prueba oficial
+                "OrdenFirma" => 1,
+                "CuadroVisibleFirma_X"     => 595 - 200 - 20, // margen derecho de 20 = 375
+                "CuadroVisibleFirma_Y"     => 20, // margen superior de 20 = 20
+                "CuadroVisibleFirma_Ancho" => 200,
+                "CuadroVisibleFirma_Alto" => 80,
+                "CuadroVisibleFirma_ImagenBase64" => "",
+                "CuadroVisibleFirma_PlantillaID" => 1, 
+                "RazonFirma" => "",
+                "CuadroVisibleFirma_Pagina" => 1,
+                "CuadroVisibleFirma_TodasPaginas" => true,
+                "UrlRedireccionOK" => $baseUrl . "/firma/exitosa",
+                "UrlRedireccionError" => $baseUrl . "/firma/error",
+                "UrlRedireccionRechazar" => $baseUrl . "/firma/rechazada",
+                "ForzarGeneracionErrorParaTest" => false,
+                "NroSerieCertificado" => "",
+                "PinEncriptado" => ""
+            ];
+
+            // Según soporte: para firma con clave en custodia (persona física) NO se debe enviar CuitOrganizacion.
+            if ($modoFirma === 'organizacion') {
+                $persona["CuitOrganizacion"] = $cuitOrg ?? '';
+            }
+
+            $payload = [
                 "DocumentoBase64" => $documentoBase64,
                 "HashSHA256Hexadecimal" => $hash,
                 "IdentificadorGrupo" => "",
                 "Personas" => [
-                    [
-                        "CodigoUnicoIdentificacion" => $cuil ?? '20000000019', // CUIL de prueba oficial
-                        "CuitOrganizacion" => $cuitOrg ?? '',
-                        "OrdenFirma" => 1,
-                        "CuadroVisibleFirma_X"     => 595 - 200 - 20, // margen derecho de 20 = 375
-                        "CuadroVisibleFirma_Y"     => 20, // margen superior de 20 = 20
-                        "CuadroVisibleFirma_Ancho" => 200,
-                        "CuadroVisibleFirma_Alto" => 80,
-                        "CuadroVisibleFirma_ImagenBase64" => "",
-                        "CuadroVisibleFirma_PlantillaID" => 1, 
-                        "RazonFirma" => "",
-                        "CuadroVisibleFirma_Pagina" => 1,
-                        "CuadroVisibleFirma_TodasPaginas" => true,
-                        "UrlRedireccionOK" => url("/firma/exitosa"),
-                        "UrlRedireccionError" => url("/firma/error"),
-                        "UrlRedireccionRechazar" => url("/firma/rechazada"),
-                        "ForzarGeneracionErrorParaTest" => false,
-                        "NroSerieCertificado" => "",
-                        "PinEncriptado" => ""
-                    ]
+                    $persona
                 ],
                 "Origen" => "",
                 "UserIdCreador" => 8
             ];
             
             $token = $this->generarTokenAuth('WebApi_industriayambiente', 'GrtLx92mQ');
-            Log::info("Token generado: " . $token);
-
-            // Log del payload para debug
-            Log::info("Payload enviado a firma digital", [
+            // Log estructurado con payload sanitizado (sin token ni PDF base64)
+            $payloadSanitizado = $this->sanitizarPayloadFirma($payload, strlen($pdfBinary), $hash);
+            Log::info("📤 Request a API firma digital (sanitizada)", [
                 'endpoint' => $this->endpoint,
-                'payload_size' => strlen(json_encode($payload)),
-                'hash' => $hash,
-                'cuil' => $payload['Personas'][0]['CodigoUnicoIdentificacion'],
-                'plantilla_id' => $payload['Personas'][0]['CuadroVisibleFirma_PlantillaID']
+                'headers' => [
+                    'Authorization' => $this->mascararToken($token),
+                    'Content-Type' => 'application/json',
+                    'Accept' => 'application/json',
+                ],
+                'payload' => $payloadSanitizado,
             ]);
 
                         // Hacer la llamada POST
@@ -84,7 +147,8 @@ class FirmaDigitalService
                 'status' => $response->status(),
                 'successful' => $response->successful(),
                 'failed' => $response->failed(),
-                'body' => $response->body(),
+                // Evitar logs gigantes: truncar body si es muy grande
+                'body' => strlen($response->body()) > 5000 ? (substr($response->body(), 0, 5000) . '... [truncated]') : $response->body(),
                 'headers' => $response->headers()
             ]);
 

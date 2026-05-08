@@ -81,6 +81,7 @@
 $totalClientes = \App\Models\Clientes::count();
 $activos = \App\Models\Clientes::where('cli_estado', true)->count();
 $inactivos = \App\Models\Clientes::where('cli_estado', false)->count();
+$readOnly = function_exists('userHasRole') ? userHasRole('facturador') : (strtolower(trim((string) (optional(Auth::user())->rol ?? ''))) === 'facturador');
 @endphp
 
 <div class="container-fluid py-4">
@@ -91,9 +92,49 @@ $inactivos = \App\Models\Clientes::where('cli_estado', false)->count();
                 <h1 class="mb-1"><x-heroicon-o-users class="me-2" style="width: 16px; height: 16px;" />Dashboard de Clientes</h1>
                 <p class="mb-0 opacity-75">Gestión y análisis de clientes</p>
             </div>
-            <a href="{{ route('clientes.create') }}" class="btn btn-light btn-lg" style="font-size: 14px;">
-                <x-heroicon-o-plus class="me-2" style="width: 16px; height: 16px;" />Nuevo Cliente
-            </a>
+            <div class="d-flex align-items-center flex-wrap gap-2">
+                @if(!$readOnly)
+                    <button type="button" class="btn btn-outline-light" data-bs-toggle="modal" data-bs-target="#importModal" style="font-size: 14px;">
+                        <x-heroicon-o-arrow-up-tray class="me-2" style="width: 16px; height: 16px;" />Importar
+                    </button>
+                    <a href="{{ route('clientes.plantilla') }}" class="btn btn-outline-light" style="font-size: 14px;">
+                        <x-heroicon-o-arrow-down-tray class="me-2" style="width: 16px; height: 16px;" />Plantilla
+                    </a>
+                    <a href="{{ route('clientes.create') }}" class="btn btn-light" style="font-size: 14px;">
+                        <x-heroicon-o-plus class="me-2" style="width: 16px; height: 16px;" />Nuevo Cliente
+                    </a>
+                @endif
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Importación -->
+    <div class="modal fade" id="importModal" tabindex="-1" aria-labelledby="importModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form action="{{ route('clientes.importar') }}" method="POST" enctype="multipart/form-data">
+                    @csrf
+                    <div class="modal-header bg-success text-white">
+                        <h5 class="modal-title" id="importModalLabel">Importar Clientes</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p>Seleccione el archivo Excel (.xlsx, .xls) o CSV con los datos de los clientes.</p>
+                        <div class="mb-3">
+                            <label for="archivo" class="form-label">Archivo</label>
+                            <input type="file" name="archivo" id="archivo" class="form-control" accept=".xlsx, .xls, .csv" required>
+                        </div>
+                        <div class="alert alert-info py-2 small">
+                            <x-heroicon-o-information-circle style="width: 16px; height: 16px;" class="me-1" />
+                            Use la plantilla descargable para asegurar el formato correcto.
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-success">Procesar Importación</button>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
 
@@ -228,18 +269,20 @@ $inactivos = \App\Models\Clientes::where('cli_estado', false)->count();
                             @endif
                         </td>
                         <td class="text-end action-buttons">
-                            <a href="{{ route('clientes.edit', trim($cliente->cli_codigo)) }}" class="btn btn-sm btn-outline-primary" title="Ver/Editar">
+                            <a href="{{ route('clientes.edit', trim($cliente->cli_codigo)) }}" class="btn btn-sm btn-outline-primary" title="{{ $readOnly ? 'Ver' : 'Ver/Editar' }}">
                                 <x-heroicon-o-pencil style="width: 16px; height: 16px;" />
                             </a>
                             <a href="{{ route('ventas.index', ['cliente' => trim($cliente->cli_codigo)]) }}" class="btn btn-sm btn-outline-info" title="Ver Cotizaciones">
                                 <x-heroicon-o-document-text style="width: 16px; height: 16px;" />
                             </a>
-                            <button type="button" 
-                               class="btn btn-sm btn-outline-danger" 
-                               onclick="confirmarEliminacion('{{ trim($cliente->cli_codigo) }}')"
-                               title="Eliminar">
-                                <x-heroicon-o-trash style="width: 16px; height: 16px;" />
-                            </button>
+                            @if(!$readOnly)
+                                <button type="button" 
+                                   class="btn btn-sm btn-outline-danger" 
+                                   onclick="confirmarEliminacion('{{ trim($cliente->cli_codigo) }}')"
+                                   title="Eliminar">
+                                    <x-heroicon-o-trash style="width: 16px; height: 16px;" />
+                                </button>
+                            @endif
                         </td>
                     </tr>
                     @endforeach

@@ -270,7 +270,7 @@ usort($gruposFinalizados, function($a, $b) use ($fechaActual) {
                             
                             <div class="d-flex gap-2 mt-2 mt-md-0">
                                 <a class="btn btn-outline-danger btn-sm"
-                                   href="https://www.google.com/maps/search/?api=1&query={{ $cotizacion->coti_direccioncli ?? '' }}, {{ $cotizacion->coti_localidad ?? '' }}, {{ $cotizacion->coti_partido ?? '' }}">
+                                   href="https://www.google.com/maps/search/?api=1&query={{ $cotizacion ? urlencode(\App\Support\CotizacionClienteEtiqueta::direccionDestinatarioMapsQuery($cotizacion)) : '' }}">
                                     <x-heroicon-o-map class="me-1" style="width: 16px; height: 16px;" />
                                     <span>Maps</span>
                                 </a>
@@ -287,7 +287,7 @@ usort($gruposFinalizados, function($a, $b) use ($fechaActual) {
                                     </div>
                                     <div class="col-md-4 d-flex align-items-center">
                                         <x-heroicon-o-map-pin class="me-2 text-muted" style="width: 14px; height: 14px;" />
-                                        <strong>Dirección: </strong> {{ $cotizacion->coti_direccioncli ?? 'N/A' }}
+                                        <strong>Dirección: </strong> {{ $cotizacion ? (\App\Support\CotizacionClienteEtiqueta::direccionDestinatarioTexto($cotizacion) ?: 'N/A') : 'N/A' }}
                                     </div>
                                     <div class="col-md-4 d-flex align-items-center">
                                         <x-heroicon-o-user-circle class="me-2 text-muted" style="width: 14px; height: 14px;" />
@@ -479,7 +479,7 @@ usort($gruposFinalizados, function($a, $b) use ($fechaActual) {
                             
                             <div class="d-flex gap-2 mt-2 mt-md-0">
                                 <a class="btn btn-outline-dark btn-sm"
-                                   href="https://www.google.com/maps/search/?api=1&query={{ $cotizacion->coti_direccioncli ?? '' }}, {{ $cotizacion->coti_localidad ?? '' }}, {{ $cotizacion->coti_partido ?? '' }}">
+                                   href="https://www.google.com/maps/search/?api=1&query={{ $cotizacion ? urlencode(\App\Support\CotizacionClienteEtiqueta::direccionDestinatarioMapsQuery($cotizacion)) : '' }}">
                                     <x-heroicon-o-map class="me-1" style="width: 16px; height: 16px;" />
                                     <span>Maps</span>
                                 </a>
@@ -496,7 +496,7 @@ usort($gruposFinalizados, function($a, $b) use ($fechaActual) {
                                     </div>
                                     <div class="col-md-4 d-flex align-items-center">
                                         <x-heroicon-o-map-pin class="me-2 text-muted" style="width: 14px; height: 14px;" />
-                                        <strong>Dirección: </strong> {{ $cotizacion->coti_direccioncli ?? 'N/A' }}
+                                        <strong>Dirección: </strong> {{ $cotizacion ? (\App\Support\CotizacionClienteEtiqueta::direccionDestinatarioTexto($cotizacion) ?: 'N/A') : 'N/A' }}
                                     </div>
                                     <div class="col-md-4 d-flex align-items-center">
                                         <x-heroicon-o-user-circle class="me-2 text-muted" style="width: 14px; height: 14px;" />
@@ -684,7 +684,7 @@ usort($gruposFinalizados, function($a, $b) use ($fechaActual) {
                             
                             <div class="d-flex gap-2 mt-2 mt-md-0">
                                 <a class="btn btn-outline-primary btn-sm"
-                                   href="https://www.google.com/maps/search/?api=1&query={{ $cotizacion->coti_direccioncli ?? '' }}, {{ $cotizacion->coti_localidad ?? '' }}, {{ $cotizacion->coti_partido ?? '' }}">
+                                   href="https://www.google.com/maps/search/?api=1&query={{ $cotizacion ? urlencode(\App\Support\CotizacionClienteEtiqueta::direccionDestinatarioMapsQuery($cotizacion)) : '' }}">
                                     <x-heroicon-o-map class="me-1" style="width: 16px; height: 16px;" />
                                     <span>Maps</span>
                                 </a>
@@ -701,7 +701,7 @@ usort($gruposFinalizados, function($a, $b) use ($fechaActual) {
                                     </div>
                                     <div class="col-md-4 d-flex align-items-center">
                                         <x-heroicon-o-map-pin class="me-2 text-muted" style="width: 14px; height: 14px;" />
-                                        <strong>Dirección: </strong> {{ $cotizacion->coti_direccioncli ?? 'N/A' }}
+                                        <strong>Dirección: </strong> {{ $cotizacion ? (\App\Support\CotizacionClienteEtiqueta::direccionDestinatarioTexto($cotizacion) ?: 'N/A') : 'N/A' }}
                                     </div>
                                     <div class="col-md-4 d-flex align-items-center">
                                         <x-heroicon-o-user-circle class="me-2 text-muted" style="width: 14px; height: 14px;" />
@@ -885,7 +885,7 @@ usort($gruposFinalizados, function($a, $b) use ($fechaActual) {
                             
                             <div class="d-flex gap-2 mt-2 mt-md-0">
                                 <a class="btn btn-outline-primary btn-sm"
-                                   href="https://www.google.com/maps/search/?api=1&query={{ $cotizacion->coti_direccioncli ?? '' }}, {{ $cotizacion->coti_localidad ?? '' }}, {{ $cotizacion->coti_partido ?? '' }}">
+                                   href="https://www.google.com/maps/search/?api=1&query={{ $cotizacion ? urlencode(\App\Support\CotizacionClienteEtiqueta::direccionDestinatarioMapsQuery($cotizacion)) : '' }}">
                                     <x-heroicon-o-map class="me-1" style="width: 16px; height: 16px;" />
                                     <span>Maps</span>
                                 </a>
@@ -902,7 +902,7 @@ usort($gruposFinalizados, function($a, $b) use ($fechaActual) {
                                     </div>
                                     <div class="col-md-4 d-flex align-items-center">
                                         <x-heroicon-o-map-pin class="me-2 text-muted" style="width: 14px; height: 14px;" />
-                                        <strong>Dirección: </strong> {{ $cotizacion->coti_direccioncli ?? 'N/A' }}
+                                        <strong>Dirección: </strong> {{ $cotizacion ? (\App\Support\CotizacionClienteEtiqueta::direccionDestinatarioTexto($cotizacion) ?: 'N/A') : 'N/A' }}
                                     </div>
                                     <div class="col-md-4 d-flex align-items-center">
                                         <x-heroicon-o-user-circle class="me-2 text-muted" style="width: 14px; height: 14px;" />
@@ -1086,7 +1086,7 @@ usort($gruposFinalizados, function($a, $b) use ($fechaActual) {
                             
                             <div class="d-flex gap-2 mt-2 mt-md-0">
                                 <a class="btn btn-outline-primary btn-sm"
-                                   href="https://www.google.com/maps/search/?api=1&query={{ $cotizacion->coti_direccioncli ?? '' }}, {{ $cotizacion->coti_localidad ?? '' }}, {{ $cotizacion->coti_partido ?? '' }}">
+                                   href="https://www.google.com/maps/search/?api=1&query={{ $cotizacion ? urlencode(\App\Support\CotizacionClienteEtiqueta::direccionDestinatarioMapsQuery($cotizacion)) : '' }}">
                                     <x-heroicon-o-map class="me-1" style="width: 16px; height: 16px;" />
                                     <span>Maps</span>
                                 </a>
@@ -1103,7 +1103,7 @@ usort($gruposFinalizados, function($a, $b) use ($fechaActual) {
                                     </div>
                                     <div class="col-md-4 d-flex align-items-center">
                                         <x-heroicon-o-map-pin class="me-2 text-muted" style="width: 14px; height: 14px;" />
-                                        <strong>Dirección: </strong> {{ $cotizacion->coti_direccioncli ?? 'N/A' }}
+                                        <strong>Dirección: </strong> {{ $cotizacion ? (\App\Support\CotizacionClienteEtiqueta::direccionDestinatarioTexto($cotizacion) ?: 'N/A') : 'N/A' }}
                                     </div>
                                     <div class="col-md-4 d-flex align-items-center">
                                         <x-heroicon-o-user-circle class="me-2 text-muted" style="width: 14px; height: 14px;" />

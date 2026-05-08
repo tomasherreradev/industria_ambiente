@@ -21,14 +21,14 @@
                             // Usar cotizacion directamente del array (funciona con o sin instancias)
                             $coti = $instanciaData['cotizacion'];
                             $instancias = collect($instanciaData['instancias'] ?? []);
-                            $muestras = $instancias->where('cotio_subitem', '=', 0)->where('enable_ot', '=', 1);
+                            $muestras = $instanciaData['muestras_relevantes'] ?? $instancias->where('cotio_subitem', '=', 0)->where('enable_ot', '=', 1);
                             $tieneInstancias = $instancias->isNotEmpty();
                             
-                            // Calcular estados para la barra de progreso
-                            $analizadas = $instancias->where('cotio_estado_analisis', 'analizado')->where('cotio_subitem', '=', 0)->count();
-                            $enProceso = $instancias->where('cotio_estado_analisis', 'en revision analisis')->where('cotio_subitem', '=', 0)->count();
-                            $coordinadas = $instancias->where('cotio_estado_analisis', 'coordinado analisis')->where('cotio_subitem', '=', 0)->count();
+                            // Calcular estados desde muestras relevantes (sin muestreo + con enable_ot)
                             $total = $muestras->count();
+                            $analizadas = $muestras->where('cotio_estado_analisis', 'analizado')->count();
+                            $enProceso = $muestras->where('cotio_estado_analisis', 'en revision analisis')->count();
+                            $coordinadas = $muestras->where('cotio_estado_analisis', 'coordinado analisis')->count();
                             
                             $porcentajes = [
                                 'analizadas' => $total > 0 ? ($analizadas / $total) * 100 : 0,
@@ -85,7 +85,7 @@
                                 </div>
                             </td>
                                 <td>
-                                    <div>{{ $coti->coti_empresa ?? 'N/A' }}</div>
+                                    <div>{{ \App\Support\CotizacionClienteEtiqueta::paraLista($coti) }}</div>
                                     @if($coti->coti_establecimiento)
                                         <small class="text-muted">{{ $coti->coti_establecimiento }}</small>
                                     @endif
@@ -325,7 +325,7 @@
                             </small>
                         </div>
                         
-                        <h6 class="card-subtitle mb-2 text-muted">{{ $coti->coti_empresa }}</h6>
+                        <h6 class="card-subtitle mb-2 text-muted">{{ \App\Support\CotizacionClienteEtiqueta::paraLista($coti) }}</h6>
                         
                         @if($coti->coti_establecimiento)
                             <p class="small mb-1"><i class="fas fa-building me-1"></i> {{ $coti->coti_establecimiento }}</p>

@@ -15,8 +15,38 @@ use App\Models\TipoCliente;
 use App\Models\ClienteEmpresaRelacionada;
 use App\Models\ClienteRazonSocialFacturacion;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
+use Maatwebsite\Excel\Facades\Excel;
+use App\Exports\ClientesTemplateExport;
+use App\Imports\ClientesImport;
 
 class ClientesController extends Controller {
+
+    private function esSoloLecturaFacturador(): bool
+    {
+        $user = Auth::user();
+        if (!$user) {
+            return false;
+        }
+
+        if (function_exists('userHasRole')) {
+            try {
+                return (bool) userHasRole('facturador');
+            } catch (\Throwable $e) {
+                // fallback abajo
+            }
+        }
+
+        $rol = strtolower(trim((string) ($user->rol ?? '')));
+        return $rol === 'facturador';
+    }
+
+    private function bloquearEscrituraParaFacturador(): void
+    {
+        if ($this->esSoloLecturaFacturador()) {
+            abort(403, 'Acción no permitida para el rol facturador (solo lectura).');
+        }
+    }
     
     public function index(Request $request)
     {
@@ -49,6 +79,8 @@ class ClientesController extends Controller {
 
     public function create()
     {
+        $this->bloquearEscrituraParaFacturador();
+
         // Cargar datos para los selectores
         $condicionesIva = CondicionIva::where('civa_estado', true)
             ->orderBy('civa_descripcion')
@@ -94,6 +126,8 @@ class ClientesController extends Controller {
 
     public function store(Request $request)
     {
+        $this->bloquearEscrituraParaFacturador();
+
         try {
             Log::info('=== INICIO CREACIÓN DE CLIENTE ===');
             Log::info('Datos recibidos en store:', $request->all());
@@ -513,6 +547,10 @@ class ClientesController extends Controller {
     public function edit($id)
     {
         $cliente = Clientes::find($id);
+
+        if (!$cliente) {
+            return redirect()->route('clientes.index')->with('error', 'Cliente no encontrado');
+        }
         
         // Cargar datos para los selectores (mismo que en create)
         $condicionesIva = CondicionIva::where('civa_estado', true)
@@ -601,6 +639,8 @@ class ClientesController extends Controller {
             ];
         })->toArray();
         
+        $readOnly = $this->esSoloLecturaFacturador();
+
         return View::make('clientes.edit', compact(
             'cliente',
             'condicionesIva',
@@ -614,12 +654,15 @@ class ClientesController extends Controller {
             'razonesSocialesJson',
             'contactos',
             'sucursales',
-            'sucursalesJson'
+            'sucursalesJson',
+            'readOnly'
         ));
     }
     
     public function update(Request $request, $id)
     {
+        $this->bloquearEscrituraParaFacturador();
+
         try {
             Log::info('=== INICIO ACTUALIZACIÓN DE CLIENTE ===', ['id' => $id]);
             Log::info('Datos recibidos en update:', $request->all());
@@ -1000,6 +1043,8 @@ class ClientesController extends Controller {
     
     public function destroy($id)
     {
+        $this->bloquearEscrituraParaFacturador();
+
         try {
             $cliente = Clientes::find($id);
             if (!$cliente) {
@@ -1034,4 +1079,31 @@ class ClientesController extends Controller {
         }
     }
     
+
+    public function downloadTemplate()
+    {
+        return \Maatwebsite\Excel\Facades\Excel::download(new \App\Exports\ClientesTemplateExport, 'plantilla_clientes.xlsx');
+    }
+
+    public function import(\Illuminate\Http\Request $request)
+    {
+        $this->bloquearEscrituraParaFacturador();
+
+        $request->validate([
+            'archivo' => 'required|mimes:xlsx,xls,csv'
+        ]);
+
+        try {
+            \Illuminate\Support\Facades\DB::beginTransaction();
+            \Maatwebsite\Excel\Facades\Excel::import(new \App\Imports\ClientesImport, $request->file('archivo'));
+            \Illuminate\Support\Facades\DB::commit();
+
+            return redirect()->route('clientes.index')->with('success', 'Clientes importados exitosamente');
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\DB::rollBack();
+            \Illuminate\Support\Facades\Log::error('Error en importación de clientes: ' . $e->getMessage());
+            return redirect()->back()->with('error', 'Error al importar clientes: ' . $e->getMessage());
+        }
+    }
+
 }

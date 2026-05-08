@@ -20,6 +20,8 @@ use App\Models\VariableRequerida;
 use App\Models\CotioValorVariable;
 use App\Models\CotioHistorialCambios;
 use App\Models\InstanciaResponsableMuestreo;
+use App\Support\CotizacionClienteEtiqueta;
+use App\Support\CotizacionCanalEnsayo;
 
 
 class MuestrasController extends Controller {
@@ -101,6 +103,27 @@ public function __construct(CotioController $cotioController)
     $this->cotioController = $cotioController;
 }
 
+/**
+ * Líneas de ítem (cotio, subitem 0) que no cuentan como muestra en coordinación (viáticos / TC en campo).
+ *
+ * @var list<string>
+ */
+private const COTIO_LINEAS_EXCLUIDAS_COORD_MUESTREO = [
+    'TRABAJO TECNICO EN CAMPO',
+    'TRABAJOS EN CAMPO NOCTURNO - VIATICOS',
+    'VIATICOS',
+];
+
+/**
+ * Misma regla que el cálculo de progreso en lista: solo tareas con "lleva muestreo" (excluye "No llevan muestreo").
+ */
+private function applyWhereTareasLlevanMuestreoParaListado($query): void
+{
+    $query->where('cotio_subitem', 0)
+        ->where('lleva_muestreo', true)
+        ->whereNotIn('cotio_descripcion', self::COTIO_LINEAS_EXCLUIDAS_COORD_MUESTREO);
+}
+
     
 public function index(Request $request)
 {
@@ -124,7 +147,7 @@ public function index(Request $request)
             ->get(['usu_codigo', 'usu_descripcion']);
     }
 
-    if ($viewType === 'calendario') {
+        if ($viewType === 'calendario') {
         // Caso especial para usuarios con nivel >= 900 que ven tareas de otro usuario
         if ($user->usu_nivel >= 900 && $viewTasks && $userToView) {
             return $this->showUserTasksCalendar($request, $userToView);
@@ -133,6 +156,8 @@ public function index(Request $request)
         // Construcción de la consulta base para instancias
         $query = CotioInstancia::with([
             'cotizacion.matriz',
+            'cotizacion.cliente',
+            'cotizacion.sucursal',
             'tarea',
             // Cargar todas las instancias de la misma cotización para verificar suspensiones y prioridades
             'cotizacion.instancias' => function ($q) {
@@ -141,19 +166,9 @@ public function index(Request $request)
         ])
             ->where('cotio_subitem', 0) // Solo instancias de muestras originales
             ->whereNotNull('fecha_inicio_muestreo') // Solo instancias con fecha de muestreo
-            // Filtro: solo cotizaciones con cadena_custodia, muestreo o ensayo de visita técnica
-            ->where(function($q) {
-                $q->whereHas('cotizacion', function($subQ) {
-                    $subQ->where('coti_cadena_custodia', true)
-                         ->orWhere('coti_muestreo', true);
-                })
-                ->orWhereHas('cotizacion.tareas', function($subQ) {
-                    $subQ->where('cotio_subitem', 0)
-                         ->where(function($subQ2) {
-                             $subQ2->whereRaw("UPPER(TRIM(cotio_descripcion)) LIKE '%TRABAJO TECNICO%'")
-                                   ->orWhereRaw("UPPER(TRIM(cotio_descripcion)) LIKE '%VISITA TECNICA%'");
-                         });
-                });
+            // Solo instancias cuya tarea lleva muestreo (alineado al listado; excluye solo custodia/TC sin muestreo).
+            ->whereHas('tarea', function ($t) {
+                $this->applyWhereTareasLlevanMuestreoParaListado($t);
             });
         
         // Filtro por término de búsqueda
@@ -185,16 +200,26 @@ public function index(Request $request)
                 $q->where('coti_estado', 'A');
             });
         }
+
+        // Evitar traer cotizaciones canceladas
+        $query->whereHas('cotizacion', function ($q) {
+            $q->where('cancelada', false);
+        });
         
         // Filtros por rango de fechas
         if ($request->has('fecha_inicio_muestreo') && !empty($request->fecha_inicio_muestreo)) {
-            $query->whereDate('fecha_muestreo', '>=', $request->fecha_inicio_muestreo);
+            $query->whereHas('cotizacion', function($q) use ($request) {
+                $q->whereDate('coti_fechaaprobado', '>=', $request->fecha_inicio_muestreo);
+            });
         }
         
         if ($request->has('fecha_fin_muestreo') && !empty($request->fecha_fin_muestreo)) {
-            $query->whereDate('fecha_muestreo', '<=', $request->fecha_fin_muestreo);
+            $query->whereHas('cotizacion', function($q) use ($request) {
+                $q->whereDate('coti_fechaaprobado', '<=', $request->fecha_fin_muestreo);
+            });
         } else {
-            // Si no hay fecha fin, mostrar por defecto el mes actual
+            // Si no hay fecha fin, mostrar por defecto el mes actual en el calendario
+            // (esto sigue siendo útil para la navegación del calendario)
             $query->whereBetween('fecha_muestreo', [
                 $currentMonth->copy()->startOfMonth(),
                 $currentMonth->copy()->endOfMonth()
@@ -205,6 +230,10 @@ public function index(Request $request)
         
         // Obtención de los resultados
         $instancias = $query->get();
+
+        CotizacionClienteEtiqueta::precargarEmpresasRelacionadas(
+            $instancias->map->cotizacion->unique(fn ($c) => $c->coti_num)->values()
+        );
         
         // Verificar suspensiones y prioridades para cada instancia
         $instancias->each(function ($instancia) {
@@ -254,16 +283,19 @@ public function index(Request $request)
                     ])
                     : route('cotizaciones.ver-detalle', ['cotizacion' => $instancia->cotio_numcoti]);
 
+                $cotiC = $instancia->cotizacion;
+                $esCuotas = (bool) ($cotiC->coti_cuotas ?? false);
                 $events->push([
-                    'title' => $instancia->cotizacion->coti_empresa . ' - ' . $instancia->cotio_numcoti,
+                    'title' => ($esCuotas ? '✓ ' : '') . CotizacionClienteEtiqueta::paraLista($cotiC) . ' - ' . $instancia->cotio_numcoti,
                     'start' => $instancia->fecha_inicio_muestreo,
                     'end' => $instancia->fecha_fin_muestreo ?? null,
                     'url' => $eventUrl,
                     'extendedProps' => [
-                        'empresa' => $instancia->cotizacion->coti_empresa,
-                        'descripcion' => $instancia->cotizacion->coti_descripcion,
+                        'empresa' => CotizacionClienteEtiqueta::paraLista($cotiC),
+                        'descripcion' => $cotiC->coti_descripcion,
                         'estado' => $instancia->cotio_estado,
                         'analisis_count' => $instancia->analisis_count ?? 0,
+                        'coti_cuotas' => $esCuotas,
                     ],
                     'className' => $this->getEventClass($instancia),
                 ]);
@@ -285,7 +317,7 @@ public function index(Request $request)
         ]);
     }
     
-    $query = Coti::with(['matriz', 'tareas.instancias' => function($q) {
+    $query = Coti::with(['matriz', 'cliente', 'sucursal', 'tareas.instancias' => function($q) {
         $q->where('cotio_subitem', 0);
     }, 'instancias' => function($q) {
         $q->where('cotio_subitem', 0);
@@ -296,20 +328,13 @@ public function index(Request $request)
              ->where('cotio_instancias.cotio_subitem', 0);
     })
     ->groupBy('coti.coti_num')
-    // Filtro: solo cotizaciones con cadena_custodia, muestreo o ensayo de visita técnica
-    ->where(function($q) {
-        $q->where('coti_cadena_custodia', true)
-          ->orWhere('coti_muestreo', true)
-          ->orWhereExists(function($subQ) {
-              $subQ->select(DB::raw(1))
-                   ->from('cotio')
-                   ->whereColumn('cotio.cotio_numcoti', 'coti.coti_num')
-                   ->where('cotio.cotio_subitem', 0)
-                   ->where(function($subQ2) {
-                       $subQ2->whereRaw("UPPER(TRIM(cotio_descripcion)) LIKE '%TRABAJO TECNICO%'")
-                             ->orWhereRaw("UPPER(TRIM(cotio_descripcion)) LIKE '%VISITA TECNICA%'");
-                   });
-          });
+    // Evitar traer cotizaciones canceladas
+    ->where(function ($q) {
+        $q->where('cancelada', false)->orWhereNull('cancelada');
+    })
+    // Al menos una muestra (cotio subitem 0) con lleva_muestreo; si todas tienen "No llevan muestreo", la coti no entra.
+    ->whereHas('tareas', function ($subQ) {
+        $this->applyWhereTareasLlevanMuestreoParaListado($subQ);
     });
 
     // Filtros (se mantienen igual)
@@ -346,11 +371,11 @@ public function index(Request $request)
     }
     
     if ($request->has('fecha_inicio_muestreo') && !empty($request->fecha_inicio_muestreo)) {
-        $query->whereDate('coti_fechaalta', '>=', $request->fecha_inicio_muestreo);
+        $query->whereDate('coti_fechaaprobado', '>=', $request->fecha_inicio_muestreo);
     }
 
     if ($request->has('fecha_fin_muestreo') && !empty($request->fecha_fin_muestreo)) {
-        $query->whereDate('coti_fechaalta', '<=', $request->fecha_fin_muestreo);
+        $query->whereDate('coti_fechaaprobado', '<=', $request->fecha_fin_muestreo);
     }
 
 
@@ -451,25 +476,40 @@ public function index(Request $request)
         ) ASC'
         )
         // Con filtros de fecha, ordenar por fecha como criterio secundario
-        ->orderBy('coti_fechaalta', 'desc');
+        ->orderBy('coti_fechaaprobado', 'desc');
         
         $muestras = $query->paginate(20)->appends($request->query());
     }
 
-    // Procesamiento de las muestras (se mantiene igual)
-    $muestras->each(function($coti) {
+        CotizacionClienteEtiqueta::precargarEmpresasRelacionadas($muestras->getCollection());
+
+        // Procesamiento de las muestras (solo las que llevan muestreo)
+        $muestras->each(function ($coti) {
+        // Muestras originales que llevan muestreo
         $muestrasOriginales = $coti->tareas->where('cotio_subitem', 0)
-            ->reject(function ($tarea) {
+            ->filter(function ($tarea) {
                 $descripcion = trim($tarea->cotio_descripcion);
-                return in_array($descripcion, [
+                // Excluir trabajos técnicos/viáticos
+                if (in_array($descripcion, [
                     'TRABAJO TECNICO EN CAMPO',
                     'TRABAJOS EN CAMPO NOCTURNO - VIATICOS',
                     'VIATICOS'
-                ]);
+                ])) {
+                    return false;
+                }
+                // Incluir solo las que llevan muestreo
+                return $tarea->lleva_muestreo === true;
             });
     
         $totalInstancias = $muestrasOriginales->sum('cotio_cantidad');
-        $instancias = $coti->instancias->where('cotio_subitem', 0);
+        // Instancias sólo de esas muestras
+        $instancias = $coti->instancias
+            ->where('cotio_subitem', 0)
+            ->filter(function($instancia) use ($muestrasOriginales) {
+                return $muestrasOriginales->contains(function($tarea) use ($instancia) {
+                    return $tarea->cotio_item == $instancia->cotio_item;
+                });
+            });
         
         $muestreadas = $instancias->filter(function($instancia) {
             return strtolower(trim($instancia->cotio_estado ?? '')) === 'muestreado';
@@ -516,6 +556,228 @@ public function index(Request $request)
     ]);
 }
 
+/**
+ * Listado estilo "Muestras" para portales por canal (consultoría / ASP / Clarke Fire).
+ */
+public function portalListaPorCanalEnsayo(Request $request, string $canal, string $portalTitulo, string $portalRouteName)
+{
+    $verTodas = $request->query('verTodas');
+    $viewType = 'lista';
+    $matrices = Matriz::orderBy('matriz_descripcion')->get();
+    $userToView = $request->get('user_to_view');
+    $usuarios = collect();
+
+    $query = Coti::with(['matriz', 'cliente', 'sucursal', 'tareas.instancias' => function ($q) {
+        $q->where('cotio_subitem', 0);
+    }, 'instancias' => function ($q) {
+        $q->where('cotio_subitem', 0);
+    }])
+        ->select('coti.*')
+        ->leftJoin('cotio_instancias', function ($join) {
+            $join->on('coti.coti_num', '=', 'cotio_instancias.cotio_numcoti')
+                ->where('cotio_instancias.cotio_subitem', 0);
+        })
+        ->groupBy('coti.coti_num')
+        ->where(function ($q) {
+            $q->where('cancelada', false)->orWhereNull('cancelada');
+        });
+
+    CotizacionCanalEnsayo::aplicarWhereCotiTieneEnsayoDelCanal($query, $canal);
+
+    if ($request->has('search') && !empty($request->search)) {
+        $searchTerms = explode(' ', trim($request->search));
+
+        $query->where(function ($q) use ($searchTerms) {
+            foreach ($searchTerms as $term) {
+                if (!empty(trim($term))) {
+                    $likeTerm = '%'.strtolower($term).'%';
+                    $termForNum = '%'.$term.'%';
+                    $q->where(function ($subQuery) use ($likeTerm, $termForNum) {
+                        $subQuery->where('coti_num', 'LIKE', $termForNum)
+                            ->orWhereRaw('LOWER(coti_empresa) LIKE ?', [$likeTerm])
+                            ->orWhereRaw('LOWER(coti_establecimiento) LIKE ?', [$likeTerm])
+                            ->orWhereRaw('LOWER(coti_descripcion) LIKE ?', [$likeTerm]);
+                    });
+                }
+            }
+        });
+    }
+
+    if ($request->has('matriz') && !empty($request->matriz)) {
+        $query->whereHas('matriz', function ($q) use ($request) {
+            $q->where('matriz_descripcion', 'like', '%'.$request->matriz.'%')
+                ->orWhere('matriz_codigo', $request->matriz);
+        });
+    }
+
+    if ($request->has('estado') && !empty($request->estado)) {
+        $query->where('coti_estado', $request->estado);
+    } elseif (!$verTodas) {
+        $query->where('coti_estado', 'A');
+    }
+
+    if ($request->has('fecha_inicio_muestreo') && !empty($request->fecha_inicio_muestreo)) {
+        $query->whereDate('coti_fechaaprobado', '>=', $request->fecha_inicio_muestreo);
+    }
+
+    if ($request->has('fecha_fin_muestreo') && !empty($request->fecha_fin_muestreo)) {
+        $query->whereDate('coti_fechaaprobado', '<=', $request->fecha_fin_muestreo);
+    }
+
+    if (empty($request->fecha_inicio_muestreo) && empty($request->fecha_fin_muestreo)) {
+        $query->orderByRaw('(
+            CASE 
+                WHEN (
+                    SELECT COALESCE(SUM(cotio_cantidad), 0) 
+                    FROM cotio 
+                    WHERE cotio_numcoti = coti.coti_num 
+                    AND cotio_subitem = 0
+                    AND cotio_descripcion NOT IN (\'TRABAJO TECNICO EN CAMPO\', \'TRABAJOS EN CAMPO NOCTURNO - VIATICOS\', \'VIATICOS\')
+                ) > (
+                    SELECT COUNT(*) 
+                    FROM cotio_instancias ci_count 
+                    WHERE ci_count.cotio_numcoti = coti.coti_num 
+                    AND ci_count.cotio_subitem = 0
+                ) THEN 3 
+                ELSE COALESCE((
+                    SELECT MIN(
+                        CASE 
+                            WHEN ci.es_priori = true AND LOWER(TRIM(COALESCE(ci.cotio_estado, \'\'))) != \'muestreado\' THEN 1
+                            WHEN LOWER(TRIM(COALESCE(ci.cotio_estado, \'\'))) = \'suspension\' THEN 2
+                            WHEN ci.cotio_estado IS NULL OR TRIM(COALESCE(ci.cotio_estado, \'\')) = \'\' THEN 3
+                            WHEN LOWER(TRIM(COALESCE(ci.cotio_estado, \'\'))) = \'en revision muestreo\' THEN 4
+                            WHEN LOWER(TRIM(COALESCE(ci.cotio_estado, \'\'))) = \'coordinado muestreo\' THEN 5
+                            WHEN LOWER(TRIM(COALESCE(ci.cotio_estado, \'\'))) = \'muestreado\' THEN 6
+                            ELSE 7
+                        END
+                    )
+                    FROM cotio_instancias ci 
+                    WHERE ci.cotio_numcoti = coti.coti_num 
+                    AND ci.cotio_subitem = 0
+                ), 3)
+            END
+        ) ASC'
+        )
+            ->orderBy('coti_fechaaprobado', 'asc');
+
+        $muestras = $query->paginate(20)->appends($request->query());
+    } else {
+        $query->orderByRaw('(
+            CASE 
+                WHEN (
+                    SELECT COALESCE(SUM(cotio_cantidad), 0) 
+                    FROM cotio 
+                    WHERE cotio_numcoti = coti.coti_num 
+                    AND cotio_subitem = 0
+                    AND cotio_descripcion NOT IN (\'TRABAJO TECNICO EN CAMPO\', \'TRABAJOS EN CAMPO NOCTURNO - VIATICOS\', \'VIATICOS\')
+                ) > (
+                    SELECT COUNT(*) 
+                    FROM cotio_instancias ci_count 
+                    WHERE ci_count.cotio_numcoti = coti.coti_num 
+                    AND ci_count.cotio_subitem = 0
+                ) THEN 3 
+                ELSE COALESCE((
+                    SELECT MIN(
+                        CASE 
+                            WHEN ci.es_priori = true AND LOWER(TRIM(COALESCE(ci.cotio_estado, \'\'))) != \'muestreado\' THEN 1
+                            WHEN LOWER(TRIM(COALESCE(ci.cotio_estado, \'\'))) = \'suspension\' THEN 2
+                            WHEN ci.cotio_estado IS NULL OR TRIM(COALESCE(ci.cotio_estado, \'\')) = \'\' THEN 3
+                            WHEN LOWER(TRIM(COALESCE(ci.cotio_estado, \'\'))) = \'en revision muestreo\' THEN 4
+                            WHEN LOWER(TRIM(COALESCE(ci.cotio_estado, \'\'))) = \'coordinado muestreo\' THEN 5
+                            WHEN LOWER(TRIM(COALESCE(ci.cotio_estado, \'\'))) = \'muestreado\' THEN 6
+                            ELSE 7
+                        END
+                    )
+                    FROM cotio_instancias ci 
+                    WHERE ci.cotio_numcoti = coti.coti_num 
+                    AND ci.cotio_subitem = 0
+                ), 3)
+            END
+        ) ASC'
+        )
+            ->orderBy('coti_fechaaprobado', 'desc');
+
+        $muestras = $query->paginate(20)->appends($request->query());
+    }
+
+    CotizacionClienteEtiqueta::precargarEmpresasRelacionadas($muestras->getCollection());
+
+    $muestras->each(function ($coti) use ($canal) {
+        $muestrasOriginales = $coti->tareas->where('cotio_subitem', 0)
+            ->filter(function ($tarea) use ($canal, $coti) {
+                $descripcion = trim($tarea->cotio_descripcion);
+                if (in_array($descripcion, [
+                    'TRABAJO TECNICO EN CAMPO',
+                    'TRABAJOS EN CAMPO NOCTURNO - VIATICOS',
+                    'VIATICOS',
+                ])) {
+                    return false;
+                }
+
+                return CotizacionCanalEnsayo::cotioEnsayoCoincideCanal(
+                    $tarea,
+                    $canal,
+                    optional($coti->matriz)->matriz_descripcion
+                );
+            });
+
+        $totalInstancias = $muestrasOriginales->sum('cotio_cantidad');
+        $instancias = $coti->instancias
+            ->where('cotio_subitem', 0)
+            ->filter(function ($instancia) use ($muestrasOriginales) {
+                return $muestrasOriginales->contains(function ($tarea) use ($instancia) {
+                    return $tarea->cotio_item == $instancia->cotio_item;
+                });
+            });
+
+        $muestreadas = $instancias->filter(function ($instancia) {
+            return strtolower(trim($instancia->cotio_estado ?? '')) === 'muestreado';
+        })->count();
+
+        $enRevision = $instancias->filter(function ($instancia) {
+            return strtolower(trim($instancia->cotio_estado ?? '')) === 'en revision muestreo';
+        })->count();
+
+        $coordinadas = $instancias->filter(function ($instancia) {
+            return strtolower(trim($instancia->cotio_estado ?? '')) === 'coordinado muestreo';
+        })->count();
+
+        $hasSuspension = $instancias->contains(function ($instancia) {
+            return strtolower(trim($instancia->cotio_estado ?? '')) === 'suspension';
+        });
+
+        $hasPriority = $instancias->contains(function ($instancia) {
+            return $instancia->es_priori && strtolower(trim($instancia->cotio_estado ?? '')) !== 'muestreado';
+        });
+
+        $porcentajes = [
+            'muestreadas' => $totalInstancias > 0 ? ($muestreadas / $totalInstancias) * 100 : 0,
+            'en_revision' => $totalInstancias > 0 ? ($enRevision / $totalInstancias) * 100 : 0,
+            'coordinadas' => $totalInstancias > 0 ? ($coordinadas / $totalInstancias) * 100 : 0,
+            'total' => $totalInstancias > 0 ? (($muestreadas + $enRevision + $coordinadas) / $totalInstancias) * 100 : 0,
+        ];
+
+        $coti->total_instancias = $totalInstancias;
+        $coti->instancias_completadas = $muestreadas + $enRevision + $coordinadas;
+        $coti->porcentaje_progreso = $porcentajes;
+        $coti->has_suspension = $hasSuspension;
+        $coti->has_priority = $hasPriority;
+    });
+
+    return view('canal-ensayos.lista-portal', [
+        'muestras' => $muestras,
+        'viewType' => $viewType,
+        'request' => $request,
+        'matrices' => $matrices,
+        'userToView' => $userToView,
+        'usuarios' => $usuarios,
+        'viewTasks' => false,
+        'portalTitulo' => $portalTitulo,
+        'portalRouteName' => $portalRouteName,
+        'portalCanal' => $canal,
+    ]);
+}
+
 
 protected function showUserTasksCalendar(Request $request, $userCode)
 {
@@ -523,8 +785,19 @@ protected function showUserTasksCalendar(Request $request, $userCode)
     $startOfWeek = $request->get('week') ? Carbon::parse($request->get('week')) : now()->startOfWeek();
     $endOfWeek = $startOfWeek->copy()->endOfWeek();
     
-    $query = CotioInstancia::with(['cotizacion.matriz', 'tarea'])
+    $query = CotioInstancia::with(['cotizacion.matriz', 'cotizacion.cliente', 'cotizacion.sucursal', 'tarea'])
         ->where('cotio_subitem', 0);
+
+    // Evitar traer cotizaciones canceladas
+    $query->whereHas('cotizacion', function ($q) {
+        $q->where(function ($q2) {
+            $q2->where('cancelada', false)->orWhereNull('cancelada');
+        });
+    });
+
+    $query->whereHas('tarea', function ($t) {
+        $this->applyWhereTareasLlevanMuestreoParaListado($t);
+    });
     
     if ($request->has('search') && !empty($request->search)) {
         $searchTerm = '%'.$request->search.'%';
@@ -542,12 +815,16 @@ protected function showUserTasksCalendar(Request $request, $userCode)
         });
     }
     
-    if ($request->has('fecha_inicio') && !empty($request->fecha_inicio)) {
-        $query->whereDate('fecha_muestreo', '>=', $request->fecha_inicio);
+    if ($request->has('fecha_inicio_muestreo') && !empty($request->fecha_inicio_muestreo)) {
+        $query->whereHas('cotizacion', function($q) use ($request) {
+            $q->whereDate('coti_fechaaprobado', '>=', $request->fecha_inicio_muestreo);
+        });
     }
     
-    if ($request->has('fecha_fin') && !empty($request->fecha_fin)) {
-        $query->whereDate('fecha_muestreo', '<=', $request->fecha_fin);
+    if ($request->has('fecha_fin_muestreo') && !empty($request->fecha_fin_muestreo)) {
+        $query->whereHas('cotizacion', function($q) use ($request) {
+            $q->whereDate('coti_fechaaprobado', '<=', $request->fecha_fin_muestreo);
+        });
     } else {
         $query->whereBetween('fecha_muestreo', [
             $currentMonth->copy()->startOfMonth(),
@@ -558,6 +835,10 @@ protected function showUserTasksCalendar(Request $request, $userCode)
     $query->orderBy('fecha_muestreo', 'asc');
     
     $instancias = $query->get();
+
+    CotizacionClienteEtiqueta::precargarEmpresasRelacionadas(
+        $instancias->map->cotizacion->unique(fn ($c) => $c->coti_num)->values()
+    );
     
     $tareasCalendario = $instancias
         ->filter(fn($instancia) => !empty($instancia->fecha_muestreo))
@@ -590,16 +871,19 @@ protected function showUserTasksCalendar(Request $request, $userCode)
                 ])
                 : route('cotizaciones.ver-detalle', ['cotizacion' => $instancia->cotio_numcoti]);
 
+            $cotiC = $instancia->cotizacion;
+            $esCuotas = (bool) ($cotiC->coti_cuotas ?? false);
             $events->push([
-                'title' => ($instancia->cotizacion->coti_empresa ?? 'Sin empresa') . ' - ' . $instancia->cotio_numcoti,
+                'title' => ($esCuotas ? '✓ ' : '') . CotizacionClienteEtiqueta::paraLista($cotiC) . ' - ' . $instancia->cotio_numcoti,
                 'start' => $instancia->fecha_inicio_muestreo ?? $instancia->fecha_muestreo,
                 'end' => $instancia->fecha_fin_muestreo ?? null,
                 'url' => $eventUrl,
                 'extendedProps' => [
-                    'empresa' => $instancia->cotizacion->coti_empresa ?? 'Sin empresa',
-                    'descripcion' => $instancia->cotizacion->coti_descripcion ?? '',
+                    'empresa' => CotizacionClienteEtiqueta::paraLista($cotiC) ?: 'Sin empresa',
+                    'descripcion' => $cotiC->coti_descripcion ?? '',
                     'estado' => $instancia->cotio_estado,
                     'analisis_count' => $instancia->analisis_count ?? 0,
+                    'coti_cuotas' => $esCuotas,
                 ],
                 'className' => $this->getEventClass($instancia),
             ]);
@@ -628,12 +912,16 @@ protected function showUserTasksCalendar(Request $request, $userCode)
 
 protected function getEventClass($instancia)
 {
-    switch (strtolower($instancia->cotio_estado)) {
-        case 'coordinado muestreo': return 'fc-event-warning';
-        case 'en revision muestreo': return 'fc-event-info';
-        case 'muestreado': return 'fc-event-success';
-        default: return 'fc-event-primary';
-    }
+    $estado = strtolower((string) ($instancia->cotio_estado ?? ''));
+    $base = match ($estado) {
+        'coordinado muestreo' => 'fc-event-warning',
+        'en revision muestreo' => 'fc-event-info',
+        'muestreado' => 'fc-event-success',
+        default => 'fc-event-primary',
+    };
+    $esCuotas = (bool) (optional($instancia->cotizacion)->coti_cuotas);
+
+    return $esCuotas ? $base . ' fc-event-cuotas' : $base;
 }
 
 
@@ -749,6 +1037,20 @@ public function show($coti_num)
                 ->orderBy('cotio_subitem')
                 ->get();
 
+    $cotizacion->loadMissing('matriz');
+    
+    // Si viene un canal por URL (desde portal), lo usamos para filtrar.
+    // Si no, usamos el canal del usuario si tiene rol restrictivo.
+    $canalParaFiltrar = request('canal') ?: CotizacionCanalEnsayo::soloCanalUsuario(Auth::user());
+
+    if ($canalParaFiltrar) {
+        $tareas = CotizacionCanalEnsayo::filtrarTareasCotioPorCanal(
+            $tareas,
+            $canalParaFiltrar,
+            optional($cotizacion->matriz)->matriz_descripcion
+        );
+    }
+
     // Obtener variables requeridas por tipo de muestra
     $tiposMuestra = $tareas->pluck('cotio_descripcion')->unique()->toArray();
     $variablesRequeridas = VariableRequerida::whereIn('cotio_descripcion', $tiposMuestra)
@@ -776,6 +1078,11 @@ public function show($coti_num)
 
     foreach ($tareas as $tarea) {
         if ($tarea->cotio_subitem == 0) { // Es una muestra
+            // Sin usuario de canal: excluir muestras que no llevan muestreo (van directo a lab).
+            // Coordinador de canal: ya vienen filtradas; mostrar también ensayos sin muestreo de su canal.
+            if (!$canalParaFiltrar && $tarea->lleva_muestreo === false) {
+                continue;
+            }
             $cantidad = $tarea->cotio_cantidad ?: 1;
 
             for ($i = 1; $i <= $cantidad; $i++) {
@@ -825,7 +1132,8 @@ public function show($coti_num)
         'inventario',
         'vehiculos',
         'vehiculoFijadoPorTipo',
-        'variablesRequeridas'
+        'variablesRequeridas',
+        'canalParaFiltrar'
     ));
 }
 
@@ -873,9 +1181,11 @@ public function pasarDirectoAOT(Request $request)
         $instanciaMuestra = $instancias->firstWhere('cotio_subitem', 0);
         $numeroOT = null;
         
-        // Solo generar número OT si es una muestra y no tiene uno ya asignado
+        // Solo generar número OT si es una muestra y no tiene uno ya asignado y no es canal especial
         if ($instanciaMuestra && !$instanciaMuestra->otn) {
-            $numeroOT = CotioInstancia::generarNumeroOT();
+            if ($instanciaMuestra->debeLlevarOTN()) {
+                $numeroOT = CotioInstancia::generarNumeroOT();
+            }
         }
         
         foreach ($instancias as $instancia) {
@@ -911,8 +1221,12 @@ public function pasarDirectoAOT(Request $request)
         ]);
     }
 
-    // 4. Generar número OT para la muestra
-    $numeroOT = CotioInstancia::generarNumeroOT();
+    // 4. Generar número OT para la muestra (solo si no es canal especial)
+    $numeroOT = null;
+    $canalEspecial = trim((string) ($muestra->cotio_canal_especial ?? ''));
+    if (!in_array($canalEspecial, ['asp', 'clarke_fire', 'consultoria'])) {
+        $numeroOT = CotioInstancia::generarNumeroOT();
+    }
     
     // 5. Crear nueva instancia para la muestra (copiar ambos métodos desde Cotio)
     CotioInstancia::create([
@@ -1090,6 +1404,21 @@ public function verMuestra($cotizacion, $item, $instance = null)
                 ->where('cotio_item', $item)
                 ->where('cotio_subitem', 0)
                 ->firstOrFail();
+
+    // Si viene un canal por URL (desde portal), lo usamos para filtrar.
+    // Si no, usamos el canal del usuario si tiene rol restrictivo.
+    $canalParaFiltrar = request('canal') ?: CotizacionCanalEnsayo::soloCanalUsuario(Auth::user());
+
+    if ($canalParaFiltrar) {
+        $cotizacion->loadMissing('matriz');
+        if (! CotizacionCanalEnsayo::cotioEnsayoCoincideCanal(
+            $categoria,
+            $canalParaFiltrar,
+            optional($cotizacion->matriz)->matriz_descripcion
+        )) {
+            abort(403, 'No autorizado a ver esta muestra.');
+        }
+    }
     
     // Obtener la instancia de la muestra con sus variables y relaciones
     $instanciaMuestra = CotioInstancia::with(['valoresVariables'])
@@ -1156,7 +1485,8 @@ public function verMuestra($cotizacion, $item, $instance = null)
             'instanciasMuestra' => collect(),
             'variablesMuestra' => collect(),
             'herramientasMuestra' => collect(),
-            'historialCambios' => collect()
+            'historialCambios' => collect(),
+            'canalParaFiltrar' => $canalParaFiltrar
         ]);
     }
 
@@ -1253,7 +1583,8 @@ public function verMuestra($cotizacion, $item, $instance = null)
         'variablesMuestra' => $variablesOrdenadas,
         'herramientasMuestra' => $herramientasMuestra,
         'todosResponsablesTareas' => $todosResponsablesTareas,
-        'historialCambios' => $historialCambios
+        'historialCambios' => $historialCambios,
+        'canalParaFiltrar' => $canalParaFiltrar
     ]);
 }
 
@@ -1912,6 +2243,21 @@ public function getDatosRecoordinacion(CotioInstancia $instancia)
     // Obtener variables actualmente seleccionadas
     $variablesSeleccionadas = $instancia->variablesMuestreo->pluck('variable_id')->toArray();
 
+    // Obtener herramientas asociadas a la instancia de forma explícita
+    $herramientas = DB::table('cotio_inventario_muestreo')
+        ->where('cotio_numcoti', $instancia->cotio_numcoti)
+        ->where('cotio_item', $instancia->cotio_item)
+        ->where('cotio_subitem', $instancia->cotio_subitem)
+        ->where('instance_number', $instancia->instance_number)
+        ->join('inventario_muestreo', 'cotio_inventario_muestreo.inventario_muestreo_id', '=', 'inventario_muestreo.id')
+        ->select(
+            'inventario_muestreo.id',
+            'inventario_muestreo.equipamiento',
+            'inventario_muestreo.marca_modelo',
+            'inventario_muestreo.n_serie_lote'
+        )
+        ->get();
+
     return response()->json([
         'fecha_inicio_muestreo' => $instancia->fecha_inicio_muestreo?->format('Y-m-d\TH:i'),
         'fecha_fin_muestreo' => $instancia->fecha_fin_muestreo?->format('Y-m-d\TH:i'),
@@ -1919,7 +2265,7 @@ public function getDatosRecoordinacion(CotioInstancia $instancia)
         'cotio_observaciones_suspension' => $instancia->cotio_observaciones_suspension,
         'es_priori' => $instancia->es_priori,
         'responsables' => $instancia->responsablesMuestreo->toArray(),
-        'herramientas' => $instancia->herramientas->toArray(),
+        'herramientas' => $herramientas,
         'variables_requeridas' => $variablesRequeridas,
         'variables_seleccionadas' => $variablesSeleccionadas
     ]);
@@ -2345,5 +2691,170 @@ public function getResponsablesMuestreo(Request $request)
     }
 }
 
+public function cancelarMuestreo(Request $request, $coti_num)
+{
+    $validated = $request->validate([
+        'razon_cancelada' => 'required|string|max:1000',
+    ]);
 
+    $user = Auth::user();
+    if (
+        !$user ||
+        !($user->usu_nivel >= 900 || $user->hasRole('coordinador_muestreo') || $user->hasRole('ventas'))
+    ) {
+        return response()->json([
+            'success' => false,
+            'message' => 'No autorizado'
+        ], 403);
+    }
+
+    try {
+        $cotizacion = Coti::where('coti_num', $coti_num)->firstOrFail();
+        $cotizacion->cancelada = true;
+        $cotizacion->razon_cancelada = trim($validated['razon_cancelada']);
+        $cotizacion->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Cotización cancelada correctamente'
+        ]);
+    } catch (\Exception $e) {
+        Log::error('Error al cancelar muestreo', [
+            'coti_num' => $coti_num,
+            'error' => $e->getMessage()
+        ]);
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Error al cancelar muestreo'
+        ], 500);
+    }
+    }
+
+    public function pasarAFacturacion(Request $request)
+    {
+        $request->validate([
+            'cotio_numcoti' => 'required|string',
+            'items_seleccionados' => 'required|json',
+            'informe_file' => 'nullable|file|mimes:pdf,doc,docx,xls,xlsx|max:20480',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $cotioNumcoti = $request->cotio_numcoti;
+            $itemsSeleccionados = json_decode($request->items_seleccionados, true);
+
+            $informePath = null;
+            if ($request->hasFile('informe_file')) {
+                $file = $request->file('informe_file');
+                $filename = time() . '_' . $file->getClientOriginalName();
+                $informePath = $file->storeAs('informes_externos', $filename, 'public');
+            }
+
+            foreach ($itemsSeleccionados as $itemData) {
+                if ($itemData['subitem'] !== '0') {
+                    continue;
+                }
+
+                $instancia = \App\Models\CotioInstancia::firstOrNew([
+                    'cotio_numcoti' => $cotioNumcoti,
+                    'cotio_item' => $itemData['item'],
+                    'cotio_subitem' => $itemData['subitem'],
+                    'instance_number' => $itemData['instance']
+                ]);
+
+                $cotio = \App\Models\Cotio::where('cotio_numcoti', $cotioNumcoti)
+                    ->where('cotio_item', $itemData['item'])
+                    ->where('cotio_subitem', $itemData['subitem'])
+                    ->first();
+
+                if (!$instancia->exists) {
+                    $instancia->cotio_descripcion = $itemData['descripcion'] ?? '';
+                    if ($cotio) {
+                        $instancia->monto = $cotio->cotio_precio;
+                        $instancia->cotio_codigoum = $cotio->cotio_codigoum;
+                    }
+                }
+
+                $instancia->cotio_estado = 'completado';
+                $instancia->enable_inform = true;
+                $instancia->aprobado_informe = true;
+                if ($informePath) {
+                    $instancia->archivo_informe = $informePath;
+                }
+                
+                $instancia->save();
+            }
+
+            DB::commit();
+
+            return redirect()->back()->with('success', 'Muestras enviadas a facturación correctamente.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error en pasarAFacturacion', [
+                'error' => $e->getMessage(),
+                'request' => $request->all()
+            ]);
+            return redirect()->back()->with('error', 'Error al procesar: ' . $e->getMessage());
+        }
+    }
+
+    public function pasarAInformes(Request $request)
+    {
+        $request->validate([
+            'cotio_numcoti' => 'required|string',
+            'cotio_item' => 'required|string',
+            'instance_number' => 'required|string',
+            'informe_pdf' => 'nullable|file|mimes:pdf|max:20480',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $instancia = CotioInstancia::where([
+                'cotio_numcoti' => $request->cotio_numcoti,
+                'cotio_item' => $request->cotio_item,
+                'cotio_subitem' => 0,
+                'instance_number' => $request->instance_number
+            ])->firstOrFail();
+
+            // Guardar el archivo si se proporcionó
+            if ($request->hasFile('informe_pdf')) {
+                $file = $request->file('informe_pdf');
+                $filename = time() . '_' . $file->getClientOriginalName();
+                $path = $file->storeAs('informes_externos', $filename, 'public');
+                $instancia->archivo_informe = $path;
+            }
+
+            // Actualizar estados para que pase a Informes
+            $instancia->cotio_estado = 'completado';
+            $instancia->enable_inform = true;
+            $instancia->aprobado_informe = true;
+            $instancia->fecha_aprobacion_informe = now();
+            $instancia->save();
+
+            // También actualizar los análisis asociados si los hay
+            CotioInstancia::where([
+                'cotio_numcoti' => $request->cotio_numcoti,
+                'cotio_item' => $request->cotio_item,
+                'instance_number' => $request->instance_number
+            ])->where('cotio_subitem', '>', 0)
+              ->update([
+                  'cotio_estado' => 'completado',
+                  'enable_inform' => true,
+                  'aprobado_informe' => true,
+                  'fecha_aprobacion_informe' => now()
+              ]);
+
+            DB::commit();
+
+            return redirect()->route('informes.index')->with('success', 'Muestra enviada a informes correctamente.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error en pasarAInformes', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return redirect()->back()->with('error', 'Error al procesar: ' . $e->getMessage());
+        }
+    }
 }

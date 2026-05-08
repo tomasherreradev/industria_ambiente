@@ -1,8 +1,4 @@
 @extends('layouts.app')
-<head>
-    <title>Muestras</title>
-</head>
-
 
 @section('content')
 <div class="container py-3 py-md-4">
@@ -70,13 +66,13 @@
                     </div>
                     
                     <div class="col-md-2">
-                        <label for="fecha_inicio_muestreo" class="form-label">Desde</label>
+                        <label for="fecha_inicio_muestreo" class="form-label">Aprobación desde</label>
                         <input type="date" class="form-control" id="fecha_inicio_muestreo" 
                                name="fecha_inicio_muestreo" value="{{ request('fecha_inicio_muestreo') }}">
                     </div>
 
                     <div class="col-md-2">
-                        <label for="fecha_fin_muestreo" class="form-label">Hasta</label>
+                        <label for="fecha_fin_muestreo" class="form-label">Aprobación hasta</label>
                         <input type="date" class="form-control" id="fecha_fin_muestreo" 
                                name="fecha_fin_muestreo" value="{{ request('fecha_fin_muestreo') }}">
                     </div>

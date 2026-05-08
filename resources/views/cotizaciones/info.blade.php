@@ -15,9 +15,16 @@
     <div id="info-{{ $cotizacion->coti_num }}" class="card-body" style="display: none;">
         @php
             $empresaRelacionada = null;
-            if ($cotizacion->coti_cli_empresa) {
-                $empresaRelacionada = \App\Models\ClienteEmpresaRelacionada::find($cotizacion->coti_cli_empresa);
+            $idEmpresaRelInfo = $cotizacion->coti_empresa_rel ?? $cotizacion->coti_cli_empresa;
+            if ($idEmpresaRelInfo) {
+                $empresaRelacionada = \App\Models\ClienteEmpresaRelacionada::find($idEmpresaRelInfo);
+                if ($empresaRelacionada) {
+                    $cotizacion->setRelation('empresaRelacionadaListaResuelta', $empresaRelacionada);
+                }
             }
+            $cotizacion->loadMissing(['cliente', 'sucursal']);
+            $lineaClienteInfo = \App\Support\CotizacionClienteEtiqueta::paraLista($cotizacion);
+            $establecimientoInfo = trim((string) ($cotizacion->coti_establecimiento ?? ''));
         @endphp
         @if($empresaRelacionada)
             <div class="mb-2">
@@ -35,7 +42,7 @@
         @endif
         <div class="mb-2">
             <strong>Cliente:</strong>
-                {{ $cotizacion->coti_empresa }} - {{ $cotizacion->coti_establecimiento }}
+            {{ $lineaClienteInfo }}@if($establecimientoInfo !== '') — {{ $establecimientoInfo }}@endif
             </div>
 
             <div class="mb-2">

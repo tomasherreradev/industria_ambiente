@@ -176,8 +176,12 @@
 
     <!-- Tabla de Facturas -->
     <div class="card shadow-sm mb-4">
-        <div class="card-header">
+        <div class="card-header d-flex justify-content-between align-items-center">
             <h5 class="mb-0">Facturas Generadas</h5>
+            <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#exportIvaModal">
+                <x-heroicon-o-document-chart-bar style="width: 18px; height: 18px;" class="me-1" />
+                Exportar IVA Ventas
+            </button>
         </div>
         <div class="card-body">
             @if($facturas->count() > 0)
@@ -194,6 +198,7 @@
                                 <th>CAE</th>
                                 <th>Fecha Emisión</th>
                                 <th>Fecha Venc. CAE</th>
+                                <th>Divisa</th>
                                 <th>Monto Total</th>
                                 <th style="text-align: center;">Acciones</th>
                             </tr>
@@ -219,7 +224,13 @@
                                     <td><small>{{ $factura->cae }}</small></td>
                                     <td>{{ $factura->fecha_emision->format('d/m/Y H:i') }}</td>
                                     <td>{{ $factura->fecha_vencimiento_cae ? \Carbon\Carbon::parse($factura->fecha_vencimiento_cae)->format('d/m/Y') : 'N/A' }}</td>
-                                    <td><strong>${{ number_format($factura->monto_total, 2, ',', '.') }}</strong></td>
+                                    <td>{{ optional($factura->cotizacion)->divisa_codigo ?? 'PES' }}</td>
+                                    <td>
+                                        @php
+                                            $divisa = optional($factura->cotizacion)->divisa_codigo ?? 'PES';
+                                        @endphp
+                                        <strong>{{ $divisa }} {{ number_format($factura->monto_total, 2, ',', '.') }}</strong>
+                                    </td>
                                     <td>
                                         <div class="d-flex justify-content-center align-items-center" style="width: 100%; height: 30px;">
                                             <a href="{{ route('facturacion.ver', $factura->id) }}" 
@@ -306,6 +317,14 @@
 
 
 <script>
+function logFacturacionRequest(payload) {
+    try {
+        console.log('[facturacion-api] request', JSON.stringify(payload, null, 2));
+    } catch (e) {
+        console.log('[facturacion-api] request', payload);
+    }
+}
+
 // Función para filtrar por tipo (total o pendientes)
 function filtrarPorTipo(tipo) {
     const url = new URL(window.location.href);
@@ -344,6 +363,19 @@ function filtrarPorTipo(tipo) {
 // Manejar descarga de PDFs con loading
 document.querySelectorAll('.descargar-pdf').forEach(link => {
     link.addEventListener('click', function(e) {
+        const href = this.getAttribute('href');
+        const facturaId = this.getAttribute('data-factura-id');
+
+        logFacturacionRequest({
+            action: 'facturacion.descargar',
+            method: 'GET',
+            url: href,
+            params: {
+                factura_id: facturaId ? Number(facturaId) : null,
+            },
+            timestamp: new Date().toISOString(),
+        });
+
         const icon = this.querySelector('svg');
         
         // Mostrar loading
@@ -359,6 +391,72 @@ document.querySelectorAll('.descargar-pdf').forEach(link => {
         }, 3000);
     });
 });
+
+// Manejar click en "Facturar" (GET con parámetro cotizacion)
+document.querySelectorAll('a[href*="facturacion"][href*="cotizacion"]').forEach(link => {
+    link.addEventListener('click', function() {
+        const href = this.getAttribute('href');
+        if (!href) return;
+
+        try {
+            const url = new URL(href, window.location.origin);
+            const coti = url.searchParams.get('cotizacion');
+
+            logFacturacionRequest({
+                action: 'facturacion.facturar',
+                method: 'GET',
+                url: url.toString(),
+                params: {
+                    cotizacion: coti ? Number(coti) : null,
+                },
+                timestamp: new Date().toISOString(),
+            });
+        } catch (e) {
+            logFacturacionRequest({
+                action: 'facturacion.facturar',
+                method: 'GET',
+                url: href,
+                params: {},
+                timestamp: new Date().toISOString(),
+            });
+        }
+    });
+});
 </script>
+
+<!-- Modal Exportar IVA Ventas -->
+<div class="modal fade" id="exportIvaModal" tabindex="-1" aria-labelledby="exportIvaModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title" id="exportIvaModalLabel">Exportar IVA Ventas</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="{{ route('facturacion.exportar-iva') }}" method="GET">
+                <div class="modal-body">
+                    <p class="text-muted small mb-4">Seleccione el rango de fechas para el reporte de IVA Ventas en formato Excel.</p>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label for="exp_fecha_desde" class="form-label">Fecha Desde</label>
+                            <input type="date" name="fecha_desde" id="exp_fecha_desde" class="form-control" 
+                                   value="{{ now()->startOfMonth()->format('Y-m-d') }}" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="exp_fecha_hasta" class="form-label">Fecha Hasta</label>
+                            <input type="date" name="fecha_hasta" id="exp_fecha_hasta" class="form-control" 
+                                   value="{{ now()->endOfMonth()->format('Y-m-d') }}" required>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-download me-1"></i>Generar Excel
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 
 @endsection

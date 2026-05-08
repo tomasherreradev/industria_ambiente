@@ -133,6 +133,53 @@
 @push('scripts')
 <script>
     document.addEventListener('DOMContentLoaded', function() {
+        function logInformeFirmaRequest(payload) {
+            try {
+                console.log('[informes-firma] request', JSON.stringify(payload, null, 2));
+            } catch (e) {
+                console.log('[informes-firma] request', payload);
+            }
+        }
+
+        // Loguear (en consola) lo que se envía al iniciar la firma del informe (request al backend).
+        // Nota: la "API de firma digital" se llama desde el backend; desde el navegador solo vemos
+        // esta request GET que dispara el proceso.
+        document.querySelectorAll('a[href*="/informes/"][href$="/firmar"]').forEach(link => {
+            link.addEventListener('click', function() {
+                const href = this.getAttribute('href');
+                if (!href) return;
+
+                try {
+                    const url = new URL(href, window.location.origin);
+                    // /informes/{cotio_numcoti}/{cotio_item}/{instance_number}/firmar
+                    const match = url.pathname.match(/\/informes\/(\d+)\/(\d+)\/(\d+)\/firmar$/);
+                    const cotio_numcoti = match ? Number(match[1]) : null;
+                    const cotio_item = match ? Number(match[2]) : null;
+                    const instance_number = match ? Number(match[3]) : null;
+
+                    logInformeFirmaRequest({
+                        action: 'informes.firmar',
+                        method: 'GET',
+                        url: url.toString(),
+                        params: {
+                            cotio_numcoti,
+                            cotio_item,
+                            instance_number,
+                        },
+                        timestamp: new Date().toISOString(),
+                    });
+                } catch (e) {
+                    logInformeFirmaRequest({
+                        action: 'informes.firmar',
+                        method: 'GET',
+                        url: href,
+                        params: {},
+                        timestamp: new Date().toISOString(),
+                    });
+                }
+            });
+        });
+
         const searchCollapse = document.getElementById('collapseSearch');
         const searchToggleBtn = document.getElementById('searchToggleBtn');
         

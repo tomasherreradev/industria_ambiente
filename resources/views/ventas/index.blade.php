@@ -2,6 +2,21 @@
 
 @section('content')
 
+@if(!empty($canalVistaVentas))
+    <div class="alert alert-info mb-3">
+        @if($canalVistaVentas === 'consultoria')
+            Solo se listan cotizaciones que incluyen al menos un ensayo de <strong>consultoría</strong>.
+        @elseif($canalVistaVentas === 'asp')
+            Solo se listan cotizaciones que incluyen al menos un ensayo <strong>ASP</strong>.
+        @elseif($canalVistaVentas === 'clarke_fire')
+            Solo se listan cotizaciones que incluyen al menos un ensayo <strong>Clarke Fire</strong>.
+        @else
+            Solo se listan cotizaciones que incluyen al menos un ensayo de su <strong>área</strong>.
+        @endif
+        Al abrir una cotización verá únicamente esos ensayos y sus componentes (solo lectura).
+    </div>
+@endif
+
 <!-- SweetAlert2 CSS -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
 
@@ -74,6 +89,10 @@
 .estado-A { background: #28a745; color: #fff; }
 .estado-R { background: #dc3545; color: #fff; }
 .estado-P { background: #17a2b8; color: #fff; }
+.estado-C { background: #6c757d; color: #fff; }
+.estado-S { background: #6f42c1; color: #fff; }
+.estado-CERR { background: #155724; color: #fff; }
+.estado-PROC { background: #0d6efd; color: #fff; }
 
 .badge-counter {
     display: inline-block;
@@ -105,6 +124,14 @@
     border-radius: 5px;
 }
 
+.ventas-det-icon {
+    transition: transform 0.2s ease;
+    font-size: 0.75rem;
+}
+.ventas-det-toggle[aria-expanded="true"] .ventas-det-icon {
+    transform: rotate(180deg);
+}
+
 @media (max-width: 768px) {
     .stats-card {
         margin-bottom: 1rem;
@@ -114,15 +141,35 @@
         margin-bottom: 0.5rem;
     }
 }
+
+/* Tarjetas de resumen /ventas: una sola franja flexible (evita filas extra por wrap del grid) */
+.ventas-stats-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+}
+.ventas-stats-strip .ventas-stats-metric {
+    flex: 1 1 9.5rem;
+    min-width: 9rem;
+    max-width: 14rem;
+}
+.ventas-stats-strip .ventas-stats-monto-wrap {
+    flex: 1 1 18rem;
+    min-width: 16rem;
+}
 </style>
 
 @php
-// Estadísticas (se calcularán en el controlador)
-$totalCotizaciones = \App\Models\Ventas::count();
-$enEspera = \App\Models\Ventas::where('coti_estado', 'LIKE', 'E%')->count();
-$aprobadas = \App\Models\Ventas::where('coti_estado', 'LIKE', 'A%')->count();
-$enProceso = \App\Models\Ventas::where('coti_estado', 'LIKE', 'P%')->count();
-$rechazadas = \App\Models\Ventas::where('coti_estado', 'LIKE', 'R%')->count();
+    $cv = $conteosVentasTarjetas ?? [];
+    $totalCotizaciones = (int) ($cv['total'] ?? 0);
+    $enEspera = (int) ($cv['enEspera'] ?? 0);
+    $aprobadas = (int) ($cv['aprobadas'] ?? 0);
+    $rechazadas = (int) ($cv['rechazadas'] ?? 0);
+    $suspendidas = (int) ($cv['suspendidas'] ?? 0);
+    $cerradasDeriv = (int) ($cv['cerrada'] ?? 0);
+    $procesoDeriv = (int) ($cv['procesoDeriv'] ?? 0);
 @endphp
 
 <div class="container-fluid py-4">
@@ -139,10 +186,10 @@ $rechazadas = \App\Models\Ventas::where('coti_estado', 'LIKE', 'R%')->count();
         </div>
     </div>
 
-    <!-- Estadísticas -->
-    <div class="row mb-4">
-        <div class="col-lg-2 col-md-4 col-sm-6 mb-3">
-            <div class="card stats-card {{ !request('estado') ? 'active' : '' }}" 
+    <!-- Estadísticas (una sola tira; sin segunda fila duplicada Cerrada/Proceso) -->
+    <div class="ventas-stats-strip">
+        <div class="ventas-stats-metric">
+            <div class="card stats-card h-100 {{ !request('estado') ? 'active' : '' }}" 
                  onclick="filtrarPorEstado('')" 
                  data-estado="">
                 <div class="card-body">
@@ -158,8 +205,8 @@ $rechazadas = \App\Models\Ventas::where('coti_estado', 'LIKE', 'R%')->count();
                 </div>
             </div>
         </div>
-        <div class="col-lg-2 col-md-4 col-sm-6 mb-3">
-            <div class="card stats-card {{ request('estado') == 'E' ? 'active' : '' }}" 
+        <div class="ventas-stats-metric">
+            <div class="card stats-card h-100 {{ request('estado') == 'E' ? 'active' : '' }}" 
                  onclick="filtrarPorEstado('E')" 
                  data-estado="E">
                 <div class="card-body">
@@ -175,8 +222,8 @@ $rechazadas = \App\Models\Ventas::where('coti_estado', 'LIKE', 'R%')->count();
                 </div>
             </div>
         </div>
-        <div class="col-lg-2 col-md-4 col-sm-6 mb-3">
-            <div class="card stats-card {{ request('estado') == 'A' ? 'active' : '' }}" 
+        <div class="ventas-stats-metric">
+            <div class="card stats-card h-100 {{ request('estado') == 'A' ? 'active' : '' }}" 
                  onclick="filtrarPorEstado('A')" 
                  data-estado="A">
                 <div class="card-body">
@@ -193,8 +240,8 @@ $rechazadas = \App\Models\Ventas::where('coti_estado', 'LIKE', 'R%')->count();
             </div>
         </div>
 
-        <div class="col-lg-2 col-md-4 col-sm-6 mb-3">
-            <div class="card stats-card {{ request('estado') == 'R' ? 'active' : '' }}" 
+        <div class="ventas-stats-metric">
+            <div class="card stats-card h-100 {{ request('estado') == 'R' ? 'active' : '' }}" 
                  onclick="filtrarPorEstado('R')" 
                  data-estado="R">
                 <div class="card-body">
@@ -211,9 +258,62 @@ $rechazadas = \App\Models\Ventas::where('coti_estado', 'LIKE', 'R%')->count();
             </div>
         </div>
 
-        <!-- Tarjeta de Monto (no clickeable) -->
-        <div class="col-lg-4 col-md-8 col-sm-12 mb-3">
-            <div class="card stats-card-monto bg-white text-info">
+        <div class="ventas-stats-metric">
+            <div class="card stats-card h-100 {{ request('estado') == '_PROCESO' ? 'active' : '' }}"
+                 onclick="filtrarPorEstado('_PROCESO')"
+                 data-estado="_PROCESO">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-muted mb-2">En Proceso</h6>
+                            <h3 class="mb-0 text-info">{{ number_format($procesoDeriv) }}</h3>
+                        </div>
+                        <div class="stats-icon text-info">
+                            <i class="fas fa-spinner"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="ventas-stats-metric">
+            <div class="card stats-card h-100 {{ request('estado') == 'S' ? 'active' : '' }}"
+                 onclick="filtrarPorEstado('S')"
+                 data-estado="S">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-muted mb-2">Suspendidas</h6>
+                            <h3 class="mb-0" style="color: #6f42c1;">{{ number_format($suspendidas) }}</h3>
+                        </div>
+                        <div class="stats-icon" style="color: #6f42c1;">
+                            <i class="fas fa-pause-circle"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="ventas-stats-metric">
+            <div class="card stats-card h-100 {{ request('estado') == '_CERRADA' ? 'active' : '' }}"
+                 onclick="filtrarPorEstado('_CERRADA')"
+                 data-estado="_CERRADA">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-muted mb-2">Cerradas</h6>
+                            <h3 class="mb-0 text-success">{{ number_format($cerradasDeriv) }}</h3>
+                        </div>
+                        <div class="stats-icon text-success">
+                            <i class="fas fa-flag-checkered"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="ventas-stats-monto-wrap">
+            <div class="card stats-card-monto bg-white text-info h-100">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
@@ -235,7 +335,7 @@ $rechazadas = \App\Models\Ventas::where('coti_estado', 'LIKE', 'R%')->count();
             <div class="mb-3">
                 <div class="d-flex justify-content-between align-items-center mb-2">
                     <h5 class="mb-0"><i class="fas fa-list me-2"></i>Cotizaciones</h5>
-                    @if(request()->hasAny(['cliente', 'estado', 'fecha_desde', 'fecha_hasta']))
+                    @if(request()->hasAny(['cliente', 'vendedor', 'sucursal', 'estado', 'fecha_desde', 'fecha_hasta']))
                         <small class="text-muted">
                             <i class="fas fa-filter me-1"></i>Filtros activos
                         </small>
@@ -247,7 +347,7 @@ $rechazadas = \App\Models\Ventas::where('coti_estado', 'LIKE', 'R%')->count();
                     <div class="row g-2">
                         <div class="col-md-3">
                             <label class="form-label small text-muted mb-1">Cliente</label>
-                            <select name="cliente" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <select name="cliente" class="form-select form-select-sm js-select2-cliente" data-placeholder="Todos los clientes">
                                 <option value="">Todos los clientes</option>
                                 @foreach($clientes as $cliente)
                                     <option value="{{ $cliente->cli_codigo }}" {{ request('cliente') == $cliente->cli_codigo ? 'selected' : '' }}>
@@ -256,15 +356,61 @@ $rechazadas = \App\Models\Ventas::where('coti_estado', 'LIKE', 'R%')->count();
                                 @endforeach
                             </select>
                         </div>
+
+                        <div class="col-md-3">
+                            <label class="form-label small text-muted mb-1">Vendedor</label>
+                            <select name="vendedor" class="form-select form-select-sm js-select2-vendedor" data-placeholder="Todos los vendedores">
+                                <option value="">Todos los vendedores</option>
+                                @foreach(($vendedores ?? []) as $vendedor)
+                                    <option value="{{ trim((string) $vendedor->usu_codigo) }}" {{ request('vendedor') == trim((string) $vendedor->usu_codigo) ? 'selected' : '' }}>
+                                        {{ trim($vendedor->usu_codigo) }} - {{ trim($vendedor->usu_descripcion ?? '') }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        <div class="col-md-2">
+                            <label class="form-label small text-muted mb-1">Sucursal</label>
+                            <select name="sucursal" class="form-select form-select-sm js-select2-sucursal" data-placeholder="Todas" onchange="this.form.submit()" {{ request('cliente') ? '' : 'disabled' }}>
+                                <option value="">Todas</option>
+                                @if(request('cliente'))
+                                    <option value="_SIN_" {{ request('sucursal') === '_SIN_' ? 'selected' : '' }}>Sin sucursal</option>
+                                    @foreach(($sucursales ?? collect()) as $suc)
+                                        @php
+                                            $cod = trim((string) ($suc->cli_codigo ?? ''));
+                                            $rs = trim((string) ($suc->cli_razonsocial ?? 'Sucursal'));
+                                            $dir = trim((string) ($suc->cli_direccion ?? ''));
+                                            $loc = trim((string) ($suc->cli_localidad ?? ''));
+                                            $part = trim((string) ($suc->cli_partido ?? ''));
+                                            $locLine = $loc;
+                                            if ($part !== '') {
+                                                $locLine = $locLine !== '' ? ($locLine . ' - ' . $part) : $part;
+                                            }
+                                            $detalle = trim(implode(' · ', array_filter([$dir, $locLine])));
+                                            $label = $detalle !== '' ? ($cod . ' - ' . $rs . ' · ' . $detalle) : ($cod . ' - ' . $rs);
+                                        @endphp
+                                        <option value="{{ $cod }}" {{ request('sucursal') === $cod ? 'selected' : '' }}>
+                                            {{ $label }}
+                                        </option>
+                                    @endforeach
+                                @endif
+                            </select>
+                            @if(!request('cliente'))
+                                <small class="text-muted">Elegí un cliente para ver sucursales.</small>
+                            @endif
+                        </div>
                         
                         <div class="col-md-2">
                             <label class="form-label small text-muted mb-1">Estado</label>
-                            <select name="estado" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <select name="estado" class="form-select form-select-sm js-select2-estado" data-placeholder="Todos los estados">
                                 <option value="">Todos los estados</option>
                                 <option value="E" {{ request('estado') == 'E' ? 'selected' : '' }}>En Espera</option>
                                 <option value="A" {{ request('estado') == 'A' ? 'selected' : '' }}>Aprobado</option>
                                 <option value="P" {{ request('estado') == 'P' ? 'selected' : '' }}>En Proceso</option>
                                 <option value="R" {{ request('estado') == 'R' ? 'selected' : '' }}>Rechazado</option>
+                                <option value="S" {{ request('estado') == 'S' ? 'selected' : '' }}>Suspendida</option>
+                                <option value="_CERRADA" {{ request('estado') == '_CERRADA' ? 'selected' : '' }}>Cerrada (operativa)</option>
+                                <option value="_PROCESO" {{ request('estado') == '_PROCESO' ? 'selected' : '' }}>Proceso (operativa)</option>
                             </select>
                         </div>
                         
@@ -308,29 +454,52 @@ $rechazadas = \App\Models\Ventas::where('coti_estado', 'LIKE', 'R%')->count();
                     </tr>
                 </thead>
                 <tbody>
+                    @php
+                        // Evitar "Undefined variable" en vistas cacheadas/edge cases
+                        $nombreCliente = null;
+                        $paraNombre = null;
+                    @endphp
                     @foreach($cotizaciones as $cotizacion)
-                    <tr>
-                        <td><strong>#{{ $cotizacion->coti_num }}@if($cotizacion->coti_version != 1).{{ $cotizacion->coti_version ?? 1 }} @endif</strong></td>
+                    @php
+                        $estCotiRow = trim((string) ($cotizacion->coti_estado ?? ''));
+                        $esAprobadaRow = $estCotiRow !== '' && strtoupper($estCotiRow[0]) === 'A';
+                        $detalleVentas = $esAprobadaRow ? (($detalleMuestrasVentas ?? [])[$cotizacion->coti_num] ?? []) : [];
+                    @endphp
+                    <tr class="{{ ($esAprobadaRow && count($detalleVentas) > 0) ? 'ventas-row-clickable' : '' }}" style="{{ ($esAprobadaRow && count($detalleVentas) > 0) ? 'cursor:pointer;' : '' }}">
+                        <td>
+                            @if($esAprobadaRow && count($detalleVentas) > 0)
+                                <button type="button"
+                                        class="btn btn-link btn-sm p-0 me-1 align-baseline text-decoration-none ventas-det-toggle"
+                                        data-bs-toggle="collapse"
+                                        data-bs-target="#ventas-det-{{ $cotizacion->coti_num }}"
+                                        aria-expanded="false"
+                                        aria-controls="ventas-det-{{ $cotizacion->coti_num }}"
+                                        title="Ver muestras y ensayos">
+                                    <i class="fas fa-chevron-down ventas-det-icon"></i>
+                                </button>
+                            @endif
+                            <strong>#{{ $cotizacion->coti_num }}@if($cotizacion->coti_version != 1).{{ $cotizacion->coti_version ?? 1 }} @endif</strong>
+                        </td>
                         <td>{{ Str::limit($cotizacion->coti_descripcion, 50) ?: 'Sin descripción' }}</td>
-                        <td>{{ Str::limit($cotizacion->coti_empresa, 30) ?: '-' }}</td>
+                        <td>
+                            {{ Str::limit(\App\Support\CotizacionClienteEtiqueta::paraLista($cotizacion), 50) ?: '-' }}
+                        </td>
                         <td>
                             @php
-                                $estado = trim($cotizacion->coti_estado);
-                                $estadoClass = 'estado-E';
-                                $estadoTexto = 'En Espera';
-                                
-                                if($estado && $estado[0] == 'A') {
-                                    $estadoClass = 'estado-A';
-                                    $estadoTexto = 'Aprobado';
-                                } elseif($estado && $estado[0] == 'R') {
-                                    $estadoClass = 'estado-R';
-                                    $estadoTexto = 'Rechazado';
-                                } elseif($estado && $estado[0] == 'P') {
-                                    $estadoClass = 'estado-P';
-                                    $estadoTexto = 'En Proceso';
-                                }
+                                $badge = ($ventasBadgesListado ?? [])[$cotizacion->coti_num] ?? ['texto' => 'En Espera', 'class' => 'estado-E'];
+                                $estadoClass = $badge['class'];
+                                $estadoTexto = $badge['texto'];
                             @endphp
                             <span class="badge {{ $estadoClass }} badge-estado">{{ $estadoTexto }}</span>
+                            @if(!empty($cotizacion->cancelada))
+                                <button type="button"
+                                        class="btn btn-sm btn-outline-secondary ms-2"
+                                        title="Ver razones de cancelación"
+                                        data-reason="{{ $cotizacion->razon_cancelada }}"
+                                        onclick="verRazonCancelacion(this)">
+                                    ?
+                                </button>
+                            @endif
                         </td>
                         <td>{{ $cotizacion->coti_fechaalta ? $cotizacion->coti_fechaalta->format('d/m/Y') : '-' }}</td>
                         <td class="text-end action-buttons">
@@ -340,14 +509,60 @@ $rechazadas = \App\Models\Ventas::where('coti_estado', 'LIKE', 'R%')->count();
                             <a href="{{ route('ventas.edit', $cotizacion->coti_num) }}" class="btn btn-sm btn-outline-primary" title="Ver/Editar">
                                 <x-heroicon-o-pencil style="width: 16px; height: 16px;" />
                             </a>
-                            <button type="button" 
-                               class="btn btn-sm btn-outline-danger" 
-                               onclick="confirmarEliminacion({{ $cotizacion->coti_num }})"
-                               title="Eliminar">
-                                <x-heroicon-o-trash style="width: 16px; height: 16px;" />
-                            </button>
+                            @php
+                                $estaAprobadaRow = !$cotizacion->cancelada && !empty($cotizacion->coti_estado) && strtoupper(trim((string) $cotizacion->coti_estado))[0] === 'A';
+                            @endphp
+                            @if($estaAprobadaRow)
+                                <button type="button"
+                                   class="btn btn-sm btn-outline-danger"
+                                   title="No se puede eliminar una cotización aprobada"
+                                   disabled>
+                                    <x-heroicon-o-trash style="width: 16px; height: 16px;" />
+                                </button>
+                            @else
+                                <button type="button" 
+                                   class="btn btn-sm btn-outline-danger" 
+                                   onclick="confirmarEliminacion({{ $cotizacion->coti_num }})"
+                                   title="Eliminar">
+                                    <x-heroicon-o-trash style="width: 16px; height: 16px;" />
+                                </button>
+                            @endif
                         </td>
                     </tr>
+                    @if($esAprobadaRow && count($detalleVentas) > 0)
+                    <tr class="collapse table-light" id="ventas-det-{{ $cotizacion->coti_num }}">
+                        <td colspan="6" class="p-0 border-0">
+                            <div class="p-3 border-bottom bg-white">
+                                <div class="small text-muted mb-2">Muestras y ensayos</div>
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-bordered mb-0 align-middle">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th style="width: 7rem;">Tipo</th>
+                                                <th>Descripción</th>
+                                                <th style="min-width: 12rem;">Estado</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach($detalleVentas as $linea)
+                                            <tr>
+                                                <td>{{ ($linea['tipo'] ?? '') === 'muestra' ? 'Muestra' : 'Ensayo' }}</td>
+                                                <td>
+                                                    {{ $linea['titulo'] ?? '-' }}
+                                                    @if(!empty($linea['copia']))
+                                                        <span class="text-muted small ms-1">({{ $linea['copia'] }})</span>
+                                                    @endif
+                                                </td>
+                                                <td><small class="text-break">{{ $linea['estado'] ?? '-' }}</small></td>
+                                            </tr>
+                                            @endforeach
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                    @endif
                     @endforeach
                     
                     @if($cotizaciones->isEmpty())
@@ -374,6 +589,67 @@ $rechazadas = \App\Models\Ventas::where('coti_estado', 'LIKE', 'R%')->count();
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
 <script>
+// Select2 en filtros (Cliente / Vendedor / Estado / Sucursal)
+document.addEventListener('DOMContentLoaded', function () {
+    if (!window.jQuery || !jQuery.fn || !jQuery.fn.select2) {
+        return;
+    }
+
+    const $form = jQuery('#filterForm');
+    const bindSubmitOnChange = ($el) => {
+        if (!$el || !$el.length) return;
+        $el.on('change', function () { $form.trigger('submit'); });
+    };
+
+    const commonOpts = {
+        width: '100%',
+        allowClear: true,
+    };
+
+    const $cliente = jQuery('.js-select2-cliente');
+    if ($cliente.length) {
+        $cliente.select2({ ...commonOpts, placeholder: $cliente.data('placeholder') || 'Todos los clientes' });
+        bindSubmitOnChange($cliente);
+    }
+
+    const $vendedor = jQuery('.js-select2-vendedor');
+    if ($vendedor.length) {
+        $vendedor.select2({ ...commonOpts, placeholder: $vendedor.data('placeholder') || 'Todos los vendedores' });
+        bindSubmitOnChange($vendedor);
+    }
+
+    const $estado = jQuery('.js-select2-estado');
+    if ($estado.length) {
+        $estado.select2({ ...commonOpts, placeholder: $estado.data('placeholder') || 'Todos los estados', minimumResultsForSearch: 0 });
+        bindSubmitOnChange($estado);
+    }
+
+    const $sucursal = jQuery('.js-select2-sucursal');
+    if ($sucursal.length && !$sucursal.prop('disabled')) {
+        $sucursal.select2({ ...commonOpts, placeholder: $sucursal.data('placeholder') || 'Todas' });
+        bindSubmitOnChange($sucursal);
+    }
+});
+
+// Hacer toda la fila clickeable para desplegar/ocultar el detalle
+document.addEventListener('click', function (e) {
+    const row = e.target.closest('tr.ventas-row-clickable');
+    if (!row) {
+        return;
+    }
+
+    // No interceptar clicks en controles interactivos (acciones, links, inputs, etc.)
+    const interactive = e.target.closest('a, button, input, select, textarea, label, .dropdown-menu, .btn');
+    if (interactive) {
+        return;
+    }
+
+    const btn = row.querySelector('.ventas-det-toggle');
+    if (btn) {
+        btn.click();
+    }
+});
+
 // Función para filtrar por estado desde las tarjetas de estadísticas
 function filtrarPorEstado(estado) {
     const url = new URL(window.location.href);
@@ -385,6 +661,12 @@ function filtrarPorEstado(estado) {
     // Mantener filtros existentes (excepto estado)
     if (url.searchParams.get('cliente')) {
         params.set('cliente', url.searchParams.get('cliente'));
+    }
+    if (url.searchParams.get('vendedor')) {
+        params.set('vendedor', url.searchParams.get('vendedor'));
+    }
+    if (url.searchParams.get('sucursal')) {
+        params.set('sucursal', url.searchParams.get('sucursal'));
     }
     if (url.searchParams.get('fecha_desde')) {
         params.set('fecha_desde', url.searchParams.get('fecha_desde'));
@@ -473,6 +755,15 @@ function confirmarEliminacion(cotiNum) {
             document.body.appendChild(form);
             form.submit();
         }
+    });
+}
+
+function verRazonCancelacion(btn) {
+    const reason = (btn?.getAttribute('data-reason') || '').toString().trim();
+    Swal.fire({
+        icon: 'info',
+        title: 'Razones de cancelación',
+        text: reason || 'Sin motivo informado.'
     });
 }
 

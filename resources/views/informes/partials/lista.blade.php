@@ -23,7 +23,7 @@
                                 $coti = $informeData['cotizacion'];
                             @endphp
                             <tr>
-                                <td colspan="4">
+                                <td colspan="5">
                                     <div class="accordion" id="accordion-{{ $numCoti }}">
                                         <div class="accordion-item">
                                             <h2 class="accordion-header" id="heading-{{ $numCoti }}">
@@ -32,7 +32,7 @@
                                                         Cotización #{{ $numCoti }} - {{ $coti->coti_empresa ?? 'N/A' }}
                                                     </button>
                                                     
-                                                    <a href="{{ route('informes.pdf-masivo', ['cotizacion' => $numCoti]) }}" class="btn btn-sm btn-outline-secondary ms-2" target="_blank" data-bs-toggle="tooltip" title="Descargar PDF masivo">
+                                                    <a href="{{ route('informes.pdf-masivo', ['cotizacion' => $numCoti]) }}" class="btn btn-sm btn-outline-secondary ms-2" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Descargar PDF masivo" position="bottom">
                                                         <x-heroicon-o-document-arrow-down style="width: 18px; height: 18px;" />
                                                         PDF masivo
                                                     </a>
@@ -57,16 +57,39 @@
                                                                     <td>{{ $muestra->identificador_documento_firma ? $muestra->identificador_documento_firma : 'N/A' }}</td>
                                                                     <td class="text-center">
                                                                         <div class="btn-group" role="group">
-                                                                            @if($isInformes)
+                                                                            @php
+                                                                                $descUpper = strtoupper(trim($muestra->cotio_descripcion ?? ''));
+                                                                                $isSpecialMuestra = str_contains($descUpper, 'CONSULTORIA') || 
+                                                                                                    str_contains($descUpper, 'ASP') || 
+                                                                                                    str_contains($descUpper, 'APARATOS SOMETIDOS A PRESIÓN') || 
+                                                                                                    str_contains($descUpper, 'APARATOS SOMETIDOS A PRESION') || 
+                                                                                                    str_contains($descUpper, 'CLARKE');
+                                                                            @endphp
+                                                                            @if($isInformes && !$isSpecialMuestra)
                                                                                 <button type="button" class="btn btn-sm btn-outline-primary preview-informe-btn"
                                                                                         data-cotizacion="{{ $numCoti }}"
                                                                                         data-item="{{ $muestra->cotio_item }}"
                                                                                         data-instance="{{ $muestra->instance_number }}"
                                                                                         data-bs-toggle="tooltip" 
+                                                                                        data-bs-placement="bottom"
                                                                                         title="Vista previa y editar">
                                                                                     <x-heroicon-o-eye style="width: 15px; height: 15px;" />
                                                                                 </button>
-                                                                                                                                                @endif
+                                                                            @endif
+                                                                            @if(userCanEditInformeProtocoloPdf() && !$isSpecialMuestra)
+                                                                                <a href="{{ route('informes.protocolo-pdf.edit', [
+                                                                                    'cotio_numcoti' => $numCoti,
+                                                                                    'cotio_item' => $muestra->cotio_item,
+                                                                                    'instance_number' => $muestra->instance_number,
+                                                                                ]) }}"
+                                                                                   class="btn btn-sm btn-warning"
+                                                                                   data-bs-toggle="tooltip"
+                                                                                   data-bs-placement="bottom"
+                                                                                   title="Editar datos del protocolo PDF">
+                                                                                    <x-heroicon-o-pencil-square style="width: 14px; height: 14px;" />
+                                                                                    <span class="ms-1">Editar</span>
+                                                                                </a>
+                                                                            @endif
                                                             <a href="{{ route('informes.pdf', [
                                                                 'cotio_numcoti' => $numCoti,
                                                                 'cotio_item' => $muestra->cotio_item,
@@ -75,6 +98,7 @@
                                                             class="btn btn-sm btn-outline-secondary" 
                                                             target="_blank"
                                                             data-bs-toggle="tooltip" 
+                                                            data-bs-placement="bottom"
                                                             title="{{ $muestra->firmado ? 'Descargar PDF Firmado' : 'Descargar PDF' }}">
                                                             <x-heroicon-o-document-arrow-down style="width: 15px; height: 15px;" />
                                                             @if($muestra->firmado)
@@ -90,6 +114,7 @@
                                                                             ]) }}"
                                                                             class="btn btn-sm btn-outline-primary" 
                                                                             data-bs-toggle="tooltip" 
+                                                                            data-bs-placement="bottom"
                                                                             title="Firmar Informe">
                                                                             <x-heroicon-o-pencil style="width: 15px; height: 15px;" />
                                                                             </a>
@@ -148,6 +173,7 @@
                                    class="btn btn-sm btn-outline-secondary ms-2" 
                                    target="_blank"
                                    data-bs-toggle="tooltip" 
+                                   data-bs-placement="bottom"
                                    title="Descargar PDF masivo">
                                     <x-heroicon-o-document-arrow-down style="width: 15px; height: 15px;" />
                                 </a>
@@ -188,17 +214,43 @@
                                             <div class="d-flex justify-content-between align-items-center">
                                                 <div>
                                                     <span class="fw-bold">{{ $muestra->cotio_identificacion }}</span><br>
-                                                    <small>{{ $muestra->cotio_descripcion }} - {{ $muestra->instance_number }}</small>
+                                                    <small>{{ $muestra->cotio_descripcion }} - {{ $muestra->instance_number }}</small><br>
+                                                    <small class="text-muted">{{ \App\Support\LeyNormativaPresentacion::textoPlano($muestra->muestra) }}</small>
                                                 </div>
                                                 <div class="btn-group" role="group">
+                                                    @php
+                                                        $descUpper = strtoupper(trim($muestra->cotio_descripcion ?? ''));
+                                                        $isSpecialMuestra = str_contains($descUpper, 'CONSULTORIA') || 
+                                                                            str_contains($descUpper, 'ASP') || 
+                                                                            str_contains($descUpper, 'APARATOS SOMETIDOS A PRESIÓN') || 
+                                                                            str_contains($descUpper, 'APARATOS SOMETIDOS A PRESION') || 
+                                                                            str_contains($descUpper, 'CLARKE');
+                                                    @endphp
+                                                    @if($isInformes && !$isSpecialMuestra)
                                                     <button type="button" class="btn btn-sm btn-outline-primary preview-informe-btn"
                                                             data-cotizacion="{{ $numCoti }}"
                                                             data-item="{{ $muestra->cotio_item }}"
                                                             data-instance="{{ $muestra->instance_number }}"
                                                             data-bs-toggle="tooltip" 
+                                                            data-bs-placement="bottom"
                                                             title="Vista previa y editar">
                                                         <x-heroicon-o-eye style="width: 15px; height: 15px;" />
                                                     </button>
+                                                    @endif
+                                                    @if(userCanEditInformeProtocoloPdf() && !$isSpecialMuestra)
+                                                    <a href="{{ route('informes.protocolo-pdf.edit', [
+                                                        'cotio_numcoti' => $numCoti,
+                                                        'cotio_item' => $muestra->cotio_item,
+                                                        'instance_number' => $muestra->instance_number,
+                                                    ]) }}"
+                                                       class="btn btn-sm btn-warning"
+                                                       data-bs-toggle="tooltip"
+                                                       data-bs-placement="bottom"
+                                                       title="Editar datos del protocolo PDF">
+                                                        <x-heroicon-o-pencil-square style="width: 14px; height: 14px;" />
+                                                        <span class="ms-1">Editar</span>
+                                                    </a>
+                                                    @endif
                                                     <a href="{{ route('informes.pdf', [
                                                         'cotio_numcoti' => $numCoti,
                                                         'cotio_item' => $muestra->cotio_item,
@@ -207,6 +259,7 @@
                                                     class="btn btn-sm btn-outline-secondary" 
                                                     target="_blank"
                                                     data-bs-toggle="tooltip" 
+                                                    data-bs-placement="bottom"
                                                     title="{{ $muestra->firmado ? 'Descargar PDF Firmado' : 'Descargar PDF' }}">
                                                     <x-heroicon-o-document-arrow-down style="width: 15px; height: 15px;" />
                                                     @if($muestra->firmado)
@@ -221,6 +274,7 @@
                                                         'instance_number' => $muestra->instance_number
                                                     ]) }}"
                                                     class="btn btn-sm btn-outline-primary" 
+                                                    data-bs-placement="bottom"
                                                     data-bs-toggle="tooltip" 
                                                     title="Firmar Informe">
                                                     <x-heroicon-o-pencil style="width: 15px; height: 15px;" />

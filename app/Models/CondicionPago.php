@@ -12,6 +12,11 @@ class CondicionPago extends Model
     protected $keyType = 'string';
     public $timestamps = false;
 
+    public function getRouteKeyName()
+    {
+        return 'pag_codigo';
+    }
+
     protected $fillable = [
         'pag_codigo',
         'pag_descripcion',

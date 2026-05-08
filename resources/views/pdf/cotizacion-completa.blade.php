@@ -75,6 +75,14 @@
         <div class="header-info">
             <table>
                 <tr>
+                    <td><strong>Código:</strong></td>
+                    <td><strong>{{ config('cotizacion_documento.codigo') }}</strong></td>
+                </tr>
+                <tr>
+                    <td><strong>DP:</strong></td>
+                    <td><strong>{{ config('cotizacion_documento.dp') }}</strong></td>
+                </tr>
+                <tr>
                     <td><strong>Cotización:</strong></td>
                     <td><strong>{{ $cotizacion->coti_num }}</strong></td>
                 </tr>

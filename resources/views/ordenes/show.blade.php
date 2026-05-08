@@ -83,6 +83,35 @@
                                     $muestraId = $esInstanciaVirtual 
                                         ? "{$muestra->cotio_numcoti}_{$muestra->cotio_item}_0_{$muestra->instance_number}"
                                         : $muestra->id;
+
+                                    // Parsear notas internas (JSON o formato antiguo simple)
+                                    $notasInternas = [];
+                                    if (!empty($categoria->cotio_nota_contenido)) {
+                                        try {
+                                            $notasParsed = json_decode($categoria->cotio_nota_contenido, true);
+                                            if (is_array($notasParsed)) {
+                                                $notasInternas = collect($notasParsed)->filter(function($nota) {
+                                                    return isset($nota['tipo']) && $nota['tipo'] === 'interna';
+                                                })->values()->toArray();
+                                            } else {
+                                                // Formato antiguo: nota simple
+                                                if (!empty($categoria->cotio_nota_tipo) && $categoria->cotio_nota_tipo === 'interna') {
+                                                    $notasInternas = [['tipo' => 'interna', 'contenido' => $categoria->cotio_nota_contenido]];
+                                                }
+                                            }
+                                        } catch (\Exception $e) {
+                                            // No es JSON, es formato antiguo
+                                            if (!empty($categoria->cotio_nota_tipo) && $categoria->cotio_nota_tipo === 'interna') {
+                                                $notasInternas = [['tipo' => 'interna', 'contenido' => $categoria->cotio_nota_contenido]];
+                                            }
+                                        }
+                                    }
+
+                                    // Fallback: si el tipo es interna pero el JSON no trae tipo por item
+                                    if (empty($notasInternas) && !empty($categoria->cotio_nota_tipo) && $categoria->cotio_nota_tipo === 'interna') {
+                                        $notasInternas = [['tipo' => 'interna', 'contenido' => $categoria->cotio_nota_contenido]];
+                                    }
+                                    $tieneNotaInterna = !empty($notasInternas);
                                     
                                     // Define header and badge classes based on analysis status
                                     $headerClass = 'bg-secondary';
@@ -143,41 +172,57 @@
                                                 </div>
                                                 <!-- Title and Link -->
                                                 <div class="flex-grow-1">
-                                                    <a 
-                                                        href="{{ route('categoria.verOrden', [
-                                                            'cotizacion' => $cotizacion->coti_num, 
-                                                            'item' => $muestra->cotio_item,
-                                                            'instance' => $muestra->instance_number
-                                                        ]) }}" 
-                                                        class="text-decoration-none text-white"
-                                                    >
-                                                        <div class="d-flex align-items-center gap-2">
-                                                            <h6 class="mb-1 fw-bold">
-                                                                {{ $categoria->cotio_descripcion }} (#{{ $muestra->otn ? $muestra->otn : $muestra->instance_number ?? 'N/A' }})
-                                                                <small class="fw-normal">(Instancia {{ $muestra->instance_number }} / {{ $categoria->cotio_cantidad ?? '-' }})</small>
-                                                            </h6>
-                                                            @if($esInstanciaVirtual)
-                                                                <div class="ms-2">
-                                                                    <span class="badge bg-info text-white">
-                                                                        <x-heroicon-o-plus-circle style="width: 12px; height: 12px;" class="me-1" />
-                                                                        Nueva
-                                                                    </span>
-                                                                </div>
-                                                            @elseif($muestra->active_ot)
-                                                                <div class="ms-2">
-                                                                    <span class="badge {{ $badgeClass }} text-white">
-                                                                        {{ str_replace('_', ' ', ucwords($muestra->cotio_estado_analisis)) }}
-                                                                    </span>
-                                                                </div>
+                                                    <div class="d-flex align-items-center gap-2">
+                                                        <a 
+                                                            href="{{ route('categoria.verOrden', [
+                                                                'cotizacion' => $cotizacion->coti_num, 
+                                                                'item' => $muestra->cotio_item,
+                                                                'instance' => $muestra->instance_number
+                                                            ]) }}" 
+                                                            class="text-decoration-none text-white"
+                                                        >
+                                                            <div class="d-flex align-items-center gap-2">
+                                                                <h6 class="mb-1 fw-bold">
+                                                                    {{ $categoria->cotio_descripcion }} (#{{ $muestra->otn ? $muestra->otn : $muestra->instance_number ?? 'N/A' }})
+                                                                    <small class="fw-normal">(muestra {{ $muestra->instance_number }} / {{ $categoria->cotio_cantidad ?? '-' }})</small>
+                                                                </h6>
+                                                                @if($esInstanciaVirtual)
+                                                                    <div class="ms-2">
+                                                                        <span class="badge bg-info text-white">
+                                                                            <x-heroicon-o-plus-circle style="width: 12px; height: 12px;" class="me-1" />
+                                                                            Nueva
+                                                                        </span>
+                                                                    </div>
+                                                                @elseif($muestra->active_ot)
+                                                                    <div class="ms-2">
+                                                                        <span class="badge {{ $badgeClass }} text-white">
+                                                                            {{ str_replace('_', ' ', ucwords($muestra->cotio_estado_analisis)) }}
+                                                                        </span>
+                                                                    </div>
+                                                                @endif
+                                                            </div>
+                                                            @if($muestra->active_ot && $muestra->coordinador)
+                                                                <small class="text-light d-block">
+                                                                    Coordinado por {{ $muestra->coordinador->usu_descripcion }}
+                                                                </small>
                                                             @endif
-                                                        </div>
-                                                    </a>
-                                                        @if($muestra->active_ot && $muestra->coordinador)
-                                                            <small class="text-light d-block">
-                                                                Coordinado por {{ $muestra->coordinador->usu_descripcion }}
-                                                            </small>
+                                                        </a>
+
+                                                        @if($tieneNotaInterna)
+                                                            <button
+                                                                type="button"
+                                                                class="btn btn-sm btn-outline-light p-1"
+                                                                data-bs-toggle="modal"
+                                                                data-bs-target="#notaInternaOrdenModal{{ $muestraId }}"
+                                                                title="Ver nota interna"
+                                                                aria-label="Ver nota interna de {{ $categoria->cotio_descripcion }} (muestra {{ $muestra->instance_number }})"
+                                                            >
+                                                                <x-heroicon-o-document-text
+                                                                    style="width: 18px; height: 18px;"
+                                                                    class="text-white" />
+                                                            </button>
                                                         @endif
-                                                    </a>
+                                                    </div>
                                                 </div>
                                             </div>
                     
@@ -380,6 +425,7 @@
                         Aplicar a muestras gemelas
                         <i class="fas fa-info-circle text-info ms-1" 
                            data-bs-toggle="tooltip" 
+                           data-bs-placement="bottom"
                            title="Si está activado, la asignación se aplicará también a todas las muestras gemelas (mismo item/subitem pero diferente número de instancia)"></i>
                     </label>
                 </div>
@@ -454,6 +500,77 @@
         <i class="fas fa-check-circle me-2"></i>Pasar a Análisis
     </button>
 </div>
+
+<!-- Modales de Nota Interna -->
+@foreach($agrupadas as $grupo)
+    @php
+        $categoria = $grupo['categoria'];
+
+        $notasInternas = [];
+        if (!empty($categoria->cotio_nota_contenido)) {
+            try {
+                $notasParsed = json_decode($categoria->cotio_nota_contenido, true);
+                if (is_array($notasParsed)) {
+                    $notasInternas = collect($notasParsed)->filter(function($nota) {
+                        return isset($nota['tipo']) && $nota['tipo'] === 'interna';
+                    })->values()->toArray();
+                } else {
+                    // Formato antiguo: nota simple
+                    if (!empty($categoria->cotio_nota_tipo) && $categoria->cotio_nota_tipo === 'interna') {
+                        $notasInternas = [['tipo' => 'interna', 'contenido' => $categoria->cotio_nota_contenido]];
+                    }
+                }
+            } catch (\Exception $e) {
+                // No es JSON, es formato antiguo
+                if (!empty($categoria->cotio_nota_tipo) && $categoria->cotio_nota_tipo === 'interna') {
+                    $notasInternas = [['tipo' => 'interna', 'contenido' => $categoria->cotio_nota_contenido]];
+                }
+            }
+        }
+
+        // Fallback: si el tipo es interna pero el JSON no trae tipo por item
+        if (empty($notasInternas) && !empty($categoria->cotio_nota_tipo) && $categoria->cotio_nota_tipo === 'interna') {
+            $notasInternas = [['tipo' => 'interna', 'contenido' => $categoria->cotio_nota_contenido]];
+        }
+
+        $tieneNotaInterna = !empty($notasInternas);
+    @endphp
+
+    @if($tieneNotaInterna)
+        @foreach($grupo['instancias'] as $instancia)
+            @php
+                $muestra = $instancia['muestra'];
+                $esInstanciaVirtual = !is_numeric($muestra->id);
+                $muestraId = $esInstanciaVirtual
+                    ? "{$muestra->cotio_numcoti}_{$muestra->cotio_item}_0_{$muestra->instance_number}"
+                    : $muestra->id;
+            @endphp
+
+            <div class="modal fade" id="notaInternaOrdenModal{{ $muestraId }}" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content border-0 shadow-sm">
+                        <div class="modal-header bg-warning">
+                            <h5 class="modal-title text-dark">
+                                Nota interna - {{ $categoria->cotio_descripcion }} (muestra {{ $muestra->instance_number }})
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            @foreach($notasInternas as $nota)
+                                <div class="mb-3" style="white-space: pre-wrap;">
+                                    {{ $nota['contenido'] ?? '' }}
+                                </div>
+                            @endforeach
+                        </div>
+                        <div class="modal-footer bg-light">
+                            <button type="button" class="btn btn-outline-secondary rounded-3" data-bs-dismiss="modal">Cerrar</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        @endforeach
+    @endif
+@endforeach
 
 @endsection
 
@@ -1380,6 +1497,9 @@
                     <div style="width: 100%; max-width: 60%; border: 1px solid #dee2e6; padding: 10px; border-radius: 8px; margin: 10px auto;">
                         <p></p>
                     </div>
+                    <div style="width: 100%; max-width: 60%; border: 1px solid #dee2e6; padding: 10px; border-radius: 8px; margin: 10px auto;">
+                        <p></p>
+                    </div>
                     <div class="modal-footer justify-content-center">
                         <button onclick="printQr('${url}', '${coti}', '${categoria}', '${instance}', '${fechaAnalisis}')" class="btn btn-primary">
                             Imprimir CT 
@@ -1468,6 +1588,9 @@
                     </p>
                     <div class="qr-wrapper">
                         <div id="qr"></div>
+                        <div style="width: 100%; max-width: 90%; border: 1px solid #dee2e6; padding: 10px; border-radius: 8px; margin: 10px auto;">
+                            <p></p>
+                        </div>
                         <div style="width: 100%; max-width: 90%; border: 1px solid #dee2e6; padding: 10px; border-radius: 8px; margin: 10px auto;">
                             <p></p>
                         </div>

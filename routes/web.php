@@ -15,6 +15,7 @@ use App\Http\Controllers\VariableRequeridaController;
 use App\Http\Controllers\InventarioMuestreoController;
 use App\Http\Controllers\MuestrasController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\AdminVolumenCosteosController;
 use App\Http\Middleware\CheckAdminOrRole;
 use App\Http\Controllers\SimpleNotificationController;
 use App\Http\Controllers\InformeController;
@@ -24,10 +25,15 @@ use App\Http\Controllers\AuditoriaController;
 use App\Http\Controllers\MetodoMuestreoController;
 use App\Http\Controllers\MetodoAnalisisController;
 use App\Http\Controllers\ItemController;
+use App\Http\Controllers\CondicionPagoController;
 use App\Http\Controllers\MetodosController;
 use App\Http\Controllers\LeyNormativaController;
 use App\Http\Controllers\VariableController;
 use App\Http\Controllers\CustomerController;
+use App\Http\Controllers\ConsultoriaController;
+use App\Http\Controllers\AspController;
+use App\Http\Controllers\ClarkeFireController;
+use App\Http\Middleware\EnsureHasRole;
 
 
 
@@ -74,6 +80,7 @@ Route::middleware(CheckAuth::class)->group(function () {
     Route::get('auth/{id}/ayuda', [AuthController::class, 'showHelp'])->name('auth.help');
 
     Route::put('/instancias/{instancia}/herramientas', [OrdenController::class, 'updateHerramientas'])->name('instancias.update-herramientas');
+    Route::put('/instancias/{instancia}/analista-fechas-analisis', [OrdenController::class, 'updateAnalistaFechasAnalisis'])->name('instancias.update-analista-fechas-analisis');
     Route::get('/instancias/{instancia}/herramientas', [OrdenController::class, 'apiHerramientasInstancia']);
 
     
@@ -84,12 +91,29 @@ Route::middleware(CheckAuth::class)->group(function () {
     
     // Ruta para usuarios clientes
     Route::get('/customers', [CustomerController::class, 'index'])->name('customers.index');
+
+    Route::get('/consultoria', [ConsultoriaController::class, 'index'])
+        ->middleware(EnsureHasRole::class.':coordinador_consul')
+        ->name('consultoria.index');
+
+    Route::get('/asp', [AspController::class, 'index'])
+        ->middleware(EnsureHasRole::class.':asp')
+        ->name('asp.index');
+
+    Route::get('/clarke-fire', [ClarkeFireController::class, 'index'])
+        ->middleware(EnsureHasRole::class.':clarke_fire')
+        ->name('clarke-fire.index');
 });
 
 // Ruta rápida para actualizar contraseñas (solo admin)
 Route::get('/actualizar-pass', [AuthController::class, 'actualizarPassRapido'])
     ->middleware([CheckAuth::class, CheckAdmin::class])
     ->name('actualizar-pass');
+
+// Volumetría por tipo (costeos) — solo administradores (usu_nivel >= 900)
+Route::get('/admin/volumen-costeos', [AdminVolumenCosteosController::class, 'index'])
+    ->middleware([CheckAuth::class, CheckAdmin::class])
+    ->name('admin.volumen-costeos');
 
 // Rutas para usuarios con nivel 900 o más (admin)
 Route::middleware([CheckAdminOrRole::class])->group(function () {
@@ -211,13 +235,16 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
     // Gestión de muestras
     Route::get('/muestras', [MuestrasController::class, 'index'])->name('muestras.index');
     Route::get('/show/{coti_num}', [MuestrasController::class, 'show'])->name('muestras.show');
+    Route::post('/muestras/{coti_num}/cancelar-muestreo', [MuestrasController::class, 'cancelarMuestreo'])->name('muestras.cancelar-muestreo');
     Route::get('/muestras/{cotizacion}/categoria/{item}/{instance}', [MuestrasController::class, 'verMuestra'])->name('categoria.verMuestra');
     Route::post('/asignar-detalles-muestra', [MuestrasController::class, 'asignarDetallesMuestra'])->name('asignar.detalles-muestra');
     Route::get('/muestras/{cotizacion}/categoria/{item}/{instance}/ver', [MuestrasController::class, 'verMuestra'])->name('muestras.ver');
+    Route::post('/muestras/pasar-facturacion', [MuestrasController::class, 'pasarAFacturacion'])->name('muestras.pasar-facturacion');
+    Route::post('/muestras/pasar-a-informes', [MuestrasController::class, 'pasarAInformes'])->name('muestras.pasar-a-informes');
     Route::post('/muestras/asignacion-masiva', [MuestrasController::class, 'asignacionMasiva'])->name('muestras.asignacion-masiva');
     Route::post('/muestras/finalizar-todas', [MuestrasController::class, 'finalizarTodas'])->name('muestras.finalizar-todas');
     Route::post('/muestras/remover-responsable', [MuestrasController::class, 'removerResponsable'])->name('muestras.remover-responsable');
-    Route::get('/muestras/{instancia}/datos-recoordinacion', [MuestrasController::class, 'getDatosRecoordinacion']);
+    Route::get('/muestras/{instancia}/datos-recoordinacion', [MuestrasController::class, 'getDatosRecoordinacion'])->name('muestras.get-datos-recoordinacion');
     Route::post('/muestras/recoordinar', [MuestrasController::class, 'recoordinar'])->name('muestras.recoordinar');
     Route::put('/muestras/update-variable', [MuestrasController::class, 'updateVariable'])->name('muestras.updateVariable');
     Route::put('/muestras/update-all-data', [MuestrasController::class, 'updateAllData'])->name('muestras.updateAllData');
@@ -244,6 +271,9 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
     Route::get('/informes/{cotio_numcoti}/{cotio_item}/{instance_number}/firmar', [InformeController::class, 'firmarInforme'])->name('informes.firmar');
     Route::get('/informes-api/{cotio_numcoti}/{cotio_item}/{instance_number}', [InformeController::class, 'getInformeData'])->name('api.informes.get');
     Route::put('/informes-api/{cotio_numcoti}/{cotio_item}/{instance_number}', [InformeController::class, 'updateInforme'])->name('api.informes.update');
+    Route::get('/informes/{cotio_numcoti}/{cotio_item}/{instance_number}/protocolo-pdf', [InformeController::class, 'editarProtocoloPdf'])->name('informes.protocolo-pdf.edit');
+    Route::put('/informes/{cotio_numcoti}/{cotio_item}/{instance_number}/protocolo-pdf', [InformeController::class, 'actualizarProtocoloPdf'])->name('informes.protocolo-pdf.update');
+    Route::post('/informes/{cotio_numcoti}/{cotio_item}/{instance_number}/protocolo-pdf/restaurar', [InformeController::class, 'restaurarProtocoloPdf'])->name('informes.protocolo-pdf.restaurar');
     
     // Rutas de callbacks para firma digital
     Route::get('/firma/exitosa', [InformeController::class, 'firmaExitosa'])->name('firma.exitosa');
@@ -307,6 +337,7 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
     Route::get('items/importar', [ItemController::class, 'showImportar'])->name('items.importar');
     Route::post('items/importar/procesar', [ItemController::class, 'procesarImportacion'])->name('items.importar-procesar');
     Route::get('items/importar/plantilla', [ItemController::class, 'descargarPlantilla'])->name('items.descargar-plantilla');
+    Route::get('items/exportar', [ItemController::class, 'exportar'])->name('items.exportar');
     
     // Cambios masivos de precios (debe ir antes de items/{cotio_items})
     Route::get('items/precios/cambios-masivos', [ItemController::class, 'showCambiosMasivos'])->name('items.cambios-masivos-precios');
@@ -319,6 +350,14 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
     Route::get('items/{cotio_items}/edit', [ItemController::class, 'edit'])->name('items.edit');
     Route::put('items/{cotio_items}', [ItemController::class, 'update'])->name('items.update');
     Route::delete('items/{cotio_items}', [ItemController::class, 'delete'])->name('items.delete');
+
+    // Condiciones de pago
+    Route::get('condiciones-pago', [CondicionPagoController::class, 'index'])->name('condiciones-pago.index');
+    Route::get('condiciones-pago/create', [CondicionPagoController::class, 'create'])->name('condiciones-pago.create');
+    Route::post('condiciones-pago', [CondicionPagoController::class, 'store'])->name('condiciones-pago.store');
+    Route::get('condiciones-pago/{condicionPago}/edit', [CondicionPagoController::class, 'edit'])->name('condiciones-pago.edit');
+    Route::put('condiciones-pago/{condicionPago}', [CondicionPagoController::class, 'update'])->name('condiciones-pago.update');
+    Route::delete('condiciones-pago/{condicionPago}', [CondicionPagoController::class, 'destroy'])->name('condiciones-pago.destroy');
     
 
     // Leyes y Normativas
@@ -510,14 +549,14 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
 
     // Gestión de muestras
     Route::get('/muestras', [MuestrasController::class, 'index'])->name('muestras.index');
-    Route::get('/show/{coti_num}', [MuestrasController::class, 'show']);
+    Route::get('/show/{coti_num}', [MuestrasController::class, 'show'])->name('muestras.show');
     Route::get('/muestras/{cotizacion}/categoria/{item}/{instance}', [MuestrasController::class, 'verMuestra'])->name('categoria.verMuestra');
     Route::post('/asignar-detalles-muestra', [MuestrasController::class, 'asignarDetallesMuestra'])->name('asignar.detalles-muestra');
     Route::get('/muestras/{cotizacion}/categoria/{item}/{instance}/ver', [MuestrasController::class, 'verMuestra'])->name('muestras.ver');
     Route::post('/muestras/asignacion-masiva', [MuestrasController::class, 'asignacionMasiva'])->name('muestras.asignacion-masiva');
     Route::post('/muestras/finalizar-todas', [MuestrasController::class, 'finalizarTodas'])->name('muestras.finalizar-todas');
     Route::post('/muestras/remover-responsable', [MuestrasController::class, 'removerResponsable'])->name('muestras.remover-responsable');
-    Route::get('/muestras/{instancia}/datos-recoordinacion', [MuestrasController::class, 'getDatosRecoordinacion']);
+    Route::get('/muestras/{instancia}/datos-recoordinacion', [MuestrasController::class, 'getDatosRecoordinacion'])->name('muestras.get-datos-recoordinacion');
     Route::post('/muestras/recoordinar', [MuestrasController::class, 'recoordinar'])->name('muestras.recoordinar');
     Route::put('/muestras/update-variable', [MuestrasController::class, 'updateVariable'])->name('muestras.updateVariable');
     Route::put('/muestras/update-all-data', [MuestrasController::class, 'updateAllData'])->name('muestras.updateAllData');
@@ -560,6 +599,10 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
     Route::get('/facturacion/{factura}/descargar', [App\Http\Controllers\FacturacionController::class, 'descargar'])->name('facturacion.descargar');
     Route::get('/facturacion/facturar/{cotizacion}', [App\Http\Controllers\FacturacionController::class, 'facturar'])->name('facturacion.show');
     Route::post('/facturacion/facturar/{cotizacion}', [App\Http\Controllers\FacturacionController::class, 'generarFacturaArca'])->name('facturacion.facturar');
+    Route::post('/facturacion/notas/{cotizacion}', [App\Http\Controllers\FacturacionController::class, 'guardarNotas'])->name('facturacion.guardar-notas');
+    Route::post('/facturacion/referencias/{cotizacion}', [App\Http\Controllers\FacturacionController::class, 'updateReferencias'])->name('facturacion.update-referencias');
+    Route::post('/facturacion/detalle/{factura}/notas', [App\Http\Controllers\FacturacionController::class, 'updateNotasFactura'])->name('facturacion.update-notas');
+    Route::get('/facturacion/exportar-iva', [App\Http\Controllers\FacturacionController::class, 'exportarIvaVentas'])->name('facturacion.exportar-iva');
 });
 
 // ventas
@@ -570,6 +613,7 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
     Route::get('/ventas/buscar-para-clonar', [VentasController::class, 'buscarParaClonar'])->name('ventas.buscar-para-clonar');
     Route::get('/ventas/{cotiNum}/obtener-para-clonar', [VentasController::class, 'obtenerParaClonar'])->name('ventas.obtener-para-clonar');
     Route::get('/ventas/{id}/edit', [VentasController::class, 'edit'])->name('ventas.edit');
+    Route::post('/ventas/{id}/descancelar', [VentasController::class, 'descancelar'])->name('ventas.descancelar');
     Route::get('/ventas/{id}/print', [VentasController::class, 'imprimir'])->name('ventas.print');
     Route::put('/ventas/{id}', [VentasController::class, 'update'])->name('ventas.update');
     Route::delete('/ventas/{id}', [VentasController::class, 'destroy'])->name('ventas.destroy');
@@ -577,7 +621,9 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
     // APIs para ventas/cotizaciones
     Route::get('/api/clientes/buscar', [VentasController::class, 'buscarClientes'])->name('api.clientes.buscar');
     Route::get('/api/clientes/{codigo}/empresas-relacionadas', [VentasController::class, 'obtenerEmpresasRelacionadas'])->name('api.clientes.empresas-relacionadas');
+    Route::get('/api/empresa-relacionada/{id}', [VentasController::class, 'obtenerEmpresaRelacionadaPorId'])->name('api.empresa-relacionada.obtener')->where('id', '[0-9]+');
     Route::get('/api/clientes/{codigo}', [VentasController::class, 'obtenerCliente'])->name('api.clientes.obtener');
+    Route::post('/api/clientes/{codigo}/contactos', [VentasController::class, 'agregarContactoCliente'])->name('api.clientes.contactos.store');
     Route::get('/api/ensayos', [VentasController::class, 'obtenerEnsayos'])->name('api.ensayos');
     Route::get('/api/componentes', [VentasController::class, 'obtenerComponentes'])->name('api.componentes');
     Route::get('/api/metodos-muestreo', [VentasController::class, 'obtenerMetodosMuestreo'])->name('api.metodos-muestreo');
@@ -587,6 +633,8 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
     Route::get('/api/cotizaciones/{cotiNum}/versiones/{version}', [VentasController::class, 'cargarVersion'])->name('api.cotizaciones.cargar-version');
 
     Route::get('/clientes', [ClientesController::class, 'index'])->name('clientes.index');
+    Route::get('/clientes/importar/plantilla', [ClientesController::class, 'downloadTemplate'])->name('clientes.plantilla');
+    Route::post('/clientes/importar', [ClientesController::class, 'import'])->name('clientes.importar');
     Route::get('/clientes/create', [ClientesController::class, 'create'])->name('clientes.create');
     Route::post('/clientes', [ClientesController::class, 'store'])->name('clientes.store');
     Route::get('/clientes/{id}/edit', [ClientesController::class, 'edit'])->name('clientes.edit');
@@ -604,6 +652,9 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
     Route::get('/informes/{cotio_numcoti}/{cotio_item}/{instance_number}/firmar', [InformeController::class, 'firmarInforme'])->name('informes.firmar');
     Route::get('/informes-api/{cotio_numcoti}/{cotio_item}/{instance_number}', [InformeController::class, 'getInformeData'])->name('api.informes.get');
     Route::put('/informes-api/{cotio_numcoti}/{cotio_item}/{instance_number}', [InformeController::class, 'updateInforme'])->name('api.informes.update');
+    Route::get('/informes/{cotio_numcoti}/{cotio_item}/{instance_number}/protocolo-pdf', [InformeController::class, 'editarProtocoloPdf'])->name('informes.protocolo-pdf.edit');
+    Route::put('/informes/{cotio_numcoti}/{cotio_item}/{instance_number}/protocolo-pdf', [InformeController::class, 'actualizarProtocoloPdf'])->name('informes.protocolo-pdf.update');
+    Route::post('/informes/{cotio_numcoti}/{cotio_item}/{instance_number}/protocolo-pdf/restaurar', [InformeController::class, 'restaurarProtocoloPdf'])->name('informes.protocolo-pdf.restaurar');
     Route::get('/informes/firma-exitosa', [InformeController::class, 'firmaExitosa'])->name('informes.firma-exitosa');
     Route::get('/informes/firma-error', [InformeController::class, 'firmaError'])->name('informes.firma-error');
     Route::get('/informes/firma-rechazada', [InformeController::class, 'firmaRechazada'])->name('informes.firma-rechazada');

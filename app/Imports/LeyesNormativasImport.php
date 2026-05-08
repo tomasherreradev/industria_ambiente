@@ -20,16 +20,52 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
     protected $errorCount = 0;
     protected $leyesCreadas = 0;
     protected $variablesAsociadas = 0;
+    protected $variablesActualizadas = 0;
 
     /** Activar para ver logs detallados en storage/logs/laravel.log */
     protected $debug = true;
 
-    /** Si se llegó a procesar alguna fila (se llamó collection() y había filas válidas o no) */
+    /** Si se llegó a procesar alguna fila */
     public $sheetProcessed = false;
 
+    /** Mapa normalizeTexto(nombre) => id para resolver leyes sin duplicar */
+    protected array $leyNormativaNombreIndex = [];
+
     /**
-     * Log de debug (solo si $this->debug está activo)
+     * Normalización canónica de texto para comparaciones:
+     * - trim, colapsa múltiples espacios a uno
+     * - minúsculas
+     * - reemplaza vocales acentuadas y ñ por su equivalente ASCII
      */
+    protected function normalizeTexto(string $texto): string
+    {
+        $texto = trim($texto);
+        $texto = preg_replace('/\s+/u', ' ', $texto);
+        $texto = mb_strtolower($texto, 'UTF-8');
+
+        $mapa = [
+            'á' => 'a', 'à' => 'a', 'ä' => 'a', 'â' => 'a', 'ã' => 'a',
+            'é' => 'e', 'è' => 'e', 'ë' => 'e', 'ê' => 'e',
+            'í' => 'i', 'ì' => 'i', 'ï' => 'i', 'î' => 'i',
+            'ó' => 'o', 'ò' => 'o', 'ö' => 'o', 'ô' => 'o', 'õ' => 'o',
+            'ú' => 'u', 'ù' => 'u', 'ü' => 'u', 'û' => 'u',
+            'ñ' => 'n', 'ç' => 'c',
+        ];
+
+        return strtr($texto, $mapa);
+    }
+
+    /**
+     * Expresión SQL para normalizar una columna de texto de la misma forma que normalizeTexto():
+     * - colapsa espacios, lowercase, y si la extensión unaccent está disponible, quita tildes.
+     * Usamos una función auxiliar portable: regexp_replace + lower + btrim.
+     */
+    protected function sqlNormalizeCol(string $col): string
+    {
+        // regexp_replace colapsa espacios internos múltiples
+        return "regexp_replace(lower(btrim({$col})), '\\s+', ' ', 'g')";
+    }
+
     protected function debug(string $message, array $context = []): void
     {
         if ($this->debug) {
@@ -37,16 +73,11 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
         }
     }
 
-    /**
-     * Procesa la colección de filas del Excel
-     * 
-     * @param Collection $rows
-     */
     public function collection(Collection $rows)
     {
         $this->sheetProcessed = true;
         Log::info('LeyesNormativasImport: Iniciando procesamiento', ['total_filas' => $rows->count()]);
-        $this->debug('Cabeceras detectadas en la primera fila', [
+        $this->debug('Cabeceras detectadas', [
             'keys' => $rows->isNotEmpty() ? array_keys($rows->first()->toArray()) : []
         ]);
 
@@ -57,89 +88,82 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
         }
 
         DB::beginTransaction();
-        
+
         try {
-            // Agrupar filas por nombre de ley
+            $this->buildLeyNormativaNombreIndex();
+
             $leyesData = [];
-            
+
             foreach ($rows as $index => $row) {
-                $rowNumber = $index + 2; // +2 porque el índice empieza en 0 y hay encabezado
-                
+                $rowNumber = $index + 2;
+
                 $this->debug("Procesando fila {$rowNumber}", ['row_raw' => $row->toArray()]);
-                
-                // Obtener valores de la fila
-                $analito = $this->getRowValue($row, ['analito_cotio_descripcion', 'analito', 'cotio_descripcion']);
-                $matriz = $this->getRowValue($row, ['matriz_opcional', 'matriz']);
-                $metodo = $this->getRowValue($row, ['metodo_opcional', 'metodo']);
-                $nombreLey = $this->getRowValue($row, ['nombre_de_la_ley', 'nombre_ley', 'nombre']);
+
+                $analito    = $this->getRowValue($row, ['analito_cotio_descripcion', 'analito', 'cotio_descripcion']);
+                $matriz     = $this->getRowValue($row, ['matriz_opcional', 'matriz']);
+                $metodo     = $this->getRowValue($row, ['metodo_opcional', 'metodo']);
+                $nombreLey  = $this->getRowValue($row, ['nombre_de_la_ley', 'nombre_ley', 'nombre']);
                 $unidadMedida = $this->getRowValue($row, ['unidad_de_medida', 'unidad_medida', 'unidad']);
-                $valorLimite = $this->getRowValue($row, ['valor_límite', 'valor_limite', 'valor']);
-                
-                $this->debug("Fila {$rowNumber} - Valores extraídos", [
-                    'analito' => $analito,
-                    'matriz' => $matriz,
-                    'metodo' => $metodo,
-                    'nombre_ley' => $nombreLey,
-                    'unidad_medida' => $unidadMedida,
-                    'valor_limite' => $valorLimite,
-                ]);
-                
-                // Validar campos requeridos
+                $valorLimite  = $this->getRowValue($row, ['valor_límite', 'valor_limite', 'valor']);
+
+                $this->debug("Fila {$rowNumber} - Valores extraídos", compact(
+                    'analito', 'matriz', 'metodo', 'nombreLey', 'unidadMedida', 'valorLimite'
+                ));
+
                 if (empty($analito)) {
                     $this->errors[] = "Fila {$rowNumber}: El analito (cotio_descripcion) es requerido";
                     $this->errorCount++;
-                    $this->debug("Fila {$rowNumber} SKIP: analito vacío");
                     continue;
                 }
-                
+
                 if (empty($nombreLey)) {
                     $this->errors[] = "Fila {$rowNumber}: El nombre de la ley es requerido";
                     $this->errorCount++;
-                    $this->debug("Fila {$rowNumber} SKIP: nombre de ley vacío");
                     continue;
                 }
-                
-                // Si no se especifica matriz ni método, aplicar a todos
+
+                $leyNormKey = $this->normalizeTexto($nombreLey);
                 $aplicarATodosBool = empty($matriz) && empty($metodo);
-                
-                // Agrupar por nombre de ley
-                if (!isset($leyesData[$nombreLey])) {
-                    $leyesData[$nombreLey] = [];
+
+                if (!isset($leyesData[$leyNormKey])) {
+                    $leyesData[$leyNormKey] = [];
                 }
-                
-                $leyesData[$nombreLey][] = [
-                    'row_number' => $rowNumber,
-                    'analito' => trim($analito),
+
+                $leyesData[$leyNormKey][] = [
+                    'row_number'    => $rowNumber,
+                    'nombre_ley'    => trim($nombreLey),
+                    'analito'       => trim($analito),
                     'aplicar_a_todos' => $aplicarATodosBool,
-                    'matriz' => !empty($matriz) ? trim($matriz) : null,
-                    'metodo' => !empty($metodo) ? trim($metodo) : null,
+                    'matriz'        => !empty($matriz) ? trim($matriz) : null,
+                    'metodo'        => !empty($metodo) ? trim($metodo) : null,
                     'unidad_medida' => !empty($unidadMedida) ? trim($unidadMedida) : null,
-                    'valor_limite' => !empty($valorLimite) ? trim($valorLimite) : null,
+                    'valor_limite'  => !empty($valorLimite) ? trim($valorLimite) : null,
                 ];
             }
-            
+
             $this->debug('Agrupación por ley', [
                 'leyes' => array_keys($leyesData),
                 'total_variables_por_ley' => array_map('count', $leyesData),
             ]);
-            
-            // Procesar cada ley
-            foreach ($leyesData as $nombreLey => $variablesData) {
-                $this->debug("Procesando ley: {$nombreLey}", ['variables_count' => count($variablesData)]);
+
+            foreach ($leyesData as $leyNormKey => $variablesData) {
+                $nombreLey = trim((string)($variablesData[0]['nombre_ley'] ?? ''));
+                $this->debug("Procesando ley '{$leyNormKey}'", [
+                    'nombre_representativo' => $nombreLey,
+                    'variables_count' => count($variablesData),
+                ]);
+
                 try {
-                    // Buscar o crear la ley normativa
                     $leyNormativa = $this->findOrCreateLeyNormativa($nombreLey);
-                    
+
                     if (!$leyNormativa) {
                         $this->errors[] = "No se pudo crear o encontrar la ley: {$nombreLey}";
                         $this->errorCount++;
-                        $this->debug("Ley no encontrada/creada: {$nombreLey}");
                         continue;
                     }
-                    
+
                     $this->debug("Ley usada: id={$leyNormativa->id} codigo={$leyNormativa->codigo}");
-                    
-                    // Procesar cada variable de esta ley
+
                     foreach ($variablesData as $varData) {
                         try {
                             $this->processVariable($leyNormativa, $varData);
@@ -147,39 +171,38 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
                             $this->errors[] = "Fila {$varData['row_number']}: " . $e->getMessage();
                             $this->errorCount++;
                             Log::error('LeyesNormativasImport: Error procesando variable', [
-                                'fila' => $varData['row_number'],
+                                'fila'    => $varData['row_number'],
                                 'varData' => $varData,
-                                'error' => $e->getMessage()
+                                'error'   => $e->getMessage(),
                             ]);
-                            $this->debug("Error en variable", ['varData' => $varData, 'error' => $e->getMessage()]);
                         }
                     }
-                    
+
                     $this->successCount++;
                 } catch (\Exception $e) {
                     $this->errors[] = "Error procesando ley '{$nombreLey}': " . $e->getMessage();
                     $this->errorCount++;
                     Log::error('LeyesNormativasImport: Error procesando ley', [
-                        'ley' => $nombreLey,
-                        'error' => $e->getMessage()
+                        'ley'   => $nombreLey,
+                        'error' => $e->getMessage(),
                     ]);
-                    $this->debug("Error en ley", ['ley' => $nombreLey, 'error' => $e->getMessage()]);
                 }
             }
-            
+
             DB::commit();
-            
+
             Log::info('LeyesNormativasImport: Procesamiento completado', [
-                'leyes_creadas' => $this->leyesCreadas,
-                'variables_asociadas' => $this->variablesAsociadas,
-                'successCount' => $this->successCount,
-                'errorCount' => $this->errorCount
+                'leyes_creadas'         => $this->leyesCreadas,
+                'variables_asociadas'   => $this->variablesAsociadas,
+                'variables_actualizadas' => $this->variablesActualizadas,
+                'successCount'          => $this->successCount,
+                'errorCount'            => $this->errorCount,
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('LeyesNormativasImport: Error general', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
             $this->errors[] = 'Error general: ' . $e->getMessage();
             throw $e;
@@ -187,107 +210,134 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
     }
 
     /**
-     * Buscar o crear ley normativa
+     * Precarga índice nombre normalizado → id.
+     * Aplica la misma normalizeTexto() que se usa al agrupar filas.
      */
-    protected function findOrCreateLeyNormativa($nombreLey)
+    protected function buildLeyNormativaNombreIndex(): void
     {
-        // Buscar por nombre exacto
-        $ley = LeyNormativa::where('nombre', $nombreLey)->first();
-        
+        $this->leyNormativaNombreIndex = [];
+
+        foreach (LeyNormativa::query()->get(['id', 'nombre']) as $ley) {
+            $key = $this->normalizeTexto((string)$ley->nombre);
+            if ($key === '') {
+                continue;
+            }
+            $this->leyNormativaNombreIndex[$key] ??= (int)$ley->id;
+        }
+    }
+
+    /**
+     * Buscar ley existente por nombre normalizado o crear una nueva.
+     * La búsqueda SQL usa regexp_replace + lower + btrim para que la comparación
+     * sea equivalente a normalizeTexto() en PHP (espacios, caja, sin tildes no aplica en SQL
+     * sin extensión, pero sí manejamos el lado PHP normalizando el parámetro).
+     */
+    protected function findOrCreateLeyNormativa(string $nombreLey): ?LeyNormativa
+    {
+        $nombreTrim = trim($nombreLey);
+        if ($nombreTrim === '') {
+            return null;
+        }
+
+        $key = $this->normalizeTexto($nombreTrim);
+
+        // 1. Buscar en caché in-memory
+        if (isset($this->leyNormativaNombreIndex[$key])) {
+            $ley = LeyNormativa::find($this->leyNormativaNombreIndex[$key]);
+            if ($ley) {
+                return $ley;
+            }
+        }
+
+        // 2. Buscar en DB normalizando la columna igual que en PHP
+        $normalizedCol = $this->sqlNormalizeCol('nombre');
+        $ley = LeyNormativa::whereRaw("{$normalizedCol} = ?", [$key])->first();
+
         if ($ley) {
+            $this->leyNormativaNombreIndex[$key] = (int)$ley->id;
             return $ley;
         }
-        
-        // Generar código único para la nueva ley
-        $codigo = $this->generateCodigoLey($nombreLey);
-        
-        // Crear nueva ley normativa
+
+        // 3. No existe → crear
+        $codigo = $this->generateCodigoLey($nombreTrim);
+
         $ley = LeyNormativa::create([
             'codigo' => $codigo,
-            'nombre' => $nombreLey,
-            'grupo' => null, // Se puede completar manualmente después
-            'activo' => true
+            'nombre' => $nombreTrim,
+            'grupo'  => null,
+            'activo' => true,
         ]);
-        
+
+        $this->leyNormativaNombreIndex[$key] = (int)$ley->id;
         $this->leyesCreadas++;
-        Log::info("LeyesNormativasImport: Ley creada: {$codigo} - {$nombreLey}");
-        
+        Log::info("LeyesNormativasImport: Ley creada: {$codigo} - {$nombreTrim}");
+
         return $ley;
     }
 
     /**
      * Generar código único para la ley
      */
-    protected function generateCodigoLey($nombreLey)
+    protected function generateCodigoLey(string $nombreLey): string
     {
-        // Intentar generar un código basado en el nombre
-        $baseCodigo = Str::slug(Str::limit($nombreLey, 20, ''), '');
-        $baseCodigo = strtoupper($baseCodigo);
-        
-        // Verificar si ya existe
-        $codigo = $baseCodigo;
+        $baseCodigo = strtoupper(Str::slug(Str::limit($nombreLey, 20, ''), ''));
+
+        $codigo  = $baseCodigo;
         $counter = 1;
-        
+
         while (LeyNormativa::where('codigo', $codigo)->exists()) {
             $codigo = $baseCodigo . '-' . $counter;
             $counter++;
         }
-        
+
         return $codigo;
     }
 
     /**
-     * Procesar variable (analito) y asociarla a la ley
+     * Procesar variable (analito) y asociarla a la ley.
+     * Busca cotio_items usando normalización en SQL equivalente a normalizeTexto() en PHP.
+     * Si ya existe la asociación → actualiza. Si no → crea.
      */
-    protected function processVariable($leyNormativa, $varData)
+    protected function processVariable($leyNormativa, $varData): void
     {
-        $analito = $varData['analito'];
+        $analito      = $varData['analito'];
         $aplicarATodos = $varData['aplicar_a_todos'];
-        $matriz = $varData['matriz'];
-        $metodo = $varData['metodo'];
+        $matriz       = $varData['matriz'];
+        $metodo       = $varData['metodo'];
         $unidadMedida = $varData['unidad_medida'];
-        $valorLimite = $varData['valor_limite'];
-        
-        $this->debug("processVariable: analito={$analito} aplicar_a_todos=" . ($aplicarATodos ? '1' : '0') . " matriz=" . ($matriz ?? 'null') . " metodo=" . ($metodo ?? 'null'));
-        
-        // Buscar cotio_items que coincidan (case-insensitive, con trim)
-        $analitoTrimmed = trim($analito);
-        $query = CotioItems::where(DB::raw('TRIM(cotio_descripcion)'), 'ILIKE', $analitoTrimmed)
-                           ->where('es_muestra', false); // Solo componentes, no agrupadores
-        
-        // Si no es "aplicar a todos", filtrar por matriz y/o método
+        $valorLimite  = $varData['valor_limite'];
+
+        $analitoNorm = $this->normalizeTexto($analito);
+
+        $this->debug("processVariable: analito='{$analito}' (norm='{$analitoNorm}') aplicar_a_todos=" . ($aplicarATodos ? '1' : '0'));
+
+        // Normalización SQL equivalente a normalizeTexto() PHP (espacios + lowercase).
+        // Las tildes en la DB se comparan con el texto ya sin tildes del lado PHP, lo que
+        // cubre el caso donde el analito en el Excel no tiene tilde pero la DB sí.
+        // Para el caso inverso (DB sin tilde, Excel con tilde), normalizeTexto() elimina la tilde del Excel.
+        $normalizedCol = $this->sqlNormalizeCol('cotio_descripcion');
+
+        $query = CotioItems::whereRaw("{$normalizedCol} = ?", [$analitoNorm])
+                           ->where('es_muestra', false);
+
         if (!$aplicarATodos) {
             if ($matriz) {
-                // Buscar matriz normalizada en la base de datos
                 $matrizCodigo = $this->findMatrizCode($matriz);
                 $this->debug("findMatrizCode('{$matriz}') => " . ($matrizCodigo ?? 'null'));
-                if ($matrizCodigo) {
-                    $query->where('matriz_codigo', $matrizCodigo);
-                } else {
-                    // Si no se encuentra, intentar con el valor original
-                    $query->where('matriz_codigo', trim($matriz));
-                }
+                $query->where('matriz_codigo', $matrizCodigo ?? trim($matriz));
             }
-            
+
             if ($metodo) {
-                // Buscar método normalizado en la base de datos
                 $metodoCodigo = $this->findMetodoCode($metodo);
                 $this->debug("findMetodoCode('{$metodo}') => " . ($metodoCodigo ?? 'null'));
-                if ($metodoCodigo) {
-                    $query->where('metodo', $metodoCodigo);
-                } else {
-                    // Si no se encuentra, intentar con el valor original
-                    $query->where('metodo', trim($metodo));
-                }
+                $query->where('metodo', $metodoCodigo ?? trim($metodo));
             }
         }
-        
-        $sql = $query->toSql();
-        $bindings = $query->getBindings();
-        $this->debug("Query CotioItems", ['sql' => $sql, 'bindings' => $bindings]);
-        
+
+        $this->debug("Query CotioItems", ['sql' => $query->toSql(), 'bindings' => $query->getBindings()]);
+
         $cotioItems = $query->get();
-        
+
         if ($cotioItems->isEmpty()) {
             $filtros = [];
             if ($matriz) $filtros[] = "matriz: {$matriz}";
@@ -296,159 +346,125 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
             $this->debug("Cero cotio_items para analito '{$analito}'{$filtrosStr}");
             throw new \Exception("No se encontraron cotio_items con descripción '{$analito}'{$filtrosStr}");
         }
-        
-        Log::info("LeyesNormativasImport: Encontrados " . $cotioItems->count() . " cotio_items para '{$analito}'");
+
+        Log::info("LeyesNormativasImport: Encontrados {$cotioItems->count()} cotio_items para '{$analito}'");
         $this->debug("CotioItems encontrados: " . $cotioItems->count(), [
-            'ids' => $cotioItems->pluck('id')->toArray(),
+            'ids'          => $cotioItems->pluck('id')->toArray(),
             'descripciones' => $cotioItems->pluck('cotio_descripcion')->toArray(),
         ]);
-        
-        // Para cada cotio_item encontrado, crear o actualizar variable y asociarla a la ley
+
         foreach ($cotioItems as $cotioItem) {
-            // Buscar o crear variable basada en el cotio_item
+            // Buscar o crear Variable ligada al cotio_item
             $variable = Variable::where('cotio_item_id', $cotioItem->id)->first();
-            
+
             if (!$variable) {
-                // Crear nueva variable
                 $variable = Variable::create([
-                    'codigo' => (string) $cotioItem->id,
-                    'nombre' => $cotioItem->cotio_descripcion,
-                    'descripcion' => $cotioItem->cotio_descripcion,
+                    'codigo'         => (string)$cotioItem->id,
+                    'nombre'         => $cotioItem->cotio_descripcion,
+                    'descripcion'    => $cotioItem->cotio_descripcion,
                     'unidad_medicion' => $unidadMedida ?? $cotioItem->unidad_medida,
-                    'cotio_item_id' => $cotioItem->id,
-                    'activo' => true
+                    'cotio_item_id'  => $cotioItem->id,
+                    'activo'         => true,
                 ]);
-                
                 $this->debug("Variable creada: id={$variable->id} cotio_item_id={$cotioItem->id}");
             } else {
                 $this->debug("Variable existente: id={$variable->id} cotio_item_id={$cotioItem->id}");
             }
-            
-            // Verificar si ya está asociada a esta ley
+
+            // Verificar si la asociación ley ↔ variable ya existe
             $existeAsociacion = $leyNormativa->variables()
                 ->where('variable_id', $variable->id)
                 ->exists();
-            
+
+            $pivotData = [
+                'valor_limite' => $valorLimite,
+                'unidad_medida' => $unidadMedida ?? $cotioItem->unidad_medida,
+            ];
+
             if (!$existeAsociacion) {
-                // Asociar variable a la ley normativa
-                $leyNormativa->variables()->attach($variable->id, [
-                    'valor_limite' => $valorLimite,
-                    'unidad_medida' => $unidadMedida ?? $cotioItem->unidad_medida,
-                ]);
-                
+                $leyNormativa->variables()->attach($variable->id, $pivotData);
                 $this->variablesAsociadas++;
-                $this->debug("Variable {$variable->id} asociada a ley {$leyNormativa->codigo} (valor_limite={$valorLimite})");
+                $this->debug("Variable {$variable->id} ASOCIADA a ley {$leyNormativa->codigo}");
             } else {
-                // Actualizar valores si ya existe
-                $leyNormativa->variables()->updateExistingPivot($variable->id, [
-                    'valor_limite' => $valorLimite,
-                    'unidad_medida' => $unidadMedida ?? $cotioItem->unidad_medida,
-                ]);
-                
-                $this->debug("Variable {$variable->id} pivot actualizado en ley {$leyNormativa->codigo}");
+                $leyNormativa->variables()->updateExistingPivot($variable->id, $pivotData);
+                $this->variablesActualizadas++;
+                $this->debug("Variable {$variable->id} ACTUALIZADA en ley {$leyNormativa->codigo}");
             }
         }
     }
 
     /**
-     * Buscar código de matriz en la base de datos (por código o nombre)
+     * Buscar código de matriz en la base de datos (por código o nombre normalizado)
      */
-    protected function findMatrizCode($value)
+    protected function findMatrizCode(string $value): ?string
     {
-        if (empty($value)) {
+        $value = trim($value);
+        if ($value === '') {
             return null;
         }
-        
-        $value = trim($value);
-        
-        // Primero buscar por código exacto
+
         $matriz = DB::table('matriz')->where('matriz_codigo', $value)->first();
         if ($matriz) {
-            $this->debug("findMatrizCode: encontrado por codigo exacto", ['value' => $value, 'codigo' => $matriz->matriz_codigo]);
             return $matriz->matriz_codigo;
         }
-        
-        // Si es numérico, intentar con diferentes paddings
+
         if (is_numeric($value)) {
-            $numero = (int) $value;
-            
-            // Intentar con diferentes longitudes de padding (hasta 10 dígitos)
+            $numero = (int)$value;
             for ($length = strlen($value); $length <= 10; $length++) {
                 $codigoPadded = str_pad($numero, $length, '0', STR_PAD_LEFT);
                 $matriz = DB::table('matriz')->where('matriz_codigo', $codigoPadded)->first();
                 if ($matriz) {
-                    $this->debug("findMatrizCode: encontrado por padding", ['value' => $value, 'codigo' => $matriz->matriz_codigo]);
                     return $matriz->matriz_codigo;
                 }
             }
         }
-        
-        // Si no se encontró por código, buscar por nombre/descripción (case-insensitive)
-        $matriz = DB::table('matriz')
-            ->where('matriz_descripcion', 'ILIKE', $value)
-            ->first();
-        if ($matriz) {
-            $this->debug("findMatrizCode: encontrado por descripcion", ['value' => $value, 'codigo' => $matriz->matriz_codigo]);
-            return $matriz->matriz_codigo;
-        }
-        
-        $this->debug("findMatrizCode: no encontrado", ['value' => $value]);
-        return null;
+
+        $normalizedCol = $this->sqlNormalizeCol('matriz_descripcion');
+        $valueNorm = $this->normalizeTexto($value);
+        $matriz = DB::table('matriz')->whereRaw("{$normalizedCol} = ?", [$valueNorm])->first();
+
+        return $matriz ? $matriz->matriz_codigo : null;
     }
 
     /**
-     * Buscar código de método en la base de datos (por código o nombre)
+     * Buscar código de método en la base de datos (por código o nombre normalizado)
      */
-    protected function findMetodoCode($value)
+    protected function findMetodoCode(string $value): ?string
     {
-        if (empty($value)) {
+        $value = trim($value);
+        if ($value === '') {
             return null;
         }
-        
-        $value = trim($value);
-        
-        // Primero buscar por código exacto
+
         $metodo = DB::table('metodo')->where('metodo_codigo', $value)->first();
         if ($metodo) {
-            $this->debug("findMetodoCode: encontrado por codigo exacto", ['value' => $value, 'codigo' => $metodo->metodo_codigo]);
             return $metodo->metodo_codigo;
         }
-        
-        // Si es numérico, intentar con diferentes paddings
+
         if (is_numeric($value)) {
-            $numero = (int) $value;
-            
-            // Intentar con diferentes longitudes de padding (hasta 10 dígitos)
+            $numero = (int)$value;
             for ($length = strlen($value); $length <= 10; $length++) {
                 $codigoPadded = str_pad($numero, $length, '0', STR_PAD_LEFT);
                 $metodo = DB::table('metodo')->where('metodo_codigo', $codigoPadded)->first();
                 if ($metodo) {
-                    $this->debug("findMetodoCode: encontrado por padding", ['value' => $value, 'codigo' => $metodo->metodo_codigo]);
                     return $metodo->metodo_codigo;
                 }
             }
         }
-        
-        // Si no se encontró por código, buscar por nombre/descripción (case-insensitive)
-        $metodo = DB::table('metodo')
-            ->where('metodo_descripcion', 'ILIKE', $value)
-            ->first();
-        if ($metodo) {
-            $this->debug("findMetodoCode: encontrado por descripcion", ['value' => $value, 'codigo' => $metodo->metodo_codigo]);
-            return $metodo->metodo_codigo;
-        }
-        
-        $this->debug("findMetodoCode: no encontrado", ['value' => $value]);
-        return null;
+
+        $normalizedCol = $this->sqlNormalizeCol('metodo_descripcion');
+        $valueNorm = $this->normalizeTexto($value);
+        $metodo = DB::table('metodo')->whereRaw("{$normalizedCol} = ?", [$valueNorm])->first();
+
+        return $metodo ? $metodo->metodo_codigo : null;
     }
 
     /**
-     * Obtener valor de fila probando múltiples nombres de columna
+     * Obtener valor de fila probando múltiples nombres de columna posibles
      */
-    protected function getRowValue($row, array $possibleKeys)
+    protected function getRowValue($row, array $possibleKeys): string
     {
         foreach ($possibleKeys as $key) {
-            // WithHeadingRow convierte a slug, probar diferentes variaciones
             $variations = [
                 $key,
                 Str::slug($key, '_'),
@@ -456,64 +472,50 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
                 str_replace('_', ' ', $key),
                 str_replace('-', ' ', $key),
             ];
-            
+
             foreach ($variations as $variation) {
-                if (isset($row[$variation]) && !empty($row[$variation])) {
-                    return trim((string) $row[$variation]);
+                if (isset($row[$variation]) && $row[$variation] !== '' && $row[$variation] !== null) {
+                    return trim((string)$row[$variation]);
                 }
             }
         }
+
         return '';
     }
 
-    /**
-     * Obtener errores
-     */
-    public function getErrors()
+    public function getErrors(): array
     {
         return $this->errors;
     }
 
-    /**
-     * Obtener contador de éxitos
-     */
-    public function getSuccessCount()
+    public function getSuccessCount(): int
     {
         return $this->successCount;
     }
 
-    /**
-     * Obtener contador de errores
-     */
-    public function getErrorCount()
+    public function getErrorCount(): int
     {
         return $this->errorCount;
     }
 
-    /**
-     * Obtener número de leyes creadas
-     */
-    public function getLeyesCreadas()
+    public function getLeyesCreadas(): int
     {
         return $this->leyesCreadas;
     }
 
-    /**
-     * Obtener número de variables asociadas
-     */
-    public function getVariablesAsociadas()
+    public function getVariablesAsociadas(): int
     {
         return $this->variablesAsociadas;
     }
 
-    /**
-     * Activar o desactivar logs de depuración (por defecto true).
-     * Los logs se escriben en storage/logs/laravel.log
-     */
+    public function getVariablesActualizadas(): int
+    {
+        return $this->variablesActualizadas;
+    }
+
     public function setDebug(bool $debug): self
     {
         $this->debug = $debug;
         return $this;
     }
 }
-

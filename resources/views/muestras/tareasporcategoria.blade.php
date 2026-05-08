@@ -7,9 +7,32 @@
 
 
 @section('content')
+@php
+    $normalizeStr = function($str) {
+        if (empty($str)) return '';
+        $str = mb_strtolower($str, 'UTF-8');
+        // Quitar paréntesis y su contenido
+        $str = preg_replace('/\s*\(.*\)\s*/u', '', $str);
+        // Quitar acentos
+        $search  = ['á', 'é', 'í', 'ó', 'ú', 'ñ', 'ü'];
+        $replace = ['a', 'e', 'i', 'o', 'u', 'n', 'u'];
+        $str = str_replace($search, $replace, $str);
+        // Quitar cualquier caracter que no sea letra o número para máxima compatibilidad
+        $str = preg_replace('/[^a-z0-9]/u', '', $str);
+        return trim($str);
+    };
+
+    $medicionesMapa = $instanciaActual->valoresVariables->mapWithKeys(function($v) use ($normalizeStr) {
+        return [$normalizeStr($v->variable) => $v->valor];
+    });
+
+    $analisisNormSet = $tareas->map(function($a) use ($normalizeStr) {
+        return $normalizeStr($a->cotio_descripcion);
+    })->filter()->unique()->values()->toArray();
+@endphp
 <div class="container py-4">
     <div class="d-flex flex-column gap-2 flex-md-row justify-content-between align-items-center mb-4">
-        <a href="{{ url('/show/'.$cotizacion->coti_num) }}" class="btn btn-outline-secondary d-flex align-items-center gap-2">
+        <a href="{{ route('muestras.show', ['coti_num' => $cotizacion->coti_num, 'canal' => $canalParaFiltrar ?? null]) }}" class="btn btn-outline-secondary d-flex align-items-center gap-2">
             Volver a la cotización
         </a>
         <div class="d-flex flex-column flex-md-row gap-2">
@@ -24,7 +47,8 @@
                                href="{{ route('muestras.ver', [
                                    'cotizacion' => $cotizacion->coti_num,
                                    'item' => $categoria->cotio_item,
-                                   'instance' => $i
+                                   'instance' => $i,
+                                   'canal' => $canalParaFiltrar ?? null
                                ]) }}">
                                 Muestra {{$i}}
                                 @if($instanciasMuestra[$i]->fecha_muestreo ?? false)
@@ -154,10 +178,25 @@
                                     <span class="d-none d-md-inline ms-1">Gestionar</span>
                                 </button>
                             @endif
-                            @if(Auth::user()->rol == 'coordinador_muestreo' && $instanciaActual->cotio_estado != 'suspension')
-                                <button type="button" class="btn btn-sm btn-warning ms-2" data-bs-toggle="modal" data-bs-target="#suspenderModal">
-                                    <i class="fas fa-pause me-1"></i> Suspender
-                                </button>
+                            @if(Auth::user()->rol == 'coordinador_muestreo')
+                                @if($instanciaActual->cotio_estado != 'suspension')
+                                    <button type="button" class="btn btn-sm btn-warning ms-2" data-bs-toggle="modal" data-bs-target="#suspenderModal">
+                                        <i class="fas fa-pause me-1"></i> Suspender
+                                    </button>
+                                @endif
+
+                                @if(in_array($instanciaActual->cotio_estado, ['coordinado muestreo', 'suspension']) && $instanciaActual->enable_ot == false)
+                                    <button type="button" 
+                                            class="btn btn-sm btn-outline-primary ms-2"
+                                            data-bs-toggle="modal" 
+                                            data-bs-target="#recoordinarModal"
+                                            data-instancia="{{ $instanciaActual->id }}"
+                                            data-cotizacion="{{ $cotizacion->coti_num }}"
+                                            data-item="{{ $instanciaActual->cotio_item }}"
+                                            data-instance="{{ $instanciaActual->instance_number }}">
+                                        Recoordinar
+                                    </button>
+                                @endif
                             @endif
                         </p>
 
@@ -276,9 +315,19 @@
 
                 {{-- Datos de la muestra: identificación, coordenadas, precinto, cadena de custodia, foto --}}
                 @if($instanciaActual)
+                @php
+                    $esCoordOAdminMuestreo = Auth::user()->hasRole('coordinador_muestreo') || (int) (Auth::user()->usu_nivel ?? 0) >= 900;
+                    $puedeEditarDatosMuestraCoord = $esCoordOAdminMuestreo && $instanciaActual->cotio_estado !== 'muestreado';
+                    $reqCadenaCustodiaMuestraCategoria = (bool) ($categoria->req_cadena_custodia ?? false);
+                @endphp
                 <div class="card shadow-sm mb-4">
-                    <div class="card-header bg-light">
+                    <div class="card-header bg-light d-flex flex-wrap justify-content-between align-items-center gap-2">
                         <h5 class="card-title mb-0 p-2">Datos de la Muestra</h5>
+                        @if($puedeEditarDatosMuestraCoord)
+                            <button type="button" class="btn btn-sm btn-primary me-2 mb-2" data-bs-toggle="modal" data-bs-target="#modalCoordDatosMuestra">
+                                <i class="fas fa-edit me-1"></i> Editar identificación y datos de campo
+                            </button>
+                        @endif
                     </div>
                     <div class="card-body">
                         <div class="row">
@@ -343,10 +392,18 @@
                                     </thead>
                                     <tbody>
                                         @foreach($variablesMuestra as $variable)
-                                            <tr>
-                                                <td>{{ $variable->variable }}</td>
+                                            @php
+                                                $isUsed = in_array($normalizeStr($variable->variable), $analisisNormSet);
+                                            @endphp
+                                            <tr @if($isUsed) class="table-info" title="Este valor se utiliza en los resultados de análisis" @endif>
+                                                <td @if($isUsed) class="fw-bold" @endif>
+                                                    {{ $variable->variable }}
+                                                    @if($isUsed)
+                                                        <i class="fas fa-check-circle text-info ms-1" style="font-size: 0.8rem;"></i>
+                                                    @endif
+                                                </td>
                                                 <td>
-                                                    <input type="text" class="form-control variable-value" 
+                                                    <input type="text" class="form-control variable-value @if($isUsed) fw-bold text-info @endif" 
                                                            value="{{ $variable->valor }}" 
                                                            data-id="{{ $variable->id }}"
                                                            @if($instanciaActual->cotio_estado == 'muestreado') readonly @endif>
@@ -402,26 +459,32 @@
 
                 {{-- añadir boton para 'habilit en otro analisis' solo si la instancia actual y los analisis tienen un estado 'finalizado' --}}
                 @if($instanciaActual->cotio_estado == 'finalizado' || $instanciaActual->cotio_estado == 'muestreado' && $instanciaActual->enable_ot == false)
-                    <form action="{{ route('categorias.enable-ot', [
-                        'cotio_numcoti' => $categoria->cotio_numcoti,
-                        'cotio_item' => $categoria->cotio_item,
-                        'cotio_subitem' => $categoria->cotio_subitem,
-                        'instance' => $instance
-                    ]) }}" method="POST">
-                        @csrf
-                        <input type="hidden" name="cotio_numcoti" value="{{ $categoria->cotio_numcoti }}">
-                        <input type="hidden" name="cotio_item" value="{{ $categoria->cotio_item }}">
-                        <input type="hidden" name="cotio_subitem" value="{{ $categoria->cotio_subitem }}">
-                        <input type="hidden" name="instance" value="{{ $instance }}">
-                        <div class="p-2">
-                            <label for="es_priori" class="form-label">Es Prioridad?</label>
-                            <input type="checkbox" name="es_priori" id="es_priori" value="1" {{ $instanciaActual->es_priori ? 'checked' : '' }}>
-                        </div>
-                        <button class="btn btn-success mt-2">Pasar a Laboratorio</button>
-                    </form>
+                    @if($categoria->cotio_canal_especial === 'mediciones')
+                        <button type="button" class="btn btn-primary mt-2" data-bs-toggle="modal" data-bs-target="#pasarAInformesModal">
+                            <i class="fas fa-file-pdf me-1"></i> Pasar a Informes
+                        </button>
+                    @else
+                        <form action="{{ route('categorias.enable-ot', [
+                            'cotio_numcoti' => $categoria->cotio_numcoti,
+                            'cotio_item' => $categoria->cotio_item,
+                            'cotio_subitem' => $categoria->cotio_subitem,
+                            'instance' => $instance
+                        ]) }}" method="POST">
+                            @csrf
+                            <input type="hidden" name="cotio_numcoti" value="{{ $categoria->cotio_numcoti }}">
+                            <input type="hidden" name="cotio_item" value="{{ $categoria->cotio_item }}">
+                            <input type="hidden" name="cotio_subitem" value="{{ $categoria->cotio_subitem }}">
+                            <input type="hidden" name="instance" value="{{ $instance }}">
+                            <div class="p-2">
+                                <label for="es_priori" class="form-label">Es Prioridad?</label>
+                                <input type="checkbox" name="es_priori" id="es_priori" value="1" {{ $instanciaActual->es_priori ? 'checked' : '' }}>
+                            </div>
+                            <button class="btn btn-success mt-2">Pasar a Laboratorio</button>
+                        </form>
+                    @endif
                 @endif
 
-                @if($instanciaActual->enable_ot == true)
+                @if($instanciaActual->enable_ot == true && Auth::user()->rol !== 'coordinador_muestreo')
                     <form action="{{ route('categorias.disable-ot', [
                         'cotio_numcoti' => $categoria->cotio_numcoti,
                         'cotio_item' => $categoria->cotio_item,
@@ -1214,8 +1277,9 @@ document.addEventListener('DOMContentLoaded', function () {
             width: '100%'
         });
 
-        // Manejar el envío del formulario de identificación
-        document.getElementById('identificacionForm').addEventListener('submit', async function(e) {
+        const identificacionFormLegacy = document.getElementById('identificacionForm');
+        if (identificacionFormLegacy) {
+            identificacionFormLegacy.addEventListener('submit', async function(e) {
             e.preventDefault();
             
             const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || 
@@ -1270,13 +1334,89 @@ document.addEventListener('DOMContentLoaded', function () {
                     confirmButtonColor: '#3085d6',
                 });
             }
-        });
+            });
+        }
+
+        const coordIdentForm = document.getElementById('coordIdentificacionMuestraForm');
+        if (coordIdentForm) {
+            const fotoInput = document.getElementById('coord_foto_muestra');
+            const hiddenB64 = document.getElementById('coord_image_base64');
+            if (fotoInput && hiddenB64) {
+                fotoInput.addEventListener('change', function () {
+                    const file = this.files && this.files[0];
+                    if (!file) {
+                        hiddenB64.value = '';
+                        return;
+                    }
+                    const reader = new FileReader();
+                    reader.onload = function () {
+                        hiddenB64.value = reader.result || '';
+                    };
+                    reader.readAsDataURL(file);
+                });
+            }
+
+            coordIdentForm.addEventListener('submit', async function (e) {
+                e.preventDefault();
+                const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ||
+                    document.querySelector('input[name="_token"]')?.value ||
+                    '{{ csrf_token() }}';
+                try {
+                    const formData = new FormData(coordIdentForm);
+                    const response = await fetch(coordIdentForm.action, {
+                        method: 'POST',
+                        body: formData,
+                        headers: {
+                            'X-CSRF-TOKEN': csrfToken,
+                            'Accept': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                        credentials: 'same-origin'
+                    });
+                    const contentType = response.headers.get('content-type');
+                    let data;
+                    if (contentType && contentType.includes('application/json')) {
+                        data = await response.json();
+                    } else {
+                        const text = await response.text();
+                        throw new Error(`Error ${response.status}: ${text || response.statusText}`);
+                    }
+                    if (response.ok && data.success !== false) {
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Éxito',
+                            text: data.message || 'Datos guardados',
+                            confirmButtonColor: '#3085d6',
+                        }).then(() => location.reload());
+                    } else {
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Error',
+                            text: data.message || 'No se pudieron guardar los cambios',
+                            confirmButtonColor: '#3085d6',
+                        });
+                    }
+                } catch (error) {
+                    console.error(error);
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Error',
+                        text: error.message || 'Ocurrió un error al guardar.',
+                        confirmButtonColor: '#3085d6',
+                    });
+                }
+            });
+        }
     });
 </script>
 
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        document.getElementById('medicionesForm').addEventListener('submit', async function(e) {
+        const medicionesForm = document.getElementById('medicionesForm');
+        if (!medicionesForm) {
+            return;
+        }
+        medicionesForm.addEventListener('submit', async function(e) {
             e.preventDefault();
             
             const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || 
@@ -2243,6 +2383,185 @@ function quitarResponsableMuestreoModal(responsableCodigo) {
     }
 </style>
 
+@if(isset($instanciaActual) && $instanciaActual)
+    @php
+        $esCoordOAdminMuestreoModal = Auth::user()->hasRole('coordinador_muestreo') || (int) (Auth::user()->usu_nivel ?? 0) >= 900;
+        $puedeModalCoord = $esCoordOAdminMuestreoModal && $instanciaActual->cotio_estado !== 'muestreado';
+        $reqCadenaModal = (bool) ($categoria->req_cadena_custodia ?? false);
+    @endphp
+    @if($puedeModalCoord)
+    <div class="modal fade" id="modalCoordDatosMuestra" tabindex="-1" aria-labelledby="modalCoordDatosMuestraLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="modalCoordDatosMuestraLabel">Editar datos de la muestra</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="coordIdentificacionMuestraForm" method="POST" action="{{ route('asignar.identificacion-muestra') }}">
+                        @csrf
+                        <input type="hidden" name="cotio_numcoti" value="{{ $instanciaActual->cotio_numcoti }}">
+                        <input type="hidden" name="cotio_item" value="{{ $instanciaActual->cotio_item }}">
+                        <input type="hidden" name="instance_number" value="{{ $instanciaActual->instance_number }}">
+                        <input type="hidden" name="accion" value="borrador">
+                        <input type="hidden" name="image_base64" id="coord_image_base64" value="">
+
+                        <div class="mb-3">
+                            <label for="coord_cotio_identificacion" class="form-label">Identificación <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="coord_cotio_identificacion" name="cotio_identificacion"
+                                   value="{{ old('cotio_identificacion', $instanciaActual->cotio_identificacion ?? '') }}"
+                                   maxlength="255" required>
+                        </div>
+
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-6">
+                                <label for="coord_latitud" class="form-label">Latitud</label>
+                                <input type="number" step="any" class="form-control" id="coord_latitud" name="latitud"
+                                       value="{{ old('latitud', $instanciaActual->latitud) }}" placeholder="-33.441953">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="coord_longitud" class="form-label">Longitud</label>
+                                <input type="number" step="any" class="form-control" id="coord_longitud" name="longitud"
+                                       value="{{ old('longitud', $instanciaActual->longitud) }}" placeholder="-70.638523">
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="coord_nro_precinto" class="form-label">N° precinto</label>
+                            <input type="text" class="form-control" id="coord_nro_precinto" name="nro_precinto" maxlength="100"
+                                   value="{{ old('nro_precinto', $instanciaActual->nro_precinto ?? '') }}">
+                        </div>
+
+                        @if($reqCadenaModal)
+                            <div class="mb-3">
+                                <label for="coord_nro_cadena" class="form-label">N° cadena de custodia</label>
+                                <input type="text" class="form-control" id="coord_nro_cadena" name="nro_cadena" maxlength="100"
+                                       value="{{ old('nro_cadena', $instanciaActual->nro_cadena ?? '') }}">
+                            </div>
+                        @endif
+
+                        <div class="mb-3">
+                            <label for="coord_fecha_identificacion" class="form-label">Fecha y hora de identificación</label>
+                            <input type="datetime-local" class="form-control" id="coord_fecha_identificacion" name="fecha_identificacion"
+                                   value="{{ old('fecha_identificacion', $instanciaActual->fecha_identificacion ? $instanciaActual->fecha_identificacion->format('Y-m-d\TH:i') : '') }}">
+                            <small class="text-muted">Opcional. Si la deja vacía, se conserva la fecha actual registrada.</small>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Foto de la muestra</label>
+                            @if($instanciaActual->image)
+                                <div class="mb-2">
+                                    <img src="{{ Storage::url('images/' . $instanciaActual->image) }}" alt="Foto actual" class="img-thumbnail" style="max-height: 120px;">
+                                </div>
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="checkbox" id="coord_remove_image" name="remove_image" value="1">
+                                    <label class="form-check-label" for="coord_remove_image">Eliminar foto actual</label>
+                                </div>
+                            @endif
+                            <input type="file" class="form-control" id="coord_foto_muestra" accept="image/*">
+                            <small class="text-muted">Si selecciona un archivo, reemplaza la imagen actual (salvo que marque eliminar).</small>
+                        </div>
+
+                        <div class="d-flex justify-content-end gap-2">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                            <button type="submit" class="btn btn-primary">Guardar cambios</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    @endif
+@endif
+
+<!-- Modal de Recoordinación -->
+@if($instanciaActual)
+<div class="modal fade" id="recoordinarModal" tabindex="-1" aria-labelledby="recoordinarModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content border-0 shadow-sm">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="recoordinarModalLabel">Recoordinar Muestra</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <form id="recoordinarForm">
+                    @csrf
+                    <input type="hidden" name="instancia_id" id="instancia_id">
+                    <input type="hidden" name="cotio_numcoti" id="cotio_numcoti">
+                    <input type="hidden" name="cotio_item" id="cotio_item">
+                    <input type="hidden" name="instance_number" id="instance_number">
+
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <label for="fecha_inicio_muestreo" class="form-label fw-semibold">Fecha Inicio Muestreo</label>
+                            <input type="datetime-local" class="form-control rounded-3" id="fecha_inicio_muestreo" name="fecha_inicio_muestreo">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="fecha_fin_muestreo" class="form-label fw-semibold">Fecha Fin Muestreo</label>
+                            <input type="datetime-local" class="form-control rounded-3" id="fecha_fin_muestreo" name="fecha_fin_muestreo">
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="responsables_muestreo" class="form-label fw-semibold">Responsables de Muestreo</label>
+                        <select class="form-select select2 rounded-3" id="responsables_muestreo" name="responsables_muestreo[]" multiple>
+                            @foreach($usuarios as $responsable)
+                                <option value="{{ $responsable->usu_codigo }}">{{ $responsable->usu_descripcion }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="vehiculo_asignado" class="form-label fw-semibold">Vehículo</label>
+                        <select class="form-select rounded-3" id="vehiculo_asignado" name="vehiculo_asignado">
+                            <option value="">Seleccione un vehículo</option>
+                            @foreach($vehiculos as $vehiculo)
+                                <option value="{{ $vehiculo->id }}">{{ $vehiculo->patente }} - {{ $vehiculo->modelo }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="herramientas_recoordinar" class="form-label fw-semibold">Herramientas de Muestreo</label>
+                        <select class="form-select select2 rounded-3" id="herramientas_recoordinar" name="herramientas[]" multiple>
+                            @foreach($inventario as $herramienta)
+                                <option value="{{ $herramienta->id }}">
+                                    {{ $herramienta->equipamiento }} ({{ $herramienta->marca_modelo }}) - {{ $herramienta->n_serie_lote }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold">Variables a Completar</label>
+                        <div id="variables-container-recoordinacion" class="variables-main-container border rounded-3 p-3 bg-light">
+                            <!-- Dynamic content -->
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="es_priori_recoordinar" class="form-label fw-semibold">
+                            <x-heroicon-o-star style="width: 20px; height: 20px; color: #ffc107;" />
+                            Marcar como Prioridad
+                        </label>
+                        <input type="checkbox" name="es_priori" id="es_priori_recoordinar" class="form-check-input" style="width: 20px; height: 20px;">
+                    </div>
+
+                    <div class="mb-4 d-none" id="motivoSuspensionGroup">
+                        <label for="motivoSuspension" class="form-label fw-semibold">Motivo de suspensión (muestreador)</label>
+                        <textarea class="form-control rounded-3" id="motivoSuspension" rows="3" readonly></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer bg-light">
+                <button type="button" class="btn btn-outline-secondary rounded-3" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary rounded-3" id="guardarRecoordinacion">Guardar Cambios</button>
+            </div>
+        </div>
+    </div>
+</div>
+@endif
+
 <!-- Modal para suspender muestra -->
 @if($instanciaActual && $instanciaActual->cotio_estado != 'suspension')
 <div class="modal fade" id="suspenderModal" tabindex="-1" aria-hidden="true">
@@ -2304,7 +2623,192 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }
     }
+
+    // Recoordinación desde verMuestra
+    const recoordinarModal = document.getElementById('recoordinarModal');
+    if (recoordinarModal) {
+        recoordinarModal.addEventListener('show.bs.modal', async function (event) {
+            const button = event.relatedTarget;
+            const instanciaId = button.getAttribute('data-instancia');
+            const cotizacionNum = button.getAttribute('data-cotizacion');
+            const item = button.getAttribute('data-item');
+            const instanceNumber = button.getAttribute('data-instance');
+
+            document.getElementById('instancia_id').value = instanciaId;
+            document.getElementById('cotio_numcoti').value = cotizacionNum;
+            document.getElementById('cotio_item').value = item;
+            document.getElementById('instance_number').value = instanceNumber;
+
+            try {
+                const response = await fetch(`/muestras/${instanciaId}/datos-recoordinacion`);
+                const data = await response.json();
+
+                document.getElementById('fecha_inicio_muestreo').value = data.fecha_inicio_muestreo || '';
+                document.getElementById('fecha_fin_muestreo').value = data.fecha_fin_muestreo || '';
+
+                // Responsables (scoped al modal de recoordinación)
+                if (Array.isArray(data.responsables)) {
+                    const responsablesSelect = $('#recoordinarModal #responsables_muestreo');
+                    responsablesSelect.val(data.responsables.map(r => r.usu_codigo)).trigger('change');
+                }
+
+                // Vehículo (scoped al modal de recoordinación)
+                $('#recoordinarModal #vehiculo_asignado').val(data.vehiculo_asignado || '').trigger('change');
+
+                // Herramientas (scoped al modal de recoordinación)
+                if (Array.isArray(data.herramientas)) {
+                    $('#recoordinarModal #herramientas_recoordinar').val(data.herramientas.map(h => h.id)).trigger('change');
+                }
+
+                // Prioridad
+                $('#es_priori_recoordinar').prop('checked', data.es_priori == 1);
+
+                // Motivo de suspensión
+                const motivoGroup = document.getElementById('motivoSuspensionGroup');
+                const motivoTextarea = document.getElementById('motivoSuspension');
+                if (motivoGroup && motivoTextarea) {
+                    if (data.cotio_observaciones_suspension) {
+                        motivoTextarea.value = data.cotio_observaciones_suspension;
+                        motivoGroup.classList.remove('d-none');
+                    } else {
+                        motivoTextarea.value = '';
+                        motivoGroup.classList.add('d-none');
+                    }
+                }
+
+                // Variables requeridas
+                const variablesContainer = document.getElementById('variables-container-recoordinacion');
+                if (variablesContainer) {
+                    variablesContainer.innerHTML = '';
+                    Object.entries(data.variables_requeridas || {}).forEach(([tipoMuestra, variables]) => {
+                        const categoryDiv = document.createElement('div');
+                        categoryDiv.className = 'mb-4 variable-category';
+
+                        const categoryHeader = document.createElement('div');
+                        categoryHeader.className = 'd-flex align-items-center mb-2 category-header';
+                        categoryHeader.innerHTML = `
+                            <h6 class="mb-0 flex-grow-1">
+                                <i class="fas fa-flask me-2"></i>${tipoMuestra}
+                            </h6>
+                        `;
+                        categoryDiv.appendChild(categoryHeader);
+
+                        const variablesGrid = document.createElement('div');
+                        variablesGrid.className = 'row row-cols-1 row-cols-md-2 row-cols-lg-3 g-2';
+
+                        Object.values(variables).forEach(variable => {
+                            const col = document.createElement('div');
+                            col.className = 'col';
+                            const formCheck = document.createElement('div');
+                            formCheck.className = 'form-check form-check-inline';
+                            const checkbox = document.createElement('input');
+                            checkbox.className = 'form-check-input';
+                            checkbox.type = 'checkbox';
+                            checkbox.name = 'variables_seleccionadas[]';
+                            checkbox.value = variable.id;
+                            checkbox.id = `var-${tipoMuestra}-${variable.id}`;
+                            if (Array.isArray(data.variables_seleccionadas) && data.variables_seleccionadas.includes(variable.id)) {
+                                checkbox.checked = true;
+                            }
+
+                            const label = document.createElement('label');
+                            label.className = 'form-check-label';
+                            label.setAttribute('for', checkbox.id);
+                            label.textContent = variable.nombre;
+                            if (variable.obligatorio) {
+                                const badge = document.createElement('span');
+                                badge.className = 'badge bg-danger ms-1';
+                                badge.textContent = 'Obligatorio';
+                                label.appendChild(badge);
+                            }
+
+                            formCheck.appendChild(checkbox);
+                            formCheck.appendChild(label);
+                            col.appendChild(formCheck);
+                            variablesGrid.appendChild(col);
+                        });
+
+                        categoryDiv.appendChild(variablesGrid);
+                        variablesContainer.appendChild(categoryDiv);
+                    });
+                }
+            } catch (e) {
+                console.error('Error cargando datos de recoordinación', e);
+            }
+        });
+
+        // Enviar recoordinación
+        const guardarBtn = document.getElementById('guardarRecoordinacion');
+        if (guardarBtn) {
+            guardarBtn.addEventListener('click', async function () {
+                const form = document.getElementById('recoordinarForm');
+                const formData = new FormData(form);
+                const jsonData = Object.fromEntries(formData.entries());
+
+                jsonData.responsables_muestreo = formData.getAll('responsables_muestreo[]');
+                jsonData.herramientas = formData.getAll('herramientas[]');
+                jsonData.variables_seleccionadas = formData.getAll('variables_seleccionadas[]');
+                jsonData.es_priori = document.getElementById('es_priori_recoordinar').checked ? 1 : 0;
+
+                try {
+                    const response = await fetch('/muestras/recoordinar', {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(jsonData)
+                    });
+
+                    const result = await response.json();
+                    if (result.success) {
+                        location.reload();
+                    } else {
+                        alert(result.message || 'Error al recoordinar la muestra');
+                    }
+                } catch (e) {
+                    console.error('Error enviando recoordinación', e);
+                    alert('Error al recoordinar la muestra');
+                }
+            });
+        }
+    }
 });
 </script>
+
+<!-- Modal para Pasar a Informes (Mediciones) -->
+<div class="modal fade" id="pasarAInformesModal" tabindex="-1" aria-labelledby="pasarAInformesModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="{{ route('muestras.pasar-a-informes') }}" method="POST" enctype="multipart/form-data">
+                @csrf
+                <input type="hidden" name="cotio_numcoti" value="{{ $categoria->cotio_numcoti }}">
+                <input type="hidden" name="cotio_item" value="{{ $categoria->cotio_item }}">
+                <input type="hidden" name="instance_number" value="{{ $instance }}">
+                
+                <div class="modal-header">
+                    <h5 class="modal-title" id="pasarAInformesModalLabel">Pasar a Informes</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-1"></i>
+                        Esta muestra pertenece a <strong>Mediciones</strong> y pasará directamente al módulo de informes.
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="informe_pdf" class="form-label">Adjuntar Informe PDF (Opcional)</label>
+                        <input type="file" class="form-control" id="informe_pdf" name="informe_pdf" accept="application/pdf">
+                        <div class="form-text">Si ya tiene un informe generado, puede subirlo aquí.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Confirmar y Pasar a Informes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 
 @endsection

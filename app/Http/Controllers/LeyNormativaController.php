@@ -307,7 +307,8 @@ class LeyNormativaController extends Controller
 
             $mensaje = 'Importación completada. ';
             $mensaje .= "Leyes creadas: {$import->getLeyesCreadas()}, ";
-            $mensaje .= "Variables asociadas: {$import->getVariablesAsociadas()}, ";
+            $mensaje .= "Variables nuevas: {$import->getVariablesAsociadas()}, ";
+            $mensaje .= "Variables actualizadas: {$import->getVariablesActualizadas()}, ";
             $mensaje .= "Filas procesadas: {$import->getSuccessCount()}";
 
             $errores = $import->getErrors();

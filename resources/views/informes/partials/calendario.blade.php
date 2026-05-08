@@ -97,6 +97,8 @@ document.addEventListener('DOMContentLoaded', function() {
                         title: `
                             <strong>${info.event.extendedProps.empresa || 'Sin empresa'}</strong><br>
                             ${info.event.extendedProps.muestra || 'Sin descripción'}<br>
+                            <small>Identificación: ${(info.event.extendedProps.identificacion || '').trim() !== '' ? info.event.extendedProps.identificacion : '—'}</small><br>
+                            <small>Legislación (categoría): ${info.event.extendedProps.ley_categoria || '—'}</small><br>
                             ${info.event.extendedProps.instancia || 'Sin instancia'}
                         `,
                         placement: 'top',

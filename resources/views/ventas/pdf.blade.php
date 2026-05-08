@@ -5,7 +5,7 @@
     <title>Cotización #{{ $cotizacion->coti_num }}</title>
     <style>
         @page {
-            margin: 1.5cm 1cm 1.5cm 1cm;
+            margin: 0cm;
         }
         body {
             font-family: 'Calibri', Arial, sans-serif;
@@ -14,23 +14,93 @@
             margin: 0;
             line-height: 1.3;
         }
-        .page {
-            page-break-after: always;
+        /* Header / Footer como “plantilla” fija (Dompdf friendly) */
+        .pdf-header,
+        .pdf-footer {
+            position: fixed;
+            left: 0;
+            right: 0;
+            z-index: 10;
+            overflow: visible;
         }
-        .page:last-of-type {
-            page-break-after: auto;
+        .pdf-header {
+            top: 0;
+            height: 38mm;
+        }
+        .pdf-footer {
+            bottom: 0;
+            height: 22mm;
+            padding: 0 4rem 1rem 4rem;
+        }
+        .pdf-header img,
+        .pdf-footer img {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        /*
+         * Saltos entre bloques: solo antes de la 2.ª página.
+         * No usar page-break-after: always en .page: Dompdf suele ignorar :last-of-type
+         * y deja page-break-after en la última página → hoja en blanco al final.
+         */
+        .page + .page {
+            page-break-before: always;
         }
         .wrapper {
-            padding: 0.3cm 0 0 0;
+            /* deja espacio para header/footer (+ separación respecto al encabezado gráfico) */
+            padding: 48mm 10mm 36mm 10mm;
         }
-        header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            margin-bottom: 10px;
-            border-bottom: 1px solid #0d6efd;
-            padding-bottom: 6px;
+        .quote-meta-bar {
+            width: 100%;
+            display: table;
+            table-layout: fixed;
+            margin-bottom: 5pt;
         }
+        .quote-meta-left {
+            display: table-cell;
+            vertical-align: top;
+            width: 58%;
+            font-size: 8.5pt;
+        }
+        .quote-meta-right {
+            display: table-cell;
+            vertical-align: top;
+            text-align: right;
+            width: 42%;
+        }
+        .quote-meta-line {
+            margin: 0 0 2pt 0;
+        }
+        .compact-client-ref {
+            font-size: 7.5pt;
+            color: #555;
+            margin-top: 2pt;
+        }
+        .quote-meta-separator {
+            height: 2pt;
+            background: #1a56a8;
+            margin: 0 0 8pt 0;
+        }
+        .doc-control-table {
+            border-collapse: collapse;
+            font-size: 6pt;
+            text-transform: uppercase;
+            color: #000;
+            margin-left: auto;
+        }
+        .doc-control-table .doc-ctrl-cell {
+            border: 1px solid #000;
+            padding: 2pt 4pt;
+            text-align: center;
+            vertical-align: middle;
+            line-height: 1.2;
+        }
+        .doc-control-table .doc-ctrl-mid-top,
+        .doc-control-table .doc-ctrl-mid-bot {
+            font-size: 5.6pt;
+            min-width: 70pt;
+        }
+        header { display:none; }
         .logo {
             width: 120px;
         }
@@ -72,8 +142,9 @@
         .info-grid .label {
             font-weight: bold;
             width: 25%;
-            color: #555;
+            color: #444;
             font-size: 7.5pt;
+            background: #f0f2f5;
         }
         .info-grid .value {
             width: 25%;
@@ -85,9 +156,10 @@
             font-size: 8pt;
             margin-top: 5px;
             table-layout: fixed;
+            border: none;
         }
         .items-table th {
-            background: #f2f5ff;
+            background: #e8eefc;
             color: #0d2b5f;
             padding: 4px 5px;
             border: 1px solid #d0d7eb;
@@ -96,7 +168,7 @@
             font-weight: bold;
         }
         .items-table td {
-            border: 1px solid #d0d7eb;
+            border: 1px solid #ddd;
             padding: 3px 5px;
             vertical-align: top;
             word-wrap: break-word;
@@ -123,6 +195,11 @@
         }
         .component-inline span {
             margin-right: 6px;
+        }
+        .component-inline .comp-metodo {
+            font-size: 7pt;
+            color: #777;
+            font-style: italic;
         }
         .resumen-table {
             width: 50%;
@@ -156,6 +233,14 @@
         .notes li {
             margin-bottom: 3px;
         }
+        .notes .note-item-imprimible {
+            margin: 4pt 0;
+            font-size: 8pt;
+            line-height: 1.35;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            word-break: break-word;
+        }
         .billing-table {
             width: 100%;
             border-collapse: collapse;
@@ -172,27 +257,32 @@
             text-align: left;
             font-size: 7.5pt;
         }
+        /* Sin flex: Dompdf suele fallar con flexbox y puede dejar de renderizar el bloque siguiente */
         .summary-highlight {
             background: #f8fbff;
             border: 1px solid #d0d7eb;
             border-radius: 4px;
             padding: 6px 10px;
             margin-top: 8px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+            display: table;
+            width: 100%;
+            table-layout: fixed;
             font-size: 8.5pt;
+        }
+        .summary-highlight .sh-left,
+        .summary-highlight .sh-right {
+            display: table-cell;
+            vertical-align: middle;
+        }
+        .summary-highlight .sh-right {
+            text-align: right;
+            width: 38%;
         }
         .summary-highlight strong {
             font-size: 10pt;
             color: #0d2b5f;
         }
-        footer {
-            margin-top: 12px;
-            font-size: 7pt;
-            text-align: center;
-            color: #777;
-        }
+        footer { display:none; }
         .compact-text {
             font-size: 7.5pt;
             color: #666;
@@ -221,12 +311,55 @@
             display: inline-block;
             max-width: 100%;
         }
+        .contactos-list {
+            margin-top: 4px;
+        }
+        .contactos-list .contacto-row {
+            padding: 3px 0;
+            border-bottom: 1px solid #eee;
+            font-size: 8pt;
+        }
+        .contactos-list .contacto-row:last-child {
+            border-bottom: none;
+        }
+        .contacto-tipo {
+            font-weight: bold;
+            color: #0d6efd;
+            margin-right: 6px;
+        }
+        .closing-saludo-row {
+            display: table;
+            width: 100%;
+            margin-top: 16px;
+            font-size: 9pt;
+        }
+        .closing-saludo-row .left {
+            display: table-cell;
+            width: 65%;
+            vertical-align: bottom;
+        }
+        .closing-saludo-row .right {
+            display: table-cell;
+            width: 35%;
+            text-align: right;
+            font-weight: bold;
+            vertical-align: bottom;
+        }
+        .legal-item-notes-title {
+            font-weight: bold;
+            margin: 10px 0 4px 0;
+        }
+        .legal-note-body {
+            margin: 2px 0 6px 12px;
+        }
     </style>
 </head>
 <body>
 @php
-    $formatCurrency = function ($value) {
-        return '$ ' . number_format((float) $value, 2, ',', '.');
+    $divisaCodigo = $cotizacion->divisa_codigo ?? 'PES';
+    $currencyPrefix = in_array(strtoupper((string) $divisaCodigo), ['PES', 'ARS'], true) ? '$' : (string) $divisaCodigo;
+    $formatCurrency = function ($value) use ($currencyPrefix) {
+        return $currencyPrefix . ' ' . number_format((float) $value, 2, ',', '.');
     };
     $formatDate = function ($date) {
         if (!$date) {
@@ -238,123 +371,85 @@
     $contacto = trim((string) ($cotizacion->coti_contacto ?? ''));
     $correo = trim((string) ($cotizacion->coti_mail1 ?? optional($cliente)->cli_email ?? ''));
     $telefono = trim((string) ($cotizacion->coti_telefono ?? optional($cliente)->cli_telefono ?? ''));
+
+    $destPdf = \App\Support\CotizacionClienteEtiqueta::destinatarioPdfCamposPrincipales($cotizacion);
+    $dRazon = $destPdf['dRazon'];
+    $dCuit = $destPdf['dCuit'];
+    $dDir = $destPdf['dDir'];
+    $dLoc = $destPdf['dLoc'];
+    $dPart = $destPdf['dPart'];
+    $dContactoBase = $destPdf['dContactoBase'];
+    $dLocalidadMerged = $dLoc;
+    if ($dPart !== '') {
+        $dLocalidadMerged = $dLocalidadMerged !== '' ? $dLocalidadMerged . ' - ' . $dPart : $dPart;
+    }
+    $correoDest = $correo;
+    $contactoDest = $dContactoBase !== '' ? $dContactoBase : $contacto;
+    $telDest = $telefono;
+    if (!empty($contactosOrdenados)) {
+        if ($correoDest === '' && !empty(trim((string) ($contactosOrdenados[0]['correo'] ?? '')))) {
+            $correoDest = trim((string) $contactosOrdenados[0]['correo']);
+        }
+        if ($contactoDest === '' && !empty(trim((string) ($contactosOrdenados[0]['nombre'] ?? '')))) {
+            $contactoDest = trim((string) $contactosOrdenados[0]['nombre']);
+        }
+        if ($telDest === '' && !empty(trim((string) ($contactosOrdenados[0]['telefono'] ?? '')))) {
+            $telDest = trim((string) $contactosOrdenados[0]['telefono']);
+        }
+        if ($telDest === '' && count($contactosOrdenados) > 1) {
+            $tels = array_filter(array_map('trim', array_column($contactosOrdenados, 'telefono')));
+            $telDest = implode(' / ', $tels);
+        }
+    }
+    $dash = '—';
 @endphp
+
+<div class="pdf-header">
+    <img src="{{ public_path('assets/img/header_pf.png') }}" alt="Header">
+</div>
+<div class="pdf-footer">
+    <img src="{{ public_path('assets/img/footer_pdf.png') }}" alt="Footer">
+</div>
 
 <div class="page">
     <div class="wrapper">
-        <header>
-            <div class="logo">
-                @if(file_exists(public_path('assets/img/logo.png')))
-                    <img src="{{ public_path('assets/img/logo.png') }}" alt="Industria y Ambiente S.A.">
-                @else
-                    <strong>Industria y Ambiente S.A.</strong>
-                @endif
-            </div>
-            <div class="company-info">
-                <h1>Industria y Ambiente S.A.</h1>
-                <p>Cotización: <strong>#{{ $cotizacion->coti_num }}</strong></p>
-                <p>Fecha: {{ $formatDate($cotizacion->coti_fechaalta) }}</p>
-            </div>
-        </header>
 
-        <h2 class="section-title">Datos del Cliente</h2>
-        <table class="info-grid">
-            <tr>
-                @if($tieneEmpresaRelacionada && $empresaRelacionada)
-                        <td class="label">Para</td>
-                        <td class="value">{{ $empresaRelacionada['razon_social'] }}</td>
-                @elseif(!empty($cotizacion->coti_para))
-                        <td class="label">Para</td>
-                        <td class="value">{{ $cotizacion->coti_para}}</td>
-                @else 
-                    <td class="label">Razón Social</td>
-                    <td class="value">{{ trim((string) ($cotizacion->coti_empresa ?? optional($cliente)->cli_razonsocial ?? '')) }}</td>
-                @endif
-                
-                <td class="label">CUIT</td>
-                <td class="value">{{ trim((string) ($cotizacion->coti_cuit ?? optional($cliente)->cli_cuit ?? '')) ?: '—' }}</td>
-            </tr>
-            <tr>
-                <td class="label">Dirección</td>
-                <td class="value">{{ trim((string) ($cotizacion->coti_direccioncli ?? optional($cliente)->cli_direccion ?? '')) }}</td>
-                <td class="label">Localidad</td>
-                <td class="value">{{ trim((string) ($cotizacion->coti_localidad ?? optional($cliente)->cli_localidad ?? '')) }}</td>
-            </tr>
-            <tr>
-                <td class="label">Sucursal / Establecimiento</td>
-                <td class="value">{{ trim((string) ($cotizacion->coti_establecimiento ?? '')) ?: '—' }}</td>
-                <td class="label">Código Postal</td>
-                <td class="value">{{ trim((string) ($cotizacion->coti_codigopostal ?? optional($cliente)->cli_codigopostal ?? '')) ?: '—' }}</td>
-            </tr>
-            <tr>
-                <td class="label">Contacto</td>
-                <td class="value">{{ $contacto ?: '—' }}</td>
-                <td class="label">Correo</td>
-                <td class="value">{{ $correo ?: '—' }}</td>
-            </tr>
-            <tr>
-                <td class="label">Teléfono</td>
-                <td class="value">{{ $telefono ?: '—' }}</td>
-                <td class="label">Matriz</td>
-                <td class="value">{{ optional($cotizacion->matriz)->matriz_descripcion ?? '—' }}</td>
-            </tr>
-            @if(!empty($cliente->cli_partido))
-            <tr>
-                <td class="label">Partido</td>
-                <td class="value">{{ trim((string) $cliente->cli_partido) }}</td>
-                <td></td>
-                <td></td>
-            </tr>
-            @endif
-        </table>
+        @include('ventas.partials.pdf-quote-meta')
 
-        @if($tieneEmpresaRelacionada && $empresaRelacionada)
-        <h2 class="section-title">Empresa Relacionada</h2>
+        <h2 class="section-title">Sr.(es).</h2>
         <table class="info-grid">
             <tr>
                 <td class="label">Razón Social</td>
-                <td class="value">{{ $empresaRelacionada['razon_social'] ?: '—' }}</td>
+                <td class="value">{{ $dRazon !== '' ? $dRazon : $dash }}</td>
                 <td class="label">CUIT</td>
-                <td class="value">{{ $empresaRelacionada['cuit'] ?: '—' }}</td>
+                <td class="value">{{ $dCuit !== '' ? $dCuit : $dash }}</td>
             </tr>
             <tr>
-                <td class="label">Direcciones</td>
-                <td class="value">{{ $empresaRelacionada['direcciones'] ?: '—' }}</td>
+                <td class="label">Dirección</td>
+                <td class="value">{{ $dDir !== '' ? $dDir : $dash }}</td>
                 <td class="label">Localidad</td>
-                <td class="value">{{ $empresaRelacionada['localidad'] ?: '—' }}</td>
+                <td class="value">{{ $dLocalidadMerged !== '' ? $dLocalidadMerged : $dash }}</td>
             </tr>
             <tr>
-                <td class="label">Partido</td>
-                <td class="value">{{ $empresaRelacionada['partido'] ?: '—' }}</td>
+                <td class="label">Sucursal / Establecimiento</td>
+                <td class="value">{{ trim((string) ($cotizacion->coti_establecimiento ?? '')) !== '' ? trim($cotizacion->coti_establecimiento) : $dash }}</td>
+                <td class="label">Correo</td>
+                <td class="value">{{ $correoDest !== '' ? $correoDest : $dash }}</td>
+            </tr>
+            <tr>
                 <td class="label">Contacto</td>
-                <td class="value">{{ $empresaRelacionada['contacto'] ?: '—' }}</td>
+                <td class="value">{{ $contactoDest !== '' ? $contactoDest : $dash }}</td>
+                <td class="label">Teléfono</td>
+                <td class="value">{{ $telDest !== '' ? $telDest : $dash }}</td>
             </tr>
         </table>
-        @endif
 
-        @if($cotizacion->coti_cadena_custodia || $cotizacion->coti_muestreo)
-        <h2 class="section-title">Características del Servicio</h2>
-        <table class="info-grid">
-            <tr>
-                @if($cotizacion->coti_cadena_custodia)
-                    <td class="label">Cadena de Custodia</td>
-                    <td class="value">Requerida</td>
-                @else
-                    <td class="label">Cadena de Custodia</td>
-                    <td class="value">No requerida</td>
-                @endif
-                @if($cotizacion->coti_muestreo)
-                    <td class="label">Servicio de Muestreo</td>
-                    <td class="value">Requerido</td>
-                @else
-                    <td class="label">Servicio de Muestreo</td>
-                    <td class="value">No requerido</td>
-                @endif
-            </tr>
-        </table>
-        @endif
+        {{-- Etiquetas/flags: Cadena de Custodia (normal / rel.) --}}
+        @php
+            $pdfCadenaRel = (bool) ($cotizacion->coti_req_cadena_custodia_relacionada ?? false);
+        @endphp
 
-        <h2 class="section-title">Detalle de Ensayos y Componentes</h2>
+        <h2 class="section-title">Detalle de ensayos y componentes</h2>
         <table class="items-table">
             <thead>
                 <tr>
@@ -368,24 +463,27 @@
             <tbody>
                 @forelse($items as $item)
                     <tr>
-                        <td>#{{ $item['item'] }}</td>
+                        <td>#{{ $loop->iteration }}</td>
                         <td style="word-wrap: break-word; overflow-wrap: break-word; word-break: break-word;">
-                            <div class="descripcion-item">{{ $item['descripcion'] }}</div>
+                            <div class="descripcion-item">
+                                {{ $item['descripcion'] }}
+                                @if(!empty($item['req_cadena_custodia']))
+                                    <span style="display:inline-block;font-size:10px;border:1px solid #0dcaf0;color:#000;background:#cff4fc;padding:1px 6px;border-radius:10px;margin-left:6px;">Cadena</span>
+                                    @if($pdfCadenaRel)
+                                        <span style="display:inline-block;font-size:10px;border:1px solid #0d6efd;color:#0d6efd;background:#e7f1ff;padding:1px 6px;border-radius:10px;margin-left:4px;">Cadena rel.</span>
+                                    @endif
+                                @endif
+                            </div>
                             @if($item['componentes']->isNotEmpty())
                                 @foreach($item['componentes'] as $componente)
                                     <div class="component-inline">
                                         <span>• {{ $componente['descripcion'] }}</span>
-                                        @if($componente['metodo'])
-                                            <span class="compact-text">[{{ $componente['metodo'] }}]</span>
+                                        @if($componente['de_agrupador'])
+                                            <span style="font-size: 7pt; color: #0d6efd; font-weight: bold;">(incluido)</span>
                                         @endif
-                                    </div>
-                                @endforeach
-                            @endif
-                            @if(!empty($item['notas']))
-                                @foreach($item['notas'] as $nota)
-                                    <div class="note-inline">
-                                        <span class="note-label">Nota:</span>
-                                        <span class="note-text">{{ $nota['contenido'] ?? '' }}</span>
+                                        @if(!empty($componente['metodo']))
+                                            <span class="comp-metodo">[{{ $componente['metodo'] }}]</span>
+                                        @endif
                                     </div>
                                 @endforeach
                             @endif
@@ -409,8 +507,7 @@
             <table class="items-table">
                 <thead>
                     <tr>
-                        <th style="width: 45%;">Descripción</th>
-                        <th style="width: 15%;">Método</th>
+                        <th style="width: 60%;">Descripción</th>
                         <th style="width: 10%; text-align: right;">Unidad</th>
                         <th style="width: 12%; text-align: right;">Cantidad</th>
                         <th style="width: 18%; text-align: right;">Importe</th>
@@ -420,7 +517,6 @@
                     @foreach($componentesSueltos as $componente)
                         <tr>
                             <td>{{ $componente['descripcion'] }}</td>
-                            <td class="compact-text">{{ $componente['metodo'] ?: '—' }}</td>
                             <td style="text-align: right;" class="compact-text">{{ $componente['unidad'] ?: '—' }}</td>
                             <td style="text-align: right;">{{ number_format($componente['cantidad'], 2, ',', '.') }}</td>
                             <td style="text-align: right;"><strong>{{ $formatCurrency($componente['total']) }}</strong></td>
@@ -430,26 +526,37 @@
             </table>
         @endif
 
-        <h2 class="section-title">Resumen Económico</h2>
+    </div>
+</div>
+
+<div class="page">
+    <div class="wrapper">
+
+        @include('ventas.partials.pdf-quote-meta')
+
+        <h2 class="section-title">Resumen económico</h2>
         <table class="resumen-table">
-            <tr>
-                <th>Subtotal ensayos</th>
-                <td>{{ $formatCurrency($totales['subtotal_items']) }}</td>
-            </tr>
             @if($componentesSueltos->isNotEmpty())
             <tr>
-                <th>Subtotal componentes adicionales</th>
+                <th>Componentes adicionales (sin encabezado de ensayo)</th>
                 <td>{{ $formatCurrency($totales['subtotal_componentes']) }}</td>
             </tr>
             @endif
             <tr>
-                <th>Total antes de descuento</th>
+                <th>Subtotal (antes de descuento global)</th>
                 <td>{{ $formatCurrency($totales['subtotal']) }}</td>
             </tr>
+            @if($cotizacion->coti_mostrar_descuento ?? true)
             <tr>
-                <th>Descuento global @if($totales['descuento_porcentaje'] > 0) ({{ number_format($totales['descuento_porcentaje'], 2, ',', '.') }}%) @endif</th>
+                <th>
+                    Descuento global
+                    @if($totales['descuento_porcentaje'] > 0)
+                        ({{ number_format($totales['descuento_porcentaje'], 2, ',', '.') }}%)
+                    @endif
+                </th>
                 <td>- {{ $formatCurrency($totales['descuento_monto']) }}</td>
             </tr>
+            @endif
             <tr>
                 <th>Total cotización</th>
                 <td><strong>{{ $formatCurrency($totales['total']) }}</strong></td>
@@ -461,95 +568,72 @@
         </table>
 
         <div class="summary-highlight">
-            <div>
+            <div class="sh-left">
                 Condición de pago: <strong>{{ $condicionPagoDescripcion }}</strong>
                 <span class="compact-text"> | Validez: {{ $cotizacion->coti_fechafin ? $formatDate($cotizacion->coti_fechafin) : '30 días' }}</span>
+                <span class="compact-text"> | Divisa: {{ $divisaCodigo }}</span>
             </div>
-            <div>
+            <div class="sh-right">
                 Total: <strong>{{ $formatCurrency($totales['total']) }}</strong>
             </div>
         </div>
 
-        <footer>
-            Documento confidencial. Su uso está limitado al cliente destinatario. Industria y Ambiente S.A.
-        </footer>
-    </div>
-</div>
-
-<div class="page">
-    <div class="wrapper">
-        <header>
-            <div class="logo">
-                @if(file_exists(public_path('assets/img/logo.png')))
-                    <img src="{{ public_path('assets/img/logo.png') }}" alt="Industria y Ambiente S.A.">
-                @else
-                    <strong>Industria y Ambiente S.A.</strong>
-                @endif
-            </div>
-            <div class="company-info">
-                <h1>Resumen de Facturación</h1>
-                <p>Cotización: <strong>#{{ $cotizacion->coti_num }}</strong></p>
-                <p>Cliente: {{ trim((string) ($cotizacion->coti_empresa ?? optional($cliente)->cli_razonsocial ?? '')) }}</p>
-                <p>Fecha: {{ $formatDate($cotizacion->coti_fechaalta) }}</p>
-            </div>
-        </header>
-
-        <h2 class="section-title">Datos de Facturación</h2>
-        <table class="billing-table">
+        @php
+            $tieneDatosFacturacionPdf = trim((string) ($cotizacion->coti_empresa ?? '')) !== '' || trim((string) ($cotizacion->coti_direccioncli ?? '')) !== '' || trim((string) ($cotizacion->coti_cuit ?? '')) !== '';
+        @endphp
+        @if($tieneDatosFacturacionPdf)
+        <h2 class="section-title">Datos de facturación</h2>
+        <table class="info-grid">
             <tr>
-                <th style="width: 35%;">Razón social facturación</th>
-                <td>{{ trim((string) ($cotizacion->coti_empresa ?? optional($cliente)->cli_razonsocial ?? '')) }}</td>
+                <td class="label">Razón Social</td>
+                <td class="value">{{ trim((string) ($cotizacion->coti_empresa ?? '')) !== '' ? trim($cotizacion->coti_empresa) : $dash }}</td>
+                <td class="label">CUIT</td>
+                <td class="value">{{ trim((string) ($cotizacion->coti_cuit ?? '')) !== '' ? trim($cotizacion->coti_cuit) : $dash }}</td>
             </tr>
             <tr>
-                <th>Dirección de facturación</th>
-                <td>{{ trim((string) ($cotizacion->coti_direccioncli ?? optional($cliente)->cli_direccion ?? '')) }}</td>
+                <td class="label">Dirección</td>
+                <td class="value">{{ trim((string) ($cotizacion->coti_direccioncli ?? '')) !== '' ? trim($cotizacion->coti_direccioncli) : $dash }}</td>
+                <td class="label">Localidad</td>
+                <td class="value">{{ ($facturacionLocalidadLinePdf ?? '') !== '' ? $facturacionLocalidadLinePdf : $dash }}</td>
             </tr>
             <tr>
-                <th>Correo de envío</th>
-                <td>{{ $correo ?: '—' }}</td>
-            </tr>
-            <tr>
-                <th>Descuento aplicado</th>
-                <td>
-                    @if($totales['descuento_porcentaje'] > 0)
-                        {{ number_format($totales['descuento_porcentaje'], 2, ',', '.') }}% ({{ $formatCurrency($totales['descuento_monto']) }})
-                    @else
-                        Sin descuento global registrado
-                    @endif
-                </td>
-            </tr>
-            <tr>
-                <th>Condición de pago</th>
-                <td>{{ $condicionPagoDescripcion }}</td>
-            </tr>
-            <tr>
-                <th>Lista de precios</th>
-                <td>{{ optional($cotizacion->listaPrecio)->lp_descripcion ?? 'Lista estándar' }}</td>
-            </tr>
-            <tr>
-                <th>Validez de la oferta</th>
-                <td>{{ $cotizacion->coti_fechafin ? $formatDate($cotizacion->coti_fechafin) : '30 días desde la emisión' }}</td>
-            </tr>
-            <tr>
-                <th>Total a facturar</th>
-                <td><strong>{{ $formatCurrency($totales['total']) }}</strong></td>
+                <td class="label">Código Postal</td>
+                <td class="value">{{ trim((string) ($cotizacion->coti_codigopostal ?? '')) !== '' ? trim($cotizacion->coti_codigopostal) : $dash }}</td>
+                <td class="label"></td>
+                <td class="value"></td>
             </tr>
         </table>
+        @endif
 
-        <h2 class="section-title">Notas y Condiciones</h2>
+        <h2 class="section-title">Notas y condiciones</h2>
         <div class="notes">
             <ol>
-                <li>Industria y Ambiente S.A. mantiene la confidencialidad total de los resultados y conclusiones obtenidos.</li>
-                <li>El cliente garantiza la seguridad del personal y equipamiento durante las tareas en sus instalaciones.</li>
-                <li>Los impuestos, tasas y sellados relacionados con los trabajos correrán por cuenta del cliente.</li>
-                <li>El cliente debe ofrecer acceso seguro a los puntos de medición y cumplir con las normas de Higiene y Seguridad.</li>
-                <li>Los trabajos se ejecutarán según la legislación vigente y las especificaciones particulares definidas en la cotización.</li>
+                <li>Los precios se expresan en {{ strtoupper($divisaCodigo) === 'PES' || strtoupper($divisaCodigo) === 'ARS' ? 'Pesos' : $divisaCodigo }} y no incluyen I.V.A. (Salvo aclaración específica en la cotización)</li>
+                <li>Industria y Ambiente S.A., apegado a la Ley Nacional 24.766, declara mantener la confidencialidad de los resultados totales o parciales obtenidos en los análisis realizados.</li>
+                <li>La Empresa contratante deberá garantizar la seguridad tanto física del personal de Industria y Ambiente S.A. como de la seguridad patrimonial del equipamiento a utilizar en los trabajos contratados. En el caso de sufrir pérdidas o roturas en los equipos utilizados, la empresa deberá retribuir al Laboratorio el monto de los bienes dañados o extraídos. En caso de requerir, el personal del Laboratorio podrá exigir la presencia de personal de vigilancia para realizar las tareas.</li>
+                <li>Los timbrados, tasas, aportes y sellados que surjan de los trabajos contratados correrán por cuenta de vuestra Empresa. Salvo que los mismos estén expresamente aclarados en el presente presupuesto.</li>
+                <li>La empresa deberá brindar los medios para acceder a los puntos de análisis y/o mediciones en forma segura. El personal de Industria y Ambiente S.A. se reserva el derecho de NO realizar las tareas pactadas en caso del NO cumplimiento de las normas mínimas de Higiene y Seguridad en el trabajo.</li>
+                <li>La empresa deberá cumplir con todas las características constructivas de las Instalaciones a medir y/o analizar según lo especificado en la Legislación vigente. En caso de no poseerlas, se evaluará puntualmente la situación y se acordará con la empresa contratante los pasos a seguir.</li>
+                <li>En el caso de concurrir a planta con la previa coordinación y no poder realizar el trabajo por única culpa de la empresa contratante, la misma deberá abonar el monto correspondiente a un viático adicional al establecido en el presupuesto. El valor viático, corresponde a media Jornada de 2 técnicos. (En caso del interior del país o en el 3er cordón de la provincia de Bs. As., se cotizara oportunamente)</li>
+                <li>Para la extracción de las muestras ver procedimientos y normas de TOMA DE MUESTRA de nuestra página web: www.industriayambiente.com.ar</li>
+                <li>En caso de aceptación del presente presupuesto, favor de enviar una Orden de Compra mencionando el Nro. de Cotización del presente presupuesto.</li>
             </ol>
+            @if(!empty($todasNotasImprimiblesItems))
+                @foreach($todasNotasImprimiblesItems as $idx => $nin)
+                    <p class="note-item-imprimible"><strong>Nota{{ $idx + 1 }}</strong> - {{ trim((string) ($nin['descripcion'] ?? '')) !== '' ? $nin['descripcion'] : ('Ítem #' . ($nin['item_ordinal'] ?? $nin['item'])) }}: {{ $nin['contenido'] ?? '' }}</p>
+                @endforeach
+            @endif
+            @if(!empty(trim((string) ($cotizacion->coti_notas ?? ''))))
+            <p class="legal-item-notes-title">Observaciones de la cotización:</p>
+            <p style="margin: 4px 0 0 0;">{{ $cotizacion->coti_notas }}</p>
+            @endif
         </div>
 
-        <footer>
-            Para confirmar la presente cotización comuníquese con su ejecutivo comercial o responda este correo. Industria y Ambiente S.A.
-        </footer>
+        <div class="closing-saludo-row">
+            <div class="left">Sin otro particular saluda a ud. atte.</div>
+            <div class="right">{{ !empty(trim((string) ($nombreCreadorCoti ?? ''))) ? $nombreCreadorCoti : '—' }}</div>
+        </div>
+
     </div>
 </div>
 </body>

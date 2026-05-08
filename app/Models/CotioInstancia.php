@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use App\Relations\BelongsToCotioLine;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Facades\Storage;
 use App\Models\InstanciaResponsableMuestreo;
@@ -86,6 +87,10 @@ class CotioInstancia extends Model
         'cotio_codigometodo',
         'cotio_codigometodo_analisis',
         'otn',
+        'protocolo_informe_json',
+        'analista_fecha_inicio',
+        'analista_fecha_fin',
+        'archivo_informe',
     ];
 
     protected $casts = [
@@ -104,6 +109,9 @@ class CotioInstancia extends Model
         'firmado' => 'boolean',
         'fecha_firma' => 'datetime',
         'fecha_aprobacion_informe' => 'datetime',
+        'protocolo_informe_json' => 'array',
+        'analista_fecha_inicio' => 'date',
+        'analista_fecha_fin' => 'date',
     ];
 
     public function responsablesMuestreo()
@@ -148,11 +156,22 @@ class CotioInstancia extends Model
 
     
     
+    /**
+     * Fila Cotio de la muestra (cotio_subitem = 0) del mismo ítem de cotización.
+     * @see BelongsToCotioLine (evita belongsTo con claves compuestas sobre Cotio y su PK compuesta)
+     */
     public function muestra()
     {
-        return $this->belongsTo(Cotio::class, 'cotio_numcoti', 'cotio_numcoti')
-                   ->where('cotio_item', $this->cotio_item)
-                   ->where('cotio_subitem', 0);
+        $related = $this->newRelatedInstance(Cotio::class);
+
+        return new BelongsToCotioLine(
+            $related->newQuery(),
+            $this,
+            'cotio_numcoti',
+            'cotio_numcoti',
+            __FUNCTION__,
+            true
+        );
     }
 
     public function cotizacion()
@@ -174,9 +193,16 @@ class CotioInstancia extends Model
 
     public function tarea()
     {
-        return $this->belongsTo(Cotio::class, 'cotio_numcoti', 'cotio_numcoti')
-                   ->where('cotio_item', $this->cotio_item)
-                   ->where('cotio_subitem', $this->cotio_subitem);
+        $related = $this->newRelatedInstance(Cotio::class);
+
+        return new BelongsToCotioLine(
+            $related->newQuery(),
+            $this,
+            'cotio_numcoti',
+            'cotio_numcoti',
+            __FUNCTION__,
+            false
+        );
     }
 
     public function tareas()
@@ -310,6 +336,22 @@ class CotioInstancia extends Model
 
         // Formatear con ceros a la izquierda (10 dígitos)
         return str_pad($siguienteNumero, 10, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Determina si esta instancia debe llevar un número OT (otn).
+     * Se excluyen canales especiales: asp, clarke_fire, consultoria.
+     */
+    public function debeLlevarOTN()
+    {
+        // Solo aplica a muestras (subitem 0)
+        if ($this->cotio_subitem != 0) return false;
+
+        // Intentar obtener el canal especial desde la tarea (cotio)
+        $this->loadMissing('tarea');
+        $canal = trim((string) ($this->tarea->cotio_canal_especial ?? ''));
+
+        return !in_array($canal, ['asp', 'clarke_fire', 'consultoria']);
     }
 
 

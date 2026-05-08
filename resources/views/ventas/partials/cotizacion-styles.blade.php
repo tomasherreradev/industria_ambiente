@@ -89,10 +89,28 @@
         font-size: 0.875rem;
     }
 
+    /* Columnas numéricas de precios en ítems de cotización */
+    .cotizacion-col-precio {
+        text-align: right;
+        white-space: nowrap;
+        vertical-align: middle;
+    }
+
+    .cotizacion-leyenda-precio-ensayo {
+        font-size: 0.68rem;
+        line-height: 1.15;
+        font-weight: 400;
+        margin-top: 0.1rem;
+    }
+
     /* Estilos para resaltar ensayos */
     .table tbody tr[data-tipo="ensayo"] {
         background-color: #e7f3ff;
         font-weight: 600;
+    }
+
+    .table tbody tr[data-tipo="ensayo"] .cotizacion-leyenda-precio-ensayo {
+        font-weight: 500;
     }
 
 
@@ -602,6 +620,75 @@
     .sortable-ensayo.sortable-drag-over,
     .sortable-componente.sortable-drag-over {
         border-top: 2px solid #0d6efd;
+    }
+
+    /* ========== Contactos de cotización ========== */
+    .cotizacion-contactos-section .contactos-list {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .contacto-card {
+        border: 1px solid #dee2e6;
+        border-radius: 0.5rem;
+        background: #fff;
+        overflow: hidden;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+    }
+
+    .contacto-card-principal {
+        border-color: #0d6efd;
+        background: linear-gradient(to bottom, rgba(13, 110, 253, 0.04) 0%, #fff 100%);
+    }
+
+    .contacto-card-extra {
+        border-color: #e9ecef;
+    }
+
+    .contacto-card-header {
+        padding: 0.5rem 0.75rem;
+        background: #f8f9fa;
+        border-bottom: 1px solid #eee;
+    }
+
+    .contacto-card-principal .contacto-card-header {
+        background: rgba(13, 110, 253, 0.08);
+    }
+
+    .contacto-card-badge {
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: #0d6efd;
+    }
+
+    .contacto-card-badge-secondary {
+        color: #6c757d;
+    }
+
+    .contacto-card-body {
+        padding: 0.75rem 1rem;
+    }
+
+    .contacto-card-actions {
+        padding-top: 0.25rem;
+    }
+
+    .contacto-card-actions .btn-guardar-contacto {
+        font-size: 0.8rem;
+    }
+
+    .btn-quitar-contacto {
+        text-decoration: none;
+        font-size: 0.8rem;
+    }
+
+    .btn-quitar-contacto:hover {
+        text-decoration: underline;
+    }
+
+    #btnAgregarContacto {
+        font-size: 0.875rem;
     }
 
 </style>

@@ -1,6 +1,10 @@
 @extends('layouts.app')
 
 @section('content')
+@php
+    $reqCadenaCustodiaMuestra = (bool) (optional($instancia->muestra)->req_cadena_custodia ?? false);
+    $esMuestreadoEstado = strtolower(trim((string) ($instancia->cotio_estado ?? ''))) === 'muestreado';
+@endphp
 <div class="container py-4">
     <!-- Encabezado -->
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -8,7 +12,8 @@
             Detalle de Muestra
     
         </h1>
-        <a href="{{ url()->previous() }}" class="btn btn-outline-secondary">
+        {{-- Tras guardar + reload, url()->previous() suele ser la misma página; el listado estable es mis-tareas --}}
+        <a href="{{ $canalParaFiltrar ? route('muestras.show', ['coti_num' => $instancia->cotio_numcoti, 'canal' => $canalParaFiltrar]) : route('mis-tareas') }}" class="btn btn-outline-secondary">
             <i class="fas fa-arrow-left me-1"></i> Volver
         </a>
     </div>
@@ -42,14 +47,16 @@
             </h5>
             @if(Auth::user()->rol != 'laboratorio')
                 <div class="btn-group botones-muestra" role="group">
-                    @if($instancia->cotio_estado != 'suspension')
-                        <button type="button" class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#suspenderModal">
-                            <i class="fas fa-pause me-1"></i> Suspender
-                        </button>
-                    @else
-                        <button type="button" class="btn btn-sm btn-secondary" disabled>
-                            <i class="fas fa-pause me-1"></i> Ya suspendida
-                        </button>
+                    @if(!$esMuestreadoEstado)
+                        @if($instancia->cotio_estado != 'suspension')
+                            <button type="button" class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#suspenderModal">
+                                <i class="fas fa-pause me-1"></i> Suspender
+                            </button>
+                        @else
+                            <button type="button" class="btn btn-sm btn-secondary" disabled>
+                                <i class="fas fa-pause me-1"></i> Ya suspendida
+                            </button>
+                        @endif
                     @endif
                     @if($instancia->cotio_estado == 'coordinado muestreo' || $instancia->cotio_estado == 'en revision muestreo')
                         <button class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#editMuestraModal">
@@ -70,7 +77,13 @@
                     <p><strong>Cotización:</strong> {{ $instancia->cotio_numcoti }}</p>
                     <p><strong>Identificación:</strong> {{ $instancia->cotio_identificacion ?? 'N/A' }}</p>
                     <p><strong>N° Precinto:</strong> {{ $instancia->nro_precinto ?? 'N/A' }}</p>
-                    <p><strong>N° Cadena:</strong> {{ $instancia->nro_cadena ?? 'N/A' }}</p>
+                    @if($reqCadenaCustodiaMuestra)
+                        <p><strong>N° Cadena:</strong> {{ $instancia->nro_cadena ?? 'N/A' }}</p>
+                    @elseif(filled($instancia->nro_cadena))
+                        <p><strong>N° Cadena:</strong> {{ $instancia->nro_cadena }} <span class="text-muted small">(no exigido por el ítem)</span></p>
+                    @else
+                        <p><strong>N° Cadena:</strong> <span class="text-muted">No requerido para este ítem</span></p>
+                    @endif
                 </div>
                 <div class="col-md-4">
                     <p><strong>Fecha Inicio:</strong> 
@@ -276,7 +289,14 @@
             </form>  
         </div>
     </div>
-      
+
+    @if($instancia->cotio_estado != 'muestreado')
+        <div class="d-flex justify-content-end mb-4">
+            <button type="button" class="btn btn-success" id="guardarIdentificacionYMediciones">
+                Guardar identificación y mediciones
+            </button>
+        </div>
+    @endif
 
 
 
@@ -327,7 +347,7 @@
                 </div>
 
                 <div class="modal-body">
-                    <form method="POST" action="{{ route('asignar.identificacion-muestra') }}" id="muestraForm" enctype="multipart/form-data">
+                    <form method="POST" action="{{ route('asignar.identificacion-muestra') }}" id="muestraForm" enctype="multipart/form-data" data-req-cadena-custodia="{{ $reqCadenaCustodiaMuestra ? '1' : '0' }}">
                         @csrf
                         <input type="hidden" name="cotio_numcoti" value="{{ $instancia->cotio_numcoti }}">
                         <input type="hidden" name="cotio_item" value="{{ $instancia->cotio_item }}">
@@ -386,20 +406,19 @@
                                    placeholder="Ingrese el número de precinto" required>
                         </div>
                     
-                        <div class="mb-3">
-                            <label for="nro_cadena" class="form-label">N° Cadena <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control" id="nro_cadena" 
-                                   name="nro_cadena" value="{{ $instancia->nro_cadena ?? '' }}"
-                                   placeholder="Ingrese el número de cadena" required>
-                        </div>
-                    
+                        @if($reqCadenaCustodiaMuestra)
+                            <div class="mb-3">
+                                <label for="nro_cadena" class="form-label">N° Cadena <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="nro_cadena"
+                                       name="nro_cadena" value="{{ $instancia->nro_cadena ?? '' }}"
+                                       placeholder="Ingrese el número de cadena" required>
+                            </div>
+                        @endif
+
                         <div class="d-flex justify-content-end">
                             <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">Cancelar</button>
                             <button type="submit" class="btn btn-outline-secondary me-2" name="accion" value="borrador" formnovalidate>
                                 <i class="fas fa-file-alt me-1"></i> Guardar
-                            </button>
-                            <button type="submit" class="btn btn-primary" name="accion" value="guardar">
-                                <i class="fas fa-save me-1"></i> Guardar y Enviar
                             </button>
                         </div>
                     </form>
@@ -408,6 +427,7 @@
         </div>
     </div>
 
+    @if(!$esMuestreadoEstado)
     <!-- Modal para suspender muestra -->
     <div class="modal fade" id="suspenderModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog">
@@ -440,6 +460,7 @@
             </div>
         </div>
     </div>
+    @endif
 
     <!-- Modal para editar herramientas -->
     <div class="modal fade" id="editHerramientasModal" tabindex="-1" aria-hidden="true">
@@ -554,6 +575,9 @@ async function enviarResultado(event, cotio_numcoti, cotio_item, cotio_subitem) 
                 text: responseData.message,
                 confirmButtonColor: '#3085d6'
             }).then(() => {
+                if (window.limpiarResiduosSweetAlert2) {
+                    window.limpiarResiduosSweetAlert2();
+                }
                 window.location.reload();
             });
         } else {
@@ -578,24 +602,31 @@ async function enviarResultado(event, cotio_numcoti, cotio_item, cotio_subitem) 
 
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        const form = document.getElementById('suspensionForm');
-        const textarea = document.getElementById('cotio_observaciones_suspension');
-        
-        form.addEventListener('submit', function(event) {
-            if (!textarea.value.trim()) {
-                event.preventDefault();
-                event.stopPropagation();
-                textarea.classList.add('is-invalid');
-            } else {
+        const modal = document.getElementById('suspenderModal');
+        if (!modal) {
+            return;
+        }
+        const form = document.getElementById('suspensionForm') || document.getElementById('suspenderForm');
+        const textarea = document.getElementById('cotio_observaciones_suspension') || document.getElementById('observacion');
+        if (form && textarea) {
+            form.addEventListener('submit', function(event) {
+                if (!textarea.value.trim()) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    textarea.classList.add('is-invalid');
+                } else {
+                    textarea.classList.remove('is-invalid');
+                }
+
+                form.classList.add('was-validated');
+            });
+        }
+
+        modal.addEventListener('hidden.bs.modal', function() {
+            if (form && textarea) {
+                form.classList.remove('was-validated');
                 textarea.classList.remove('is-invalid');
             }
-            
-            form.classList.add('was-validated');
-        });
-        
-        document.getElementById('suspenderModal').addEventListener('hidden.bs.modal', function() {
-            form.classList.remove('was-validated');
-            textarea.classList.remove('is-invalid');
         });
     });
 
@@ -607,6 +638,10 @@ async function enviarResultado(event, cotio_numcoti, cotio_item, cotio_subitem) 
         const galleryInput = document.getElementById('galleryInput');
         const imageBase64 = document.getElementById('image_base64');
         const imagePreview = document.getElementById('imagePreview');
+
+        if (!captureBtn || !selectBtn || !imageInput || !galleryInput || !imageBase64 || !imagePreview) {
+            return;
+        }
 
         // Función para procesar la imagen
         function processImage(file) {
@@ -727,19 +762,21 @@ async function enviarResultado(event, cotio_numcoti, cotio_item, cotio_subitem) 
                 }
 
                 const esGuardarYEnviar = e.submitter && e.submitter.value === 'guardar';
+                const reqCadenaCustodia = form.getAttribute('data-req-cadena-custodia') === '1';
 
                 // Validar campos obligatorios solo si presionó "Guardar y Enviar"
                 if (esGuardarYEnviar) {
                     const identificacion = (document.getElementById('cotio_identificacion') || {}).value || '';
                     const precinto = (document.getElementById('nro_precinto') || {}).value || '';
-                    const cadena = (document.getElementById('nro_cadena') || {}).value || '';
+                    const cadenaEl = document.getElementById('nro_cadena');
+                    const cadena = cadenaEl ? (cadenaEl.value || '') : '';
                     const lat = (document.getElementById('latitud') || {}).value || '';
                     const lng = (document.getElementById('longitud') || {}).value || '';
 
                     const faltantes = [];
                     if (!identificacion.trim()) faltantes.push('Identificación de muestra');
                     if (!precinto.trim()) faltantes.push('N° Precinto');
-                    if (!cadena.trim()) faltantes.push('N° Cadena');
+                    if (reqCadenaCustodia && !cadena.trim()) faltantes.push('N° Cadena');
                     if (!lat.trim() || !lng.trim()) faltantes.push('Coordenadas (latitud y longitud)');
 
                     if (faltantes.length > 0) {
@@ -785,18 +822,41 @@ async function enviarResultado(event, cotio_numcoti, cotio_item, cotio_subitem) 
                 })
                 .then(data => {
                     if (data.redirected) {
+                        Swal.close();
+                        if (window.limpiarResiduosSweetAlert2) {
+                            window.limpiarResiduosSweetAlert2();
+                        }
                         window.location.href = data.url;
                         return;
                     }
-                    
+
+                    Swal.close();
+                    if (window.limpiarResiduosSweetAlert2) {
+                        window.limpiarResiduosSweetAlert2();
+                    }
+
                     if (data.success) {
                         Swal.fire({
                             icon: 'success',
                             title: '¡Éxito!',
                             text: data.message || 'Datos guardados correctamente',
-                            confirmButtonText: 'Aceptar'
+                            confirmButtonText: 'Aceptar',
+                            didClose: function () {
+                                if (window.limpiarResiduosSweetAlert2) {
+                                    window.limpiarResiduosSweetAlert2();
+                                }
+                            },
                         }).then(() => {
-                            // Recargar la página o cerrar el modal
+                            const modalEl = document.getElementById('editMuestraModal');
+                            if (modalEl) {
+                                const inst = bootstrap.Modal.getInstance(modalEl);
+                                if (inst) {
+                                    inst.hide();
+                                }
+                            }
+                            if (window.limpiarResiduosSweetAlert2) {
+                                window.limpiarResiduosSweetAlert2();
+                            }
                             window.location.reload();
                         });
                     } else {
@@ -810,6 +870,10 @@ async function enviarResultado(event, cotio_numcoti, cotio_item, cotio_subitem) 
                 })
                 .catch(error => {
                     console.error('Error:', error);
+                    Swal.close();
+                    if (window.limpiarResiduosSweetAlert2) {
+                        window.limpiarResiduosSweetAlert2();
+                    }
                     Swal.fire({
                         icon: 'error',
                         title: 'Error',
@@ -1080,11 +1144,23 @@ function guardarHerramientas() {
                 icon: 'success',
                 title: '¡Éxito!',
                 text: data.message,
-                confirmButtonText: 'Aceptar'
+                confirmButtonText: 'Aceptar',
+                didClose: function () {
+                    if (window.limpiarResiduosSweetAlert2) {
+                        window.limpiarResiduosSweetAlert2();
+                    }
+                },
             }).then(() => {
-                // Cerrar modal y recargar página
-                const modal = bootstrap.Modal.getInstance(document.getElementById('editHerramientasModal'));
-                modal.hide();
+                const modalEl = document.getElementById('editHerramientasModal');
+                if (modalEl) {
+                    const modal = bootstrap.Modal.getInstance(modalEl);
+                    if (modal) {
+                        modal.hide();
+                    }
+                }
+                if (window.limpiarResiduosSweetAlert2) {
+                    window.limpiarResiduosSweetAlert2();
+                }
                 window.location.reload();
             });
         } else {
@@ -1227,6 +1303,80 @@ function deseleccionarTodas() {
             }
         });
     }
+</script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const botonGlobal = document.getElementById('guardarIdentificacionYMediciones');
+    if (!botonGlobal) return;
+
+    botonGlobal.addEventListener('click', async function () {
+        const muestraForm = document.getElementById('muestraForm');
+        const medicionesForm = document.getElementById('medicionesForm');
+
+        if (!muestraForm || !medicionesForm) {
+            alert('No se encontraron los formularios de identificación o mediciones.');
+            return;
+        }
+
+        const identInput = document.getElementById('cotio_identificacion');
+        if (identInput && !identInput.value.trim()) {
+            alert('Debe completar la identificación de la muestra antes de guardar.');
+            identInput.focus();
+            return;
+        }
+
+        const reqCadenaCustodia = muestraForm.getAttribute('data-req-cadena-custodia') === '1';
+        const cadenaInput = document.getElementById('nro_cadena');
+        if (reqCadenaCustodia && cadenaInput && !cadenaInput.value.trim()) {
+            alert('Debe completar el N° Cadena de custodia antes de guardar.');
+            cadenaInput.focus();
+            return;
+        }
+
+        try {
+            const csrf = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+
+            // 1) Guardar identificación (incluye imagen / georreferencia / precinto / cadena)
+            const fdIdent = new FormData(muestraForm);
+            const respIdent = await fetch(muestraForm.action, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': csrf,
+                    'Accept': 'text/html,application/json'
+                },
+                body: fdIdent
+            });
+
+            if (!respIdent.ok) {
+                alert('Error al guardar la identificación de la muestra.');
+                return;
+            }
+
+            // 2) Guardar mediciones de campo (reutiliza validaciones existentes del servidor)
+            const fdMed = new FormData(medicionesForm);
+            const respMed = await fetch(medicionesForm.action, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': csrf,
+                    'Accept': 'text/html,application/json'
+                },
+                body: fdMed
+            });
+
+            if (!respMed.ok) {
+                alert('Error al guardar las mediciones de campo.');
+                return;
+            }
+
+            // Recargar para reflejar cambios
+            window.location.reload();
+        } catch (e) {
+            console.error(e);
+            alert('Ocurrió un error al guardar identificación y mediciones.');
+        }
+    });
+});
 </script>
 
 @endsection

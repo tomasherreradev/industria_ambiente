@@ -44,6 +44,17 @@ class AuthController extends Controller
     
         if ($inputPassword === $storedPassword) {
             Auth::login($user, true);
+            // Forzar "último login gana": regenerar session y persistir el session_id vigente.
+            $request->session()->regenerate();
+            try {
+                $user->current_session_id = $request->session()->getId();
+                $user->save();
+            } catch (\Throwable $e) {
+                Log::warning('No se pudo guardar current_session_id', [
+                    'usu_codigo' => $user->usu_codigo,
+                    'error' => $e->getMessage(),
+                ]);
+            }
             Log::info('Login exitoso', [
                 'usu_codigo' => $user->usu_codigo,
                 'rol' => $user->rol,
@@ -71,6 +82,12 @@ class AuthController extends Controller
                 return redirect()->intended('/customers');
             } elseif($user->hasRole('cadena_custodia')) {
                 return redirect()->intended('/muestras');
+            } elseif($user->hasRole('coordinador_consul')) {
+                return redirect()->intended(route('consultoria.index'));
+            } elseif($user->hasRole('asp')) {
+                return redirect()->intended(route('asp.index'));
+            } elseif($user->hasRole('clarke_fire')) {
+                return redirect()->intended(route('clarke-fire.index'));
             } else {
                 Log::notice('Usuario logueado pero sin rol específico', ['usu_codigo' => $user->usu_codigo, 'rol_principal' => $user->rol]);
                 return redirect()->intended('/login');
@@ -84,7 +101,20 @@ class AuthController extends Controller
     
     public function logout(Request $request)
     {
+        // Limpiar marca de sesión vigente (best effort).
+        try {
+            $u = Auth::user();
+            if ($u) {
+                $u->current_session_id = null;
+                $u->save();
+            }
+        } catch (\Throwable $e) {
+            // no-op
+        }
+
         Auth::logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
         return redirect('/login');
     }
 

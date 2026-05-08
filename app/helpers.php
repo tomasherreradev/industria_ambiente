@@ -43,3 +43,35 @@ if (!function_exists('userHasAnyRole')) {
         return $user->hasAnyRole($roles);
     }
 }
+
+/**
+ * Quien puede editar la cabecera del protocolo en PDF (misma idea que acceder a /informes con CheckAdminOrRole).
+ */
+if (! function_exists('userCanEditInformeProtocoloPdf')) {
+    function userCanEditInformeProtocoloPdf(): bool
+    {
+        if (! Auth::check()) {
+            return false;
+        }
+        $user = Auth::user();
+        if (! $user) {
+            return false;
+        }
+        if ((int) ($user->usu_nivel ?? 0) >= 900) {
+            return true;
+        }
+
+        return $user->hasAnyRole([
+            'informes',
+            'firmador',
+            'coordinador_lab',
+            'coordinador_muestreo',
+            'ventas',
+            'facturador',
+            'cadena_custodia',
+            'coordinador_consul',
+            'asp',
+            'clarke_fire',
+        ]);
+    }
+}

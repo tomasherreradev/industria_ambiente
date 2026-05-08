@@ -3,14 +3,14 @@
         // Usar cotizacion directamente del array (funciona con o sin instancias)
         $coti = $data['cotizacion'];
         $instancias = collect($data['instancias'] ?? []);
-        $muestras = $instancias->where('cotio_subitem', '=', 0)->where('enable_ot', '=', 1);
+        $muestras = $data['muestras_relevantes'] ?? $instancias->where('cotio_subitem', '=', 0)->where('enable_ot', '=', 1);
         $tieneInstancias = $instancias->isNotEmpty();
         
-        // Calcular progreso
+        // Calcular progreso desde muestras relevantes (sin muestreo + con enable_ot)
+        $total = $muestras->count();
         $analizadas = $muestras->where('cotio_estado_analisis', 'analizado')->count();
         $enProceso = $muestras->where('cotio_estado_analisis', 'en revision analisis')->count();
         $coordinadas = $muestras->where('cotio_estado_analisis', 'coordinado analisis')->count();
-        $total = $muestras->count();
         
         $porcentajes = [
             'analizadas' => $total > 0 ? ($analizadas / $total) * 100 : 0,
@@ -49,7 +49,7 @@
                         </span>
                     @endif
                     <span class="text-muted small d-none d-md-inline">|</span>
-                    <span class="small text-truncate" style="max-width: 200px;">{{ $coti->coti_empresa }}</span>
+                    <span class="small text-truncate" style="max-width: 200px;">{{ \App\Support\CotizacionClienteEtiqueta::paraLista($coti) }}</span>
                     <span class="small text-muted d-none d-lg-inline">- {{ $coti->matriz->matriz_descripcion ?? 'N/A' }}</span>
                 </div>
                 

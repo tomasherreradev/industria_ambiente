@@ -126,13 +126,13 @@
                                     <i class="fas fa-filter me-1"></i> Estado
                                 </button>
                                 <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="filterEstadoDropdown">
-                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'all', 'muestreador' => request('muestreador', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'zona' => request('zona', 'all')]) }}">Todos</a></li>
-                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'coordinado muestreo', 'muestreador' => request('muestreador', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'zona' => request('zona', 'all')]) }}">Coordinados para Muestrear</a></li>
-                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'en revision muestreo', 'muestreador' => request('muestreador', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'zona' => request('zona', 'all')]) }}">Muestreado en Revisión</a></li>
-                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'muestreado', 'muestreador' => request('muestreador', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'zona' => request('zona', 'all')]) }}">Finalizados</a></li>
-                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'suspension', 'muestreador' => request('muestreador', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'zona' => request('zona', 'all')]) }}">Suspendidas</a></li>
+                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'all', 'muestreador' => request('muestreador', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'zona' => request('zona', 'all'), 'cuotas' => request('cuotas', 'all')]) }}">Todos</a></li>
+                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'coordinado muestreo', 'muestreador' => request('muestreador', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'zona' => request('zona', 'all'), 'cuotas' => request('cuotas', 'all')]) }}">Coordinados para Muestrear</a></li>
+                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'en revision muestreo', 'muestreador' => request('muestreador', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'zona' => request('zona', 'all'), 'cuotas' => request('cuotas', 'all')]) }}">Muestreado en Revisión</a></li>
+                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'muestreado', 'muestreador' => request('muestreador', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'zona' => request('zona', 'all'), 'cuotas' => request('cuotas', 'all')]) }}">Finalizados</a></li>
+                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'suspension', 'muestreador' => request('muestreador', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'zona' => request('zona', 'all'), 'cuotas' => request('cuotas', 'all')]) }}">Suspendidas</a></li>
                                     <li><hr class="dropdown-divider"></li>
-                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'proximos', 'muestreador' => request('muestreador', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'zona' => request('zona', 'all')]) }}">Próximos 3 días</a></li>
+                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'proximos', 'muestreador' => request('muestreador', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'zona' => request('zona', 'all'), 'cuotas' => request('cuotas', 'all')]) }}">Próximos 3 días</a></li>
                                 </ul>
                             </div>
                             
@@ -142,9 +142,9 @@
                                     <i class="fas fa-user me-1"></i> Muestreador
                                 </button>
                                 <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="filterMuestreadorDropdown">
-                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['muestreador' => 'all', 'estado' => request('estado', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'zona' => request('zona', 'all')]) }}">Todos</a></li>
+                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['muestreador' => 'all', 'estado' => request('estado', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'zona' => request('zona', 'all'), 'cuotas' => request('cuotas', 'all')]) }}">Todos</a></li>
                                     @foreach($muestreadores as $muestreador)
-                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['muestreador' => $muestreador->usu_codigo, 'estado' => request('estado', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'zona' => request('zona', 'all')]) }}">{{ $muestreador->usu_descripcion }}</a></li>
+                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['muestreador' => $muestreador->usu_codigo, 'estado' => request('estado', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'zona' => request('zona', 'all'), 'cuotas' => request('cuotas', 'all')]) }}">{{ $muestreador->usu_descripcion }}</a></li>
                                     @endforeach
                                 </ul>
                             </div>
@@ -155,9 +155,9 @@
                                     <i class="fas fa-car me-1"></i> Vehículo
                                 </button>
                                 <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="filterVehiculoDropdown">
-                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['vehiculo' => 'all', 'estado' => request('estado', 'all'), 'muestreador' => request('muestreador', 'all'), 'zona' => request('zona', 'all')]) }}">Todos</a></li>
+                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['vehiculo' => 'all', 'estado' => request('estado', 'all'), 'muestreador' => request('muestreador', 'all'), 'zona' => request('zona', 'all'), 'cuotas' => request('cuotas', 'all')]) }}">Todos</a></li>
                                     @foreach($vehiculosDisponibles as $vehiculo)
-                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['vehiculo' => $vehiculo->id, 'estado' => request('estado', 'all'), 'muestreador' => request('muestreador', 'all'), 'zona' => request('zona', 'all')]) }}">{{ $vehiculo->patente }} - {{ $vehiculo->marca }} {{ $vehiculo->modelo }}</a></li>
+                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['vehiculo' => $vehiculo->id, 'estado' => request('estado', 'all'), 'muestreador' => request('muestreador', 'all'), 'zona' => request('zona', 'all'), 'cuotas' => request('cuotas', 'all')]) }}">{{ $vehiculo->patente }} - {{ $vehiculo->marca }} {{ $vehiculo->modelo }}</a></li>
                                     @endforeach
                                 </ul>
                             </div>
@@ -168,15 +168,27 @@
                                     <i class="fas fa-map-marker-alt me-1"></i> Zona
                                 </button>
                                 <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="filterZonaDropdown">
-                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['zona' => 'all', 'estado' => request('estado', 'all'), 'muestreador' => request('muestreador', 'all'), 'vehiculo' => request('vehiculo', 'all')]) }}">Todas</a></li>
+                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['zona' => 'all', 'estado' => request('estado', 'all'), 'muestreador' => request('muestreador', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'cuotas' => request('cuotas', 'all')]) }}">Todas</a></li>
                                     @foreach($zonasDisponibles as $zona)
-                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['zona' => $zona->zon_codigo, 'estado' => request('estado', 'all'), 'muestreador' => request('muestreador', 'all'), 'vehiculo' => request('vehiculo', 'all')]) }}">{{ $zona->zon_descripcion }}</a></li>
+                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['zona' => $zona->zon_codigo, 'estado' => request('estado', 'all'), 'muestreador' => request('muestreador', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'cuotas' => request('cuotas', 'all')]) }}">{{ $zona->zon_descripcion }}</a></li>
                                     @endforeach
                                 </ul>
                             </div>
                             
+                            <!-- Filtro de Cuotas -->
+                            <div class="dropdown">
+                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="filterCuotasDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <i class="fas fa-money-bill-wave me-1"></i> Cuotas
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="filterCuotasDropdown">
+                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['cuotas' => 'all', 'estado' => request('estado', 'all'), 'muestreador' => request('muestreador', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'zona' => request('zona', 'all')]) }}">Todas</a></li>
+                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['cuotas' => 'yes', 'estado' => request('estado', 'all'), 'muestreador' => request('muestreador', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'zona' => request('zona', 'all')]) }}">Con cuotas</a></li>
+                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['cuotas' => 'no', 'estado' => request('estado', 'all'), 'muestreador' => request('muestreador', 'all'), 'vehiculo' => request('vehiculo', 'all'), 'zona' => request('zona', 'all')]) }}">Sin cuotas</a></li>
+                                </ul>
+                            </div>
+                            
                             <!-- Botón para limpiar filtros -->
-                            @if(request('estado') != 'all' || request('muestreador') != 'all' || request('vehiculo') != 'all' || request('zona') != 'all')
+                            @if(request('estado') != 'all' || request('muestreador') != 'all' || request('vehiculo') != 'all' || request('zona') != 'all' || request('cuotas') != 'all')
                             <a href="{{ route('dashboard.muestreo') }}" class="btn btn-sm btn-outline-danger">
                                 <i class="fas fa-times me-1"></i> Limpiar
                             </a>
@@ -201,6 +213,7 @@
                             <thead class="table-light">
                                 <tr>
                                     <th class="ps-4">Cotización</th>
+                                    <th>Cliente</th>
                                     <th>Descripción</th>
                                     <th>Fecha Muestreo</th>
                                     <th>Responsables</th>
@@ -211,9 +224,30 @@
                                 @forelse($muestras as $muestra)
                                 <tr>
                                     <td class="ps-4 fw-bold">
-                                        <a href="/show/{{ $muestra->cotizacion->coti_num }}" class="text-primary">
-                                            {{ $muestra->cotizacion->coti_num ?? 'N/A' }}
-                                        </a>
+                                        <div class="d-flex align-items-center gap-2">
+                                            <a href="/show/{{ $muestra->cotizacion->coti_num }}" class="text-primary">
+                                                {{ $muestra->cotizacion->coti_num ?? 'N/A' }}
+                                            </a>
+                                            @if($muestra->cotizacion && $muestra->cotizacion->coti_cuotas)
+                                                <span class="badge bg-[#0dcaf0] text-white px-2 py-1 rounded-pill" style="font-size: 0.65rem; background-color: #0dcaf0;">CUOTAS</span>
+                                            @endif
+                                            @if($muestra->cotizacion)
+                                                @include('muestras.partials.canal-especial-badge', ['coti' => $muestra->cotizacion])
+                                            @endif
+                                        </div>
+                                    </td>
+                                    <td style="max-width: 180px;">
+                                        @php
+                                            $cliM = $muestra->cotizacion->cliente ?? null;
+                                            $nombreClienteM = trim((string) (optional($cliM)->cli_razonsocial ?? ''));
+                                            if ($nombreClienteM === '') {
+                                                $nombreClienteM = trim((string) (optional($cliM)->cli_fantasia ?? ''));
+                                            }
+                                            if ($nombreClienteM === '') {
+                                                $nombreClienteM = trim((string) ($muestra->cotizacion->coti_empresa ?? ''));
+                                            }
+                                        @endphp
+                                        <span class="d-block text-truncate" title="{{ $nombreClienteM }}">{{ $nombreClienteM !== '' ? $nombreClienteM : '—' }}</span>
                                     </td>
                                     <td style="max-width: 200px;" title="{{ $muestra->cotio_descripcion }}">
                                         <a href="{{ route('muestras.ver', [
@@ -270,7 +304,7 @@
                                 </tr>
                                 @empty
                                 <tr>
-                                    <td colspan="5" class="text-center py-4 text-muted">
+                                    <td colspan="6" class="text-center py-4 text-muted">
                                         <i class="fas fa-calendar-times fa-2x mb-2"></i>
                                         <p class="mb-0">No hay muestras asignadas actualmente</p>
                                     </td>
@@ -340,6 +374,12 @@
                         <div class="list-group-item border-0 px-0 py-2">
                             <div class="d-flex justify-content-between align-items-start mb-1">
                                 <span class="fw-bold">#{{ $muestra->cotizacion->coti_num ?? 'N/A' }}</span>
+                                @if($muestra->cotizacion && $muestra->cotizacion->coti_cuotas)
+                                    <span class="badge bg-[#0dcaf0] text-white px-1 py-0 rounded-pill ms-1" style="font-size: 0.6rem; background-color: #0dcaf0;">CUOTAS</span>
+                                @endif
+                                @if($muestra->cotizacion)
+                                    @include('muestras.partials.canal-especial-badge', ['coti' => $muestra->cotizacion])
+                                @endif
                                 <small class="text-muted">{{ $muestra->fecha_muestreo ? $muestra->fecha_muestreo->format('d/m H:i') : 'Sin fecha' }}</small>
                             </div>
                             <p class="mb-1 small text-truncate">{{ $muestra->cotio_descripcion }}</p>
@@ -480,6 +520,7 @@
         const currentMuestreador = '{{ $muestreadorFiltro }}';
         const currentVehiculo = '{{ $vehiculoFiltro }}';
         const currentZona = '{{ $zonaFiltro }}';
+        const currentCuotas = '{{ $cuotasFiltro }}';
         
         // Actualizar botón de Estado
         const filterEstadoDropdown = document.getElementById('filterEstadoDropdown');
@@ -521,6 +562,17 @@
             zonaOptions.forEach(option => {
                 if (option.getAttribute('href').includes(`zona=${currentZona}`)) {
                     filterZonaDropdown.innerHTML = `<i class="fas fa-map-marker-alt me-1"></i> ${option.textContent}`;
+                }
+            });
+        }
+
+        // Actualizar botón de Cuotas
+        const filterCuotasDropdown = document.getElementById('filterCuotasDropdown');
+        if (filterCuotasDropdown && currentCuotas !== 'all') {
+            const cuotasOptions = filterCuotasDropdown.nextElementSibling.querySelectorAll('.filter-option');
+            cuotasOptions.forEach(option => {
+                if (option.getAttribute('href').includes(`cuotas=${currentCuotas}`)) {
+                    filterCuotasDropdown.innerHTML = `<i class="fas fa-money-bill-wave me-1"></i> ${option.textContent}`;
                 }
             });
         }

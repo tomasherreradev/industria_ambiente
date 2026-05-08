@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\CotioInstancia;
+use App\Models\CotioItems;
+use App\Models\Metodo;
 use App\Models\Matriz;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
@@ -11,19 +13,51 @@ use Illuminate\Support\Facades\Log;
 use Barryvdh\DomPDF\Facade\Pdf;
 use App\Services\FirmaDigitalService;
 use Illuminate\Http\Response;
+use Illuminate\Support\Collection;
+use App\Support\LeyNormativaPresentacion;
+use App\Support\ProtocoloInformePdfCabecera;
 
 
 class InformeController extends Controller
 {
     /**
+     * Equipos de laboratorio para el PDF: pivote cotio_inventario_lab suele apuntar a la instancia
+     * de la muestra (cotio_subitem = 0), no a cada análisis (subitem > 0). Se unen ambos orígenes.
+     *
+     * @param  \Illuminate\Support\Collection|\App\Models\CotioInstancia[]  $analisis
+     */
+    protected function equiposLaboratorioParaInforme(CotioInstancia $muestra, $analisis): Collection
+    {
+        $analisisCol = collect($analisis);
+
+        $desdeMuestra = $muestra->relationLoaded('herramientasLab')
+            ? collect($muestra->herramientasLab)
+            : $muestra->herramientasLab()->get();
+
+        $desdeAnalisis = $analisisCol->flatMap(function ($a) {
+            if (!$a instanceof CotioInstancia) {
+                return collect();
+            }
+
+            return $a->relationLoaded('herramientasLab')
+                ? collect($a->herramientasLab)
+                : $a->herramientasLab()->get();
+        });
+
+        return $desdeMuestra->concat($desdeAnalisis)->unique('id')->values();
+    }
+
+    /**
      * Genera un PDF masivo con todos los informes de una cotización
      */
     public function generarPdfMasivo($cotizacion)
     {
-        $cotizacionObj = \App\Models\Coti::with('matriz')->where('coti_num', $cotizacion)->firstOrFail();
+        $cotizacionObj = \App\Models\Coti::with(['matriz', 'cliente', 'sucursal'])->where('coti_num', $cotizacion)->firstOrFail();
         
         // Obtener todas las muestras principales
         $muestras = \App\Models\CotioInstancia::with([
+            'muestra.leyNormativa',
+            'responsablesMuestreo',
             'tareas' => function($query) {
                 $query->where('enable_inform', true)->orderBy('cotio_subitem');
             },
@@ -36,7 +70,9 @@ class InformeController extends Controller
                     'cotio_inventario_lab.observaciones as pivot_observaciones');
             },
             'vehiculo',
-            'cotizacion.matriz'
+            'cotizacion.matriz',
+            'cotizacion.cliente',
+            'cotizacion.sucursal',
         ])
         ->where('cotio_numcoti', $cotizacion)
         ->where('enable_inform', true)
@@ -53,11 +89,42 @@ class InformeController extends Controller
         
         $apiKey = config('services.google.maps_api_key');
         $mapPaths = [];
+
+        // Resolver metodologías de muestreo (prioridad: cotio_instancias.cotio_codigometodo, fallback: cotio_items.metodo)
+        $itemIds = $muestras->pluck('cotio_item')->filter()->unique()->values()->all();
+        $itemsById = CotioItems::query()
+            ->whereIn('id', $itemIds)
+            ->get(['id', 'metodo'])
+            ->keyBy('id');
+        $metodosCodigos = collect()
+            ->merge($muestras->pluck('cotio_codigometodo'))
+            ->merge($itemsById->pluck('metodo'))
+            ->filter()
+            ->map(fn ($c) => trim((string) $c))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+        $metodosByCodigo = Metodo::query()
+            ->whereIn(DB::raw('TRIM(metodo_codigo)'), $metodosCodigos)
+            ->get(['metodo_codigo', 'metodo_descripcion'])
+            ->keyBy(fn ($m) => trim((string) $m->metodo_codigo));
     
+        $metodosAnalisisCodigos = [];
+
         // Procesar cada muestra
         foreach ($muestras as $muestra) {
             $muestra->showMap = !empty($muestra->latitud) && !empty($muestra->longitud);
             $muestra->localMapPath = null;
+            $muestra->herramientasMuestreo = $muestra->getHerramientasMuestreo();
+            $codigoMetodoMuestreo = trim((string) ($muestra->cotio_codigometodo ?? ''));
+            if ($codigoMetodoMuestreo === '') {
+                $codigoMetodoMuestreo = trim((string) optional($itemsById->get($muestra->cotio_item))->metodo);
+            }
+            $muestra->metodoMuestreoCodigo = $codigoMetodoMuestreo;
+            $muestra->metodoMuestreoNombre = $codigoMetodoMuestreo !== ''
+                ? (trim((string) optional($metodosByCodigo->get($codigoMetodoMuestreo))->metodo_descripcion) ?: $codigoMetodoMuestreo)
+                : null;
     
             if ($muestra->showMap) {
                 $lat = $muestra->latitud;
@@ -66,7 +133,8 @@ class InformeController extends Controller
                 $localPath = $tempDir.$filename;
                 
                 try {
-                    $mapUrl = "https://maps.googleapis.com/maps/api/staticmap?center=$lat,$lng&zoom=15&size=600x300&maptype=roadmap&markers=color:red%7C$lat,$lng&key=$apiKey";
+                    // Imagen satelital (lo más parecido a los ejemplos)
+                    $mapUrl = "https://maps.googleapis.com/maps/api/staticmap?center=$lat,$lng&zoom=18&size=900x450&scale=1&maptype=satellite&markers=color:yellow%7C$lat,$lng&key=$apiKey";
                     file_put_contents($localPath, file_get_contents($mapUrl));
                     $muestra->localMapPath = $localPath;
                     $mapPaths[] = $localPath; // Guardar para limpieza posterior
@@ -78,8 +146,13 @@ class InformeController extends Controller
     
             // Obtener análisis para esta muestra
             $muestra->analisis = \App\Models\CotioInstancia::with([
+                'tarea.leyNormativa',
                 'valoresVariables',
-                'responsablesAnalisis'
+                'responsablesAnalisis',
+                'herramientasLab' => function($query) {
+                    $query->select('inventario_lab.*', 'cotio_inventario_lab.cantidad',
+                        'cotio_inventario_lab.observaciones as pivot_observaciones');
+                },
             ])
             ->where('cotio_numcoti', $cotizacion)
             ->where('cotio_item', $muestra->cotio_item)
@@ -87,12 +160,32 @@ class InformeController extends Controller
             ->where('cotio_subitem', '>', 0)
             ->orderBy('cotio_subitem')
             ->get();
+
+            // Equipos de lab: pivote en instancia muestra (subitem 0) y/o por cada análisis
+            $muestra->equiposAnalisis = $this->equiposLaboratorioParaInforme($muestra, $muestra->analisis);
+
+            $metodosAnalisisCodigos = array_merge(
+                $metodosAnalisisCodigos,
+                $muestra->analisis
+                    ->map(fn ($a) => trim((string) ($a->cotio_codigometodo_analisis ?? $a->cotio_codigometodo ?? '')))
+                    ->filter()
+                    ->unique()
+                    ->values()
+                    ->all()
+            );
         }
+
+        $metodosAnalisisCodigos = collect($metodosAnalisisCodigos)->filter()->unique()->values()->all();
+        $metodosAnalisisByCodigo = Metodo::query()
+            ->whereIn(DB::raw('TRIM(metodo_codigo)'), $metodosAnalisisCodigos)
+            ->get(['metodo_codigo', 'metodo_descripcion'])
+            ->keyBy(fn ($m) => trim((string) $m->metodo_codigo));
     
         // Generar PDF
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('informes.pdf_masivo', [
             'cotizacion' => $cotizacionObj,
-            'muestras'   => $muestras
+            'muestras'   => $muestras,
+            'metodosByCodigo' => $metodosAnalisisByCodigo,
         ]);
     
         // Limpiar archivos temporales de mapas
@@ -102,10 +195,10 @@ class InformeController extends Controller
             }
         }
 
-        // Descargar PDF masivo directamente (sin firma)
+        // Mostrar PDF masivo directamente en el navegador
         return response()->make($pdf->output(), 200, [
             'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'attachment; filename="informe-masivo-cotizacion-' . $cotizacion . '.pdf"',
+            'Content-Disposition' => 'inline; filename="informe-masivo-cotizacion-' . $cotizacion . '.pdf"',
         ]);
     }
 
@@ -122,6 +215,7 @@ class InformeController extends Controller
         // Consulta base para informes
         $baseQuery = CotioInstancia::with([
             'cotizacion.matriz',
+            'muestra.leyNormativa',
             'tareas' => function($query) {
                 $query->where('enable_inform', true)
                       ->orderBy('cotio_subitem');
@@ -156,12 +250,12 @@ class InformeController extends Controller
             });
         }
 
-        if ($request->has('fecha_inicio_muestreo') && !empty($request->fecha_inicio_muestreo)) {
-            $baseQuery->whereDate('fecha_inicio_muestreo', '>=', $request->fecha_inicio_muestreo);
+        if ($request->has('fecha_inicio') && !empty($request->fecha_inicio)) {
+            $baseQuery->whereDate('fecha_inicio_muestreo', '>=', $request->fecha_inicio);
         }
 
-        if ($request->has('fecha_fin_muestreo') && !empty($request->fecha_fin_muestreo)) {
-            $baseQuery->whereDate('fecha_fin_muestreo', '<=', $request->fecha_fin_muestreo);
+        if ($request->has('fecha_fin') && !empty($request->fecha_fin)) {
+            $baseQuery->whereDate('fecha_fin_muestreo', '<=', $request->fecha_fin);
         }
 
         // Vista de calendario
@@ -181,6 +275,8 @@ class InformeController extends Controller
                         'empresa' => $instancia->cotizacion->coti_empresa,
                         'muestra' => $instancia->cotio_descripcion,
                         'instancia' => $instancia->instance_number,
+                        'identificacion' => trim((string) ($instancia->cotio_identificacion ?? '')),
+                        'ley_categoria' => LeyNormativaPresentacion::textoPlano($instancia->muestra),
                     ],
                     'className' => 'informe-' . $this->determinarTipoInforme($instancia),
                 ];
@@ -277,10 +373,13 @@ class InformeController extends Controller
     public function show($cotio_numcoti, $cotio_item, $instance_number)
     {
         // Obtener la muestra específica con sus análisis
-        $muestra = CotioInstancia::with(['tareas' => function($query) {
-                        $query->where('enable_inform', true)
-                              ->orderBy('cotio_subitem');
-                    }])
+        $muestra = CotioInstancia::with([
+            'muestra.leyNormativa',
+            'tareas' => function ($query) {
+                $query->where('enable_inform', true)
+                    ->orderBy('cotio_subitem');
+            },
+        ])
                     ->where('cotio_numcoti', $cotio_numcoti)
                     ->where('cotio_item', $cotio_item)
                     ->where('instance_number', $instance_number)
@@ -300,8 +399,12 @@ class InformeController extends Controller
     public function generarPdf($cotio_numcoti, $cotio_item, $instance_number)
     {
         $muestra = CotioInstancia::with([
+            'muestra.leyNormativa',
+            'responsablesMuestreo',
             'tareas',
             'cotizacion.matriz',
+            'cotizacion.cliente',
+            'cotizacion.sucursal',
             'valoresVariables' => function($query) {
                 $query->orderBy('variable');
             },
@@ -317,8 +420,29 @@ class InformeController extends Controller
         ->where('instance_number', $instance_number)
         ->where('cotio_subitem', 0)
         ->firstOrFail();
+
+        if (!empty($muestra->archivo_informe) && \Illuminate\Support\Facades\Storage::disk('public')->exists($muestra->archivo_informe)) {
+            $path = \Illuminate\Support\Facades\Storage::disk('public')->path($muestra->archivo_informe);
+            return response()->file($path, [
+                'Content-Type' => 'application/pdf',
+                'Content-Disposition' => 'inline; filename="' . basename($path) . '"'
+            ]);
+        }
+
+        $herramientasMuestreo = $muestra->getHerramientasMuestreo();
+
+        $itemPadre = CotioItems::query()->where('id', $muestra->cotio_item)->first(['id', 'metodo']);
+        $codigoMetodoMuestreo = trim((string) ($muestra->cotio_codigometodo ?? ''));
+        if ($codigoMetodoMuestreo === '') {
+            $codigoMetodoMuestreo = trim((string) ($itemPadre->metodo ?? ''));
+        }
+        $metodoObj = $codigoMetodoMuestreo !== ''
+            ? Metodo::query()->whereRaw('TRIM(metodo_codigo) = ?', [$codigoMetodoMuestreo])->first(['metodo_codigo', 'metodo_descripcion'])
+            : null;
+        $metodoMuestreoNombre = $metodoObj ? (trim((string) $metodoObj->metodo_descripcion) ?: $codigoMetodoMuestreo) : ($codigoMetodoMuestreo !== '' ? $codigoMetodoMuestreo : null);
     
         $analisis = CotioInstancia::with([
+            'tarea.leyNormativa',
             'responsablesAnalisis',
             'herramientasLab'
         ])
@@ -327,6 +451,20 @@ class InformeController extends Controller
         ->where('instance_number', $instance_number)
         ->where('cotio_subitem', '>', 0)
         ->get();
+
+        $equiposAnalisis = $this->equiposLaboratorioParaInforme($muestra, $analisis);
+
+        $metodosAnalisisCodigos = $analisis
+            ->map(fn ($a) => trim((string) ($a->cotio_codigometodo_analisis ?? $a->cotio_codigometodo ?? '')))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $metodosAnalisisByCodigo = Metodo::query()
+            ->whereIn(DB::raw('TRIM(metodo_codigo)'), $metodosAnalisisCodigos)
+            ->get(['metodo_codigo', 'metodo_descripcion'])
+            ->keyBy(fn ($m) => trim((string) $m->metodo_codigo));
     
         $tipoInforme = $this->determinarTipoInforme($muestra);
         $showMap = !empty($muestra->latitud) && !empty($muestra->longitud);
@@ -336,7 +474,8 @@ class InformeController extends Controller
             $apiKey = config('services.google.maps_api_key');
             $lat = $muestra->latitud;
             $lng = $muestra->longitud;
-            $mapUrl = "https://maps.googleapis.com/maps/api/staticmap?center=$lat,$lng&zoom=15&size=600x300&maptype=roadmap&markers=color:red%7C$lat,$lng&key=$apiKey";
+            // Imagen satelital (lo más parecido a los ejemplos)
+            $mapUrl = "https://maps.googleapis.com/maps/api/staticmap?center=$lat,$lng&zoom=18&size=900x450&scale=1&maptype=satellite&markers=color:yellow%7C$lat,$lng&key=$apiKey";
             
             // Descargar la imagen y guardarla temporalmente
             $tempDir = storage_path('app/temp_maps/');
@@ -362,7 +501,11 @@ class InformeController extends Controller
             'analisis'   => $analisis,
             'tipoInforme'=> $tipoInforme,
             'showMap'    => $showMap,
-            'localMapPath'=> $localMapPath ?? null
+            'localMapPath'=> $localMapPath ?? null,
+            'herramientasMuestreo' => $herramientasMuestreo,
+            'metodoMuestreoNombre' => $metodoMuestreoNombre,
+            'metodosByCodigo' => $metodosAnalisisByCodigo,
+            'equiposAnalisis' => $equiposAnalisis,
         ]);
     
         // Si ya está firmado, obtener el documento firmado
@@ -375,15 +518,15 @@ class InformeController extends Controller
                 
                 return response()->make($pdfFirmado, 200, [
                     'Content-Type' => 'application/pdf',
-                    'Content-Disposition' => 'attachment; filename="informe-firmado-' . $cotio_numcoti . '-' . $cotio_item . '-' . $instance_number . '.pdf"',
+                    'Content-Disposition' => 'inline; filename="informe-firmado-' . $cotio_numcoti . '-' . $cotio_item . '-' . $instance_number . '.pdf"',
                 ]);
             }
         }
 
-        // Generar PDF normal (sin firma)
+        // Generar PDF normal (sin firma) para vista en navegador
         return response()->make($pdf->output(), 200, [
             'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'attachment; filename="informe-' . $cotio_numcoti . '-' . $cotio_item . '-' . $instance_number . '.pdf"',
+            'Content-Disposition' => 'inline; filename="informe-' . $cotio_numcoti . '-' . $cotio_item . '-' . $instance_number . '.pdf"',
         ]);
     }
 
@@ -473,8 +616,12 @@ class InformeController extends Controller
     private function generarPdfParaFirma($cotio_numcoti, $cotio_item, $instance_number)
     {
         $muestra = CotioInstancia::with([
+            'muestra.leyNormativa',
+            'responsablesMuestreo',
             'tareas',
             'cotizacion.matriz',
+            'cotizacion.cliente',
+            'cotizacion.sucursal',
             'valoresVariables' => function($query) {
                 $query->orderBy('variable');
             },
@@ -490,8 +637,21 @@ class InformeController extends Controller
         ->where('instance_number', $instance_number)
         ->where('cotio_subitem', 0)
         ->firstOrFail();
+
+        $herramientasMuestreo = $muestra->getHerramientasMuestreo();
+
+        $itemPadre = CotioItems::query()->where('id', $muestra->cotio_item)->first(['id', 'metodo']);
+        $codigoMetodoMuestreo = trim((string) ($muestra->cotio_codigometodo ?? ''));
+        if ($codigoMetodoMuestreo === '') {
+            $codigoMetodoMuestreo = trim((string) ($itemPadre->metodo ?? ''));
+        }
+        $metodoObj = $codigoMetodoMuestreo !== ''
+            ? Metodo::query()->whereRaw('TRIM(metodo_codigo) = ?', [$codigoMetodoMuestreo])->first(['metodo_codigo', 'metodo_descripcion'])
+            : null;
+        $metodoMuestreoNombre = $metodoObj ? (trim((string) $metodoObj->metodo_descripcion) ?: $codigoMetodoMuestreo) : ($codigoMetodoMuestreo !== '' ? $codigoMetodoMuestreo : null);
     
         $analisis = CotioInstancia::with([
+            'tarea.leyNormativa',
             'responsablesAnalisis',
             'herramientasLab'
         ])
@@ -500,6 +660,20 @@ class InformeController extends Controller
         ->where('instance_number', $instance_number)
         ->where('cotio_subitem', '>', 0)
         ->get();
+
+        $equiposAnalisis = $this->equiposLaboratorioParaInforme($muestra, $analisis);
+
+        $metodosAnalisisCodigos = $analisis
+            ->map(fn ($a) => trim((string) ($a->cotio_codigometodo_analisis ?? $a->cotio_codigometodo ?? '')))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $metodosAnalisisByCodigo = Metodo::query()
+            ->whereIn('metodo_codigo', $metodosAnalisisCodigos)
+            ->get(['metodo_codigo', 'metodo_descripcion'])
+            ->keyBy(fn ($m) => trim((string) $m->metodo_codigo));
     
         $tipoInforme = $this->determinarTipoInforme($muestra);
         $showMap = !empty($muestra->latitud) && !empty($muestra->longitud);
@@ -509,7 +683,8 @@ class InformeController extends Controller
             $apiKey = config('services.google.maps_api_key');
             $lat = $muestra->latitud;
             $lng = $muestra->longitud;
-            $mapUrl = "https://maps.googleapis.com/maps/api/staticmap?center=$lat,$lng&zoom=15&size=600x300&maptype=roadmap&markers=color:red%7C$lat,$lng&key=$apiKey";
+            // Imagen satelital (lo más parecido a los ejemplos)
+            $mapUrl = "https://maps.googleapis.com/maps/api/staticmap?center=$lat,$lng&zoom=18&size=900x450&scale=1&maptype=satellite&markers=color:yellow%7C$lat,$lng&key=$apiKey";
             
             // Descargar la imagen y guardarla temporalmente
             $tempDir = storage_path('app/temp_maps/');
@@ -533,7 +708,11 @@ class InformeController extends Controller
             'analisis'   => $analisis,
             'tipoInforme'=> $tipoInforme,
             'showMap'    => $showMap,
-            'localMapPath'=> $localMapPath ?? null
+            'localMapPath'=> $localMapPath ?? null,
+            'herramientasMuestreo' => $herramientasMuestreo,
+            'metodoMuestreoNombre' => $metodoMuestreoNombre,
+            'metodosByCodigo' => $metodosAnalisisByCodigo,
+            'equiposAnalisis' => $equiposAnalisis,
         ]);
     }
 
@@ -541,6 +720,9 @@ class InformeController extends Controller
     {
         $muestra = CotioInstancia::with([
             'cotizacion.matriz',
+            'cotizacion.cliente',
+            'cotizacion.sucursal',
+            'muestra.leyNormativa',
             'tareas',
             'valoresVariables' => function($query) {
                 $query->select('id', 'cotio_instancia_id', 'variable', 'valor')
@@ -562,6 +744,7 @@ class InformeController extends Controller
         Log::info($muestra->valoresVariables);
     
         $analisis = CotioInstancia::with([
+            'tarea.leyNormativa',
             'responsablesAnalisis',
             'herramientasLab' => function($query) {
                 $query->select('inventario_lab.*', 'cotio_inventario_lab.cantidad', 
@@ -577,6 +760,7 @@ class InformeController extends Controller
         return response()->json([
             'cotizacion' => $muestra->cotizacion,
             'muestra' => $muestra,
+            'ley_categoria_texto' => LeyNormativaPresentacion::textoPlano($muestra->muestra),
             'analisis' => $analisis,
             'vehiculo' => $muestra->vehiculo, // Asegúrate de incluir esto si lo necesitas
             'valoresVariables' => $muestra->valoresVariables
@@ -792,7 +976,7 @@ class InformeController extends Controller
                 
                 return response()->make($pdfFirmado, 200, [
                     'Content-Type' => 'application/pdf',
-                    'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+                    'Content-Disposition' => 'inline; filename="' . $filename . '"',
                 ]);
             }
             
@@ -824,6 +1008,138 @@ class InformeController extends Controller
         }
         
         return "documento-firmado-{$timestamp}.pdf";
+    }
+
+    /**
+     * Formulario para editar la cabecera del PDF (recuadro de datos del protocolo).
+     */
+    public function editarProtocoloPdf($cotio_numcoti, $cotio_item, $instance_number)
+    {
+        abort_unless(userCanEditInformeProtocoloPdf(), 403);
+
+        $muestra = CotioInstancia::with([
+            'muestra.leyNormativa',
+            'responsablesMuestreo',
+            'cotizacion.matriz',
+            'cotizacion.cliente',
+            'cotizacion.sucursal',
+        ])
+            ->where('cotio_numcoti', $cotio_numcoti)
+            ->where('cotio_item', $cotio_item)
+            ->where('instance_number', $instance_number)
+            ->where('cotio_subitem', 0)
+            ->where('enable_inform', true)
+            ->firstOrFail();
+
+        $analisis = CotioInstancia::with([
+            'tarea.leyNormativa',
+            'responsablesAnalisis',
+            'herramientasLab'
+        ])
+        ->where('cotio_numcoti', $cotio_numcoti)
+        ->where('cotio_item', $cotio_item)
+        ->where('instance_number', $instance_number)
+        ->where('cotio_subitem', '>', 0)
+        ->orderBy('cotio_subitem')
+        ->get();
+
+        $cab = ProtocoloInformePdfCabecera::forPdf($muestra);
+
+        return view('informes.protocolo-pdf-edit', compact('muestra', 'analisis', 'cab'));
+    }
+
+    public function actualizarProtocoloPdf(Request $request, $cotio_numcoti, $cotio_item, $instance_number)
+    {
+        abort_unless(userCanEditInformeProtocoloPdf(), 403);
+
+        $muestra = CotioInstancia::where('cotio_numcoti', $cotio_numcoti)
+            ->where('cotio_item', $cotio_item)
+            ->where('instance_number', $instance_number)
+            ->where('cotio_subitem', 0)
+            ->where('enable_inform', true)
+            ->firstOrFail();
+
+        $rules = [
+            'observaciones_ot' => 'nullable|string',
+            'analisis' => 'nullable|array',
+            'analisis.*.id' => 'required|integer',
+            'analisis.*.resultado_final' => 'nullable|string',
+            'analisis.*.observacion_resultado' => 'nullable|string',
+        ];
+        foreach (ProtocoloInformePdfCabecera::KEYS as $k) {
+            $rules[$k] = 'nullable|string|max:4000';
+        }
+        $validated = $request->validate($rules);
+
+        DB::transaction(function() use ($muestra, $validated, $request) {
+            // 1. Actualizar campos de cabecera en JSON
+            $defaults = ProtocoloInformePdfCabecera::defaults($muestra);
+            $json = [];
+            foreach (ProtocoloInformePdfCabecera::KEYS as $k) {
+                $reqVal = array_key_exists($k, $validated) ? trim((string) $validated[$k]) : '';
+                $defVal = trim((string) ($defaults[$k] ?? ''));
+                if ($reqVal !== $defVal) {
+                    $json[$k] = $reqVal;
+                }
+            }
+            $muestra->protocolo_informe_json = count($json) > 0 ? $json : null;
+
+            // 2. Actualizar observaciones de la muestra
+            if ($request->has('observaciones_ot')) {
+                $muestra->observaciones_ot = $request->input('observaciones_ot');
+            }
+            $muestra->save();
+
+            // 3. Actualizar resultados de análisis
+            if ($request->has('analisis')) {
+                foreach ($request->input('analisis') as $analisisData) {
+                    $analisis = CotioInstancia::where('id', $analisisData['id'])
+                        ->where('cotio_numcoti', $muestra->cotio_numcoti)
+                        ->where('cotio_item', $muestra->cotio_item)
+                        ->where('instance_number', $muestra->instance_number)
+                        ->where('cotio_subitem', '>', 0)
+                        ->first();
+                    
+                    if ($analisis) {
+                        $analisis->update([
+                            'resultado_final' => $analisisData['resultado_final'] ?? null,
+                            'observacion_resultado' => $analisisData['observacion_resultado'] ?? null,
+                        ]);
+                    }
+                }
+            }
+        });
+
+        return redirect()
+            ->route('informes.protocolo-pdf.edit', [
+                'cotio_numcoti' => $cotio_numcoti,
+                'cotio_item' => $cotio_item,
+                'instance_number' => $instance_number,
+            ])
+            ->with('success', 'Informe actualizado. Los cambios se verán al descargar el PDF.');
+    }
+
+    public function restaurarProtocoloPdf($cotio_numcoti, $cotio_item, $instance_number)
+    {
+        abort_unless(userCanEditInformeProtocoloPdf(), 403);
+
+        $muestra = CotioInstancia::where('cotio_numcoti', $cotio_numcoti)
+            ->where('cotio_item', $cotio_item)
+            ->where('instance_number', $instance_number)
+            ->where('cotio_subitem', 0)
+            ->where('enable_inform', true)
+            ->firstOrFail();
+
+        $muestra->protocolo_informe_json = null;
+        $muestra->save();
+
+        return redirect()
+            ->route('informes.protocolo-pdf.edit', [
+                'cotio_numcoti' => $cotio_numcoti,
+                'cotio_item' => $cotio_item,
+                'instance_number' => $instance_number,
+            ])
+            ->with('success', 'Se eliminaron los textos personalizados; el PDF usará los datos del sistema.');
     }
 
 

@@ -21,6 +21,8 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Str;
 use App\Models\SimpleNotification;
+use App\Support\CotizacionClienteEtiqueta;
+use App\Support\LeyNormativaPresentacion;
 
 class OrdenController extends Controller
 {
@@ -37,34 +39,48 @@ class OrdenController extends Controller
         $startOfWeek = $request->get('week') ? Carbon::parse($request->get('week'))->startOfWeek() : now()->startOfWeek();
         $endOfWeek = $startOfWeek->copy()->endOfWeek();
     
-        // Vista de Calendario (mantiene lógica de instancias con enable_ot)
+        // Vista de Calendario (instancias en laboratorio, por muestra)
         if ($viewType === 'calendario') {
             $query = CotioInstancia::query()
-                ->where('enable_ot', true)
-                ->with(['cotizacion', 'responsablesAnalisis'])
-                // Filtro: solo cotizaciones SIN cadena_custodia y SIN trabajo técnico.
-                // EXCEPCIÓN: si la cotización es de muestreo pero ya tiene OTs (enable_ot=true),
-                // igual la incluimos porque pasó a laboratorio.
-                ->whereHas('cotizacion', function($q) {
-                    $q->where(function($subQ) {
-                        $subQ->where('coti_cadena_custodia', false)
-                             ->orWhereNull('coti_cadena_custodia');
-                    })
-                    ->where(function($subQ) {
-                        $subQ->where('coti_muestreo', false)
-                             ->orWhereNull('coti_muestreo')
-                             ->orWhereHas('instancias', function($instQ) {
-                                 $instQ->where('cotio_subitem', 0)
-                                       ->where('enable_ot', true);
-                             });
+                ->where('cotio_subitem', 0)
+                ->whereHas('tarea', function($q) {
+                    $q->whereNull('cotio_canal_especial');
+                })
+                ->with(['cotizacion.cliente', 'cotizacion.sucursal', 'responsablesAnalisis', 'tarea'])
+                // Alinear con lista/documento: directo a lab (sin muestreo) O ya en circuito lab (enable_ot)
+                ->where(function ($outer) {
+                    $outer->whereHas('tarea', function ($q) {
+                        $q->where('cotio_subitem', 0)
+                            ->where(function ($subQ) {
+                                $subQ->where('lleva_muestreo', false)
+                                    ->orWhereNull('lleva_muestreo');
+                            });
+                    })->orWhere(function ($q2) {
+                        $q2->where('enable_ot', true)
+                            ->whereHas('tarea', function ($tq) {
+                                $tq->where('cotio_subitem', 0);
+                            });
                     });
                 })
-                ->whereDoesntHave('cotizacion.tareas', function($q) {
-                    $q->where('cotio_subitem', 0)
-                      ->where(function($subQ) {
-                          $subQ->whereRaw("UPPER(TRIM(cotio_descripcion)) LIKE '%TRABAJO TECNICO%'")
-                               ->orWhereRaw("UPPER(TRIM(cotio_descripcion)) LIKE '%VISITA TECNICA%'");
-                      });
+                // Misma regla que lista/documento sobre la cotización: si hay muestra con enable_ot,
+                // se muestra aunque otras líneas lleven req_cadena_custodia; si no, aplican exclusiones.
+                ->whereHas('cotizacion', function ($q) {
+                    $q->where(function ($inner) {
+                        $inner->whereHas('instancias', function ($subQ) {
+                            $subQ->where('cotio_subitem', 0)->where('enable_ot', true);
+                        })->orWhere(function ($q2) {
+                            $q2->whereDoesntHave('tareas', function ($subQ) {
+                                $subQ->where('req_cadena_custodia', true);
+                            })
+                                ->whereDoesntHave('tareas', function ($q3) {
+                                    $q3->where('cotio_subitem', 0)
+                                        ->where(function ($subQ2) {
+                                            $subQ2->whereRaw("UPPER(TRIM(cotio_descripcion)) LIKE '%TRABAJO TECNICO%'")
+                                                ->orWhereRaw("UPPER(TRIM(cotio_descripcion)) LIKE '%VISITA TECNICA%'");
+                                        });
+                                });
+                        });
+                    });
                 });
     
             // Aplicar filtros
@@ -116,23 +132,39 @@ class OrdenController extends Controller
                 });
             }
     
-            // Filtros por rango de fechas
-            if ($request->has('fecha_inicio_ot') && !empty($request->fecha_inicio_ot)) {
-                $query->whereDate('fecha_inicio_ot', '>=', $request->fecha_inicio_ot);
-            }
-    
-            if ($request->has('fecha_fin_ot') && !empty($request->fecha_fin_ot)) {
-                $query->whereDate('fecha_fin_ot', '<=', $request->fecha_fin_ot);
+            // Filtros Desde/Hasta: por fecha de aprobación de la cotización (coti_fechaaprobado).
+            // Sin esos parámetros: mes de navegación por fecha de inicio OT **o** por fecha de aprobación
+            // (muchas muestras directo a lab aún no tienen fecha_inicio_ot y quedaban fuera del calendario).
+            $filtroFechaAprobacion = $request->filled('fecha_inicio_ot') || $request->filled('fecha_fin_ot');
+            if ($filtroFechaAprobacion) {
+                $query->whereHas('cotizacion', function ($q) use ($request) {
+                    if ($request->filled('fecha_inicio_ot')) {
+                        $q->whereDate('coti_fechaaprobado', '>=', $request->fecha_inicio_ot);
+                    }
+                    if ($request->filled('fecha_fin_ot')) {
+                        $q->whereDate('coti_fechaaprobado', '<=', $request->fecha_fin_ot);
+                    }
+                });
             } else {
-                // Mostrar por defecto el mes actual si no hay fecha_fin
-                $query->whereBetween('fecha_inicio_ot', [
-                    $currentMonth->copy()->startOfMonth(),
-                    $currentMonth->copy()->endOfMonth()
-                ]);
+                $monthStart = $currentMonth->copy()->startOfMonth();
+                $monthEnd = $currentMonth->copy()->endOfMonth();
+                $monthStartDate = $monthStart->toDateString();
+                $monthEndDate = $monthEnd->toDateString();
+                $query->where(function ($q) use ($monthStart, $monthEnd, $monthStartDate, $monthEndDate) {
+                    $q->whereBetween('fecha_inicio_ot', [$monthStart, $monthEnd])
+                        ->orWhereHas('cotizacion', function ($cq) use ($monthStartDate, $monthEndDate) {
+                            $cq->whereDate('coti_fechaaprobado', '>=', $monthStartDate)
+                                ->whereDate('coti_fechaaprobado', '<=', $monthEndDate);
+                        });
+                });
             }
     
             // Obtener resultados ordenados por fecha
             $instancias = $query->orderBy('fecha_inicio_ot', 'asc')->get();
+
+            CotizacionClienteEtiqueta::precargarEmpresasRelacionadas(
+                $instancias->map->cotizacion->unique(fn ($c) => $c->coti_num)->values()
+            );
     
             // Verificar suspensiones
             $instancias->each(function ($instancia) {
@@ -161,11 +193,24 @@ class OrdenController extends Controller
             $events = collect();
             foreach ($tareasCalendario as $date => $instancias) {
                 foreach ($instancias as $instancia) {
+                    $start = $instancia->fecha_inicio_ot;
+                    $sintetizoInicio = empty($start);
+                    if ($sintetizoInicio) {
+                        $fa = $instancia->cotizacion?->coti_fechaaprobado;
+                        $start = $fa
+                            ? Carbon::parse($fa)->setTime(8, 0, 0)
+                            : Carbon::now()->setTime(8, 0, 0);
+                    }
+                    $end = $instancia->fecha_fin_ot;
+                    if ($sintetizoInicio && empty($end)) {
+                        $end = Carbon::parse($start)->copy()->addHour();
+                    }
+
                     $events->push([
-                        'title' => $instancia->cotizacion->coti_empresa . ' - ' . $instancia->cotio_numcoti,
-                        'start' => $instancia->fecha_inicio_ot,
+                        'title' => CotizacionClienteEtiqueta::paraLista($instancia->cotizacion) . ' - ' . $instancia->cotio_numcoti,
+                        'start' => $start,
                         'cotio_subitem' => $instancia->cotio_subitem,
-                        'end' => $instancia->fecha_fin_ot ?? null,
+                        'end' => $end,
                         'url' => route('categoria.verOrden', [
                             'cotizacion' => $instancia->cotio_numcoti,
                             'item' => $instancia->cotio_item,
@@ -173,7 +218,7 @@ class OrdenController extends Controller
                             'instance' => $instancia->instance_number
                         ]),
                         'extendedProps' => [
-                            'empresa' => $instancia->cotizacion->coti_empresa,
+                            'empresa' => CotizacionClienteEtiqueta::paraLista($instancia->cotizacion),
                             'descripcion' => $instancia->cotizacion->coti_descripcion ?? '',
                             'estado' => $instancia->cotio_estado_analisis,
                             'analisis_count' => $instancia->responsablesAnalisis->count() ?? 0,
@@ -201,28 +246,44 @@ class OrdenController extends Controller
     
         // Vista de Lista/Documento - Empezar desde Coti para incluir cotizaciones sin instancias
         $baseQuery = Coti::query()
-            ->with(['matriz', 'tareas', 'instancias'])
-            // Filtro: solo cotizaciones SIN cadena_custodia y SIN trabajo técnico.
-            // EXCEPCIÓN: si la cotización es de muestreo pero ya tiene OTs (enable_ot=true),
-            // igual la incluimos porque pasó a laboratorio.
-            ->where(function($q) {
-                $q->where('coti_cadena_custodia', false)
-                  ->orWhereNull('coti_cadena_custodia');
+            ->with(['matriz', 'tareas', 'instancias', 'cliente', 'sucursal'])
+            // Prioridad: si una cotización tiene al menos UNA instancia de muestra (cotio_subitem = 0)
+            // con enable_ot=true, se muestra aunque existan otras tareas con req_cadena_custodia o
+            // trabajos/visitas técnicas.
+            // Si NO tiene enable_ot=true, entonces se aplican las exclusiones históricas.
+            ->where(function ($q) {
+                $q->whereHas('instancias', function ($subQ) {
+                    $subQ->where('cotio_subitem', 0)->where('enable_ot', true);
+                })->orWhere(function ($q2) {
+                    $q2->whereDoesntHave('tareas', function ($subQ) {
+                        $subQ->where('req_cadena_custodia', true);
+                    })
+                    ->whereDoesntHave('tareas', function ($q3) {
+                        $q3->where('cotio_subitem', 0)
+                            ->where(function ($subQ2) {
+                                $subQ2->whereRaw("UPPER(TRIM(cotio_descripcion)) LIKE '%TRABAJO TECNICO%'")
+                                      ->orWhereRaw("UPPER(TRIM(cotio_descripcion)) LIKE '%VISITA TECNICA%'");
+                            });
+                    });
+                });
             })
             ->where(function($q) {
-                $q->where('coti_muestreo', false)
-                  ->orWhereNull('coti_muestreo')
-                  ->orWhereHas('instancias', function($subQ) {
-                      $subQ->where('cotio_subitem', 0)
-                           ->where('enable_ot', true);
-                  });
+                // Al menos una muestra sin muestreo (va directo a lab)
+                // O tiene instancias que ya pasaron muestreo (enable_ot)
+                $q->whereHas('tareas', function($subQ) {
+                    $subQ->where('cotio_subitem', 0)
+                         ->where(function($subQ2) {
+                             $subQ2->where('lleva_muestreo', false)
+                                   ->orWhereNull('lleva_muestreo');
+                         });
+                })
+                ->orWhereHas('instancias', function($subQ) {
+                    $subQ->where('cotio_subitem', 0)->where('enable_ot', true);
+                });
             })
+            // Excluir canales especiales (consultoria, asp, clarke_fire)
             ->whereDoesntHave('tareas', function($q) {
-                $q->where('cotio_subitem', 0)
-                  ->where(function($subQ) {
-                      $subQ->whereRaw("UPPER(TRIM(cotio_descripcion)) LIKE '%TRABAJO TECNICO%'")
-                           ->orWhereRaw("UPPER(TRIM(cotio_descripcion)) LIKE '%VISITA TECNICA%'");
-                  });
+                $q->whereNotNull('cotio_canal_especial');
             });
     
         // Filtro de búsqueda
@@ -246,6 +307,14 @@ class OrdenController extends Controller
         // Filtro por matriz
         if ($request->has('matriz') && !empty($request->matriz)) {
             $baseQuery->where('coti_codigomatriz', $request->matriz);
+        }
+
+        // Filtro por fecha de aprobación (mismos campos Desde/Hasta del formulario)
+        if ($request->filled('fecha_inicio_ot')) {
+            $baseQuery->whereDate('coti_fechaaprobado', '>=', $request->fecha_inicio_ot);
+        }
+        if ($request->filled('fecha_fin_ot')) {
+            $baseQuery->whereDate('coti_fechaaprobado', '<=', $request->fecha_fin_ot);
         }
     
         // Filtro por estado
@@ -274,37 +343,69 @@ class OrdenController extends Controller
         // Paginación
         $pagination = $baseQuery->orderBy('coti_num', 'desc')
             ->paginate($viewType === 'documento' ? 100 : 100);
+
+        CotizacionClienteEtiqueta::precargarEmpresasRelacionadas($pagination->getCollection());
     
         // Procesar las cotizaciones paginadas
         $ordenes = collect();
         foreach ($pagination as $coti) {
             $instancias = $coti->instancias->where('cotio_subitem', 0);
-            $instanciasConOt = $instancias->where('enable_ot', true);
-            
-            $total = $instanciasConOt->count();
-            $completadas = $instanciasConOt->where('cotio_estado_analisis', 'analizado')->count();
-            $enProceso = $instanciasConOt->where('cotio_estado_analisis', 'en revision analisis')->count();
-            $coordinadas = $instanciasConOt->where('cotio_estado_analisis', 'coordinado analisis')->count();
+            $tareasMuestra = $coti->tareas->where('cotio_subitem', 0);
+
+            // Instancias relevantes para lab: sin muestreo (lleva_muestreo=false) o con enable_ot (pasaron muestreo)
+            $muestrasRelevantes = collect();
+            foreach ($tareasMuestra as $tarea) {
+                if ($tarea->lleva_muestreo === false) {
+                    $cantidad = max(1, (int)$tarea->cotio_cantidad);
+                    for ($i = 1; $i <= $cantidad; $i++) {
+                        $inst = $instancias->first(fn($x) => $x->cotio_item == $tarea->cotio_item && $x->instance_number == $i);
+                        if ($inst) {
+                            $muestrasRelevantes->push($inst);
+                        } else {
+                            $muestrasRelevantes->push(new CotioInstancia([
+                                'cotio_numcoti' => $coti->coti_num,
+                                'cotio_item' => $tarea->cotio_item,
+                                'cotio_subitem' => 0,
+                                'instance_number' => $i,
+                                'cotio_descripcion' => $tarea->cotio_descripcion,
+                                'enable_ot' => false,
+                                'cotio_estado_analisis' => null,
+                            ]));
+                        }
+                    }
+                } else {
+                    foreach ($instancias->where('cotio_item', $tarea->cotio_item)->where('enable_ot', true) as $inst) {
+                        $muestrasRelevantes->push($inst);
+                    }
+                }
+            }
+
+            $total = $muestrasRelevantes->count();
+            $completadas = $muestrasRelevantes->where('cotio_estado_analisis', 'analizado')->count();
+            $enProceso = $muestrasRelevantes->where('cotio_estado_analisis', 'en revision analisis')->count();
+            $coordinadas = $muestrasRelevantes->where('cotio_estado_analisis', 'coordinado analisis')->count();
             $porcentaje = $total > 0 ? round(($completadas / $total) * 100) : 0;
-            
-            $fecha_orden = $instancias->min('fecha_inicio_ot') ?? $instancias->min('fecha_muestreo');
-            
-            $has_priority = $instancias->contains(function ($instancia) {
+
+            $fecha_orden = $muestrasRelevantes->min('fecha_inicio_ot') ?? $muestrasRelevantes->min('fecha_muestreo');
+
+            $has_priority = $muestrasRelevantes->contains(function ($instancia) {
                 return $instancia->es_priori && strtolower(trim($instancia->cotio_estado_analisis ?? '')) != 'analizado';
             });
-            
-            $has_suspension = $instancias->contains(function ($instancia) {
+
+            $has_suspension = $muestrasRelevantes->contains(function ($instancia) {
                 return strtolower(trim($instancia->cotio_estado_analisis ?? '')) === 'suspension';
             });
-            
+
             // Determinar estado predominante
             $estadoPredominante = 'pendiente_coordinar';
-            if ($instanciasConOt->isNotEmpty()) {
-                $estadoPredominante = $this->determinarEstadoPredominanteConActiveOt($instanciasConOt);
+            $conEstado = $muestrasRelevantes->filter(fn($i) => !empty(trim($i->cotio_estado_analisis ?? '')));
+            if ($conEstado->isNotEmpty()) {
+                $estadoPredominante = $this->determinarEstadoPredominanteConActiveOt($conEstado);
             }
-            
+
             $ordenes[$coti->coti_num] = [
                 'instancias' => $coti->instancias,
+                'muestras_relevantes' => $muestrasRelevantes,
                 'cotizacion' => $coti,
                 'total' => $total,
                 'completadas' => $completadas,
@@ -566,6 +667,9 @@ public function showOrdenes(Request $request)
     ])
     ->where('cotio_subitem', 0)
     ->where('active_ot', true)
+    ->whereHas('tarea', function($q) {
+        $q->whereNull('cotio_canal_especial');
+    })
     ->orderBy('fecha_inicio_ot', 'desc')
     ->orderByRaw("CASE WHEN cotio_estado_analisis = 'coordinado' THEN 0 ELSE 1 END");
 
@@ -578,6 +682,9 @@ public function showOrdenes(Request $request)
     ])
     ->where('cotio_subitem', '>', 0)
     ->where('active_ot', true)
+    ->whereHas('tarea', function($q) {
+        $q->whereNull('cotio_canal_especial');
+    })
     ->orderBy('fecha_inicio_ot', 'desc')
     ->orderByRaw("CASE WHEN cotio_estado_analisis = 'coordinado' THEN 0 ELSE 1 END");
 
@@ -913,7 +1020,8 @@ public function showOrdenes(Request $request)
                     'descripcion' => $descripcion,
                     'empresa' => $empresa,
                     'estado' => $estado,
-                    'priority' => $muestra->es_priori
+                    'priority' => $muestra->es_priori,
+                    'otn' => $muestra->otn,
                 ]
             ];
         });
@@ -926,7 +1034,12 @@ public function showOrdenes(Request $request)
     $cotizaciones = Coti::whereIn('coti_num', $cotizacionesIds)->get()->keyBy('coti_num');
 
     $userCode = Auth::user()->usu_codigo;
-    return view('mis-ordenes.index', [
+
+    $view = $request->boolean('print')
+        ? 'mis-ordenes.print'
+        : 'mis-ordenes.index';
+
+    return view($view, [
         'ordenesAgrupadas' => $ordenesAgrupadas,
         'cotizaciones' => $cotizaciones,
         'tareasPaginadas' => $tareasPaginadas,
@@ -946,11 +1059,25 @@ public function showDetalle($ordenId)
     $cotizacion = Coti::findOrFail($ordenId);
     $inventario = InventarioLab::all();
 
-    // Obtener todas las categorías (muestras) de la cotización desde Cotio
-    $categoriasHabilitadas = $cotizacion->tareas()
+    // Obtener categorías (muestras) que van a lab: sin muestreo (lleva_muestreo=false)
+    // o que ya pasaron muestreo (tienen instancia con enable_ot)
+    $todasLasCategorias = $cotizacion->tareas()
         ->where('cotio_subitem', 0)
         ->orderBy('cotio_item')
         ->get();
+
+    $categoriasHabilitadas = $todasLasCategorias->filter(function($cat) use ($cotizacion) {
+        // Sin muestreo (explícitamente false): va directo a lab
+        if ($cat->lleva_muestreo === false) {
+            return true;
+        }
+        // Con muestreo (true o null): incluir solo si ya tiene instancia con enable_ot (pasó muestreo)
+        return CotioInstancia::where('cotio_numcoti', $cotizacion->coti_num)
+            ->where('cotio_item', $cat->cotio_item)
+            ->where('cotio_subitem', 0)
+            ->where('enable_ot', true)
+            ->exists();
+    })->values();
 
     $categoriasIds = $categoriasHabilitadas->pluck('cotio_item')->toArray();
 
@@ -977,7 +1104,7 @@ public function showDetalle($ordenId)
         $item = $categoria->cotio_item;
         $cantidad = max(1, (int)$categoria->cotio_cantidad); // Mínimo 1 instancia
 
-        // Obtener instancias existentes (con enable_ot = true O sin enable_ot)
+        // Obtener instancias existentes
         $instanciasExistentes = CotioInstancia::with('herramientas', 'responsablesAnalisis')
             ->where([
                 'cotio_numcoti' => $cotizacion->coti_num,
@@ -988,11 +1115,16 @@ public function showDetalle($ordenId)
             ->get()
             ->keyBy('instance_number');
 
+        // Qué instancias mostrar: si va directo a lab (lleva_muestreo=false), todas (1..cantidad);
+        // si pasó por muestreo, solo las que tienen enable_ot
+        $numerosInstanciaAMostrar = $categoria->lleva_muestreo === false
+            ? range(1, $cantidad)
+            : $instanciasExistentes->where('enable_ot', true)->keys()->sort()->values()->all();
+
         $tareasDeCategoria = $tareas->where('cotio_item', $item);
         $instanciasConAnalisis = collect();
 
-        // Crear instancias para cada número de instancia según cotio_cantidad
-        for ($instanceNumber = 1; $instanceNumber <= $cantidad; $instanceNumber++) {
+        foreach ($numerosInstanciaAMostrar as $instanceNumber) {
             // Verificar si existe una instancia real
             $instanciaMuestra = $instanciasExistentes->get($instanceNumber);
 
@@ -1223,6 +1355,10 @@ public function verOrden($cotizacion, $item, $instance = null)
 
             // Evitar propiedades dinámicas: exponer como relación en memoria
             $instancia->setRelation('herramientasLab', $herramientasAnalisis);
+            $instancia->setAttribute(
+                'puede_editar_fechas_informe',
+                $this->userCanEditAnalistaFechasInforme(Auth::user(), $instancia)
+            );
             $tarea->instancia = $instancia;
             return $tarea;
         }
@@ -1522,6 +1658,7 @@ public function showOrdenesAll($cotio_numcoti, $cotio_item, $cotio_subitem = 0, 
         $instanciaMuestra = CotioInstancia::with([
             'muestra.vehiculo',
             'muestra.cotizacion',
+            'muestra.leyNormativa.variables',
             'valoresVariables' => function ($query) {
                 $query->select('id', 'cotio_instancia_id', 'variable', 'valor')
                       ->orderBy('variable');
@@ -1550,7 +1687,7 @@ public function showOrdenesAll($cotio_numcoti, $cotio_item, $cotio_subitem = 0, 
                 'analisis' => collect(),
                 'instanceNumber' => $instance,
                 'allHerramientas' => $allHerramientas,
-                'error' => 'No se encontró la muestra principal.'
+                'error' => 'No se encontró la muestra principal.',
             ]);
         }
 
@@ -1584,6 +1721,13 @@ public function showOrdenesAll($cotio_numcoti, $cotio_item, $cotio_subitem = 0, 
 
         $analisis = $analisisQuery->orderBy('cotio_subitem')->get();
 
+        foreach ($analisis as $itemAnalisis) {
+            $itemAnalisis->setAttribute(
+                'puede_editar_fechas_informe',
+                $this->userCanEditAnalistaFechasInforme($usuario, $itemAnalisis)
+            );
+        }
+
         Log::debug('Análisis encontrados', [
             'count' => $analisis->count(),
             'instancia_ids' => $analisis->pluck('id')->toArray(),
@@ -1596,7 +1740,7 @@ public function showOrdenesAll($cotio_numcoti, $cotio_item, $cotio_subitem = 0, 
             'instancia' => $instanciaMuestra,
             'analisis' => $analisis,
             'instanceNumber' => $instance,
-            'allHerramientas' => $allHerramientas
+            'allHerramientas' => $allHerramientas,
         ]);
 
     } catch (\Exception $e) {
@@ -1614,7 +1758,7 @@ public function showOrdenesAll($cotio_numcoti, $cotio_item, $cotio_subitem = 0, 
             'analisis' => collect(),
             'instanceNumber' => $instance,
             'allHerramientas' => $allHerramientas,
-            'error' => 'Error al cargar la muestra: ' . $e->getMessage()
+            'error' => 'Error al cargar la muestra: ' . $e->getMessage(),
         ]);
     }
 }
@@ -1653,6 +1797,68 @@ public function updateHerramientas(Request $request, $instanciaId)
         'success' => true,
         'message' => 'Estado actualizado correctamente'
     ]);
+}
+
+/**
+ * Puede editar fechas manuales de análisis (informe) para una instancia de ensayo (cotio_subitem > 0):
+ * admin, coordinador de lab, roles con "gerente"/"jefe", o analista asignado a ese ensayo.
+ */
+private function userCanEditAnalistaFechasInforme(User $user, CotioInstancia $instanciaAnalisis): bool
+{
+    if ((int) $instanciaAnalisis->cotio_subitem <= 0) {
+        return false;
+    }
+    if ((int) ($user->usu_nivel ?? 0) >= 900) {
+        return true;
+    }
+    if ($user->hasAnyRole(['coordinador_lab'])) {
+        return true;
+    }
+    foreach ($user->all_roles as $rol) {
+        $lr = strtolower((string) $rol);
+        if (str_contains($lr, 'gerente') || str_contains($lr, 'jefe')) {
+            return true;
+        }
+    }
+    $codigo = trim((string) $user->usu_codigo);
+
+    return DB::table('instancia_responsable_analisis')
+        ->where('cotio_instancia_id', $instanciaAnalisis->id)
+        ->whereRaw('TRIM(usu_codigo) = ?', [$codigo])
+        ->exists();
+}
+
+public function updateAnalistaFechasAnalisis(Request $request, CotioInstancia $instancia)
+{
+    if ((int) $instancia->cotio_subitem <= 0) {
+        abort(404);
+    }
+
+    $user = Auth::user();
+    if (! $this->userCanEditAnalistaFechasInforme($user, $instancia)) {
+        abort(403, 'No autorizado para editar estas fechas.');
+    }
+
+    $inicio = $request->input('analista_fecha_inicio');
+    $fin = $request->input('analista_fecha_fin');
+    $request->merge([
+        'analista_fecha_inicio' => ($inicio !== null && $inicio !== '') ? $inicio : null,
+        'analista_fecha_fin' => ($fin !== null && $fin !== '') ? $fin : null,
+    ]);
+
+    $validated = $request->validate([
+        'analista_fecha_inicio' => 'nullable|date',
+        'analista_fecha_fin' => 'nullable|date|after_or_equal:analista_fecha_inicio',
+    ]);
+
+    $instancia->update([
+        'analista_fecha_inicio' => $validated['analista_fecha_inicio'] ?? null,
+        'analista_fecha_fin' => $validated['analista_fecha_fin'] ?? null,
+    ]);
+
+    return redirect()
+        ->back()
+        ->with('success', 'Fechas de análisis para el informe guardadas correctamente.');
 }
 
 
@@ -1918,9 +2124,11 @@ public function asignacionMasiva(Request $request, $ordenId)
                 $muestra->cotio_estado_analisis = 'coordinado analisis';
                 $muestra->coordinador_codigo_lab = Auth::user()->usu_codigo;
                 
-                // Generar OTN si no existe
+                // Generar OTN si no existe y no es canal especial
                 if (!$muestra->otn) {
-                    $muestra->otn = CotioInstancia::generarNumeroOT();
+                    if ($muestra->debeLlevarOTN()) {
+                        $muestra->otn = CotioInstancia::generarNumeroOT();
+                    }
                 }
                 
                 // Asignar fechas
@@ -2004,7 +2212,9 @@ public function asignacionMasiva(Request $request, $ordenId)
                 $muestra->coordinador_codigo_lab = Auth::user()->usu_codigo;
                 
                 if (!$muestra->otn) {
-                    $muestra->otn = CotioInstancia::generarNumeroOT();
+                    if ($muestra->debeLlevarOTN()) {
+                        $muestra->otn = CotioInstancia::generarNumeroOT();
+                    }
                 }
                 
                 if (!empty($validated['fecha_inicio_ot'])) {
@@ -2103,7 +2313,9 @@ public function asignacionMasiva(Request $request, $ordenId)
                             $gemelo->enable_ot = true;
                             $gemelo->cotio_estado_analisis = 'coordinado analisis';
                             if (!$gemelo->otn) {
-                                $gemelo->otn = CotioInstancia::generarNumeroOT();
+                                if ($gemelo->debeLlevarOTN()) {
+                                    $gemelo->otn = CotioInstancia::generarNumeroOT();
+                                }
                             }
                             if (!empty($validated['fecha_inicio_ot'])) {
                                 $gemelo->fecha_inicio_ot = $validated['fecha_inicio_ot'];
@@ -2561,6 +2773,7 @@ public function verInformePreliminar($instancia_id)
     try {
         $instancia = CotioInstancia::with([
             'cotizacion.matriz',
+            'muestra.leyNormativa.variables',
             'valoresVariables' => function($query) {
                 $query->orderBy('variable');
             },
@@ -2569,11 +2782,12 @@ public function verInformePreliminar($instancia_id)
                 $query->select('inventario_lab.*', 'cotio_inventario_lab.cantidad',
                     'cotio_inventario_lab.observaciones as pivot_observaciones');
             },
-            'vehiculo'
+            'vehiculo',
         ])->findOrFail($instancia_id);
 
-        // Obtener todos los análisis de esta muestra (cotio_subitem > 0)
-        $analisis = CotioInstancia::with(['responsablesAnalisis'])
+        // Obtener todos los análisis de esta muestra (cotio_subitem > 0), con línea Cotio y ley
+        $analisis = CotioInstancia::query()
+            ->with(['tarea.leyNormativa'])
             ->where('cotio_numcoti', $instancia->cotio_numcoti)
             ->where('cotio_item', $instancia->cotio_item)
             ->where('instance_number', $instancia->instance_number)
@@ -2581,13 +2795,8 @@ public function verInformePreliminar($instancia_id)
             ->orderBy('cotio_subitem')
             ->get();
 
-        // Obtener las descripciones de los análisis desde la tabla cotio
         foreach ($analisis as $analisisItem) {
-            $cotio = \App\Models\Cotio::where('cotio_numcoti', $analisisItem->cotio_numcoti)
-                ->where('cotio_item', $analisisItem->cotio_item)
-                ->where('cotio_subitem', $analisisItem->cotio_subitem)
-                ->first();
-            
+            $cotio = $analisisItem->tarea;
             $analisisItem->cotio_descripcion = $cotio ? $cotio->cotio_descripcion : 'Análisis #' . $analisisItem->cotio_subitem;
         }
 
@@ -2660,275 +2869,396 @@ public function aprobarInforme($instancia_id)
     }
 }
 
-/**
- * Generar contenido HTML del informe
- */
-private function generarContenidoInforme($instancia, $analisis)
-{
-    $cotizacion = $instancia->cotizacion;
-    $matriz = $cotizacion->matriz;
-    
-    $html = '<div class="informe-preliminar">';
-    
-    // Encabezado del informe
-    $html .= '<div class="mb-4">';
-    $html .= '<h4 class="text-primary mb-3">📋 Informe de Análisis</h4>';
-    $html .= '<div class="row">';
-    $html .= '<div class="col-md-6">';
-    $html .= '<p><strong>Cotización:</strong> ' . $cotizacion->coti_num . '</p>';
-    $html .= '<p><strong>Empresa:</strong> ' . $cotizacion->coti_empresa . '</p>';
-    $html .= '<p><strong>Establecimiento:</strong> ' . $cotizacion->coti_establecimiento . '</p>';
-    $html .= '</div>';
-    $html .= '<div class="col-md-6">';
-    $html .= '<p><strong>Matriz:</strong> ' . ($matriz ? $matriz->matriz_descripcion : 'N/A') . '</p>';
-    $fechaMuestreoFormateada = 'N/A';
-    if ($instancia->fecha_muestreo) {
-        try {
-            $fechaMuestreo = is_string($instancia->fecha_muestreo) ? \Carbon\Carbon::parse($instancia->fecha_muestreo) : $instancia->fecha_muestreo;
-            $fechaMuestreoFormateada = $fechaMuestreo->format('d/m/Y');
-        } catch (\Exception $e) {
-            $fechaMuestreoFormateada = 'Fecha inválida';
-        }
-    }
-    $html .= '<p><strong>Fecha de Muestreo:</strong> ' . $fechaMuestreoFormateada . '</p>';
-    $html .= '<p><strong>O.T.N:</strong> #' . $instancia->otn ?? 'N/A' . '</p>';
-    $html .= '</div>';
-    $html .= '</div>';
-    $html .= '</div>';
-
-    // Variables de medición
-    if ($instancia->valoresVariables && $instancia->valoresVariables->count() > 0) {
-        $html .= '<div class="mb-4">';
-        $html .= '<h5 class="text-secondary mb-3">🔬 Variables de Medición</h5>';
-        $html .= '<table class="table table-bordered table-sm">';
-        $html .= '<thead class="table-light"><tr><th>Variable</th><th>Valor</th></tr></thead>';
-        $html .= '<tbody>';
-        foreach ($instancia->valoresVariables as $variable) {
-            $html .= '<tr>';
-            $html .= '<td>' . htmlspecialchars($variable->variable) . '</td>';
-            $html .= '<td>' . htmlspecialchars($variable->valor) . '</td>';
-            $html .= '</tr>';
-        }
-        $html .= '</tbody>';
-        $html .= '</table>';
-        $html .= '</div>';
+    /**
+     * Texto HTML (escapado) de legislación / normativa según fila Cotio y relación leyes_normativas.
+     */
+    private function textoLeyNormativaParaInforme(?Cotio $lineaCotio): string
+    {
+        return LeyNormativaPresentacion::fragmentoHtml($lineaCotio);
     }
 
-    // Análisis de la muestra
-    if ($analisis && $analisis->count() > 0) {
-        $html .= '<div class="mb-4">';
-        $html .= '<h5 class="text-secondary mb-3">📊 Análisis de la Muestra</h5>';
+    /**
+     * Texto de «fecha de análisis» alineado al informe PDF: fechas manuales del ensayo o respaldo por carga de resultado.
+     */
+    private function textoFechaAnalisisParaInforme(CotioInstancia $tarea): string
+    {
+        $mFi = $tarea->analista_fecha_inicio ?? null;
+        $mFf = $tarea->analista_fecha_fin ?? null;
+        if ($mFi && $mFf) {
+            return Carbon::parse($mFi)->format('d/m/Y') . ' – ' . Carbon::parse($mFf)->format('d/m/Y');
+        }
+        if ($mFi) {
+            return 'Desde ' . Carbon::parse($mFi)->format('d/m/Y');
+        }
+        if ($mFf) {
+            return 'Hasta ' . Carbon::parse($mFf)->format('d/m/Y');
+        }
+        $fechaAnalisis = $tarea->fecha_carga_ot
+            ?? $tarea->fecha_carga_resultado_3
+            ?? $tarea->fecha_carga_resultado_2
+            ?? $tarea->fecha_carga_resultado_1
+            ?? null;
+        if ($fechaAnalisis) {
+            return Carbon::parse($fechaAnalisis)->format('d/m/Y') . ' (fecha de carga de resultado)';
+        }
+
+        return '—';
+    }
+
+    /**
+     * Generar contenido HTML del informe
+     */
+        private function generarContenidoInforme($instancia, $analisis)
+    {
+        $cotizacion = $instancia->cotizacion;
+        $matriz = $cotizacion->matriz;
+
+        $codigosCargaResultados = collect();
+        if ($analisis && $analisis->count() > 0) {
+            foreach ($analisis as $t) {
+                foreach ([
+                    $t->responsable_resultado_1,
+                    $t->responsable_resultado_2,
+                    $t->responsable_resultado_3,
+                    $t->responsable_resultado_final,
+                ] as $c) {
+                    if ($c !== null && trim((string) $c) !== '') {
+                        $codigosCargaResultados->push(trim((string) $c));
+                    }
+                }
+            }
+        }
+        $usuariosPorCodigoCarga = collect();
+        if ($codigosCargaResultados->isNotEmpty()) {
+            $usuariosPorCodigoCarga = User::whereIn('usu_codigo', $codigosCargaResultados->unique()->values()->all())
+                ->get()
+                ->keyBy(fn ($u) => trim((string) $u->usu_codigo));
+        }
+        $nombreUsuarioCarga = function (?string $codigo) use ($usuariosPorCodigoCarga): string {
+            if ($codigo === null || trim((string) $codigo) === '') {
+                return '—';
+            }
+            $k = trim((string) $codigo);
+            $u = $usuariosPorCodigoCarga->get($k);
+
+            return $u ? htmlspecialchars((string) ($u->usu_descripcion ?? $k)) : htmlspecialchars($k);
+        };
+
+        $html = '<div class="informe-preliminar">';
         
-        foreach ($analisis as $tarea) {
-            // Determinar el estado del análisis
-            $estadoAnalisis = $tarea->cotio_estado_analisis ?? 'pendiente';
-            $badgeClass = match (strtolower($estadoAnalisis)) {
-                'analizado' => 'success',
-                'en proceso' => 'info',
-                'coordinado analisis' => 'warning',
-                'en revision analisis' => 'info',
-                'suspension' => 'danger',
-                default => 'secondary'
-            };
-            
-            $html .= '<div class="card mb-3 border-start border-4 border-' . $badgeClass . '">';
-            $html .= '<div class="card-header bg-light d-flex justify-content-between align-items-center">';
-            $html .= '<div>';
-            $html .= '<h6 class="mb-0">' . htmlspecialchars($tarea->cotio_descripcion) . '</h6>';
-            $html .= '<small class="text-muted">Análisis #' . $tarea->cotio_subitem . '</small>';
+        // Encabezado del informe
+        $html .= '<div class="mb-4">';
+        $html .= '<h4 class="text-primary mb-3">📋 Informe de Análisis</h4>';
+        $html .= '<div class="row">';
+        $html .= '<div class="col-md-6">';
+        $html .= '<p><strong>Cotización:</strong> ' . $cotizacion->coti_num . '</p>';
+        $html .= '<p><strong>Empresa:</strong> ' . $cotizacion->coti_empresa . '</p>';
+        $html .= '<p><strong>Establecimiento:</strong> ' . $cotizacion->coti_establecimiento . '</p>';
+        $html .= '</div>';
+        $html .= '<div class="col-md-6">';
+        $html .= '<p><strong>Matriz:</strong> ' . ($matriz ? $matriz->matriz_descripcion : 'N/A') . '</p>';
+        $fechaMuestreoFormateada = 'N/A';
+        if ($instancia->fecha_muestreo) {
+            try {
+                $fechaMuestreo = is_string($instancia->fecha_muestreo) ? \Carbon\Carbon::parse($instancia->fecha_muestreo) : $instancia->fecha_muestreo;
+                $fechaMuestreoFormateada = $fechaMuestreo->format('d/m/Y');
+            } catch (\Exception $e) {
+                $fechaMuestreoFormateada = 'Fecha inválida';
+            }
+        }
+        $html .= '<p><strong>Fecha de Muestreo:</strong> ' . $fechaMuestreoFormateada . '</p>';
+        $otnTxt = ($instancia->otn !== null && trim((string) $instancia->otn) !== '')
+            ? '#' . htmlspecialchars(trim((string) $instancia->otn))
+            : 'N/A';
+        $html .= '<p><strong>O.T.N:</strong> ' . $otnTxt . '</p>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+
+        $html .= '<div class="mb-4 border rounded p-3 bg-light">';
+        $html .= '<h5 class="text-secondary mb-3">🏷️ Muestra</h5>';
+        $html .= '<p class="mb-2"><strong>Identificación de muestra:</strong> ';
+        $html .= htmlspecialchars((string) (trim((string) ($instancia->cotio_identificacion ?? '')) !== ''
+            ? $instancia->cotio_identificacion
+            : '—'));
+        $html .= '</p>';
+        $lineaMuestra = $instancia->relationLoaded('muestra') ? $instancia->muestra : null;
+        if ($lineaMuestra === null && $instancia->cotio_numcoti !== null) {
+            $lineaMuestra = Cotio::query()
+                ->where('cotio_numcoti', $instancia->cotio_numcoti)
+                ->where('cotio_item', $instancia->cotio_item)
+                ->where('cotio_subitem', 0)
+                ->with('leyNormativa.variables')
+                ->first();
+        }
+        $html .= '<p class="mb-0"><strong>Legislación / normativa (categoría):</strong> ';
+        $html .= $this->textoLeyNormativaParaInforme($lineaMuestra);
+        $html .= '</p>';
+        $html .= '</div>';
+
+        // Variables de medición
+        if ($instancia->valoresVariables && $instancia->valoresVariables->count() > 0) {
+            $html .= '<div class="mb-4">';
+            $html .= '<h5 class="text-secondary mb-3">🔬 Variables de Medición</h5>';
+            $html .= '<table class="table table-bordered table-sm">';
+            $html .= '<thead class="table-light"><tr><th>Variable</th><th>Valor</th></tr></thead>';
+            $html .= '<tbody>';
+            foreach ($instancia->valoresVariables as $variable) {
+                $html .= '<tr>';
+                $html .= '<td>' . htmlspecialchars($variable->variable) . '</td>';
+                $html .= '<td>' . htmlspecialchars($variable->valor) . '</td>';
+                $html .= '</tr>';
+            }
+            $html .= '</tbody>';
+            $html .= '</table>';
             $html .= '</div>';
-            $html .= '<span class="badge bg-' . $badgeClass . '">' . ucfirst($estadoAnalisis) . '</span>';
-            $html .= '</div>';
-            $html .= '<div class="card-body">';
-            
-            // Información del análisis
-            $html .= '<div class="row mb-3">';
-            $html .= '<div class="col-md-6">';
-            $html .= '<small class="text-muted"><strong>Fechas:</strong></small><br>';
-            if ($tarea->fecha_inicio_ot) {
-                try {
-                    $fechaInicio = is_string($tarea->fecha_inicio_ot) ? \Carbon\Carbon::parse($tarea->fecha_inicio_ot) : $tarea->fecha_inicio_ot;
-                    $html .= '<small>📅 <strong>Inicio:</strong> ' . $fechaInicio->format('d/m/Y H:i') . '</small><br>';
-                } catch (\Exception $e) {
-                    $html .= '<small>📅 <strong>Inicio:</strong> Fecha inválida</small><br>';
+        }
+
+        // Lógica para mapear límites de la ley de la muestra
+        $leyNormativaMuestra = $lineaMuestra ? $lineaMuestra->leyNormativa : null;
+        $variablesLey = $leyNormativaMuestra ? $leyNormativaMuestra->variables : collect();
+        $mapVariablePorDescripcion = collect();
+        
+        if ($variablesLey->isNotEmpty()) {
+            $catalogIdsEnLey = $variablesLey->pluck('cotio_item_id')->filter()->unique()->toArray();
+            $itemsCatalogo = \App\Models\CotioItems::whereIn('id', $catalogIdsEnLey)->get();
+            foreach ($itemsCatalogo as $itemCat) {
+                $variable = $variablesLey->firstWhere('cotio_item_id', $itemCat->id);
+                if ($variable) {
+                    $mapVariablePorDescripcion[trim(strtolower((string)$itemCat->cotio_descripcion))] = $variable;
                 }
             }
-            if ($tarea->fecha_fin_ot) {
-                try {
-                    $fechaFin = is_string($tarea->fecha_fin_ot) ? \Carbon\Carbon::parse($tarea->fecha_fin_ot) : $tarea->fecha_fin_ot;
-                    $html .= '<small>🏁 <strong>Fin:</strong> ' . $fechaFin->format('d/m/Y H:i') . '</small><br>';
-                } catch (\Exception $e) {
-                    $html .= '<small>🏁 <strong>Fin:</strong> Fecha inválida</small><br>';
-                }
-            }
-            if ($tarea->fecha_carga_ot) {
-                try {
-                    $fechaCarga = is_string($tarea->fecha_carga_ot) ? \Carbon\Carbon::parse($tarea->fecha_carga_ot) : $tarea->fecha_carga_ot;
-                    $html .= '<small>💾 <strong>Carga:</strong> ' . $fechaCarga->format('d/m/Y H:i') . '</small>';
-                } catch (\Exception $e) {
-                    $html .= '<small>💾 <strong>Carga:</strong> Fecha inválida</small>';
-                }
-            }
-            $html .= '</div>';
-            $html .= '<div class="col-md-6">';
+        }
+
+        // Análisis de la muestra
+        if ($analisis && $analisis->count() > 0) {
+            $html .= '<div class="mb-4">';
+            $html .= '<h5 class="text-secondary mb-3">📊 Análisis de la Muestra</h5>';
             
-            // Responsables del análisis
-            if ($tarea->responsablesAnalisis && $tarea->responsablesAnalisis->count() > 0) {
-                $html .= '<small class="text-muted"><strong>👥 Responsables:</strong></small><br>';
-                foreach ($tarea->responsablesAnalisis as $responsable) {
-                    $html .= '<span class="badge bg-primary me-1 mb-1">' . htmlspecialchars($responsable->usu_descripcion) . '</span>';
-                }
-            } else {
-                $html .= '<small class="text-muted">👥 <strong>Responsables:</strong> Sin asignar</small>';
-            }
-            
-            $html .= '</div>';
-            $html .= '</div>';
-            
-            // Observaciones del coordinador
-            if ($tarea->observaciones_ot) {
-                $html .= '<div class="alert alert-info py-2 mb-3">';
-                $html .= '<small><strong>💬 Observaciones del Coordinador:</strong><br>';
-                $html .= htmlspecialchars($tarea->observaciones_ot) . '</small>';
-                $html .= '</div>';
-            }
-            
-            // Tabla de resultados
-            $resultados = [
-                ['tipo' => '🔬 Resultado Primario', 'valor' => $tarea->resultado, 'obs' => $tarea->observacion_resultado, 'fecha' => $tarea->fecha_carga_resultado_1],
-                ['tipo' => '🔬 Resultado Secundario', 'valor' => $tarea->resultado_2, 'obs' => $tarea->observacion_resultado_2, 'fecha' => $tarea->fecha_carga_resultado_2],
-                ['tipo' => '🔬 Resultado Terciario', 'valor' => $tarea->resultado_3, 'obs' => $tarea->observacion_resultado_3, 'fecha' => $tarea->fecha_carga_resultado_3],
-                ['tipo' => '🏆 Resultado Final', 'valor' => $tarea->resultado_final, 'obs' => $tarea->observacion_resultado_final, 'fecha' => $tarea->fecha_carga_ot]
-            ];
-            
-            $tieneResultados = false;
-            foreach ($resultados as $resultado) {
-                if (!empty($resultado['valor'])) {
-                    $tieneResultados = true;
-                    break;
-                }
-            }
-            
-            if ($tieneResultados) {
-                $html .= '<div class="table-responsive">';
-                $html .= '<table class="table table-sm table-striped mb-0">';
-                $html .= '<thead class="table-dark"><tr><th>Tipo de Resultado</th><th>Valor</th><th>Observaciones</th><th>Fecha de Carga</th></tr></thead>';
-                $html .= '<tbody>';
+            foreach ($analisis as $tarea) {
+                // Determinar el estado del análisis
+                $estadoAnalisis = $tarea->cotio_estado_analisis ?? 'pendiente';
+                $badgeClass = match (strtolower($estadoAnalisis)) {
+                    'analizado' => 'success',
+                    'en proceso' => 'info',
+                    'coordinado analisis' => 'warning',
+                    'en revision analisis' => 'info',
+                    'suspension' => 'danger',
+                    default => 'secondary'
+                };
                 
+                $html .= '<div class="card mb-3 border-start border-4 border-' . $badgeClass . '">';
+                $html .= '<div class="card-header bg-light d-flex justify-content-between align-items-center">';
+                $html .= '<div>';
+                $html .= '<h6 class="mb-0">' . htmlspecialchars($tarea->cotio_descripcion) . '</h6>';
+                $html .= '<small class="text-muted">Análisis #' . $tarea->cotio_subitem . '</small>';
+                $html .= '</div>';
+                $html .= '<span class="badge bg-' . $badgeClass . '">' . ucfirst($estadoAnalisis) . '</span>';
+                $html .= '</div>';
+                $html .= '<div class="card-body">';
+                $lineaEnsayo = $tarea->tarea;
+                $html .= '<p class="small text-muted mb-3 border-bottom pb-2">';
+                $html .= '<strong>Legislación / normativa (ensayo):</strong> ';
+                $html .= $this->textoLeyNormativaParaInforme($lineaEnsayo);
+                $html .= '</p>';
+
+                // Mostrar valor límite si existe en la ley de la muestra
+                $variableLey = $variablesLey->first(function($v) use ($tarea) {
+                    $itemProdCode = trim((string)($tarea->tarea->cotio_codigoprod ?? ''));
+                    $varCatalogId = trim((string)($v->cotio_item_id ?? ''));
+                    return $itemProdCode !== '' && (int)$itemProdCode === (int)$varCatalogId;
+                });
+
+                if (!$variableLey) {
+                    $desc = trim(strtolower((string)($tarea->cotio_descripcion ?? '')));
+                    $variableLey = $mapVariablePorDescripcion->get($desc);
+                }
+
+                if ($variableLey) {
+                    $html .= '<div class="alert alert-info py-1 px-2 mb-3 d-inline-block">';
+                    $html .= '<small><strong>📍 Valor Límite (Referencia Ley):</strong> ' . 
+                             htmlspecialchars((string)($variableLey->pivot->valor_limite ?? 'N/A')) . ' ' . 
+                             htmlspecialchars((string)($variableLey->pivot->unidad_medida ?? '')) . '</small>';
+                    $html .= '</div>';
+                }
+
+                // Información del análisis
+                $html .= '<div class="row mb-3">';
+                $html .= '<div class="col-12">';
+                $html .= '<small><strong>Fecha de análisis (informe):</strong> ' . htmlspecialchars($this->textoFechaAnalisisParaInforme($tarea)) . '</small><br>';
+                $html .= '<small class="text-muted"><strong>Fechas OT / carga:</strong></small><br>';
+                if ($tarea->fecha_inicio_ot) {
+                    try {
+                        $fechaInicio = is_string($tarea->fecha_inicio_ot) ? \Carbon\Carbon::parse($tarea->fecha_inicio_ot) : $tarea->fecha_inicio_ot;
+                        $html .= '<small>📅 <strong>Inicio:</strong> ' . $fechaInicio->format('d/m/Y H:i') . '</small><br>';
+                    } catch (\Exception $e) {
+                        $html .= '<small>📅 <strong>Inicio:</strong> Fecha inválida</small><br>';
+                    }
+                }
+                if ($tarea->fecha_fin_ot) {
+                    try {
+                        $fechaFin = is_string($tarea->fecha_fin_ot) ? \Carbon\Carbon::parse($tarea->fecha_fin_ot) : $tarea->fecha_fin_ot;
+                        $html .= '<small>🏁 <strong>Fin:</strong> ' . $fechaFin->format('d/m/Y H:i') . '</small><br>';
+                    } catch (\Exception $e) {
+                        $html .= '<small>🏁 <strong>Fin:</strong> Fecha inválida</small><br>';
+                    }
+                }
+                if ($tarea->fecha_carga_ot) {
+                    try {
+                        $fechaCarga = is_string($tarea->fecha_carga_ot) ? \Carbon\Carbon::parse($tarea->fecha_carga_ot) : $tarea->fecha_carga_ot;
+                        $html .= '<small>💾 <strong>Carga:</strong> ' . $fechaCarga->format('d/m/Y H:i') . '</small>';
+                    } catch (\Exception $e) {
+                        $html .= '<small>💾 <strong>Carga:</strong> Fecha inválida</small>';
+                    }
+                }
+                $html .= '</div>';
+                $html .= '</div>';
+                
+                // Observaciones del coordinador
+                if ($tarea->observaciones_ot) {
+                    $html .= '<div class="alert alert-info py-2 mb-3">';
+                    $html .= '<small><strong>💬 Observaciones del Coordinador:</strong><br>';
+                    $html .= htmlspecialchars($tarea->observaciones_ot) . '</small>';
+                    $html .= '</div>';
+                }
+                
+                // Tabla de resultados (responsable = quien cargó cada resultado)
+                $resultados = [
+                    ['tipo' => '🔬 Resultado Primario', 'valor' => $tarea->resultado, 'obs' => $tarea->observacion_resultado, 'fecha' => $tarea->fecha_carga_resultado_1, 'responsable' => $tarea->responsable_resultado_1],
+                    ['tipo' => '🔬 Resultado Secundario', 'valor' => $tarea->resultado_2, 'obs' => $tarea->observacion_resultado_2, 'fecha' => $tarea->fecha_carga_resultado_2, 'responsable' => $tarea->responsable_resultado_2],
+                    ['tipo' => '🔬 Resultado Terciario', 'valor' => $tarea->resultado_3, 'obs' => $tarea->observacion_resultado_3, 'fecha' => $tarea->fecha_carga_resultado_3, 'responsable' => $tarea->responsable_resultado_3],
+                    ['tipo' => '🏆 Resultado Final', 'valor' => $tarea->resultado_final, 'obs' => $tarea->observacion_resultado_final, 'fecha' => $tarea->fecha_carga_ot, 'responsable' => $tarea->responsable_resultado_final],
+                ];
+                
+                $tieneResultados = false;
                 foreach ($resultados as $resultado) {
                     if (!empty($resultado['valor'])) {
-                        $html .= '<tr>';
-                        $html .= '<td><strong>' . $resultado['tipo'] . '</strong></td>';
-                        $html .= '<td class="fw-bold text-primary">' . htmlspecialchars($resultado['valor']) . '</td>';
-                        $html .= '<td>' . htmlspecialchars($resultado['obs'] ?? 'Sin observaciones') . '</td>';
-                        $fechaFormateada = 'N/A';
-                        if ($resultado['fecha']) {
-                            try {
-                                $fecha = is_string($resultado['fecha']) ? \Carbon\Carbon::parse($resultado['fecha']) : $resultado['fecha'];
-                                $fechaFormateada = $fecha->format('d/m/Y H:i');
-                            } catch (\Exception $e) {
-                                $fechaFormateada = 'Fecha inválida';
-                            }
-                        }
-                        $html .= '<td><small>' . $fechaFormateada . '</small></td>';
-                        $html .= '</tr>';
+                        $tieneResultados = true;
+                        break;
                     }
                 }
                 
-                $html .= '</tbody>';
-                $html .= '</table>';
+                if ($tieneResultados) {
+                    $html .= '<div class="table-responsive">';
+                    $html .= '<table class="table table-sm table-striped mb-0">';
+                    $html .= '<thead class="table-dark"><tr><th>Tipo de Resultado</th><th>Valor</th><th>Observaciones</th><th>Cargado por</th><th>Fecha de Carga</th></tr></thead>';
+                    $html .= '<tbody>';
+                    
+                    foreach ($resultados as $resultado) {
+                        if (!empty($resultado['valor'])) {
+                            $html .= '<tr>';
+                            $html .= '<td><strong>' . $resultado['tipo'] . '</strong></td>';
+                            $html .= '<td class="fw-bold text-primary">' . htmlspecialchars($resultado['valor']) . '</td>';
+                            $html .= '<td>' . htmlspecialchars($resultado['obs'] ?? 'Sin observaciones') . '</td>';
+                            $html .= '<td><small>' . $nombreUsuarioCarga($resultado['responsable'] ?? null) . '</small></td>';
+                            $fechaFormateada = 'N/A';
+                            if ($resultado['fecha']) {
+                                try {
+                                    $fecha = is_string($resultado['fecha']) ? \Carbon\Carbon::parse($resultado['fecha']) : $resultado['fecha'];
+                                    $fechaFormateada = $fecha->format('d/m/Y H:i');
+                                } catch (\Exception $e) {
+                                    $fechaFormateada = 'Fecha inválida';
+                                }
+                            }
+                            $html .= '<td><small>' . $fechaFormateada . '</small></td>';
+                            $html .= '</tr>';
+                        }
+                    }
+                    
+                    $html .= '</tbody>';
+                    $html .= '</table>';
+                    $html .= '</div>';
+                } else {
+                    $html .= '<div class="alert alert-warning py-2">';
+                    $html .= '<small><strong>⚠️ Sin resultados:</strong> Este análisis aún no tiene resultados cargados.</small>';
+                    $html .= '</div>';
+                }
+                
+                // Información adicional si está habilitado para informe
+                if ($tarea->enable_inform) {
+                    $html .= '<div class="mt-2">';
+                    $html .= '<span class="badge bg-success"><i class="fas fa-check"></i> Habilitado para informe</span>';
+                    $html .= '</div>';
+                } else {
+                    $html .= '<div class="mt-2">';
+                    $html .= '</div>';
+                }
+                
                 $html .= '</div>';
-            } else {
-                $html .= '<div class="alert alert-warning py-2">';
-                $html .= '<small><strong>⚠️ Sin resultados:</strong> Este análisis aún no tiene resultados cargados.</small>';
                 $html .= '</div>';
             }
-            
-            // Información adicional si está habilitado para informe
-            if ($tarea->enable_inform) {
-                $html .= '<div class="mt-2">';
-                $html .= '<span class="badge bg-success"><i class="fas fa-check"></i> Habilitado para informe</span>';
-                $html .= '</div>';
-            } else {
-                $html .= '<div class="mt-2">';
-                $html .= '</div>';
-            }
-            
             $html .= '</div>';
-            $html .= '</div>';
-        }
-        $html .= '</div>';
-    } else {
-        $html .= '<div class="mb-4">';
-        $html .= '<h5 class="text-secondary mb-3">📊 Análisis de la Muestra</h5>';
-        $html .= '<div class="alert alert-info">';
-        $html .= '<strong>ℹ️ Sin análisis:</strong> Esta muestra no tiene análisis asociados.';
-        $html .= '</div>';
-        $html .= '</div>';
-    }
-
-    // Herramientas utilizadas
-    if ($instancia->herramientasLab && $instancia->herramientasLab->count() > 0) {
-        $html .= '<div class="mb-4">';
-        $html .= '<h5 class="text-secondary mb-3">🔧 Herramientas Utilizadas</h5>';
-        $html .= '<ul class="list-group">';
-        foreach ($instancia->herramientasLab as $herramienta) {
-            $html .= '<li class="list-group-item d-flex justify-content-between align-items-center">';
-            $html .= '<span>' . htmlspecialchars($herramienta->equipamiento);
-            if ($herramienta->marca_modelo) {
-                $html .= ' <small class="text-muted">(' . htmlspecialchars($herramienta->marca_modelo) . ')</small>';
-            }
-            $html .= '</span>';
-            if (isset($herramienta->cantidad) && $herramienta->cantidad > 1) {
-                $html .= '<span class="badge bg-primary rounded-pill">' . $herramienta->cantidad . '</span>';
-            }
-            $html .= '</li>';
-        }
-        $html .= '</ul>';
-        $html .= '</div>';
-    }
-
-    // Observaciones
-    if ($instancia->observaciones_medicion_coord_muestreo || $instancia->observaciones_medicion_muestreador) {
-        $html .= '<div class="mb-4">';
-        $html .= '<h5 class="text-secondary mb-3">💬 Observaciones</h5>';
-        
-        if ($instancia->observaciones_medicion_coord_muestreo) {
+        } else {
+            $html .= '<div class="mb-4">';
+            $html .= '<h5 class="text-secondary mb-3">📊 Análisis de la Muestra</h5>';
             $html .= '<div class="alert alert-info">';
-            $html .= '<strong>Coordinador de Muestreo:</strong><br>';
-            $html .= htmlspecialchars($instancia->observaciones_medicion_coord_muestreo);
+            $html .= '<strong>ℹ️ Sin análisis:</strong> Esta muestra no tiene análisis asociados.';
+            $html .= '</div>';
             $html .= '</div>';
         }
-        
-        if ($instancia->observaciones_medicion_muestreador) {
-            $html .= '<div class="alert alert-warning">';
-            $html .= '<strong>Muestreador:</strong><br>';
-            $html .= htmlspecialchars($instancia->observaciones_medicion_muestreador);
-            $html .= '</div>';
-        }
-        $html .= '</div>';
-    }
 
-    // Pie del informe
-    $html .= '<div class="mt-4 pt-3 border-top">';
-    $html .= '<div class="row">';
-    $html .= '<div class="col-md-6">';
-    $html .= '<small class="text-muted">';
-    $html .= '<strong>Fecha de generación:</strong> ' . now()->format('d/m/Y H:i');
-    $html .= '</small>';
-    $html .= '</div>';
-    $html .= '<div class="col-md-6 text-end">';
-    $html .= '<small class="text-muted">';
-    $html .= '<strong>Estado:</strong> ' . ucfirst($instancia->cotio_estado_analisis);
-    $html .= '</small>';
-    $html .= '</div>';
-    $html .= '</div>';
-    $html .= '</div>';
-    
-    $html .= '</div>'; // Cierre del div principal
-    
-    return $html;
-}
+        // Herramientas utilizadas
+        if ($instancia->herramientasLab && $instancia->herramientasLab->count() > 0) {
+            $html .= '<div class="mb-4">';
+            $html .= '<h5 class="text-secondary mb-3">🔧 Herramientas Utilizadas</h5>';
+            $html .= '<ul class="list-group">';
+            foreach ($instancia->herramientasLab as $herramienta) {
+                $html .= '<li class="list-group-item d-flex justify-content-between align-items-center">';
+                $html .= '<span>' . htmlspecialchars($herramienta->equipamiento);
+                if ($herramienta->marca_modelo) {
+                    $html .= ' <small class="text-muted">(' . htmlspecialchars($herramienta->marca_modelo) . ')</small>';
+                }
+                $html .= '</span>';
+                if (isset($herramienta->cantidad) && $herramienta->cantidad > 1) {
+                    $html .= '<span class="badge bg-primary rounded-pill">' . $herramienta->cantidad . '</span>';
+                }
+                $html .= '</li>';
+            }
+            $html .= '</ul>';
+            $html .= '</div>';
+        }
+
+        // Observaciones
+        if ($instancia->observaciones_medicion_coord_muestreo || $instancia->observaciones_medicion_muestreador) {
+            $html .= '<div class="mb-4">';
+            $html .= '<h5 class="text-secondary mb-3">💬 Observaciones</h5>';
+            
+            if ($instancia->observaciones_medicion_coord_muestreo) {
+                $html .= '<div class="alert alert-info">';
+                $html .= '<strong>Coordinador de Muestreo:</strong><br>';
+                $html .= htmlspecialchars($instancia->observaciones_medicion_coord_muestreo);
+                $html .= '</div>';
+            }
+            
+            if ($instancia->observaciones_medicion_muestreador) {
+                $html .= '<div class="alert alert-warning">';
+                $html .= '<strong>Muestreador:</strong><br>';
+                $html .= htmlspecialchars($instancia->observaciones_medicion_muestreador);
+                $html .= '</div>';
+            }
+            $html .= '</div>';
+        }
+
+        // Pie del informe
+        $html .= '<div class="mt-4 pt-3 border-top">';
+        $html .= '<div class="row">';
+        $html .= '<div class="col-md-6">';
+        $html .= '<small class="text-muted">';
+        $html .= '<strong>Fecha de generación:</strong> ' . now()->format('d/m/Y H:i');
+        $html .= '</small>';
+        $html .= '</div>';
+        $html .= '<div class="col-md-6 text-end">';
+        $html .= '<small class="text-muted">';
+        $html .= '<strong>Estado:</strong> ' . ucfirst($instancia->cotio_estado_analisis);
+        $html .= '</small>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+
+        $html .= '</div>';
+
+        return $html;
+    }
 
 public function finalizarTodas(Request $request)
 {

@@ -87,13 +87,15 @@ public function dashboardMuestreo(Request $request)
     $muestreadorFiltro = $request->get('muestreador', 'all');
     $vehiculoFiltro = $request->get('vehiculo', 'all');
     $zonaFiltro = $request->get('zona', 'all');
+    $cuotasFiltro = $request->get('cuotas', 'all');
 
     Log::info('[Dashboard Muestreo] Iniciando consulta', [
         'user_codigo' => $userCodigo,
         'estado_filtro' => $estadoFiltro,
         'muestreador_filtro' => $muestreadorFiltro,
         'vehiculo_filtro' => $vehiculoFiltro,
-        'zona_filtro' => $zonaFiltro
+        'zona_filtro' => $zonaFiltro,
+        'cuotas_filtro' => $cuotasFiltro
     ]);
 
     // Verificar si el usuario es coordinador_muestreo
@@ -201,6 +203,13 @@ public function dashboardMuestreo(Request $request)
     if ($zonaFiltro !== 'all') {
         $query->whereHas('cotizacion.cliente', function($q) use ($zonaFiltro) {
             $q->where('cli_codigozon', $zonaFiltro);
+        });
+    }
+
+    // Aplicar filtro de cuotas
+    if ($cuotasFiltro !== 'all') {
+        $query->whereHas('cotizacion', function($q) use ($cuotasFiltro) {
+            $q->where('coti_cuotas', $cuotasFiltro === 'yes' ? 1 : 0);
         });
     }
 
@@ -366,6 +375,7 @@ public function dashboardMuestreo(Request $request)
         'muestreadorFiltro',
         'vehiculoFiltro',
         'zonaFiltro',
+        'cuotasFiltro',
         'muestreadores',
         'vehiculosDisponibles',
         'zonasDisponibles',
@@ -469,7 +479,7 @@ public function dashboardAnalisis(Request $request)
 
         // Obtener las muestras relacionadas con estos análisis
         if ($analisisEnMes->isNotEmpty()) {
-            $muestrasDeAnalisisEnMes = CotioInstancia::where('cotio_subitem', 0)
+            $muestrasDeAnalisisQuery = CotioInstancia::where('cotio_subitem', 0)
                 ->where('enable_ot', true)
                 ->where(function($query) use ($analisisEnMes) {
                     foreach ($analisisEnMes as $analisis) {
@@ -480,7 +490,19 @@ public function dashboardAnalisis(Request $request)
                         });
                     }
                 })
-                ->with(['cotizacion'])
+                ->with(['cotizacion']);
+
+            // Respetar el filtro de estado aplicado a muestras: si el usuario filtra por un estado
+            // (p.ej. "en revision analisis"), no debemos reinyectar muestras de otros estados.
+            if ($estadoFiltro !== 'all') {
+                if ($estadoFiltro === 'pendientes_coordinar') {
+                    $muestrasDeAnalisisQuery->where('active_ot', false);
+                } else {
+                    $muestrasDeAnalisisQuery->where('cotio_estado_analisis', $estadoFiltro);
+                }
+            }
+
+            $muestrasDeAnalisisEnMes = $muestrasDeAnalisisQuery
                 ->get()
                 ->groupBy(fn($m) => $m->cotio_numcoti . '-' . $m->cotio_item . '-' . $m->instance_number);
 

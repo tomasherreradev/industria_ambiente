@@ -1,9 +1,4 @@
-@extends('layouts.app')
-
 {{-- @dd($events) --}}
-
-@section('title', 'Calendario de Muestras')
-@section('content')
 <link href='https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.css' rel='stylesheet' />
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
@@ -41,6 +36,11 @@
     .fc-event-danger { background-color: #dc3545; border-color: #dc3545; }
     .fc-event-primary { background-color: #0d6efd; border-color: #0d6efd; }
     .fc-event-secondary { background-color: #6c757d; border-color: #6c757d; }
+    /* Cuotas: borde y refuerzo visual */
+    .fc-event-cuotas {
+        box-shadow: inset 4px 0 0 0 #0dcaf0;
+        font-weight: 600;
+    }
     .view-switcher {
         display: flex;
         gap: 10px;
@@ -245,12 +245,25 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                 }
 
+                if (info.event.extendedProps.coti_cuotas) {
+                    const titleEl2 = info.el.querySelector('.fc-event-title');
+                    if (titleEl2) {
+                        const cuotasBadge = document.createElement('span');
+                        cuotasBadge.className = 'badge bg-info text-white ms-1';
+                        cuotasBadge.style.fontSize = '0.65em';
+                        cuotasBadge.textContent = 'Cuotas';
+                        cuotasBadge.title = 'Cotización con plan de cuotas';
+                        titleEl2.appendChild(cuotasBadge);
+                    }
+                }
+
                 if(info.event.extendedProps) {
                     new bootstrap.Tooltip(info.el, {
                         title: `
                             <strong>${info.event.extendedProps.empresa || 'Sin empresa'}</strong><br>
                             ${info.event.extendedProps.descripcion || 'Sin descripción'}<br>
                             <small>Estado: ${info.event.extendedProps.estado || 'No especificado'}</small>
+                            ${info.event.extendedProps.coti_cuotas ? '<br><span class=\\"badge bg-info\\">Cuotas</span>' : ''}
                             ${info.event.extendedProps.responsables ? 
                               `<br><small>Responsables: ${info.event.extendedProps.responsables}</small>` : ''}
                             ${info.event.extendedProps.analisis_count > 0 ? 
@@ -295,4 +308,3 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 </script>
-@endsection

@@ -5,6 +5,14 @@
 <!-- SweetAlert2 CSS -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
 
+@php
+    $readOnly = isset($readOnly) ? (bool) $readOnly : (function_exists('userHasRole') ? userHasRole('facturador') : (strtolower(trim((string) (optional(Auth::user())->rol ?? ''))) === 'facturador'));
+@endphp
+
+<script>
+    window.clientesReadOnly = {{ $readOnly ? 'true' : 'false' }};
+</script>
+
 <div class="container-fluid">
     <div class="row">
         <div class="col-12">
@@ -41,6 +49,12 @@
                         @endforeach
                     </ul>
                     <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            @endif
+
+            @if($readOnly)
+                <div class="alert alert-info">
+                    Este usuario tiene rol <strong>facturador</strong>: vista en modo <strong>solo lectura</strong>.
                 </div>
             @endif
 
@@ -614,10 +628,12 @@
                                     <x-heroicon-o-x-mark style="width: 16px; height: 16px;" class="me-1" />
                                     Cancelar
                                 </button>
-                                <button type="submit" class="btn btn-primary">
-                                    <x-heroicon-o-check style="width: 16px; height: 16px;" class="me-1" />
-                                    Actualizar
-                                </button>
+                                @if(!$readOnly)
+                                    <button type="submit" class="btn btn-primary">
+                                        <x-heroicon-o-check style="width: 16px; height: 16px;" class="me-1" />
+                                        Actualizar
+                                    </button>
+                                @endif
                             </div>
                         </div>
                     </form>
@@ -684,7 +700,9 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="button" class="btn btn-primary" onclick="guardarSucursal()">Guardar</button>
+                    @if(!$readOnly)
+                        <button type="button" class="btn btn-primary" onclick="guardarSucursal()">Guardar</button>
+                    @endif
                 </div>
             </div>
         </div>
@@ -731,7 +749,9 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="button" class="btn btn-primary" onclick="guardarEmpresaRelacionada()">Guardar</button>
+                    @if(!$readOnly)
+                        <button type="button" class="btn btn-primary" onclick="guardarEmpresaRelacionada()">Guardar</button>
+                    @endif
                 </div>
             </div>
         </div>
@@ -810,7 +830,9 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="button" class="btn btn-primary" onclick="guardarRazonSocialFacturacion()">Guardar</button>
+                    @if(!$readOnly)
+                        <button type="button" class="btn btn-primary" onclick="guardarRazonSocialFacturacion()">Guardar</button>
+                    @endif
                 </div>
             </div>
         </div>
@@ -1234,12 +1256,14 @@
                     <td>${escapeHtml(empresa.partido || '-')}</td>
                     <td>${escapeHtml(empresa.contacto || '-')}</td>
                     <td>
+                        ${window.clientesReadOnly ? '' : `
                         <button type="button" class="btn btn-sm btn-outline-primary" onclick="editarEmpresaRelacionada(${index})" title="Editar">
                             <x-heroicon-o-pencil style="width: 14px; height: 14px;" />
                         </button>
                         <button type="button" class="btn btn-sm btn-outline-danger" onclick="eliminarEmpresaRelacionada(${index})" title="Eliminar">
                             <x-heroicon-o-trash style="width: 14px; height: 14px;" />
                         </button>
+                        `}
                     </td>
                 `;
                 tbody.appendChild(row);
@@ -1412,12 +1436,14 @@
                     <td>${escapeHtml(sucursal.telefono || '-')}</td>
                     <td>${escapeHtml(sucursal.email || '-')}</td>
                     <td>
+                        ${window.clientesReadOnly ? '' : `
                         <button type="button" class="btn btn-sm btn-outline-primary" onclick="editarSucursal(${index})" title="Editar">
                             <x-heroicon-o-pencil style="width: 14px; height: 14px;" />
                         </button>
                         <button type="button" class="btn btn-sm btn-outline-danger" onclick="eliminarSucursal(${index})" title="Eliminar">
                             <x-heroicon-o-trash style="width: 14px; height: 14px;" />
                         </button>
+                        `}
                     </td>
                 `;
                 tbody.appendChild(row);
@@ -1651,12 +1677,14 @@
                     <td>${escapeHtml(razonSocial.tipo_factura || '-')}</td>
                     <td class="text-center">${razonSocial.es_predeterminada ? '<span class="badge bg-success">Sí</span>' : '<span class="badge bg-secondary">No</span>'}</td>
                     <td>
+                        ${window.clientesReadOnly ? '' : `
                         <button type="button" class="btn btn-sm btn-outline-primary" onclick="editarRazonSocialFacturacion(${index})" title="Editar">
                             <x-heroicon-o-pencil style="width: 14px; height: 14px;" />
                         </button>
                         <button type="button" class="btn btn-sm btn-outline-danger" onclick="eliminarRazonSocialFacturacion(${index})" title="Eliminar">
                             <x-heroicon-o-trash style="width: 14px; height: 14px;" />
                         </button>
+                        `}
                     </td>
                 `;
                 tbody.appendChild(row);
@@ -1832,5 +1860,58 @@ window.debugFormulario = function() {
     
     console.log('\nFormulario válido:', razonSocial && razonSocial.value.trim() ? 'SÍ' : 'NO');
 };
+</script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    if (!window.clientesReadOnly) return;
+
+    const form = document.getElementById('clienteForm');
+    if (!form) return;
+
+    // Deshabilitar interacción (solo lectura real)
+    form.querySelectorAll('input, select, textarea').forEach(el => {
+        const tag = el.tagName.toLowerCase();
+        const type = (el.getAttribute('type') || '').toLowerCase();
+
+        // Selects/checkbox/radio/date/datetime-local: disabled
+        if (tag === 'select' || tag === 'textarea' || type === 'checkbox' || type === 'radio' || type === 'date' || type === 'datetime-local' || type === 'file') {
+            el.disabled = true;
+        } else {
+            el.readOnly = true;
+        }
+    });
+
+    // Deshabilitar botones del form excepto "Cancelar"
+    form.querySelectorAll('button').forEach(btn => {
+        // Permitir navegación entre solapas (Bootstrap tabs)
+        const bsToggle = (btn.getAttribute('data-bs-toggle') || '').toLowerCase();
+        const role = (btn.getAttribute('role') || '').toLowerCase();
+        const esTab = bsToggle === 'tab' || role === 'tab' || btn.classList.contains('nav-link');
+        if (esTab) return;
+
+        const text = (btn.textContent || '').trim().toLowerCase();
+        const isCancelar = text.includes('cancelar');
+        if (!isCancelar) btn.disabled = true;
+    });
+
+    // Bloquear triggers de modales/acciones interactivas
+    form.querySelectorAll('[data-bs-toggle]').forEach(el => {
+        const toggle = (el.getAttribute('data-bs-toggle') || '').toLowerCase();
+        // Mantener tabs habilitadas
+        if (toggle === 'tab') return;
+
+        el.setAttribute('data-bs-toggle', '');
+        el.setAttribute('aria-disabled', 'true');
+        el.classList.add('disabled');
+    });
+
+    // Bloquear submit por si acaso
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+    }, true);
+});
 </script>
 @endsection

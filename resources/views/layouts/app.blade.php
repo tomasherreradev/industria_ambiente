@@ -347,6 +347,12 @@
                     {{ url('/dashboard/muestreo') }}
                 @elseif(userHasRole('ventas'))
                     {{ url('/ventas') }}
+                @elseif(userHasRole('coordinador_consul'))
+                    {{ route('consultoria.index') }}
+                @elseif(userHasRole('asp'))
+                    {{ route('asp.index') }}
+                @elseif(userHasRole('clarke_fire'))
+                    {{ route('clarke-fire.index') }}
                 @elseif(userHasRole('firmador'))
                     {{ url('/informes') }}
                 @elseif(userHasRole('facturador'))
@@ -518,7 +524,7 @@
                     </a>
                 @endif
 
-                @if(userHasRole('ventas'))
+                @if(userHasRole('ventas') || userHasRole('facturador'))
                     <a class="nav-link mobile-nav-link" href="{{ url('/clientes') }}">
                         <x-heroicon-o-ticket style="width: 18px; height: 18px;" />
                         Clientes
@@ -575,6 +581,13 @@
                     </a>
                 @endif
 
+                @if(Auth::user()->usu_nivel >= 900 || userHasRole('ventas'))
+                    <a class="nav-link mobile-nav-link" href="{{ route('condiciones-pago.index') }}">
+                        <x-heroicon-o-cog style="width: 18px; height: 18px;" />
+                        Condiciones de pago
+                    </a>
+                @endif
+
 
                 @if(Auth::user()->usu_nivel >= 900 || userHasRole('coordinador_muestreo'))
                 <a class="nav-link mobile-nav-link" href="{{ url('/vehiculos') }}">
@@ -612,6 +625,27 @@
                     Usuarios
                 </a>
             @endif
+
+            @if(userHasRole('coordinador_consul'))
+                <a class="nav-link mobile-nav-link" href="{{ route('consultoria.index') }}">
+                    <x-heroicon-o-document-text style="width: 18px; height: 18px;" />
+                    Consultoría
+                </a>
+            @endif
+
+            @if(userHasRole('asp'))
+                <a class="nav-link mobile-nav-link" href="{{ route('asp.index') }}">
+                    <x-heroicon-o-document-text style="width: 18px; height: 18px;" />
+                    ASP
+                </a>
+            @endif
+
+            @if(userHasRole('clarke_fire'))
+                <a class="nav-link mobile-nav-link" href="{{ route('clarke-fire.index') }}">
+                    <x-heroicon-o-document-text style="width: 18px; height: 18px;" />
+                    Clarke Fire
+                </a>
+            @endif
             
             <a class="nav-link mobile-nav-link" href="{{ url('/auth/' . Auth::user()->usu_codigo) }}">
                 <x-heroicon-o-user style="width: 18px; height: 18px;" />
@@ -645,12 +679,39 @@
             {{ url('/dashboard/muestreo') }}
         @elseif(userHasRole('ventas'))
             {{ url('/ventas') }}
+        @elseif(userHasRole('coordinador_consul'))
+            {{ route('consultoria.index') }}
+        @elseif(userHasRole('asp'))
+            {{ route('asp.index') }}
+        @elseif(userHasRole('clarke_fire'))
+            {{ route('clarke-fire.index') }}
         @endif
     ">
         <img src="{{ asset('/assets/img/logo.png') }}" alt="Logo" class="sidebar-logo">
     </a>
     
     <nav class="nav flex-column w-100 px-2">
+
+        @if(userHasRole('coordinador_consul'))
+            <a class="nav-link" href="{{ route('consultoria.index') }}">
+                <x-heroicon-o-document-text style="width: 16px; height: 16px;" class="me-2" />
+                Consultoría
+            </a>
+        @endif
+
+        @if(userHasRole('asp'))
+            <a class="nav-link" href="{{ route('asp.index') }}">
+                <x-heroicon-o-document-text style="width: 16px; height: 16px;" class="me-2" />
+                ASP
+            </a>
+        @endif
+
+        @if(userHasRole('clarke_fire'))
+            <a class="nav-link" href="{{ route('clarke-fire.index') }}">
+                <x-heroicon-o-document-text style="width: 16px; height: 16px;" class="me-2" />
+                Clarke Fire
+            </a>
+        @endif
         
         @if(Auth::user())
             <div class="accordion-item">
@@ -698,7 +759,7 @@
                             </a>
                         @endif
 
-                        @if(userHasRole('ventas'))
+                        @if(userHasRole('ventas') || userHasRole('facturador'))
                             <a class="nav-link" href="{{ url('/clientes') }}">
                                 Clientes
                             </a>
@@ -788,6 +849,12 @@
                         @if(Auth::user()->usu_nivel >= 900 || userHasRole('ventas') || userHasRole('coordinador_lab'))
                             <a class="nav-link" href="{{ url('/items') }}">
                                 Determinaciones
+                            </a>
+                        @endif
+
+                        @if(Auth::user()->usu_nivel >= 900 || userHasRole('ventas'))
+                            <a class="nav-link" href="{{ route('condiciones-pago.index') }}">
+                                Condiciones de pago
                             </a>
                         @endif
 
@@ -996,8 +1063,36 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+    /**
+     * Evita que queden contenedores/backdrops de SweetAlert2 o estilos en body
+     * que bloqueen clics (p. ej. enlace "Volver") tras cerrar un alert con timer o encadenar Swal + Bootstrap modal.
+     */
+    window.limpiarResiduosSweetAlert2 = function () {
+        try {
+            if (window.Swal) {
+                Swal.close();
+            }
+        } catch (e) {}
+        document.querySelectorAll('.swal2-container').forEach(function (el) {
+            el.remove();
+        });
+        document.body.classList.remove('swal2-shown', 'swal2-height-auto');
+        document.documentElement.classList.remove('swal2-shown', 'swal2-height-auto');
+        document.body.style.removeProperty('padding-right');
+        document.body.style.removeProperty('overflow');
+        document.documentElement.style.removeProperty('overflow');
+        if (!document.querySelector('.modal.show')) {
+            document.querySelectorAll('.modal-backdrop').forEach(function (b) {
+                b.remove();
+            });
+            document.body.classList.remove('modal-open');
+        }
+    };
+</script>
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+@stack('scripts')
 <script defer src="https://maps.googleapis.com/maps/api/js?key={{ env('GOOGLE_API_KEY') }}&libraries=places"></script>
 
 <script>
@@ -1007,6 +1102,10 @@
         const toggler = document.getElementById('mobileNavbarToggler');
         const closeBtn = document.getElementById('closeMenuBtn');
         const body = document.body;
+
+        if (!mobileNavbar || !navbarOverlay || !toggler || !closeBtn) {
+            return;
+        }
 
         
         function toggleMenu(show) {
