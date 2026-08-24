@@ -186,6 +186,8 @@
                                                         <tbody>
                                                             @foreach($muestras as $muestra)
                                                                 @php
+                                                                    $cotioLinea = $coti->tareas->firstWhere('cotio_item', $muestra->cotio_item);
+                                                                    $esPrioriFila = \App\Support\PrioridadListado::prioridadEfectivaMuestreo($cotioLinea, $coti, $muestra);
                                                                     $estadoMuestra = $muestra->cotio_estado_analisis ?? 'pendiente';
                                                                     $badgeMuestra = match($estadoMuestra) {
                                                                         'coordinado analisis' => 'bg-warning text-dark',
@@ -202,12 +204,18 @@
                                                                         default => 'Pendiente',
                                                                     };
                                                                 @endphp
-                                                                <tr class="@if($muestra->cotio_estado == 'suspension') table-danger @elseif($muestra->es_priori) table-warning @endif">
+                                                                <tr class="@if($muestra->cotio_estado == 'suspension') table-danger @elseif($esPrioriFila) table-warning @endif" @if($esPrioriFila) style="border-left: 4px solid #ffc107;" @endif>
                                                                     <td class="fw-bold" style="padding: 10px !important;">
                                                                         {{ $muestra->otn ?? 'N/A' }}
+                                                                        @if($esPrioriFila)
+                                                                            <x-heroicon-o-star style="width: 14px; height: 14px;" class="text-warning ms-1" title="Prioridad" />
+                                                                        @endif
                                                                     </td>
                                                                     <td style="padding: 10px !important;">
                                                                         {{ $muestra->cotio_descripcion ?? 'Sin descripción' }}
+                                                                        @if($esPrioriFila)
+                                                                            <span class="badge bg-warning text-dark ms-1">Prioridad</span>
+                                                                        @endif
                                                                         @if($muestra->cotio_identificacion)
                                                                             <br><small class="text-muted">ID: {{ $muestra->cotio_identificacion }}</small>
                                                                         @endif
@@ -254,7 +262,7 @@
                 // Usar cotizacion directamente del array (funciona con o sin instancias)
                 $coti = $instanciaData['cotizacion'];
                 $instanciasMobile = collect($instanciaData['instancias'] ?? []);
-                $muestrasMobile = $instanciasMobile->where('cotio_subitem', '=', 0)->where('enable_ot', '=', 1);
+                $muestrasMobile = $instanciaData['muestras_relevantes'] ?? $instanciasMobile->where('cotio_subitem', '=', 0)->where('enable_ot', '=', 1);
                 $tieneInstanciasMobile = $instanciasMobile->isNotEmpty();
                 
                 // Calcular estados para la barra de progreso
@@ -411,6 +419,8 @@
                                 <div class="list-group list-group-flush">
                                     @foreach($muestrasMobile as $muestra)
                                         @php
+                                            $cotioLinea = $coti->tareas->firstWhere('cotio_item', $muestra->cotio_item);
+                                            $esPrioriFila = \App\Support\PrioridadListado::prioridadEfectivaMuestreo($cotioLinea, $coti, $muestra);
                                             $estadoMuestra = $muestra->cotio_estado_analisis ?? 'pendiente';
                                             $badgeMuestra = match($estadoMuestra) {
                                                 'coordinado analisis' => 'bg-warning text-dark',
@@ -427,12 +437,13 @@
                                                 default => 'Pendiente',
                                             };
                                         @endphp
-                                        <div class="list-group-item px-2 py-2 @if($muestra->cotio_estado == 'suspension') list-group-item-danger @elseif($muestra->es_priori) list-group-item-warning @endif">
+                                        <div class="list-group-item px-2 py-2 @if($muestra->cotio_estado == 'suspension') list-group-item-danger @elseif($esPrioriFila) list-group-item-warning @endif" @if($esPrioriFila) style="border-left: 4px solid #ffc107;" @endif>
                                             <div class="d-flex justify-content-between align-items-center">
                                                 <div>
                                                     <strong class="small">OT: {{ $muestra->otn ?? 'N/A' }}</strong>
-                                                    @if($muestra->es_priori)
+                                                    @if($esPrioriFila)
                                                         <x-heroicon-o-star style="width: 12px; height: 12px;" class="text-warning ms-1" />
+                                                        <span class="badge bg-warning text-dark ms-1" style="font-size: 0.65em;">Prioridad</span>
                                                     @endif
                                                 </div>
                                                 <span class="badge {{ $badgeMuestra }}" style="font-size: 0.7em;">{{ $textoMuestra }}</span>

@@ -34,6 +34,14 @@ class CheckAdminOrRole
             'clarke_fire',
         ]);
 
+        // Bandeja limitada: solo informes (coordinador lab/mediciones con flag activo)
+        if (! $isAdmin && ! $hasRequiredRole && userTieneBandejaSoloInformes()) {
+            $path = ltrim($request->path(), '/');
+            if (str_starts_with($path, 'informes')) {
+                return $next($request);
+            }
+        }
+
         // Log::info("Usuario: {$user->usu_codigo}, Es Admin: " . ($isAdmin ? 'Sí' : 'No') . ", Tiene rol requerido: " . ($hasRequiredRole ? 'Sí' : 'No'));
 
         if (! $isAdmin && ! $hasRequiredRole) {

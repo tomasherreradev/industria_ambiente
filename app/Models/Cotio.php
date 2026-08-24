@@ -40,6 +40,7 @@ class Cotio extends Model
         'lleva_muestreo',
         'cotio_canal_especial',
         'de_agrupador',
+        'es_priori',
 
     ];
     
@@ -48,6 +49,7 @@ class Cotio extends Model
         'limite_deteccion' => 'decimal:6',
         'limite_cuantificacion' => 'decimal:6',
         'de_agrupador' => 'boolean',
+        'es_priori' => 'boolean',
     ];
     
     public $timestamps = false;
@@ -136,10 +138,7 @@ class Cotio extends Model
 
 
 
-    public function vehiculo()
-    {
-        return $this->belongsTo(Vehiculo::class, 'vehiculo_asignado');
-    }
+
 
 
     public function cotizacion()
@@ -184,6 +183,14 @@ class Cotio extends Model
     public function metodoAnalisis()
     {
         return $this->belongsTo(MetodoAnalisis::class, 'cotio_codigometodo_analisis', 'codigo');
+    }
+
+    /**
+     * Relación con la tabla legado 'metodo' para obtener descripciones usando cotio_codigometodo
+     */
+    public function metodoLegacy()
+    {
+        return $this->belongsTo(Metodo::class, 'cotio_codigometodo', 'metodo_codigo');
     }
 
     /**
@@ -395,12 +402,6 @@ class Cotio extends Model
 
     if ($todosFinalizados) {
         $categoria->cotio_estado = 'finalizado';
-        $vehiculo = Vehiculo::find($categoria->vehiculo_asignado);
-        if ($vehiculo) {
-            $vehiculo->estado = 'libre';
-            $vehiculo->save();
-        }
-        $categoria->vehiculo_asignado = null;
     } elseif ($todosPendientes) {
         $categoria->cotio_estado = 'pendiente';
     } else {

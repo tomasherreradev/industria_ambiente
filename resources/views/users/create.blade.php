@@ -13,6 +13,7 @@
         'ventas' => 'Vendedor',
         'firmador' => 'Firmador',
         'coordinador_consul' => 'Coordinador Consultoría',
+        'coordinador_mediciones' => 'Coordinador Mediciones',
         'asp' => 'ASP',
         'clarke_fire' => 'Clarke Fire',
         'cliente' => 'Usuario Cliente',
@@ -117,7 +118,37 @@
                             </div>
                         @endif
 
+                        @php
+                            $mostrarAdminLab = (string) old('rol') === 'coordinador_lab'
+                                || in_array('coordinador_lab', (array) old('roles_adicionales', []), true);
+                        @endphp
+                        <div class="mb-3" id="wrapper_admin_lab" style="display: {{ $mostrarAdminLab ? 'block' : 'none' }};">
+                            <div class="form-check">
+                                <input type="checkbox"
+                                       name="admin_lab"
+                                       id="admin_lab"
+                                       class="form-check-input"
+                                       value="1"
+                                       @checked((bool) old('admin_lab', false))>
+                                <label for="admin_lab" class="form-check-label">Administrador de laboratorio</label>
+                                <div class="form-text">Puede ver quién aprobó los informes en órdenes de trabajo.</div>
+                            </div>
+                        </div>
+
                         <div class="mb-3">
+                            <div class="form-check">
+                                <input type="checkbox"
+                                       name="puede_cargar_items"
+                                       id="puede_cargar_items"
+                                       class="form-check-input"
+                                       value="1"
+                                       @checked((bool) old('puede_cargar_items', false))>
+                                <label for="puede_cargar_items" class="form-check-label">Puede cargar determinaciones (items)</label>
+                                <div class="form-text">Habilita el acceso al módulo de determinaciones: alta, edición, importación y exportación.</div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3" id="wrapper_sector_unico">
                             <label for="sector_codigo" class="form-label">Laboratorio (sector)</label>
                             <select name="sector_codigo" id="sector_codigo" class="form-select">
                                 <option value="">Sin sector</option>
@@ -127,6 +158,19 @@
                                     </option>
                                 @endforeach
                             </select>
+                        </div>
+
+                        <div class="mb-3" id="wrapper_sectores_multiples">
+                            <label for="sectores_codigos" class="form-label">Laboratorios / Sectores (múltiples; Ctrl+clic)</label>
+                            <select name="sectores_codigos[]" id="sectores_codigos" class="form-select" multiple size="6">
+                                @foreach($sectores as $sector)
+                                    <option value="{{ $sector->usu_codigo }}"
+                                        {{ in_array($sector->usu_codigo, (array) old('sectores_codigos', []), true) ? 'selected' : '' }}>
+                                        {{ $sector->usu_descripcion }} ({{ $sector->usu_codigo }})
+                                    </option>
+                                @endforeach
+                            </select>
+                            <div class="form-text">Mantené presionado Ctrl (o Cmd en Mac) para seleccionar más de un sector.</div>
                         </div>
 
                         <div class="row">
@@ -156,22 +200,68 @@
         const form = document.getElementById('form-crear-usuario');
         const rolSelect = document.getElementById('rol');
         const sectorSelect = document.getElementById('sector_codigo');
-        if (!form || !rolSelect || !sectorSelect) return;
+        const sectoresMultiSelect = document.getElementById('sectores_codigos');
+        const rolesMultiSelect = document.getElementById('roles_adicionales');
+        const wrapperSectorUnico = document.getElementById('wrapper_sector_unico');
+        const wrapperSectoresMultiples = document.getElementById('wrapper_sectores_multiples');
+        const wrapperAdminLab = document.getElementById('wrapper_admin_lab');
+        const adminLabCheckbox = document.getElementById('admin_lab');
+
+        if (!form || !rolSelect) return;
+
+        function tieneCoordinadorLab() {
+            if (rolSelect.value === 'coordinador_lab') {
+                return true;
+            }
+            if (rolesMultiSelect) {
+                return Array.from(rolesMultiSelect.selectedOptions).some(option => option.value === 'coordinador_lab');
+            }
+            return false;
+        }
+
+        function toggleAdminLab() {
+            if (!wrapperAdminLab) return;
+            if (tieneCoordinadorLab()) {
+                wrapperAdminLab.style.display = 'block';
+            } else {
+                wrapperAdminLab.style.display = 'none';
+                if (adminLabCheckbox) adminLabCheckbox.checked = false;
+            }
+        }
 
         function rolPermiteSector() {
             const r = rolSelect.value;
             return r === 'laboratorio' || r === 'coordinador_lab';
         }
 
-        function toggleSector() {
-            sectorSelect.disabled = !rolPermiteSector();
+        function toggleSectores() {
+            const permite = rolPermiteSector();
+            if (permite) {
+                if (wrapperSectorUnico) wrapperSectorUnico.style.display = 'none';
+                if (wrapperSectoresMultiples) wrapperSectoresMultiples.style.display = 'block';
+                if (sectorSelect) sectorSelect.disabled = true;
+                if (sectoresMultiSelect) sectoresMultiSelect.disabled = false;
+            } else {
+                if (wrapperSectorUnico) wrapperSectorUnico.style.display = 'block';
+                if (wrapperSectoresMultiples) wrapperSectoresMultiples.style.display = 'none';
+                if (sectorSelect) sectorSelect.disabled = true;
+                if (sectoresMultiSelect) sectoresMultiSelect.disabled = true;
+            }
         }
 
-        rolSelect.addEventListener('change', toggleSector);
-        toggleSector();
+        rolSelect.addEventListener('change', () => {
+            toggleSectores();
+            toggleAdminLab();
+        });
+        if (rolesMultiSelect) {
+            rolesMultiSelect.addEventListener('change', toggleAdminLab);
+        }
+        toggleSectores();
+        toggleAdminLab();
 
         form.addEventListener('submit', function () {
-            sectorSelect.disabled = false;
+            if (sectorSelect) sectorSelect.disabled = false;
+            if (sectoresMultiSelect) sectoresMultiSelect.disabled = false;
         });
     });
 </script>

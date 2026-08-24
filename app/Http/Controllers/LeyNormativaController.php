@@ -294,6 +294,10 @@ class LeyNormativaController extends Controller
      */
     public function import(Request $request)
     {
+        // Elevar límites de memoria y tiempo para la importación
+        ini_set('memory_limit', '1024M');
+        set_time_limit(0);
+
         $request->validate([
             'archivo' => 'required|mimes:xlsx,xls|max:10240' // Máximo 10MB
         ]);

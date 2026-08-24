@@ -67,7 +67,7 @@
                                     <div class="d-flex justify-content-between">
                                         <div>
                                             <strong class="d-block">#{{ $numCoti }}</strong>
-                                            <small class="text-muted">{{ Str::limit($cotizacion->coti_empresa ?? 'Sin cliente', 20) }}</small>
+                                            <small class="text-muted">{{ Str::limit(\App\Support\CotizacionClienteEtiqueta::paraLista($cotizacion), 20) }}</small>
                                         </div>
                                         <span class="badge {{ $badgeClass }} align-self-start text-dark">
                                             {{ ucfirst($estado) }}
@@ -97,7 +97,7 @@
                             <td class="d-none d-md-table-cell">
                                 <div class="d-flex flex-column">
                                     <strong>#{{ $numCoti }}</strong>
-                                    <strong class="small">{{ $cotizacion->coti_empresa ?? 'Sin cliente' }}</strong>
+                                    <strong class="small">{{ \App\Support\CotizacionClienteEtiqueta::paraLista($cotizacion) }}</strong>
                                 </div>
                             </td>
                             <td class="d-none d-md-table-cell">

@@ -31,6 +31,18 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
     /** Mapa normalizeTexto(nombre) => id para resolver leyes sin duplicar */
     protected array $leyNormativaNombreIndex = [];
 
+    /** Cache de matrices: trim(codigo) => codigo y normalizeTexto(descripcion) => codigo */
+    protected array $matrizCache = [];
+
+    /** Cache de métodos: trim(codigo) => codigo y normalizeTexto(descripcion) => codigo */
+    protected array $metodoCache = [];
+
+    /** Cache de cotio_items: normalizeTexto(cotio_descripcion) => array of CotioItems */
+    protected array $cotioItemsCache = [];
+
+    /** Cache de variables: cotio_item_id => Variable */
+    protected array $variableCache = [];
+
     /**
      * Normalización canónica de texto para comparaciones:
      * - trim, colapsa múltiples espacios a uno
@@ -91,6 +103,9 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
 
         try {
             $this->buildLeyNormativaNombreIndex();
+            $this->buildMatrizAndMetodoCache();
+            $this->buildCotioItemsCache();
+            $this->buildVariableCache();
 
             $leyesData = [];
 
@@ -226,11 +241,56 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
         }
     }
 
+    protected function buildMatrizAndMetodoCache(): void
+    {
+        $this->matrizCache = [];
+        foreach (DB::table('matriz')->get(['matriz_codigo', 'matriz_descripcion']) as $row) {
+            $this->matrizCache[trim((string)$row->matriz_codigo)] = trim((string)$row->matriz_codigo);
+            $keyDesc = $this->normalizeTexto((string)$row->matriz_descripcion);
+            if ($keyDesc !== '') {
+                $this->matrizCache[$keyDesc] = trim((string)$row->matriz_codigo);
+            }
+        }
+
+        $this->metodoCache = [];
+        foreach (DB::table('metodo')->get(['metodo_codigo', 'metodo_descripcion']) as $row) {
+            $this->metodoCache[trim((string)$row->metodo_codigo)] = trim((string)$row->metodo_codigo);
+            $keyDesc = $this->normalizeTexto((string)$row->metodo_descripcion);
+            if ($keyDesc !== '') {
+                $this->metodoCache[$keyDesc] = trim((string)$row->metodo_codigo);
+            }
+        }
+    }
+
+    protected function buildCotioItemsCache(): void
+    {
+        $this->cotioItemsCache = [];
+        
+        $items = CotioItems::where('es_muestra', false)
+            ->orWhereNull('es_muestra')
+            ->get();
+
+        foreach ($items as $item) {
+            $descNorm = $this->normalizeTexto((string)$item->cotio_descripcion);
+            if ($descNorm === '') {
+                continue;
+            }
+            $this->cotioItemsCache[$descNorm][] = $item;
+        }
+    }
+
+    protected function buildVariableCache(): void
+    {
+        $this->variableCache = [];
+        foreach (Variable::all() as $variable) {
+            if ($variable->cotio_item_id) {
+                $this->variableCache[(int)$variable->cotio_item_id] = $variable;
+            }
+        }
+    }
+
     /**
      * Buscar ley existente por nombre normalizado o crear una nueva.
-     * La búsqueda SQL usa regexp_replace + lower + btrim para que la comparación
-     * sea equivalente a normalizeTexto() en PHP (espacios, caja, sin tildes no aplica en SQL
-     * sin extensión, pero sí manejamos el lado PHP normalizando el parámetro).
      */
     protected function findOrCreateLeyNormativa(string $nombreLey): ?LeyNormativa
     {
@@ -243,7 +303,7 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
 
         // 1. Buscar en caché in-memory
         if (isset($this->leyNormativaNombreIndex[$key])) {
-            $ley = LeyNormativa::find($this->leyNormativaNombreIndex[$key]);
+            $ley = LeyNormativa::with('variables')->find($this->leyNormativaNombreIndex[$key]);
             if ($ley) {
                 return $ley;
             }
@@ -251,7 +311,7 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
 
         // 2. Buscar en DB normalizando la columna igual que en PHP
         $normalizedCol = $this->sqlNormalizeCol('nombre');
-        $ley = LeyNormativa::whereRaw("{$normalizedCol} = ?", [$key])->first();
+        $ley = LeyNormativa::with('variables')->whereRaw("{$normalizedCol} = ?", [$key])->first();
 
         if ($ley) {
             $this->leyNormativaNombreIndex[$key] = (int)$ley->id;
@@ -267,6 +327,8 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
             'grupo'  => null,
             'activo' => true,
         ]);
+
+        $ley->setRelation('variables', collect());
 
         $this->leyNormativaNombreIndex[$key] = (int)$ley->id;
         $this->leyesCreadas++;
@@ -295,8 +357,6 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
 
     /**
      * Procesar variable (analito) y asociarla a la ley.
-     * Busca cotio_items usando normalización en SQL equivalente a normalizeTexto() en PHP.
-     * Si ya existe la asociación → actualiza. Si no → crea.
      */
     protected function processVariable($leyNormativa, $varData): void
     {
@@ -311,32 +371,38 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
 
         $this->debug("processVariable: analito='{$analito}' (norm='{$analitoNorm}') aplicar_a_todos=" . ($aplicarATodos ? '1' : '0'));
 
-        // Normalización SQL equivalente a normalizeTexto() PHP (espacios + lowercase).
-        // Las tildes en la DB se comparan con el texto ya sin tildes del lado PHP, lo que
-        // cubre el caso donde el analito en el Excel no tiene tilde pero la DB sí.
-        // Para el caso inverso (DB sin tilde, Excel con tilde), normalizeTexto() elimina la tilde del Excel.
-        $normalizedCol = $this->sqlNormalizeCol('cotio_descripcion');
+        $candidates = $this->cotioItemsCache[$analitoNorm] ?? [];
+        $cotioItems = collect();
 
-        $query = CotioItems::whereRaw("{$normalizedCol} = ?", [$analitoNorm])
-                           ->where('es_muestra', false);
-
-        if (!$aplicarATodos) {
-            if ($matriz) {
-                $matrizCodigo = $this->findMatrizCode($matriz);
-                $this->debug("findMatrizCode('{$matriz}') => " . ($matrizCodigo ?? 'null'));
-                $query->where('matriz_codigo', $matrizCodigo ?? trim($matriz));
-            }
-
-            if ($metodo) {
-                $metodoCodigo = $this->findMetodoCode($metodo);
-                $this->debug("findMetodoCode('{$metodo}') => " . ($metodoCodigo ?? 'null'));
-                $query->where('metodo', $metodoCodigo ?? trim($metodo));
-            }
+        $matrizCodigo = null;
+        if (!$aplicarATodos && $matriz) {
+            $matrizCodigo = $this->findMatrizCode($matriz) ?? trim($matriz);
         }
 
-        $this->debug("Query CotioItems", ['sql' => $query->toSql(), 'bindings' => $query->getBindings()]);
+        $metodoCodigo = null;
+        if (!$aplicarATodos && $metodo) {
+            $metodoCodigo = $this->findMetodoCode($metodo) ?? trim($metodo);
+        }
 
-        $cotioItems = $query->get();
+        foreach ($candidates as $item) {
+            // Filtrar por matriz si se solicita
+            if (!$aplicarATodos && $matriz) {
+                $itemMatriz = trim((string)$item->matriz_codigo);
+                if ($itemMatriz !== trim((string)$matrizCodigo)) {
+                    continue;
+                }
+            }
+
+            // Filtrar por método si se solicita
+            if (!$aplicarATodos && $metodo) {
+                $itemMetodo = trim((string)$item->metodo);
+                if ($itemMetodo !== trim((string)$metodoCodigo)) {
+                    continue;
+                }
+            }
+
+            $cotioItems->push($item);
+        }
 
         if ($cotioItems->isEmpty()) {
             $filtros = [];
@@ -355,7 +421,7 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
 
         foreach ($cotioItems as $cotioItem) {
             // Buscar o crear Variable ligada al cotio_item
-            $variable = Variable::where('cotio_item_id', $cotioItem->id)->first();
+            $variable = $this->variableCache[(int)$cotioItem->id] ?? null;
 
             if (!$variable) {
                 $variable = Variable::create([
@@ -366,15 +432,14 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
                     'cotio_item_id'  => $cotioItem->id,
                     'activo'         => true,
                 ]);
+                $this->variableCache[(int)$cotioItem->id] = $variable;
                 $this->debug("Variable creada: id={$variable->id} cotio_item_id={$cotioItem->id}");
             } else {
                 $this->debug("Variable existente: id={$variable->id} cotio_item_id={$cotioItem->id}");
             }
 
             // Verificar si la asociación ley ↔ variable ya existe
-            $existeAsociacion = $leyNormativa->variables()
-                ->where('variable_id', $variable->id)
-                ->exists();
+            $existeAsociacion = $leyNormativa->variables->contains('id', $variable->id);
 
             $pivotData = [
                 'valor_limite' => $valorLimite,
@@ -383,6 +448,7 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
 
             if (!$existeAsociacion) {
                 $leyNormativa->variables()->attach($variable->id, $pivotData);
+                $leyNormativa->variables->push($variable);
                 $this->variablesAsociadas++;
                 $this->debug("Variable {$variable->id} ASOCIADA a ley {$leyNormativa->codigo}");
             } else {
@@ -394,7 +460,7 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
     }
 
     /**
-     * Buscar código de matriz en la base de datos (por código o nombre normalizado)
+     * Buscar código de matriz (por código o nombre normalizado)
      */
     protected function findMatrizCode(string $value): ?string
     {
@@ -403,31 +469,33 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
             return null;
         }
 
-        $matriz = DB::table('matriz')->where('matriz_codigo', $value)->first();
-        if ($matriz) {
-            return $matriz->matriz_codigo;
+        // 1. Exact match by code
+        if (isset($this->matrizCache[$value])) {
+            return $this->matrizCache[$value];
         }
 
+        // 2. Try padded numeric variations
         if (is_numeric($value)) {
             $numero = (int)$value;
             for ($length = strlen($value); $length <= 10; $length++) {
                 $codigoPadded = str_pad($numero, $length, '0', STR_PAD_LEFT);
-                $matriz = DB::table('matriz')->where('matriz_codigo', $codigoPadded)->first();
-                if ($matriz) {
-                    return $matriz->matriz_codigo;
+                if (isset($this->matrizCache[$codigoPadded])) {
+                    return $this->matrizCache[$codigoPadded];
                 }
             }
         }
 
-        $normalizedCol = $this->sqlNormalizeCol('matriz_descripcion');
+        // 3. Normalized match
         $valueNorm = $this->normalizeTexto($value);
-        $matriz = DB::table('matriz')->whereRaw("{$normalizedCol} = ?", [$valueNorm])->first();
+        if (isset($this->matrizCache[$valueNorm])) {
+            return $this->matrizCache[$valueNorm];
+        }
 
-        return $matriz ? $matriz->matriz_codigo : null;
+        return null;
     }
 
     /**
-     * Buscar código de método en la base de datos (por código o nombre normalizado)
+     * Buscar código de método (por código o nombre normalizado)
      */
     protected function findMetodoCode(string $value): ?string
     {
@@ -436,27 +504,29 @@ class LeyesNormativasImport implements ToCollection, WithHeadingRow, SkipsEmptyR
             return null;
         }
 
-        $metodo = DB::table('metodo')->where('metodo_codigo', $value)->first();
-        if ($metodo) {
-            return $metodo->metodo_codigo;
+        // 1. Exact match by code
+        if (isset($this->metodoCache[$value])) {
+            return $this->metodoCache[$value];
         }
 
+        // 2. Try padded numeric variations
         if (is_numeric($value)) {
             $numero = (int)$value;
             for ($length = strlen($value); $length <= 10; $length++) {
                 $codigoPadded = str_pad($numero, $length, '0', STR_PAD_LEFT);
-                $metodo = DB::table('metodo')->where('metodo_codigo', $codigoPadded)->first();
-                if ($metodo) {
-                    return $metodo->metodo_codigo;
+                if (isset($this->metodoCache[$codigoPadded])) {
+                    return $this->metodoCache[$codigoPadded];
                 }
             }
         }
 
-        $normalizedCol = $this->sqlNormalizeCol('metodo_descripcion');
+        // 3. Normalized match
         $valueNorm = $this->normalizeTexto($value);
-        $metodo = DB::table('metodo')->whereRaw("{$normalizedCol} = ?", [$valueNorm])->first();
+        if (isset($this->metodoCache[$valueNorm])) {
+            return $this->metodoCache[$valueNorm];
+        }
 
-        return $metodo ? $metodo->metodo_codigo : null;
+        return null;
     }
 
     /**

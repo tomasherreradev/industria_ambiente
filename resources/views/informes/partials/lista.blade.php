@@ -29,7 +29,7 @@
                                             <h2 class="accordion-header" id="heading-{{ $numCoti }}">
                                                 <div class="d-flex w-100 align-items-center justify-content-between">
                                                     <button class="accordion-button collapsed flex-grow-1 text-start" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-{{ $numCoti }}" aria-expanded="false" aria-controls="collapse-{{ $numCoti }}">
-                                                        Cotización #{{ $numCoti }} - {{ $coti->coti_empresa ?? 'N/A' }}
+                                                        Cotización #{{ $numCoti }} - {{ \App\Support\CotizacionClienteEtiqueta::paraLista($coti) }} ({{ $informeData['muestras']->count() }} muestras)
                                                     </button>
                                                     
                                                     <a href="{{ route('informes.pdf-masivo', ['cotizacion' => $numCoti]) }}" class="btn btn-sm btn-outline-secondary ms-2" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Descargar PDF masivo" position="bottom">
@@ -180,7 +180,7 @@
                             </div>
                         </div>
                         
-                        <h6 class="card-subtitle mb-2 text-muted">{{ $coti->coti_empresa }}</h6>
+                        <h6 class="card-subtitle mb-2 text-muted">{{ \App\Support\CotizacionClienteEtiqueta::paraLista($coti) }}</h6>
                         
                         @if($coti->coti_establecimiento)
                             <p class="small mb-1"><i class="fas fa-building me-1"></i> {{ $coti->coti_establecimiento }}</p>
@@ -623,8 +623,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Llenar información general
                 document.getElementById('modalCotizacionNumero').textContent = `Cotización #${data.cotizacion.coti_num}`;
                 document.getElementById('modalClienteInfo').innerHTML = `
-                    <strong>${data.cotizacion.coti_empresa}</strong><br>
-                    ${data.cotizacion.coti_establecimiento ? data.cotizacion.coti_establecimiento : ''}
+                    <strong>${data.cotizacion.cliente_etiqueta || data.cotizacion.coti_empresa || 'N/A'}</strong><br>
+                    ${data.cotizacion.cliente_establecimiento ? data.cotizacion.cliente_establecimiento : (data.cotizacion.coti_establecimiento || '')}
                 `;
                 document.getElementById('modalDescripcion').textContent = data.muestra.cotio_descripcion + ' ' + data.muestra.instance_number || 'Sin descripción';
                 document.getElementById('modalFechaMuestreo').textContent = `Muestreo: ${data.muestra.fecha_muestreo ? new Date(data.muestra.fecha_muestreo).toLocaleDateString() : 'No especificada'}`;

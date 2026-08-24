@@ -136,6 +136,8 @@
                         <div class="d-flex flex-wrap gap-1">
                             @foreach($muestras->take(10) as $muestra)
                                 @php
+                                    $cotioLinea = $coti->tareas->firstWhere('cotio_item', $muestra->cotio_item);
+                                    $esPrioriFila = \App\Support\PrioridadListado::prioridadEfectivaMuestreo($cotioLinea, $coti, $muestra);
                                     $estadoMuestra = strtolower($muestra->cotio_estado_analisis ?? 'pendiente');
                                     $badgeMuestra = match($estadoMuestra) {
                                         'analizado' => 'bg-success',
@@ -159,8 +161,8 @@
                                     ]) }}" 
                                    class="badge {{ $badgeMuestra }} text-decoration-none ot-badge" 
                                    title="{{ $muestra->cotio_descripcion }} - {{ $textoEstado }}&#10;OT: {{ $muestra->otn ?? 'N/A' }}&#10;Fecha: {{ $muestra->fecha_muestreo ? $muestra->fecha_muestreo->format('d/m/Y') : 'Sin fecha' }}">
-                                    @if($muestra->es_priori)
-                                        <x-heroicon-o-star style="width: 10px; height: 10px;" />
+                                    @if($esPrioriFila)
+                                        <x-heroicon-o-star style="width: 10px; height: 10px;" class="text-warning" />
                                     @endif
                                     {{ $muestra->otn ? Str::limit($muestra->otn, 10) : 'OT' }}: {{ Str::limit($muestra->cotio_descripcion, 20) }}
                                 </a>

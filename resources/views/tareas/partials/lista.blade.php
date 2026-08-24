@@ -160,35 +160,39 @@ usort($gruposFinalizados, function($a, $b) use ($fechaActual) {
 ?>
 
 @if(count($tareasAgrupadas) > 0)
-    <!-- Control para mostrar/ocultar muestras finalizadas -->
-    @if(count($gruposFinalizados) > 0)
-        <div class="mb-3 d-flex justify-content-between align-items-center">
-            <div class="text-muted small">
-                <i class="fas fa-info-circle me-1"></i>
-                <span id="contadorFinalizadas">{{ count($gruposFinalizados) }} muestra(s) finalizada(s) oculta(s)</span>
-            </div>
-            <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" id="toggleFinalizadas" style="cursor: pointer;">
-                <label class="form-check-label" for="toggleFinalizadas" style="cursor: pointer;">
-                    <i class="fas fa-eye me-1"></i> Mostrar muestras finalizadas
-                </label>
-            </div>
-        </div>
-    @endif
+    <div class="d-md-none">
+        @include('tareas.partials.lista-mobile')
+    </div>
 
-    <!-- Control para mostrar/ocultar muestras vencidas -->
-    @if(count($gruposVencidas) > 0)
-        <div class="mb-3 d-flex justify-content-between align-items-center">
-            <div class="text-muted small">
-                <i class="fas fa-info-circle me-1"></i>
-                <span id="contadorVencidas">{{ count($gruposVencidas) }} muestra(s) vencida(s) oculta(s)</span>
-            </div>
-            <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" id="toggleVencidas" style="cursor: pointer;">
-                <label class="form-check-label" for="toggleVencidas" style="cursor: pointer;">
-                    <i class="fas fa-eye me-1"></i> Mostrar muestras vencidas
-                </label>
-            </div>
+    <div class="d-none d-md-block tareas-lista-desktop">
+<div class="tareas-muestreo-lista">
+    <!-- Controles de visibilidad -->
+    @if(count($gruposFinalizados) > 0 || count($gruposVencidas) > 0)
+        <div class="tareas-muestreo-filtros">
+            @if(count($gruposFinalizados) > 0)
+                <div class="filtro-row">
+                    <div class="text-muted small">
+                        <i class="fas fa-info-circle me-1"></i>
+                        <span id="contadorFinalizadas">{{ count($gruposFinalizados) }} finalizada(s) oculta(s)</span>
+                    </div>
+                    <div class="form-check form-switch mb-0">
+                        <input class="form-check-input" type="checkbox" id="toggleFinalizadas">
+                        <label class="form-check-label" for="toggleFinalizadas">Mostrar finalizadas</label>
+                    </div>
+                </div>
+            @endif
+            @if(count($gruposVencidas) > 0)
+                <div class="filtro-row">
+                    <div class="text-muted small">
+                        <i class="fas fa-exclamation-circle me-1"></i>
+                        <span id="contadorVencidas">{{ count($gruposVencidas) }} vencida(s)</span>
+                    </div>
+                    <div class="form-check form-switch mb-0">
+                        <input class="form-check-input" type="checkbox" id="toggleVencidas" checked>
+                        <label class="form-check-label" for="toggleVencidas">Mostrar vencidas</label>
+                    </div>
+                </div>
+            @endif
         </div>
     @endif
 
@@ -221,12 +225,12 @@ usort($gruposFinalizados, function($a, $b) use ($fechaActual) {
                     };
                 @endphp
 
-                <div class="card mb-4 shadow-sm table-danger" style="border-left: 4px solid #dc3545 !important;">
+                <div class="card mb-4 shadow-sm table-danger tarea-grupo-card" style="border-left: 4px solid #dc3545 !important;">
                     <div class="card-header">
                         <!-- Encabezado -->
                         <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
                             <div class="d-flex align-items-center">
-                                <button class="btn btn-link text-decoration-none p-0 me-2" 
+                                <button class="btn btn-link text-decoration-none p-0 me-2 tarea-collapse-toggle" 
                                         data-bs-toggle="collapse" 
                                         data-bs-target="#tabla-vencida-{{ $numCoti }}-{{ $itemId }}-{{ $isHermana ? $subitemId : $instanceNumber }}" 
                                         aria-expanded="false" 
@@ -236,12 +240,12 @@ usort($gruposFinalizados, function($a, $b) use ($fechaActual) {
                                 </button>
                                 <div>
                                     <h4 class="mb-0 text-primary">
-                                        {{ $cotizacion->coti_empresa ?? 'NA' }} - {{ $grupo['instancias'][0]['instancia_muestra']->cotio_descripcion ?? 'N/A' }}
+                                        {{ \App\Support\CotizacionClienteEtiqueta::paraLista($cotizacion) ?? 'NA' }} - {{ $grupo['instancias'][0]['instancia_muestra']->cotio_descripcion ?? 'N/A' }}
                                         @if($isHermana)
                                             ({{ $grupo['instancias']->count() }} Muestras)
                                         @endif
                                     </h4>
-                                    <div class="d-flex align-items-center gap-2 mt-1 flex-wrap">
+                                    <div class="d-flex align-items-center gap-2 mt-1 flex-wrap tarea-grupo-badges">
                                         <span class="badge bg-danger text-white">
                                             <x-heroicon-o-exclamation-triangle class="me-1" style="width: 12px; height: 12px;" />
                                             Vencida
@@ -268,40 +272,18 @@ usort($gruposFinalizados, function($a, $b) use ($fechaActual) {
                                 </div>
                             </div>
                             
-                            <div class="d-flex gap-2 mt-2 mt-md-0">
-                                <a class="btn btn-outline-danger btn-sm"
-                                   href="https://www.google.com/maps/search/?api=1&query={{ $cotizacion ? urlencode(\App\Support\CotizacionClienteEtiqueta::direccionDestinatarioMapsQuery($cotizacion)) : '' }}">
-                                    <x-heroicon-o-map class="me-1" style="width: 16px; height: 16px;" />
-                                    <span>Maps</span>
-                                </a>
-                            </div>
+                            @include('tareas.partials.grupo-acciones', ['grupo' => $grupo, 'cotizacion' => $cotizacion, 'mapsBtnClass' => 'btn-outline-danger'])
                         </div>
 
-                        <!-- Información de la cotización -->
                         @if($cotizacion)
-                            <div class="mt-3 small text-dark">
-                                <div class="row g-2">
-                                    <div class="col-md-4 d-flex align-items-center">
-                                        <x-heroicon-o-calendar class="me-2 text-muted" style="width: 14px; height: 14px;" />
-                                        <strong>Fecha y hora: </strong> {{ $grupo['instancias'][0]['instancia_muestra']->fecha_inicio_muestreo ? \Carbon\Carbon::parse($grupo['instancias'][0]['instancia_muestra']->fecha_inicio_muestreo)->format('d/m/Y H:i:s') : 'N/A' }}
-                                    </div>
-                                    <div class="col-md-4 d-flex align-items-center">
-                                        <x-heroicon-o-map-pin class="me-2 text-muted" style="width: 14px; height: 14px;" />
-                                        <strong>Dirección: </strong> {{ $cotizacion ? (\App\Support\CotizacionClienteEtiqueta::direccionDestinatarioTexto($cotizacion) ?: 'N/A') : 'N/A' }}
-                                    </div>
-                                    <div class="col-md-4 d-flex align-items-center">
-                                        <x-heroicon-o-user-circle class="me-2 text-muted" style="width: 14px; height: 14px;" />
-                                        <strong>Cotización N°: </strong> {{ $cotizacion->coti_num ?? 'N/A' }}
-                                    </div>
-                                </div>
-                            </div>
+                            @include('tareas.partials.meta-cotizacion', ['grupo' => $grupo, 'cotizacion' => $cotizacion])
                         @endif
                     </div>
 
                     <div id="tabla-vencida-{{ $numCoti }}-{{ $itemId }}-{{ $isHermana ? $subitemId : $instanceNumber }}" class="collapse">
                         <div class="card-body p-0">
                             <div class="table-responsive">
-                                <table class="table table-bordered align-middle mb-0">
+                                <table class="table table-bordered align-middle mb-0 tareas-muestras-table">
                                     <thead class="table-dark">
                                         <tr>
                                             <th class="w-60">Descripción</th>
@@ -439,12 +421,12 @@ usort($gruposFinalizados, function($a, $b) use ($fechaActual) {
                     };
                 @endphp
 
-                <div class="card mb-4 shadow-sm table-{{ $badgeClassMuestra }}" style="border-left: 4px solid #ffc107 !important;">
+                <div class="card mb-4 shadow-sm table-{{ $badgeClassMuestra }} tarea-grupo-card" style="border-left: 4px solid #ffc107 !important;">
                     <div class="card-header">
                         <!-- Encabezado -->
                         <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
                             <div class="d-flex align-items-center">
-                                <button class="btn btn-link text-decoration-none p-0 me-2" 
+                                <button class="btn btn-link text-decoration-none p-0 me-2 tarea-collapse-toggle" 
                                         data-bs-toggle="collapse" 
                                         data-bs-target="#tabla-priority-{{ $numCoti }}-{{ $itemId }}-{{ $isHermana ? $subitemId : $instanceNumber }}" 
                                         aria-expanded="false" 
@@ -454,12 +436,12 @@ usort($gruposFinalizados, function($a, $b) use ($fechaActual) {
                                 </button>
                                 <div>
                                     <h4 class="mb-0 text-primary">
-                                        {{ $cotizacion->coti_empresa ?? 'NA' }} - {{ $grupo['instancias'][0]['instancia_muestra']->cotio_descripcion ?? 'N/A' }}
+                                        {{ \App\Support\CotizacionClienteEtiqueta::paraLista($cotizacion) ?? 'NA' }} - {{ $grupo['instancias'][0]['instancia_muestra']->cotio_descripcion ?? 'N/A' }}
                                         @if($isHermana)
                                             ({{ $grupo['instancias']->count() }} Muestras)
                                         @endif
                                     </h4>
-                                    <div class="d-flex align-items-center gap-2 mt-1">
+                                    <div class="d-flex align-items-center gap-2 mt-1 tarea-grupo-badges">
                                         <span class="badge bg-{{ $badgeClassMuestra }} text-dark">
                                             {{ ucfirst($estadoGrupo) }}
                                         </span>
@@ -477,40 +459,18 @@ usort($gruposFinalizados, function($a, $b) use ($fechaActual) {
                                 </div>
                             </div>
                             
-                            <div class="d-flex gap-2 mt-2 mt-md-0">
-                                <a class="btn btn-outline-dark btn-sm"
-                                   href="https://www.google.com/maps/search/?api=1&query={{ $cotizacion ? urlencode(\App\Support\CotizacionClienteEtiqueta::direccionDestinatarioMapsQuery($cotizacion)) : '' }}">
-                                    <x-heroicon-o-map class="me-1" style="width: 16px; height: 16px;" />
-                                    <span>Maps</span>
-                                </a>
-                            </div>
+                            @include('tareas.partials.grupo-acciones', ['grupo' => $grupo, 'cotizacion' => $cotizacion, 'mapsBtnClass' => 'btn-outline-dark'])
                         </div>
 
-                        <!-- Información de la cotización -->
                         @if($cotizacion)
-                            <div class="mt-3 small text-dark">
-                                <div class="row g-2">
-                                    <div class="col-md-4 d-flex align-items-center">
-                                        <x-heroicon-o-calendar class="me-2 text-muted" style="width: 14px; height: 14px;" />
-                                        <strong>Fecha y hora inicio: </strong> {{ \Carbon\Carbon::parse($grupo['instancias'][0]['instancia_muestra']->fecha_inicio_muestreo)->format('d/m/Y H:i:s') ?? 'N/A' }}
-                                    </div>
-                                    <div class="col-md-4 d-flex align-items-center">
-                                        <x-heroicon-o-map-pin class="me-2 text-muted" style="width: 14px; height: 14px;" />
-                                        <strong>Dirección: </strong> {{ $cotizacion ? (\App\Support\CotizacionClienteEtiqueta::direccionDestinatarioTexto($cotizacion) ?: 'N/A') : 'N/A' }}
-                                    </div>
-                                    <div class="col-md-4 d-flex align-items-center">
-                                        <x-heroicon-o-user-circle class="me-2 text-muted" style="width: 14px; height: 14px;" />
-                                        <strong>Cotización N°: </strong> {{ $cotizacion->coti_num ?? 'N/A' }}
-                                    </div>
-                                </div>
-                            </div>
+                            @include('tareas.partials.meta-cotizacion', ['grupo' => $grupo, 'cotizacion' => $cotizacion, 'fechaLabel' => 'Fecha y hora inicio'])
                         @endif
                     </div>
 
                     <div id="tabla-priority-{{ $numCoti }}-{{ $itemId }}-{{ $isHermana ? $subitemId : $instanceNumber }}" class="collapse">
                         <div class="card-body p-0">
                             <div class="table-responsive">
-                                <table class="table table-bordered align-middle mb-0">
+                                <table class="table table-bordered align-middle mb-0 tareas-muestras-table">
                                     <thead class="table-dark">
                                         <tr>
                                             <th class="w-60">Descripción</th>
@@ -648,12 +608,12 @@ usort($gruposFinalizados, function($a, $b) use ($fechaActual) {
                     };
                 @endphp
 
-                <div class="card mb-4 shadow-sm">
+                <div class="card mb-4 shadow-sm tarea-grupo-card">
                     <div class="card-header table-{{ $badgeClassMuestra }}">
                         <!-- Encabezado -->
                         <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
                             <div class="d-flex align-items-center">
-                                <button class="btn btn-link text-decoration-none p-0 me-2" 
+                                <button class="btn btn-link text-decoration-none p-0 me-2 tarea-collapse-toggle" 
                                         data-bs-toggle="collapse" 
                                         data-bs-target="#tabla-{{ $numCoti }}-{{ $itemId }}-{{ $isHermana ? $subitemId : $instanceNumber }}" 
                                         aria-expanded="false" 
@@ -663,12 +623,12 @@ usort($gruposFinalizados, function($a, $b) use ($fechaActual) {
                                 </button>
                                 <div>
                                     <h4 class="mb-0 text-primary">
-                                        {{ $cotizacion->coti_empresa ?? 'NA' }} - {{ $grupo['instancias'][0]['instancia_muestra']->cotio_descripcion ?? 'N/A' }}
+                                        {{ \App\Support\CotizacionClienteEtiqueta::paraLista($cotizacion) ?? 'NA' }} - {{ $grupo['instancias'][0]['instancia_muestra']->cotio_descripcion ?? 'N/A' }}
                                         @if($isHermana)
                                             ({{ $grupo['instancias']->count() }} Muestras)
                                         @endif
                                     </h4>
-                                    <div class="d-flex align-items-center gap-2 mt-1">
+                                    <div class="d-flex align-items-center gap-2 mt-1 tarea-grupo-badges">
                                         <span class="badge bg-{{ $badgeClassMuestra }} text-dark">
                                             {{ ucfirst($estadoMuestra) }}
                                         </span>
@@ -682,40 +642,18 @@ usort($gruposFinalizados, function($a, $b) use ($fechaActual) {
                                 </div>
                             </div>
                             
-                            <div class="d-flex gap-2 mt-2 mt-md-0">
-                                <a class="btn btn-outline-primary btn-sm"
-                                   href="https://www.google.com/maps/search/?api=1&query={{ $cotizacion ? urlencode(\App\Support\CotizacionClienteEtiqueta::direccionDestinatarioMapsQuery($cotizacion)) : '' }}">
-                                    <x-heroicon-o-map class="me-1" style="width: 16px; height: 16px;" />
-                                    <span>Maps</span>
-                                </a>
-                            </div>
+                            @include('tareas.partials.grupo-acciones', ['grupo' => $grupo, 'cotizacion' => $cotizacion])
                         </div>
 
-                        <!-- Información de la cotización -->
                         @if($cotizacion)
-                            <div class="mt-3 small">
-                                <div class="row g-2">
-                                    <div class="col-md-4 d-flex align-items-center">
-                                        <x-heroicon-o-calendar class="me-2 text-muted" style="width: 14px; height: 14px;" />
-                                        <strong>Fecha y hora: </strong> {{ \Carbon\Carbon::parse($grupo['instancias'][0]['instancia_muestra']->fecha_inicio_muestreo)->format('d/m/Y H:i:s') ?? 'N/A' }}    
-                                    </div>
-                                    <div class="col-md-4 d-flex align-items-center">
-                                        <x-heroicon-o-map-pin class="me-2 text-muted" style="width: 14px; height: 14px;" />
-                                        <strong>Dirección: </strong> {{ $cotizacion ? (\App\Support\CotizacionClienteEtiqueta::direccionDestinatarioTexto($cotizacion) ?: 'N/A') : 'N/A' }}
-                                    </div>
-                                    <div class="col-md-4 d-flex align-items-center">
-                                        <x-heroicon-o-user-circle class="me-2 text-muted" style="width: 14px; height: 14px;" />
-                                        <strong>Cotización N°: </strong> {{ $cotizacion->coti_num ?? 'N/A' }}
-                                    </div>
-                                </div>
-                            </div>
+                            @include('tareas.partials.meta-cotizacion', ['grupo' => $grupo, 'cotizacion' => $cotizacion])
                         @endif
                     </div>
 
                     <div id="tabla-{{ $numCoti }}-{{ $itemId }}-{{ $isHermana ? $subitemId : $instanceNumber }}" class="collapse">
                         <div class="card-body p-0">
                             <div class="table-responsive">
-                                <table class="table table-bordered align-middle mb-0">
+                                <table class="table table-bordered align-middle mb-0 tareas-muestras-table">
                                     <thead class="table-dark">
                                         <tr>
                                             <th class="w-60">Descripción</th>
@@ -849,12 +787,12 @@ usort($gruposFinalizados, function($a, $b) use ($fechaActual) {
                     };
                 @endphp
 
-                <div class="card mb-4 shadow-sm">
+                <div class="card mb-4 shadow-sm tarea-grupo-card">
                     <div class="card-header table-{{ $badgeClassMuestra }}">
                         <!-- Encabezado -->
                         <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
                             <div class="d-flex align-items-center">
-                                <button class="btn btn-link text-decoration-none p-0 me-2" 
+                                <button class="btn btn-link text-decoration-none p-0 me-2 tarea-collapse-toggle" 
                                         data-bs-toggle="collapse" 
                                         data-bs-target="#tabla-{{ $numCoti }}-{{ $itemId }}-{{ $isHermana ? $subitemId : $instanceNumber }}" 
                                         aria-expanded="false" 
@@ -864,12 +802,12 @@ usort($gruposFinalizados, function($a, $b) use ($fechaActual) {
                                 </button>
                                 <div>
                                     <h4 class="mb-0 text-primary">
-                                        {{ $cotizacion->coti_empresa ?? 'NA' }} - {{ $grupo['instancias'][0]['instancia_muestra']->cotio_descripcion ?? 'N/A' }}
+                                        {{ \App\Support\CotizacionClienteEtiqueta::paraLista($cotizacion) ?? 'NA' }} - {{ $grupo['instancias'][0]['instancia_muestra']->cotio_descripcion ?? 'N/A' }}
                                         @if($isHermana)
                                             ({{ $grupo['instancias']->count() }} Muestras)
                                         @endif
                                     </h4>
-                                    <div class="d-flex align-items-center gap-2 mt-1">
+                                    <div class="d-flex align-items-center gap-2 mt-1 tarea-grupo-badges">
                                         <span class="badge bg-{{ $badgeClassMuestra }} text-dark">
                                             {{ ucfirst($estadoMuestra) }}
                                         </span>
@@ -883,40 +821,18 @@ usort($gruposFinalizados, function($a, $b) use ($fechaActual) {
                                 </div>
                             </div>
                             
-                            <div class="d-flex gap-2 mt-2 mt-md-0">
-                                <a class="btn btn-outline-primary btn-sm"
-                                   href="https://www.google.com/maps/search/?api=1&query={{ $cotizacion ? urlencode(\App\Support\CotizacionClienteEtiqueta::direccionDestinatarioMapsQuery($cotizacion)) : '' }}">
-                                    <x-heroicon-o-map class="me-1" style="width: 16px; height: 16px;" />
-                                    <span>Maps</span>
-                                </a>
-                            </div>
+                            @include('tareas.partials.grupo-acciones', ['grupo' => $grupo, 'cotizacion' => $cotizacion])
                         </div>
 
-                        <!-- Información de la cotización -->
                         @if($cotizacion)
-                            <div class="mt-3 small">
-                                <div class="row g-2">
-                                    <div class="col-md-4 d-flex align-items-center">
-                                        <x-heroicon-o-calendar class="me-2 text-muted" style="width: 14px; height: 14px;" />
-                                        <strong>Fecha y hora: </strong> {{ \Carbon\Carbon::parse($grupo['instancias'][0]['instancia_muestra']->fecha_inicio_muestreo)->format('d/m/Y H:i:s') ?? 'N/A' }}
-                                    </div>
-                                    <div class="col-md-4 d-flex align-items-center">
-                                        <x-heroicon-o-map-pin class="me-2 text-muted" style="width: 14px; height: 14px;" />
-                                        <strong>Dirección: </strong> {{ $cotizacion ? (\App\Support\CotizacionClienteEtiqueta::direccionDestinatarioTexto($cotizacion) ?: 'N/A') : 'N/A' }}
-                                    </div>
-                                    <div class="col-md-4 d-flex align-items-center">
-                                        <x-heroicon-o-user-circle class="me-2 text-muted" style="width: 14px; height: 14px;" />
-                                        <strong>Cotización N°: </strong> {{ $cotizacion->coti_num ?? 'N/A' }}
-                                    </div>
-                                </div>
-                            </div>
+                            @include('tareas.partials.meta-cotizacion', ['grupo' => $grupo, 'cotizacion' => $cotizacion])
                         @endif
                     </div>
 
                     <div id="tabla-{{ $numCoti }}-{{ $itemId }}-{{ $isHermana ? $subitemId : $instanceNumber }}" class="collapse">
                         <div class="card-body p-0">
                             <div class="table-responsive">
-                                <table class="table table-bordered align-middle mb-0">
+                                <table class="table table-bordered align-middle mb-0 tareas-muestras-table">
                                     <thead class="table-dark">
                                         <tr>
                                             <th class="w-60">Descripción</th>
@@ -1050,12 +966,12 @@ usort($gruposFinalizados, function($a, $b) use ($fechaActual) {
                     };
                 @endphp
 
-                <div class="card mb-4 shadow-sm">
+                <div class="card mb-4 shadow-sm tarea-grupo-card">
                     <div class="card-header table-{{ $badgeClassMuestra }}">
                         <!-- Encabezado -->
                         <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
                             <div class="d-flex align-items-center">
-                                <button class="btn btn-link text-decoration-none p-0 me-2" 
+                                <button class="btn btn-link text-decoration-none p-0 me-2 tarea-collapse-toggle" 
                                         data-bs-toggle="collapse" 
                                         data-bs-target="#tabla-{{ $numCoti }}-{{ $itemId }}-{{ $isHermana ? $subitemId : $instanceNumber }}" 
                                         aria-expanded="false" 
@@ -1065,12 +981,12 @@ usort($gruposFinalizados, function($a, $b) use ($fechaActual) {
                                 </button>
                                 <div>
                                     <h4 class="mb-0 text-primary">
-                                        {{ $cotizacion->coti_empresa ?? 'NA' }} - {{ $grupo['instancias'][0]['instancia_muestra']->cotio_descripcion ?? 'N/A' }}
+                                        {{ \App\Support\CotizacionClienteEtiqueta::paraLista($cotizacion) ?? 'NA' }} - {{ $grupo['instancias'][0]['instancia_muestra']->cotio_descripcion ?? 'N/A' }}
                                         @if($isHermana)
                                             ({{ $grupo['instancias']->count() }} Muestras)
                                         @endif
                                     </h4>
-                                    <div class="d-flex align-items-center gap-2 mt-1">
+                                    <div class="d-flex align-items-center gap-2 mt-1 tarea-grupo-badges">
                                         <span class="badge bg-{{ $badgeClassMuestra }} text-dark">
                                             {{ ucfirst($estadoMuestra) }}
                                         </span>
@@ -1084,40 +1000,18 @@ usort($gruposFinalizados, function($a, $b) use ($fechaActual) {
                                 </div>
                             </div>
                             
-                            <div class="d-flex gap-2 mt-2 mt-md-0">
-                                <a class="btn btn-outline-primary btn-sm"
-                                   href="https://www.google.com/maps/search/?api=1&query={{ $cotizacion ? urlencode(\App\Support\CotizacionClienteEtiqueta::direccionDestinatarioMapsQuery($cotizacion)) : '' }}">
-                                    <x-heroicon-o-map class="me-1" style="width: 16px; height: 16px;" />
-                                    <span>Maps</span>
-                                </a>
-                            </div>
+                            @include('tareas.partials.grupo-acciones', ['grupo' => $grupo, 'cotizacion' => $cotizacion])
                         </div>
 
-                        <!-- Información de la cotización -->
                         @if($cotizacion)
-                            <div class="mt-3 small">
-                                <div class="row g-2">
-                                    <div class="col-md-4 d-flex align-items-center">
-                                        <x-heroicon-o-calendar class="me-2 text-muted" style="width: 14px; height: 14px;" />
-                                        <strong>Fecha y hora: </strong> {{ \Carbon\Carbon::parse($grupo['instancias'][0]['instancia_muestra']->fecha_inicio_muestreo)->format('d/m/Y H:i:s') ?? 'N/A' }}
-                                    </div>
-                                    <div class="col-md-4 d-flex align-items-center">
-                                        <x-heroicon-o-map-pin class="me-2 text-muted" style="width: 14px; height: 14px;" />
-                                        <strong>Dirección: </strong> {{ $cotizacion ? (\App\Support\CotizacionClienteEtiqueta::direccionDestinatarioTexto($cotizacion) ?: 'N/A') : 'N/A' }}
-                                    </div>
-                                    <div class="col-md-4 d-flex align-items-center">
-                                        <x-heroicon-o-user-circle class="me-2 text-muted" style="width: 14px; height: 14px;" />
-                                        <strong>Cotización N°: </strong> {{ $cotizacion->coti_num ?? 'N/A' }}
-                                    </div>
-                                </div>
-                            </div>
+                            @include('tareas.partials.meta-cotizacion', ['grupo' => $grupo, 'cotizacion' => $cotizacion])
                         @endif
                     </div>
 
                     <div id="tabla-{{ $numCoti }}-{{ $itemId }}-{{ $isHermana ? $subitemId : $instanceNumber }}" class="collapse">
                         <div class="card-body p-0">
                             <div class="table-responsive">
-                                <table class="table table-bordered align-middle mb-0">
+                                <table class="table table-bordered align-middle mb-0 tareas-muestras-table">
                                     <thead class="table-dark">
                                         <tr>
                                             <th class="w-60">Descripción</th>
@@ -1221,6 +1115,8 @@ usort($gruposFinalizados, function($a, $b) use ($fechaActual) {
             @endforeach
         </div>
     @endif
+</div>
+    </div>
 @else
     <div class="alert alert-info">
         No hay tareas para mostrar.

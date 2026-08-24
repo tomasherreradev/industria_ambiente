@@ -1,0 +1,282 @@
+/* Panel de atajos — paleta del sistema (grises claros + azul primario) */
+
+.dashboard-apps-launcher {
+    --apps-primary: var(--primary-color, #4e73df);
+    --apps-primary-rgb: 78, 115, 223;
+    --apps-light: var(--light-color, #f8f9fc);
+    --apps-dark: var(--dark-color, #5a5c69);
+    --apps-gray: var(--gray-600, #6c757d);
+    --apps-border: var(--gray-400, #ced4da);
+    --apps-surface: #ffffff;
+
+    position: relative;
+    z-index: 20;
+}
+
+.dashboard-apps-launcher.is-open {
+    z-index: 1040;
+}
+
+.dashboard-apps-launcher__trigger {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    padding: 0.875rem 1rem;
+    border: 1px solid var(--apps-border);
+    border-radius: 1rem;
+    background: var(--apps-surface);
+    color: var(--apps-dark);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    transition: box-shadow 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
+    cursor: pointer;
+    text-align: left;
+}
+
+.dashboard-apps-launcher__trigger:hover {
+    border-color: rgba(var(--apps-primary-rgb), 0.35);
+    box-shadow: 0 4px 14px rgba(var(--apps-primary-rgb), 0.08);
+}
+
+.dashboard-apps-launcher.is-open .dashboard-apps-launcher__trigger {
+    border-color: rgba(var(--apps-primary-rgb), 0.45);
+    background: var(--apps-light);
+    box-shadow: 0 4px 16px rgba(var(--apps-primary-rgb), 0.12);
+}
+
+.dashboard-apps-launcher__trigger-icon {
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 50%;
+    background: var(--apps-light);
+    border: 1px solid var(--apps-border);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: var(--apps-primary);
+}
+
+.dashboard-apps-launcher__trigger-icon svg {
+    width: 1.25rem;
+    height: 1.25rem;
+}
+
+.dashboard-apps-launcher__trigger-text {
+    flex: 1;
+    min-width: 0;
+}
+
+.dashboard-apps-launcher__trigger-title {
+    display: block;
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--apps-dark);
+}
+
+.dashboard-apps-launcher__trigger-subtitle {
+    display: block;
+    font-size: 0.8125rem;
+    color: var(--apps-gray);
+    line-height: 1.3;
+}
+
+.dashboard-apps-launcher__trigger-badge {
+    font-size: 0.75rem;
+    font-weight: 600;
+    background-color: rgba(var(--apps-primary-rgb), 0.12) !important;
+    color: var(--apps-primary) !important;
+}
+
+.dashboard-apps-launcher__trigger-chevron {
+    flex-shrink: 0;
+    color: var(--apps-gray);
+    transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1), color 0.2s ease;
+}
+
+.dashboard-apps-launcher.is-open .dashboard-apps-launcher__trigger-chevron {
+    transform: rotate(180deg);
+    color: var(--apps-primary);
+}
+
+.dashboard-apps-launcher__panel-wrap {
+    position: absolute;
+    top: calc(100% + 0.5rem);
+    left: 0;
+    right: 0;
+    z-index: 1041;
+    pointer-events: none;
+    visibility: hidden;
+}
+
+.dashboard-apps-launcher.is-open .dashboard-apps-launcher__panel-wrap {
+    pointer-events: auto;
+    visibility: visible;
+}
+
+.dashboard-apps-launcher__panel {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.96);
+    transform-origin: top center;
+    transition:
+        opacity 0.28s ease,
+        transform 0.34s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.dashboard-apps-launcher.is-open .dashboard-apps-launcher__panel {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+}
+
+.dashboard-apps-launcher__panel-inner {
+    padding: 1rem;
+    background: var(--apps-surface);
+    border: 1px solid var(--apps-border);
+    border-radius: 1.25rem;
+    box-shadow:
+        0 2px 8px rgba(0, 0, 0, 0.06),
+        0 12px 32px rgba(var(--apps-primary-rgb), 0.08);
+    max-height: min(70vh, 32rem);
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
+.dashboard-apps-favorites {
+    background: var(--apps-light);
+    border: 1px solid var(--apps-border);
+    border-radius: 1rem;
+    padding: 0.875rem 0.75rem 0.625rem;
+    margin-bottom: 0.875rem;
+}
+
+.dashboard-apps-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.625rem;
+    padding: 0 0.25rem;
+}
+
+.dashboard-apps-section-header__title {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--apps-gray);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.dashboard-apps-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.25rem 0.125rem;
+}
+
+.dashboard-apps-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.5rem;
+    padding: 0.625rem 0.375rem;
+    border-radius: 0.875rem;
+    text-decoration: none;
+    color: var(--apps-dark);
+    transition: background-color 0.15s ease, color 0.15s ease;
+    opacity: 0;
+    transform: translateY(8px);
+}
+
+.dashboard-apps-launcher.is-open .dashboard-apps-tile {
+    animation: dashboardAppsTileIn 0.38s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    animation-delay: calc(var(--tile-index, 0) * 0.028s + 0.08s);
+}
+
+.dashboard-apps-tile:hover,
+.dashboard-apps-tile:focus-visible {
+    background: rgba(var(--apps-primary-rgb), 0.08);
+    color: var(--apps-primary);
+}
+
+.dashboard-apps-tile:focus-visible {
+    outline: 2px solid rgba(var(--apps-primary-rgb), 0.55);
+    outline-offset: 2px;
+}
+
+.dashboard-apps-tile__icon {
+    width: 3rem;
+    height: 3rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    flex-shrink: 0;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.dashboard-apps-tile__icon svg {
+    width: 1.35rem;
+    height: 1.35rem;
+}
+
+.dashboard-apps-tile__label {
+    font-size: 0.6875rem;
+    line-height: 1.25;
+    text-align: center;
+    width: 100%;
+    max-width: 5.5rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    word-break: break-word;
+}
+
+@keyframes dashboardAppsTileIn {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@media (min-width: 576px) {
+    .dashboard-apps-launcher__panel-wrap {
+        left: auto;
+        right: 0;
+        width: 22.5rem;
+    }
+
+    .dashboard-apps-launcher__panel {
+        transform-origin: top right;
+    }
+
+    .dashboard-apps-launcher__panel-inner {
+        width: 100%;
+    }
+
+    .dashboard-apps-grid {
+        gap: 0.375rem 0.25rem;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .dashboard-apps-launcher__panel,
+    .dashboard-apps-launcher__trigger-chevron,
+    .dashboard-apps-tile {
+        transition: none !important;
+        animation: none !important;
+    }
+
+    .dashboard-apps-launcher.is-open .dashboard-apps-tile {
+        opacity: 1;
+        transform: none;
+    }
+}

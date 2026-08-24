@@ -13,12 +13,17 @@ use App\Models\CotioInstanciaMuestraMuestraAnalisis;
 use App\Models\Matriz;
 use App\Models\Factura;
 use App\Models\Clientes;
+use App\Models\ClienteContacto;
 use App\Models\Divis;
+use App\Support\CotizacionContactosFacturacion;
 use App\Support\CotizacionClienteEtiqueta;
 use App\Support\CotizacionPrecioEnsayo;
 use App\Support\CotizacionReferenciasFacturacion;
+use App\Support\CotizacionResumenEconomico;
 use App\Services\Afip\AfipDirectWsfeClient;
+use App\Mail\FacturaEnviadaMail;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Mail;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -37,6 +42,8 @@ class FacturacionController extends Controller
 
 public function index(Request $request)
 {
+    \App\Support\TrabajoTecnicoCampo::sincronizarInstanciasMuestreadasPendientes();
+
     $query = Factura::with('cotizacion')
                 ->orderBy('created_at', 'desc');
 
@@ -91,6 +98,8 @@ public function index(Request $request)
 
     $baseQuery = CotioInstancia::with([
         'cotizacion.matriz',
+        'cotizacion.cliente',
+        'cotizacion.sucursal',
         'tareas' => function($query) {
             $query->where('enable_inform', true)
                     ->orderBy('cotio_subitem');
@@ -107,6 +116,10 @@ public function index(Request $request)
         ->orderBy('cotio_item', 'asc')
         ->orderBy('instance_number', 'asc')
         ->paginate(20);
+
+    CotizacionClienteEtiqueta::precargarEmpresasRelacionadas(
+        $pagination->getCollection()->map->cotizacion->unique(fn ($c) => $c->coti_num)->filter()->values()
+    );
 
     // Agrupar por cotización
     $informesPorCotizacion = $pagination->groupBy('cotio_numcoti')->map(function ($group) {
@@ -128,7 +141,11 @@ public function index(Request $request)
 
 public function facturar($coti_num)
 {
-    $cotizacion = Coti::with(['cliente'])->findOrFail($coti_num);
+    \App\Support\TrabajoTecnicoCampo::sincronizarInstanciasMuestreadasPendientes((int) $coti_num);
+
+    $cotizacion = Coti::with(['cliente.contactos'])->findOrFail($coti_num);
+    $contactosEnvioFactura = $this->contactosEnvioFacturaParaCotizacion($cotizacion);
+    $estadoEnvioFactura = CotizacionContactosFacturacion::estadoEnvioFactura($cotizacion, $contactosEnvioFactura);
 
     // Cargar tareas con relaciones necesarias
     $tareas = $cotizacion->tareas()
@@ -295,29 +312,29 @@ public function facturar($coti_num)
             ?? $cotizacion->coti_fechaalta
             ?? now();
 
-        // monto_indiv guardado por el JS ya incluye el interés → es la fuente de verdad.
-        // coti_cuota_monto_total puede estar desactualizado respecto al total real,
-        // por lo que NO se usa para recomputar el monto individual.
+        $descuentoData = $this->obtenerDatosDescuento($cotizacion);
+        $resumenEconomico = CotizacionResumenEconomico::calcular(
+            $tareas,
+            (float) ($cotizacion->coti_aumentoglobal ?? 0),
+            $descuentoData['porcentaje_global'],
+            $descuentoData['porcentaje_sector']
+        );
         $cuotaCant    = max(1, (int) $cotizacion->coti_cuota_cant);
-        $cuotaIndiv   = (float) ($cotizacion->coti_cuota_monto_indiv ?? 0);
         $cuotaInteres = (float) ($cotizacion->coti_cuota_interes ?? 0);
-
-        // Total efectivo a cobrar = lo que el cliente paga realmente (indiv × cant)
-        $cuotaTotalEfectivo = $cuotaIndiv * $cuotaCant;
-
-        // Monto base (sin interés): back-calculado solo para mostrar el desglose
-        $cuotaMontoBase = $cuotaInteres > 0
-            ? round($cuotaTotalEfectivo / (1 + $cuotaInteres / 100), 2)
-            : $cuotaTotalEfectivo;
+        $montosCuotas = CotizacionResumenEconomico::calcularCuotas(
+            $resumenEconomico['total_final'],
+            $cuotaCant,
+            $cuotaInteres
+        );
 
         $cuotasInfo = [
             'total'             => $cuotaCant,
             'billed_list'       => $cuotasFacturadas,
             'facturadas'        => count($cuotasFacturadas),
-            'monto_base'        => $cuotaMontoBase,
+            'monto_base'        => $montosCuotas['monto_total'],
             'interes'           => $cuotaInteres,
-            'monto_con_interes' => $cuotaTotalEfectivo,
-            'monto_indiv'       => $cuotaIndiv,
+            'monto_con_interes' => $montosCuotas['monto_con_interes'],
+            'monto_indiv'       => $montosCuotas['monto_individual'],
             'descripcion'       => $cotizacion->coti_cuota_desc,
             'proxima'           => empty($cuotasFacturadas) ? 1 : max($cuotasFacturadas) + 1,
             'fecha_inicio'      => $fechaInicioCuotas,
@@ -331,8 +348,107 @@ public function facturar($coti_num)
         'agrupadas',
         'resumenMontos',
         'refsFacturacion',
-        'cuotasInfo'
+        'cuotasInfo',
+        'contactosEnvioFactura',
+        'estadoEnvioFactura'
     ));
+}
+
+/**
+ * Valida y resuelve emails de envío. Retorna redirect si falta selección obligatoria.
+ *
+ * @return \Illuminate\Http\RedirectResponse|array{emails: array<int, string>, contactos_cliente: \Illuminate\Support\Collection, estado: array}
+ */
+private function validarYResolverEmailsEnvioFactura(Request $request, Coti $cotizacion)
+{
+    $contactosCliente = $this->contactosEnvioFacturaParaCotizacion($cotizacion);
+    $estado = CotizacionContactosFacturacion::estadoEnvioFactura($cotizacion, $contactosCliente);
+    $emails = CotizacionContactosFacturacion::resolverEmailsDestino(
+        $cotizacion,
+        $contactosCliente,
+        $request->input('emails_envio_factura')
+    );
+
+    if ($emails === [] && $estado['requiere_seleccion'] && $contactosCliente->isNotEmpty()) {
+        return redirect()->back()->with('error', 'Seleccione al menos un email de envío de factura antes de facturar.');
+    }
+
+    return [
+        'emails' => $emails,
+        'contactos_cliente' => $contactosCliente,
+        'estado' => $estado,
+    ];
+}
+
+private function procesarEnvioFacturaPorCorreo(Coti $cotizacion, Factura $factura, array $emails, $contactosCliente, array $estado): void
+{
+    if ($emails === []) {
+        return;
+    }
+
+    if ($estado['requiere_seleccion']) {
+        CotizacionContactosFacturacion::persistirContactosEnvioFacturaEnCoti(
+            $cotizacion,
+            $contactosCliente,
+            $emails
+        );
+    }
+
+    $this->enviarFacturaPorCorreo($factura, $emails);
+}
+
+/**
+ * @param  array<int, string>  $emails
+ */
+private function enviarFacturaPorCorreo(Factura $factura, array $emails): void
+{
+    try {
+        $rutaPdf = null;
+        try {
+            $rutaPdf = $this->resolverRutaPdfFactura($factura);
+        } catch (\Throwable $e) {
+            Log::warning('No se pudo generar PDF para envío por email', [
+                'factura_id' => $factura->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        Mail::to($emails)->send(new FacturaEnviadaMail($factura, $rutaPdf));
+
+        Log::info('Factura enviada por email', [
+            'factura_id' => $factura->id,
+            'numero_factura' => $factura->numero_factura,
+            'destinatarios' => $emails,
+            'pdf_adjunto' => $rutaPdf !== null,
+        ]);
+    } catch (\Throwable $e) {
+        Log::error('Error al enviar factura por email', [
+            'factura_id' => $factura->id,
+            'destinatarios' => $emails,
+            'error' => $e->getMessage(),
+        ]);
+    }
+}
+
+/**
+ * Contactos del cliente con tipo «Envío de factura» (tabla cliente_contactos).
+ *
+ * @return \Illuminate\Support\Collection<int, ClienteContacto>
+ */
+private function contactosEnvioFacturaParaCotizacion(Coti $cotizacion): \Illuminate\Support\Collection
+{
+    $cliCodigo = trim((string) ($cotizacion->coti_codigocli ?? ''));
+    if ($cliCodigo === '') {
+        return collect();
+    }
+
+    return ClienteContacto::query()
+        ->whereRaw('LTRIM(RTRIM(cli_codigo)) = ?', [$cliCodigo])
+        ->envioFactura()
+        ->whereNotNull('email')
+        ->whereRaw("LTRIM(RTRIM(email)) <> ''")
+        ->orderBy('nombre')
+        ->get();
 }
 
 
@@ -430,6 +546,8 @@ public function generarFacturaArca(Request $request, $coti_num)
             'muestras.*' => 'numeric|exists:cotio_instancias,id',
             'analisis.*' => 'numeric|exists:cotio_instancias,id',
             'cuotas.*' => 'numeric',
+            'emails_envio_factura' => 'array|nullable',
+            'emails_envio_factura.*' => 'email',
         ], [
             'analisis.*.numeric' => 'El ID del análisis :index debe ser un número.',
             'analisis.*.exists' => 'El ID del análisis :index no existe en la base de datos.',
@@ -439,6 +557,11 @@ public function generarFacturaArca(Request $request, $coti_num)
         ]);
 
         $cotizacion = Coti::with(['cliente'])->findOrFail($coti_num);
+
+        $emailsResueltos = $this->validarYResolverEmailsEnvioFactura($request, $cotizacion);
+        if ($emailsResueltos instanceof \Illuminate\Http\RedirectResponse) {
+            return $emailsResueltos;
+        }
 
         $bloqueoRefs = CotizacionReferenciasFacturacion::mensajeSiNoPuedeFacturar($cotizacion);
         if ($bloqueoRefs) {
@@ -452,7 +575,7 @@ public function generarFacturaArca(Request $request, $coti_num)
 
         // Si se seleccionaron cuotas, priorizar esa lógica
         if (!empty($cuotasSeleccionadas)) {
-            return $this->generarFacturaCuotas($request, $cotizacion, $cuotasSeleccionadas, $observaciones);
+            return $this->generarFacturaCuotas($request, $cotizacion, $cuotasSeleccionadas, $observaciones, $emailsResueltos);
         }
 
         // Cargar instancias de muestras (solo las que NO están facturadas)
@@ -734,8 +857,21 @@ public function generarFacturaArca(Request $request, $coti_num)
                 'analisis_ids' => $analisisSeleccionados,
                 'observaciones' => $observaciones
             ]);
+
+            $this->procesarEnvioFacturaPorCorreo(
+                $cotizacion,
+                $factura,
+                $emailsResueltos['emails'],
+                $emailsResueltos['contactos_cliente'],
+                $emailsResueltos['estado']
+            );
     
-            return redirect()->back()->with('success', 'Factura generada exitosamente: ' . $resultadoFactura['numero_factura']);
+            $mensajeExito = 'Factura generada exitosamente: ' . $resultadoFactura['numero_factura'];
+            if ($emailsResueltos['emails'] !== []) {
+                $mensajeExito .= '. Enviada a: ' . implode(', ', $emailsResueltos['emails']);
+            }
+
+            return redirect()->back()->with('success', $mensajeExito);
         } catch (\Exception $e) {
             Log::error('Error al guardar factura después de generarla en AFIP: ' . $e->getMessage());
             return redirect()->back()->with('success', 'Factura generada en AFIP: ' . $resultadoFactura['numero_factura'] . ' (Error al guardar en BD: ' . $e->getMessage() . ')');
@@ -749,7 +885,7 @@ public function generarFacturaArca(Request $request, $coti_num)
     }
 }
 
-protected function generarFacturaCuotas(Request $request, $cotizacion, $cuotasSeleccionadas, $observaciones = null)
+protected function generarFacturaCuotas(Request $request, $cotizacion, $cuotasSeleccionadas, $observaciones = null, ?array $emailsResueltos = null)
 {
     // Verificar si alguna de las cuotas ya fue facturada (evitar duplicados)
     $facturas = Factura::where('cotizacion_id', $cotizacion->coti_num)->get();
@@ -779,9 +915,24 @@ protected function generarFacturaCuotas(Request $request, $cotizacion, $cuotasSe
     $montoTotal = 0;
     $montoTotalBruto = 0;
 
-    // monto_indiv ya tiene el interés incluido (lo calcula el JS al guardar)
+    $tareasCuotas = $cotizacion->tareas()
+        ->orderBy('cotio_item')
+        ->orderBy('cotio_subitem')
+        ->get();
+    $descuentoDataCuotas = $this->obtenerDatosDescuento($cotizacion);
+    $resumenCuotas = CotizacionResumenEconomico::calcular(
+        $tareasCuotas,
+        (float) ($cotizacion->coti_aumentoglobal ?? 0),
+        $descuentoDataCuotas['porcentaje_global'],
+        $descuentoDataCuotas['porcentaje_sector']
+    );
     $totalCuotas      = max(1, (int) ($cotizacion->coti_cuota_cant ?? 1));
-    $montoCuota       = (float) ($cotizacion->coti_cuota_monto_indiv ?? 0);
+    $montosCuotaFactura = CotizacionResumenEconomico::calcularCuotas(
+        $resumenCuotas['total_final'],
+        $totalCuotas,
+        (float) ($cotizacion->coti_cuota_interes ?? 0)
+    );
+    $montoCuota       = $montosCuotaFactura['monto_individual'];
     $descripcionCuota = $cotizacion->coti_cuota_desc ?? 'Cuota';
 
     $mesesEs = [
@@ -873,7 +1024,22 @@ protected function generarFacturaCuotas(Request $request, $cotizacion, $cuotasSe
             'observaciones' => $observaciones
         ]);
 
-        return redirect()->back()->with('success', 'Factura de cuotas generada exitosamente: ' . $resultadoFactura['numero_factura']);
+        if ($emailsResueltos !== null) {
+            $this->procesarEnvioFacturaPorCorreo(
+                $cotizacion,
+                $factura,
+                $emailsResueltos['emails'],
+                $emailsResueltos['contactos_cliente'],
+                $emailsResueltos['estado']
+            );
+        }
+
+        $mensajeExito = 'Factura de cuotas generada exitosamente: ' . $resultadoFactura['numero_factura'];
+        if ($emailsResueltos !== null && ($emailsResueltos['emails'] ?? []) !== []) {
+            $mensajeExito .= '. Enviada a: ' . implode(', ', $emailsResueltos['emails']);
+        }
+
+        return redirect()->back()->with('success', $mensajeExito);
     } catch (\Exception $e) {
         Log::error('Error al guardar factura de cuotas: ' . $e->getMessage());
         return redirect()->back()->with('success', 'Factura de cuotas generada en AFIP: ' . $resultadoFactura['numero_factura'] . ' (Error al guardar en BD: ' . $e->getMessage() . ')');
@@ -1088,10 +1254,13 @@ private function obtenerDatosDescuento(?Coti $cotizacion): array
         $descuentoGlobal = (float) $cotizacion->coti_descuentoglobal;
     }
 
-    // Descuento sector: solo usar el configurado en la cotización
+    // Descuento sector: cotización; si no hay, el del cliente (igual que showDetalle)
     $descuentoSector = 0.0;
     if ($cotizacion && $sectorCodigo) {
         $descuentoSector = $this->obtenerDescuentoSectorCotizacion($cotizacion, $sectorCodigo);
+    }
+    if ($descuentoSector == 0.0 && $cliente && $sectorCodigo) {
+        $descuentoSector = $this->obtenerDescuentoSector($cliente, $sectorCodigo);
     }
 
     $descuentoGlobal = max(0.0, min($descuentoGlobal, 100.0));
@@ -1420,22 +1589,23 @@ private function construirResumenFinanciero(Coti $cotizacion, $tareas = null): a
 
     $totalComponentesExtras = $componentesExtrasDetalle->sum('precio');
 
-    $totalBruto = $totalMuestras + $totalComponentesExtras;
-
     $descuentoData = $this->obtenerDatosDescuento($cotizacion);
-
-    // Aumento global de la cotización (mismo concepto que en la edición de la coti)
     $aumentoPorcentaje = max(0.0, min((float) ($cotizacion->coti_aumentoglobal ?? 0.0), 100.0));
     $aumentoFactor = $aumentoPorcentaje / 100;
 
-    $descuentoMontoTotal = round($totalBruto * $descuentoData['factor_total'], 2);
-    $descuentoMontoGlobal = round($totalBruto * $descuentoData['factor_global'], 2);
-    $descuentoMontoSector = round($totalBruto * $descuentoData['factor_sector'], 2);
+    $resumenEconomico = CotizacionResumenEconomico::calcular(
+        $tareasCollection,
+        $aumentoPorcentaje,
+        $descuentoData['porcentaje_global'],
+        $descuentoData['porcentaje_sector']
+    );
 
-    $aumentoMontoTotal = round($totalBruto * $aumentoFactor, 2);
-
-    // Total neto = Subtotal + Aumento - Descuentos
-    $totalNeto = round($totalBruto + $aumentoMontoTotal - $descuentoMontoTotal, 2);
+    $totalBruto = $resumenEconomico['subtotal'];
+    $descuentoMontoGlobal = $resumenEconomico['descuento_global_monto'];
+    $descuentoMontoSector = $resumenEconomico['descuento_sector_monto'];
+    $descuentoMontoTotal = $resumenEconomico['descuento_total_monto'];
+    $aumentoMontoTotal = $resumenEconomico['aumento_monto'];
+    $totalNeto = $resumenEconomico['total_final'];
 
     return [
         'muestras' => $muestrasInfo,
@@ -2096,13 +2266,36 @@ public function descargar(Factura $factura)
             'cae' => $factura->cae
         ]);
 
+        $filePath = $this->resolverRutaPdfFactura($factura);
+
+        return response()->download($filePath, basename($filePath));
+
+    } catch (\Exception $e) {
+        Log::error('Error al generar/descargar factura: ' . $e->getMessage(), [
+            'factura_id' => $factura->id,
+            'numero_factura' => $factura->numero_factura,
+            'error_trace' => $e->getTraceAsString()
+        ]);
+
+        if (request()->wantsJson() || request()->ajax()) {
+            return response()->json([
+                'error' => 'No se pudo generar el PDF: ' . $e->getMessage()
+            ], 500);
+        }
+
+        return redirect()->back()->with('error', 'Error al generar la factura: ' . $e->getMessage());
+    }
+}
+
+protected function resolverRutaPdfFactura(Factura $factura): string
+{
         // Verificar si ya tenemos un PDF guardado localmente
         $fileName = 'Factura_' . str_replace(['-', '/', '\\'], '_', $factura->numero_factura) . '.pdf';
         $filePath = storage_path('app/facturas/' . $fileName);
 
         if (file_exists($filePath)) {
-            Log::info('PDF encontrado en cache, descargando archivo existente', ['file' => $fileName]);
-            return response()->download($filePath, $fileName);
+            Log::info('PDF encontrado en cache', ['file' => $fileName]);
+            return $filePath;
         }
 
         // Crear directorio si no existe
@@ -2315,11 +2508,9 @@ public function descargar(Factura $factura)
         ];
         $html = str_replace(array_keys($replacements), array_values($replacements), $html);
 
-        // Log HTML para depuración
         file_put_contents(storage_path('app/debug_bill.html'), $html);
         Log::debug('Processed HTML saved to storage/app/debug_bill.html');
 
-        // Opciones para el archivo
         $options = [
             'width' => 8,
             'marginLeft' => 0.4,
@@ -2337,7 +2528,6 @@ public function descargar(Factura $factura)
             }
             Log::info('PDF generado solo con DomPDF (FACTURA_PDF_SOLO_DOMPDF)', ['factura_id' => $factura->id]);
         } else {
-            // Crear PDF con Afip SDK (devuelve URL S3 o ruta local)
             $accessToken = config('afip.access_token');
             if (empty($accessToken)) {
                 throw new \Exception('Variable AFIPSDK_ACCESS_TOKEN no configurada. No es posible generar el PDF.');
@@ -2389,41 +2579,32 @@ public function descargar(Factura $factura)
             }
         }
 
-        // Actualizar la referencia en la base de datos
         $factura->update(['pdf_url' => $fileName]);
 
-        Log::info('PDF de factura listo para descarga', [
+        Log::info('PDF de factura generado', [
             'factura_id' => $factura->id,
             'archivo' => $fileName,
             'tamaño' => filesize($filePath) . ' bytes'
         ]);
 
-        return response()->download($filePath, $fileName);
-
-    } catch (\Exception $e) {
-        Log::error('Error al generar/descargar factura: ' . $e->getMessage(), [
-            'factura_id' => $factura->id,
-            'numero_factura' => $factura->numero_factura,
-            'error_trace' => $e->getTraceAsString()
-        ]);
-
-        if (request()->wantsJson() || request()->ajax()) {
-            return response()->json([
-                'error' => 'No se pudo generar el PDF: ' . $e->getMessage()
-            ], 500);
-        }
-
-        return back()->with('error', 'No se pudo generar el PDF: ' . $e->getMessage());
-    }
+        return $filePath;
 }
+
 
 /**
  * Logo en base64 para el PDF (DomPDF / CreatePDF no resuelven bien rutas locales).
  */
-private function buildFacturaLogoImgHtml(int $maxHeightPx = 88): string
+private function buildFacturaLogoImgHtml(int $maxHeightPx = 88, float $opacity = 0.88): string
 {
-    $path = public_path('assets/img/logo_facturacion.png');
-    if (!is_readable($path)) {
+    $path = null;
+    foreach (['logo.png', 'logo_facturacion.png'] as $name) {
+        $candidate = public_path('assets/img/' . $name);
+        if (is_readable($candidate)) {
+            $path = $candidate;
+            break;
+        }
+    }
+    if ($path === null) {
         return '';
     }
     $raw = @file_get_contents($path);
@@ -2431,8 +2612,10 @@ private function buildFacturaLogoImgHtml(int $maxHeightPx = 88): string
         return '';
     }
     $src = 'data:image/png;base64,' . base64_encode($raw);
+    $opacity = max(0.1, min(1.0, $opacity));
 
-    return '<img src="' . $src . '" alt="" style="max-height:' . $maxHeightPx . 'px;width:auto;display:block;">';
+    return '<img src="' . $src . '" alt="" style="max-height:' . $maxHeightPx
+        . 'px;width:auto;display:block;opacity:' . $opacity . ';">';
 }
 
 /**

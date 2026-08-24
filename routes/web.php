@@ -19,6 +19,8 @@ use App\Http\Controllers\AdminVolumenCosteosController;
 use App\Http\Middleware\CheckAdminOrRole;
 use App\Http\Controllers\SimpleNotificationController;
 use App\Http\Controllers\InformeController;
+use App\Http\Controllers\InformeNotaController;
+use App\Http\Controllers\PresupuestoNotaController;
 use App\Http\Controllers\VentasController;
 use App\Http\Controllers\ClientesController;
 use App\Http\Controllers\AuditoriaController;
@@ -33,6 +35,7 @@ use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\ConsultoriaController;
 use App\Http\Controllers\AspController;
 use App\Http\Controllers\ClarkeFireController;
+use App\Http\Controllers\MedicionesController;
 use App\Http\Middleware\EnsureHasRole;
 
 
@@ -100,9 +103,26 @@ Route::middleware(CheckAuth::class)->group(function () {
         ->middleware(EnsureHasRole::class.':asp')
         ->name('asp.index');
 
+    Route::get('/mediciones', [MedicionesController::class, 'index'])
+        ->middleware(EnsureHasRole::class.':coordinador_mediciones')
+        ->name('mediciones.index');
+
+    Route::get('/mediciones/{cotizacion}/categoria/{item}/{instance}/ver', [MedicionesController::class, 'ver'])->name('mediciones.ver');
+    Route::get('/mediciones/{cotizacion}/categoria/{item}/{instance}/informe', [MedicionesController::class, 'verInforme'])->name('mediciones.informe.ver');
+    Route::get('/mediciones/{coti_num}', [MedicionesController::class, 'show'])->name('mediciones.show');
+    Route::post('/mediciones/informe/subir', [MedicionesController::class, 'subirInforme'])->name('mediciones.informe.subir');
+    Route::post('/mediciones/informe/eliminar', [MedicionesController::class, 'eliminarInforme'])->name('mediciones.informe.eliminar');
+    Route::post('/mediciones/informe/aprobar', [MedicionesController::class, 'aprobarInforme'])->name('mediciones.informe.aprobar');
+
     Route::get('/clarke-fire', [ClarkeFireController::class, 'index'])
         ->middleware(EnsureHasRole::class.':clarke_fire')
         ->name('clarke-fire.index');
+
+    // Detalle de cotización y paso a facturación (coordinadores de canal y roles operativos)
+    Route::middleware(CheckAdminOrRole::class)->group(function () {
+        Route::get('/show/{coti_num}', [MuestrasController::class, 'show'])->name('muestras.show');
+        Route::post('/muestras/pasar-facturacion', [MuestrasController::class, 'pasarAFacturacion'])->name('muestras.pasar-facturacion');
+    });
 });
 
 // Ruta rápida para actualizar contraseñas (solo admin)
@@ -149,6 +169,7 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
     Route::post('/users', [UserController::class, 'storeUser'])->name('users.storeUser');
     Route::get('/users/{usu_codigo}', [UserController::class, 'showUser'])->name('users.showUser');
     Route::put('/users/{usu_codigo}', [UserController::class, 'update'])->name('users.update');
+    Route::delete('/users/{usu_codigo}', [UserController::class, 'destroy'])->name('users.destroy');
     Route::get('/users/exportar/excel', [UserController::class, 'exportar'])->name('users.exportar');
     
 
@@ -234,22 +255,27 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
 
     // Gestión de muestras
     Route::get('/muestras', [MuestrasController::class, 'index'])->name('muestras.index');
-    Route::get('/show/{coti_num}', [MuestrasController::class, 'show'])->name('muestras.show');
     Route::post('/muestras/{coti_num}/cancelar-muestreo', [MuestrasController::class, 'cancelarMuestreo'])->name('muestras.cancelar-muestreo');
     Route::get('/muestras/{cotizacion}/categoria/{item}/{instance}', [MuestrasController::class, 'verMuestra'])->name('categoria.verMuestra');
     Route::post('/asignar-detalles-muestra', [MuestrasController::class, 'asignarDetallesMuestra'])->name('asignar.detalles-muestra');
     Route::get('/muestras/{cotizacion}/categoria/{item}/{instance}/ver', [MuestrasController::class, 'verMuestra'])->name('muestras.ver');
-    Route::post('/muestras/pasar-facturacion', [MuestrasController::class, 'pasarAFacturacion'])->name('muestras.pasar-facturacion');
     Route::post('/muestras/pasar-a-informes', [MuestrasController::class, 'pasarAInformes'])->name('muestras.pasar-a-informes');
+    Route::post('/muestras/pasar-a-mediciones', [MuestrasController::class, 'pasarAMediciones'])->name('muestras.pasar-a-mediciones');
     Route::post('/muestras/asignacion-masiva', [MuestrasController::class, 'asignacionMasiva'])->name('muestras.asignacion-masiva');
     Route::post('/muestras/finalizar-todas', [MuestrasController::class, 'finalizarTodas'])->name('muestras.finalizar-todas');
     Route::post('/muestras/remover-responsable', [MuestrasController::class, 'removerResponsable'])->name('muestras.remover-responsable');
     Route::get('/muestras/{instancia}/datos-recoordinacion', [MuestrasController::class, 'getDatosRecoordinacion'])->name('muestras.get-datos-recoordinacion');
     Route::post('/muestras/recoordinar', [MuestrasController::class, 'recoordinar'])->name('muestras.recoordinar');
+    Route::post('/muestras/revertir-coordinacion/{cotio_numcoti}/{cotio_item}/{instance_number}', [MuestrasController::class, 'revertirCoordinacionMuestreo'])->name('muestras.revertir-coordinacion');
     Route::put('/muestras/update-variable', [MuestrasController::class, 'updateVariable'])->name('muestras.updateVariable');
     Route::put('/muestras/update-all-data', [MuestrasController::class, 'updateAllData'])->name('muestras.updateAllData');
     Route::post('/muestras/update-all-data', [MuestrasController::class, 'updateAllData'])->name('muestras.updateAllData');
     Route::post('/muestras/update-all-data', [MuestrasController::class, 'updateAllData'])->name('muestras.updateAllData');
+    Route::post('/muestras/adjuntos/subir', [MuestrasController::class, 'subirAdjuntoInstancia'])->name('muestras.adjuntos.subir');
+    Route::delete('/muestras/adjuntos/{adjunto}', [MuestrasController::class, 'eliminarAdjuntoInstancia'])->name('muestras.adjuntos.eliminar');
+    Route::get('/muestras/adjuntos/{adjunto}/descargar', [MuestrasController::class, 'descargarAdjuntoInstancia'])->name('muestras.adjuntos.descargar');
+    Route::get('/muestras/adjuntos-ventas/{adjunto}/descargar', [MuestrasController::class, 'descargarAdjuntoVentas'])->name('muestras.adjuntos-ventas.descargar');
+    Route::delete('/muestras/adjuntos-ventas/{adjunto}', [MuestrasController::class, 'eliminarAdjuntoVentas'])->name('muestras.adjuntos-ventas.eliminar');
     Route::post('/muestras/pasar-directo-a-ot/{cotio_numcoti}/{cotio_item}/{instance_number}', [MuestrasController::class, 'pasarDirectoAOT'])->name('muestras.pasar-directo-a-ot');
     Route::delete('/muestras/quitar-directo-a-ot/{cotio_numcoti}/{cotio_item}/{instance_number}', [MuestrasController::class, 'quitarDirectoAOT'])->name('muestras.quitar-directo-a-ot');
     Route::delete('/muestras/quitar-directo-a-ot-from-coordinador/{cotio_numcoti}/{cotio_item}/{instance_number}', [MuestrasController::class, 'quitarDirectoAOTFromCoordinador'])->name('muestras.quitar-directo-a-ot-from-coordinador');
@@ -264,6 +290,11 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
 
 
     //informes
+    Route::get('/informes/notas', [InformeNotaController::class, 'index'])->name('informes.notas.index');
+    Route::post('/informes/notas', [InformeNotaController::class, 'store'])->name('informes.notas.store');
+    Route::get('/informes/notas/{informeNota}/edit', [InformeNotaController::class, 'edit'])->name('informes.notas.edit');
+    Route::put('/informes/notas/{informeNota}', [InformeNotaController::class, 'update'])->name('informes.notas.update');
+    Route::delete('/informes/notas/{informeNota}', [InformeNotaController::class, 'destroy'])->name('informes.notas.destroy');
     Route::get('/informes', [InformeController::class, 'index'])->name('informes.index');
     Route::get('/informes/{cotio_numcoti}/{cotio_item}/{instance_number}', [InformeController::class, 'show'])->name('informes.show');
     Route::get('/informes/pdf-masivo/{cotizacion}', [InformeController::class, 'generarPdfMasivo'])->name('informes.pdf-masivo');
@@ -329,27 +360,29 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
     Route::delete('metodos/{metodo}', [MetodosController::class, 'delete'])->name('metodos.delete');
 
     //Items
-    Route::get('items', [ItemController::class, 'index'])->name('items.index');
-    Route::get('items/create', [ItemController::class, 'create'])->name('items.create');
-    Route::post('items/store', [ItemController::class, 'store'])->name('items.store');
-    
-    // Importación masiva (debe ir antes de items/{cotio_items})
-    Route::get('items/importar', [ItemController::class, 'showImportar'])->name('items.importar');
-    Route::post('items/importar/procesar', [ItemController::class, 'procesarImportacion'])->name('items.importar-procesar');
-    Route::get('items/importar/plantilla', [ItemController::class, 'descargarPlantilla'])->name('items.descargar-plantilla');
-    Route::get('items/exportar', [ItemController::class, 'exportar'])->name('items.exportar');
-    
-    // Cambios masivos de precios (debe ir antes de items/{cotio_items})
-    Route::get('items/precios/cambios-masivos', [ItemController::class, 'showCambiosMasivos'])->name('items.cambios-masivos-precios');
-    Route::post('items/precios/aplicar-cambios-masivos', [ItemController::class, 'aplicarCambiosMasivos'])->name('items.aplicar-cambios-masivos');
-    Route::get('items/precios/historial', [ItemController::class, 'historialPrecios'])->name('items.historial-precios');
-    Route::post('items/precios/revertir/{operacionId}', [ItemController::class, 'revertirCambios'])->name('items.revertir-cambios');
-    
-    // Rutas con parámetros (deben ir al final)
-    Route::get('items/{cotio_items}', [ItemController::class, 'show'])->name('items.show');
-    Route::get('items/{cotio_items}/edit', [ItemController::class, 'edit'])->name('items.edit');
-    Route::put('items/{cotio_items}', [ItemController::class, 'update'])->name('items.update');
-    Route::delete('items/{cotio_items}', [ItemController::class, 'delete'])->name('items.delete');
+    Route::middleware('puede.cargar.items')->group(function () {
+        Route::get('items', [ItemController::class, 'index'])->name('items.index');
+        Route::get('items/create', [ItemController::class, 'create'])->name('items.create');
+        Route::post('items/store', [ItemController::class, 'store'])->name('items.store');
+
+        // Importación masiva (debe ir antes de items/{cotio_items})
+        Route::get('items/importar', [ItemController::class, 'showImportar'])->name('items.importar');
+        Route::post('items/importar/procesar', [ItemController::class, 'procesarImportacion'])->name('items.importar-procesar');
+        Route::get('items/importar/plantilla', [ItemController::class, 'descargarPlantilla'])->name('items.descargar-plantilla');
+        Route::get('items/exportar', [ItemController::class, 'exportar'])->name('items.exportar');
+
+        // Cambios masivos de precios (debe ir antes de items/{cotio_items})
+        Route::get('items/precios/cambios-masivos', [ItemController::class, 'showCambiosMasivos'])->name('items.cambios-masivos-precios');
+        Route::post('items/precios/aplicar-cambios-masivos', [ItemController::class, 'aplicarCambiosMasivos'])->name('items.aplicar-cambios-masivos');
+        Route::get('items/precios/historial', [ItemController::class, 'historialPrecios'])->name('items.historial-precios');
+        Route::post('items/precios/revertir/{operacionId}', [ItemController::class, 'revertirCambios'])->name('items.revertir-cambios');
+
+        // Rutas con parámetros (deben ir al final)
+        Route::get('items/{cotio_items}', [ItemController::class, 'show'])->name('items.show');
+        Route::get('items/{cotio_items}/edit', [ItemController::class, 'edit'])->name('items.edit');
+        Route::put('items/{cotio_items}', [ItemController::class, 'update'])->name('items.update');
+        Route::delete('items/{cotio_items}', [ItemController::class, 'delete'])->name('items.delete');
+    });
 
     // Condiciones de pago
     Route::get('condiciones-pago', [CondicionPagoController::class, 'index'])->name('condiciones-pago.index');
@@ -482,6 +515,7 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
     Route::post('/users', [UserController::class, 'storeUser'])->name('users.storeUser');
     Route::get('/users/{usu_codigo}', [UserController::class, 'showUser'])->name('users.showUser');
     Route::put('/users/{usu_codigo}', [UserController::class, 'update'])->name('users.update');
+    Route::delete('/users/{usu_codigo}', [UserController::class, 'destroy'])->name('users.destroy');
     Route::get('/users/exportar/excel', [UserController::class, 'exportar'])->name('users.exportar');
     
 
@@ -558,9 +592,15 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
     Route::post('/muestras/remover-responsable', [MuestrasController::class, 'removerResponsable'])->name('muestras.remover-responsable');
     Route::get('/muestras/{instancia}/datos-recoordinacion', [MuestrasController::class, 'getDatosRecoordinacion'])->name('muestras.get-datos-recoordinacion');
     Route::post('/muestras/recoordinar', [MuestrasController::class, 'recoordinar'])->name('muestras.recoordinar');
+    Route::post('/muestras/revertir-coordinacion/{cotio_numcoti}/{cotio_item}/{instance_number}', [MuestrasController::class, 'revertirCoordinacionMuestreo'])->name('muestras.revertir-coordinacion');
     Route::put('/muestras/update-variable', [MuestrasController::class, 'updateVariable'])->name('muestras.updateVariable');
     Route::put('/muestras/update-all-data', [MuestrasController::class, 'updateAllData'])->name('muestras.updateAllData');
     Route::post('/muestras/update-all-data', [MuestrasController::class, 'updateAllData'])->name('muestras.updateAllData');
+    Route::post('/muestras/adjuntos/subir', [MuestrasController::class, 'subirAdjuntoInstancia'])->name('muestras.adjuntos.subir');
+    Route::delete('/muestras/adjuntos/{adjunto}', [MuestrasController::class, 'eliminarAdjuntoInstancia'])->name('muestras.adjuntos.eliminar');
+    Route::get('/muestras/adjuntos/{adjunto}/descargar', [MuestrasController::class, 'descargarAdjuntoInstancia'])->name('muestras.adjuntos.descargar');
+    Route::get('/muestras/adjuntos-ventas/{adjunto}/descargar', [MuestrasController::class, 'descargarAdjuntoVentas'])->name('muestras.adjuntos-ventas.descargar');
+    Route::delete('/muestras/adjuntos-ventas/{adjunto}', [MuestrasController::class, 'eliminarAdjuntoVentas'])->name('muestras.adjuntos-ventas.eliminar');
 
 
     // Gestión de vehículos
@@ -579,6 +619,7 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
     Route::post('/users', [UserController::class, 'storeUser'])->name('users.storeUser');
     Route::get('/users/{usu_codigo}', [UserController::class, 'showUser'])->name('users.showUser');
     Route::put('/users/{usu_codigo}', [UserController::class, 'update'])->name('users.update');
+    Route::delete('/users/{usu_codigo}', [UserController::class, 'destroy'])->name('users.destroy');
     Route::get('/users/exportar/excel', [UserController::class, 'exportar'])->name('users.exportar');
     
 
@@ -607,16 +648,24 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
 
 // ventas
 Route::middleware([CheckAdminOrRole::class])->group(function () {
+    Route::get('/ventas/notas', [PresupuestoNotaController::class, 'index'])->name('ventas.notas.index');
+    Route::post('/ventas/notas', [PresupuestoNotaController::class, 'store'])->name('ventas.notas.store');
+    Route::get('/ventas/notas/{presupuestoNota}/edit', [PresupuestoNotaController::class, 'edit'])->name('ventas.notas.edit');
+    Route::put('/ventas/notas/{presupuestoNota}', [PresupuestoNotaController::class, 'update'])->name('ventas.notas.update');
+    Route::delete('/ventas/notas/{presupuestoNota}', [PresupuestoNotaController::class, 'destroy'])->name('ventas.notas.destroy');
     Route::get('/ventas', [VentasController::class, 'index'])->name('ventas.index');
     Route::get('/ventas/create', [VentasController::class, 'create'])->name('ventas.create');
     Route::post('/ventas', [VentasController::class, 'store'])->name('ventas.store');
     Route::get('/ventas/buscar-para-clonar', [VentasController::class, 'buscarParaClonar'])->name('ventas.buscar-para-clonar');
     Route::get('/ventas/{cotiNum}/obtener-para-clonar', [VentasController::class, 'obtenerParaClonar'])->name('ventas.obtener-para-clonar');
     Route::get('/ventas/{id}/edit', [VentasController::class, 'edit'])->name('ventas.edit');
+    Route::post('/ventas/{id}/edicion-lock/heartbeat', [VentasController::class, 'edicionLockHeartbeat'])->name('ventas.edicion-lock.heartbeat');
+    Route::post('/ventas/{id}/edicion-lock/release', [VentasController::class, 'edicionLockRelease'])->name('ventas.edicion-lock.release');
     Route::post('/ventas/{id}/descancelar', [VentasController::class, 'descancelar'])->name('ventas.descancelar');
     Route::get('/ventas/{id}/print', [VentasController::class, 'imprimir'])->name('ventas.print');
     Route::put('/ventas/{id}', [VentasController::class, 'update'])->name('ventas.update');
     Route::delete('/ventas/{id}', [VentasController::class, 'destroy'])->name('ventas.destroy');
+    Route::get('/ventas/adjuntos/{adjunto}/descargar', [VentasController::class, 'descargarAdjuntoEnsayo'])->name('ventas.adjuntos.descargar');
     
     // APIs para ventas/cotizaciones
     Route::get('/api/clientes/buscar', [VentasController::class, 'buscarClientes'])->name('api.clientes.buscar');
@@ -634,6 +683,7 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
 
     Route::get('/clientes', [ClientesController::class, 'index'])->name('clientes.index');
     Route::get('/clientes/importar/plantilla', [ClientesController::class, 'downloadTemplate'])->name('clientes.plantilla');
+    Route::get('/clientes/importar/plantilla-pendientes', [ClientesController::class, 'downloadPendientesTemplate'])->name('clientes.plantilla-pendientes');
     Route::post('/clientes/importar', [ClientesController::class, 'import'])->name('clientes.importar');
     Route::get('/clientes/create', [ClientesController::class, 'create'])->name('clientes.create');
     Route::post('/clientes', [ClientesController::class, 'store'])->name('clientes.store');
@@ -645,6 +695,11 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
 // firmador
 Route::middleware([CheckAdminOrRole::class])->group(function () {
     //informes
+    Route::get('/informes/notas', [InformeNotaController::class, 'index'])->name('informes.notas.index');
+    Route::post('/informes/notas', [InformeNotaController::class, 'store'])->name('informes.notas.store');
+    Route::get('/informes/notas/{informeNota}/edit', [InformeNotaController::class, 'edit'])->name('informes.notas.edit');
+    Route::put('/informes/notas/{informeNota}', [InformeNotaController::class, 'update'])->name('informes.notas.update');
+    Route::delete('/informes/notas/{informeNota}', [InformeNotaController::class, 'destroy'])->name('informes.notas.destroy');
     Route::get('/informes', [InformeController::class, 'index'])->name('informes.index');
     Route::get('/informes/{cotio_numcoti}/{cotio_item}/{instance_number}', [InformeController::class, 'show'])->name('informes.show');
     Route::get('/informes/pdf-masivo/{cotizacion}', [InformeController::class, 'generarPdfMasivo'])->name('informes.pdf-masivo');

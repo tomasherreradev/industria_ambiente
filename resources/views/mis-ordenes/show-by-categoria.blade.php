@@ -25,21 +25,43 @@
         return $normalizeStr($a->cotio_descripcion);
     })->filter()->unique()->values()->toArray();
 @endphp
-<div class="container py-4">
+<link rel="stylesheet" href="{{ asset('css/tareas-muestreo-mobile.css') }}?v={{ filemtime(public_path('css/tareas-muestreo-mobile.css')) }}">
+<div class="container py-4 tarea-detalle-page">
     <!-- Encabezado -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
+    @php
+        $detalleRouteBase = [
+            'cotio_numcoti' => optional($instancia)->cotio_numcoti ?? request()->route('cotio_numcoti'),
+            'cotio_item' => optional($instancia)->cotio_item ?? request()->route('cotio_item'),
+            'cotio_subitem' => optional($instancia)->cotio_subitem ?? request()->route('cotio_subitem', 0),
+            'instance' => $instanceNumber ?? request()->route('instance', 1),
+        ];
+        $urlDetalleTodos = route('ordenes.all.show', $detalleRouteBase);
+        $urlDetalleSolo = route('ordenes.all.show', array_merge($detalleRouteBase, ['solo_mis_asignaciones' => 1]));
+        $misOrdenesVolverQuery = array_merge(
+            request()->except('page'),
+            !empty($soloMisAsignaciones) ? ['solo_mis_asignaciones' => 1] : []
+        );
+    @endphp
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 mb-4 tarea-detalle-header">
         <h1 class="mb-0">
             Detalle de Muestra
             @if($instanceNumber && $instancia)
-                <span class="fs-5 text-muted">(Muestra #{{ $instancia->instance_number }} · OT {{ $instancia->otn ?? '—' }})</span>
+                <span class="fs-5 text-muted d-block d-md-inline tarea-detalle-hero-subtitle">(Muestra #{{ $instancia->instance_number }} · OT {{ $instancia->otn ?? '—' }})</span>
             @elseif($instanceNumber)
-                <span class="fs-5 text-muted">(Muestra #{{ $instanceNumber }})</span>
+                <span class="fs-5 text-muted d-block d-md-inline tarea-detalle-hero-subtitle">(Muestra #{{ $instanceNumber }})</span>
             @endif
         </h1>
-        {{-- Tras guardar + reload, url()->previous() suele ser la misma página; el listado estable es mis-ordenes --}}
-        <a href="{{ route('mis-ordenes') }}" class="btn btn-outline-secondary">
-            <i class="fas fa-arrow-left"></i> Volver
-        </a>
+        <div class="d-flex flex-wrap align-items-center gap-2 tarea-detalle-acciones">
+            @include('mis-ordenes.partials.toggle-solo-mis-asignaciones', [
+                'puedeAlternarVistaAsignaciones' => $puedeAlternarVistaAsignaciones ?? false,
+                'soloMisAsignaciones' => $soloMisAsignaciones ?? false,
+                'urlMisOrdenesTodos' => $urlDetalleTodos,
+                'urlMisOrdenesSolo' => $urlDetalleSolo,
+            ])
+            <a href="{{ route('mis-ordenes', $misOrdenesVolverQuery) }}" class="btn btn-outline-secondary btn-volver">
+                <i class="fas fa-arrow-left"></i> Volver
+            </a>
+        </div>
     </div>
 
     @if(session('success'))
@@ -60,19 +82,26 @@
         </div>
     @endif
 
+    @php
+        $muestraAnalizada = isset($instancia) && $instancia
+            && strtolower(trim((string) ($instancia->cotio_estado_analisis ?? ''))) === 'analizado';
+    @endphp
+
     <div class="card shadow-sm mb-4">
-        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-            <h5 class="mb-0">
-                {{ $instancia->cotio_descripcion ?? 'N/A' }}
+        <div class="card-header bg-primary text-white d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2 tarea-detalle-hero">
+            <div class="tarea-detalle-hero-main">
+                <h5 class="mb-0 tarea-detalle-hero-title">
+                    {{ $instancia->cotio_descripcion ?? 'N/A' }}
+                </h5>
                 @php
                     $estadoMuestra = strtolower($instancia->cotio_estado_analisis ?? 'pendiente');
                     $badgeClassMuestra = match ($estadoMuestra) {
                         'coordinado muestreo' => 'warning',
                         'pendiente' => 'warning',
-                        'coordinado analisis' => 'warning',
+                        'coordinado analisis', 'coordinado' => 'warning',
                         'en proceso' => 'info',
                         'en revision muestreo' => 'info',
-                        'en revision analisis' => 'info',
+                        'en revision analisis', 'en revision' => 'info',
                         'finalizado' => 'success',
                         'muestreado' => 'success',
                         'analizado' => 'success',
@@ -80,26 +109,22 @@
                         default => 'secondary'
                     };
                 @endphp
-                <span class="badge bg-{{ $badgeClassMuestra }} ms-2">
+                <span class="badge bg-{{ $badgeClassMuestra }} mt-2 d-inline-block">
                     {{ ucfirst($instancia->cotio_estado_analisis ?? 'pendiente') }}
                 </span>
-            </h5>
+            </div>
 
             @if(Auth::user()->rol != 'laboratorio')
-
-                <div>
-                    <div class="btn-group" role="group">
-                        @if($instancia->cotio_estado_analisis != 'suspension')
+                <div class="btn-group botones-muestra tarea-detalle-acciones" role="group">
+                    @if($instancia->cotio_estado_analisis != 'suspension')
                         <button type="button" class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#suspenderModal">
                             <i class="fas fa-pause me-1"></i> Suspender
                         </button>
-                        @else
+                    @else
                         <button type="button" class="btn btn-sm btn-secondary" disabled>
                             <i class="fas fa-pause me-1"></i> Ya suspendida
                         </button>
-                        @endif
-                    </div>
-    
+                    @endif
                     <button class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#editMuestraModal">
                         Editar Muestra
                     </button>
@@ -108,25 +133,37 @@
 
         </div>
         <div class="card-body">
-            <div class="row">
+            <div class="row gy-3 tarea-detalle-datos">
                 <div class="col-md-4">
-                    <p><strong>Cotización:</strong> {{ $instancia->cotio_numcoti ?? 'N/A' }}</p>
-                    <p><strong>N° OT:</strong> {{ $instancia->otn ?? '—' }}</p>
+                    <div class="tarea-detalle-dato">
+                        <span class="tarea-detalle-dato-label">Cotización</span>
+                        <span class="tarea-detalle-dato-value">{{ $instancia->cotio_numcoti ?? 'N/A' }}</span>
+                    </div>
+                    <div class="tarea-detalle-dato mt-2">
+                        <span class="tarea-detalle-dato-label">N° OT</span>
+                        <span class="tarea-detalle-dato-value">{{ $instancia->otn ?? '—' }}</span>
+                    </div>
                 </div>
                 <div class="col-md-4">
-                    <p><strong>Fecha Inicio:</strong> 
-                        {{ $instancia->fecha_inicio_ot ? \Carbon\Carbon::parse($instancia->fecha_inicio_ot)->format('d/m/Y') : 'N/A' }}
-                    </p>
-                    <p><strong>Fecha Fin:</strong> 
-                        {{ $instancia->fecha_fin_ot ? \Carbon\Carbon::parse($instancia->fecha_fin_ot)->format('d/m/Y') : 'N/A' }}
-                    </p>
+                    <div class="tarea-detalle-dato">
+                        <span class="tarea-detalle-dato-label">Fecha Inicio</span>
+                        <span class="tarea-detalle-dato-value">
+                            {{ $instancia->fecha_inicio_ot ? \Carbon\Carbon::parse($instancia->fecha_inicio_ot)->format('d/m/Y') : 'N/A' }}
+                        </span>
+                    </div>
+                    <div class="tarea-detalle-dato mt-2">
+                        <span class="tarea-detalle-dato-label">Fecha Fin</span>
+                        <span class="tarea-detalle-dato-value">
+                            {{ $instancia->fecha_fin_ot ? \Carbon\Carbon::parse($instancia->fecha_fin_ot)->format('d/m/Y') : 'N/A' }}
+                        </span>
+                    </div>
                 </div>
-
                 <div class="col-md-4">
-                    <p><strong>Identificación:</strong> {{ $instancia->cotio_identificacion ?? 'N/A' }}</p>
+                    <div class="tarea-detalle-dato">
+                        <span class="tarea-detalle-dato-label">Identificación</span>
+                        <span class="tarea-detalle-dato-value">{{ $instancia->cotio_identificacion ?? 'N/A' }}</span>
+                    </div>
                 </div>
-
-
                 <div class="col-md-4">
                     @if($instancia->image)
                         <img src="{{ Storage::url('images/' . $instancia->image) }}" alt="Imagen de la muestra" class="img-fluid w-50 rounded">
@@ -209,13 +246,15 @@
 
             @if($instancia->herramientasLab->count() > 0)
             <div class="mt-3 pt-3 border-top">
-                <div class="d-flex justify-content-between align-items-center mb-3">
+                <div class="d-flex justify-content-between align-items-center mb-3 tarea-detalle-herramientas-header">
                     <h6>Herramientas asignadas</h6>
-                    <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#editHerramientasModal">
-                        <i class="fas fa-edit"></i> Editar Herramientas
-                    </button>
+                    @if(! $muestraAnalizada)
+                        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#editHerramientasModal">
+                            <i class="fas fa-edit"></i> Editar Herramientas
+                        </button>
+                    @endif
                 </div>
-                <div class="row">
+                <div class="row tarea-detalle-herramientas-grid">
                     @foreach($instancia->herramientasLab as $herramienta)
                         <div class="col-md-4 mb-2">
                             <div class="card border">
@@ -234,13 +273,16 @@
             </div>
         @else
             <div class="alert alert-info mt-3">
-                No hay herramientas asignadas. 
-                <button type="button" class="btn btn-sm btn-primary ms-2" data-bs-toggle="modal" data-bs-target="#editHerramientasModal">
-                    <i class="fas fa-plus"></i> Agregar Herramientas
-                </button>
+                No hay herramientas asignadas.
+                @if(! $muestraAnalizada)
+                    <button type="button" class="btn btn-sm btn-primary ms-2" data-bs-toggle="modal" data-bs-target="#editHerramientasModal">
+                        <i class="fas fa-plus"></i> Agregar Herramientas
+                    </button>
+                @endif
             </div>
         @endif
         
+        @if(! $muestraAnalizada)
         <!-- Modal para editar herramientas -->
         <div class="modal fade" id="editHerramientasModal" tabindex="-1" aria-labelledby="editHerramientasModalLabel" aria-hidden="true">
             <div class="modal-dialog modal-lg">
@@ -266,6 +308,7 @@
                 </div>
             </div>
         </div>
+        @endif
 
         </div>
     </div>
@@ -345,7 +388,7 @@
                                     <div class="d-flex flex-column flex-md-row justify-content-between w-100 pe-md-3 align-items-start align-items-md-center">
                                         <div class="d-flex align-items-center mb-2 mb-md-0">
                                             <span class="badge bg-primary me-2">#{{ $item->cotio_subitem }}</span>
-                                            <span class="fw-bold">{{ $item->cotio_descripcion }}</span>
+                                            <span class="fw-bold">{{ $item->cotio_descripcion }}@include('ordenes.partials.metodo-analisis-etiqueta', ['tarea' => $item])</span>
                                             @if($item->request_review)
                                                 <div class="bg-warning rounded-pill ms-2 d-flex align-items-center justify-content-center" style="width: 1.8rem; height: 1.8rem;"
                                                 data-bs-toggle="tooltip" 

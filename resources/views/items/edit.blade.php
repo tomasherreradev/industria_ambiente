@@ -38,30 +38,23 @@
                     @enderror
                 </div>
 
-                <div class="mb-3">
-                    <label for="metodo" class="form-label">Método</label>
-                    <select name="metodo" id="metodo" class="form-select select2">
-                        <option value="">Sin método</option>
-                        @foreach($metodos as $met)
-                            <option value="{{ trim($met->metodo_codigo) }}" {{ old('metodo', $item->metodo) == trim($met->metodo_codigo) ? 'selected' : '' }}>
-                                {{ trim($met->metodo_codigo) }} - {{ $met->metodo_descripcion }}
-                            </option>
-                        @endforeach
-                    </select>
-                    @error('metodo')
-                        <div class="text-danger small mt-1">{{ $message }}</div>
-                    @enderror
-                </div>
+                @include('items.partials.metodos-campos', [
+                    'item' => $item,
+                    'metodos' => $metodos,
+                ])
                 </div>
 
                 <div class="mb-3">
                     <label for="matrices" class="form-label">Matrices</label>
                     <select name="matrices[]" id="matrices" class="form-select select2-multiple" multiple data-placeholder="Selecciona las matrices">
                         @php
-                            $matricesSeleccionadas = old('matrices', $item->matrices->pluck('matriz_codigo')->toArray());
+                            $matricesSeleccionadas = collect(old('matrices', $item->matrices->pluck('matriz_codigo')->toArray()))
+                                ->map(fn ($codigo) => trim((string) $codigo))
+                                ->filter()
+                                ->all();
                         @endphp
                         @foreach($matrices as $matriz)
-                            <option value="{{ $matriz->matriz_codigo }}" {{ in_array($matriz->matriz_codigo, $matricesSeleccionadas) ? 'selected' : '' }}>
+                            <option value="{{ trim($matriz->matriz_codigo) }}" {{ in_array(trim((string) $matriz->matriz_codigo), $matricesSeleccionadas, true) ? 'selected' : '' }}>
                                 {{ $matriz->matriz_codigo }} - {{ $matriz->matriz_descripcion }}
                             </option>
                         @endforeach
@@ -154,63 +147,23 @@
                     <select name="componentes[]" id="componentes" class="form-select select2-multiple" multiple data-placeholder="Selecciona los componentes">
                         @foreach($componentes as $componente)
                             @php
-                                // Obtener nombre del método
-                                $metodoCodigo = trim($componente->metodo ?? '');
-                                $metodoNombre = '';
-                                
-                                if ($metodoCodigo) {
-                                    // Intentar desde MetodoAnalitico (relación con Metodo legacy)
-                                    if ($componente->metodoAnalitico) {
-                                        $metodoNombre = trim($componente->metodoAnalitico->metodo_descripcion ?? '');
-                                    }
-                                    // Si no, intentar desde MetodoMuestreo (relación con Metodo legacy)
-                                    if (!$metodoNombre && $componente->metodoMuestreo) {
-                                        $metodoNombre = trim($componente->metodoMuestreo->metodo_descripcion ?? '');
-                                    }
-                                    // Si no, buscar en MetodoAnalisis
-                                    if (!$metodoNombre) {
-                                        $metodoAnalisis = \App\Models\MetodoAnalisis::where('codigo', $metodoCodigo)->first();
-                                        if ($metodoAnalisis) {
-                                            $metodoNombre = trim($metodoAnalisis->nombre ?? '');
-                                        }
-                                    }
-                                    // Si no, buscar en MetodoMuestreo
-                                    if (!$metodoNombre) {
-                                        $metodoMuestreo = \App\Models\MetodoMuestreo::where('codigo', $metodoCodigo)->first();
-                                        if ($metodoMuestreo) {
-                                            $metodoNombre = trim($metodoMuestreo->nombre ?? '');
-                                        }
-                                    }
+                                $metodoAnalisisDisplay = optional($componente->metodoAnalitico)->metodo_descripcion;
+                                $metodoCodigoAnalisis = trim((string) ($componente->metodo ?? ''));
+                                if (!$metodoAnalisisDisplay && $metodoCodigoAnalisis !== '') {
+                                    $metodoAnalisisDisplay = \App\Models\Metodo::query()
+                                        ->whereRaw('trim(metodo_codigo) = ?', [$metodoCodigoAnalisis])
+                                        ->value('metodo_descripcion');
                                 }
-                                
-                                $metodoDisplay = $metodoNombre ? ($metodoCodigo . ' - ' . $metodoNombre) : ($metodoCodigo ?: 'Sin método');
-                                
-                                // Obtener matriz con código y descripción
-                                $matrizDisplay = 'Sin matriz';
-                                if ($componente->matriz) {
-                                    $matrizCodigo = trim($componente->matriz->matriz_codigo ?? '');
-                                    $matrizDescripcion = trim($componente->matriz->matriz_descripcion ?? '');
-                                    if ($matrizCodigo && $matrizDescripcion) {
-                                        $matrizDisplay = $matrizCodigo . ' - ' . $matrizDescripcion;
-                                    } elseif ($matrizDescripcion) {
-                                        $matrizDisplay = $matrizDescripcion;
-                                    } elseif ($matrizCodigo) {
-                                        $matrizDisplay = $matrizCodigo;
-                                    }
-                                }
+                                $metodoDisplay = $metodoAnalisisDisplay
+                                    ? ($metodoCodigoAnalisis !== '' ? $metodoCodigoAnalisis . ' - ' . trim($metodoAnalisisDisplay) : trim($metodoAnalisisDisplay))
+                                    : ($metodoCodigoAnalisis !== '' ? $metodoCodigoAnalisis : 'Sin método');
+
+                                $matrizDisplay = $componente->etiquetaMatrices();
+                                $matricesCodigos = $componente->codigosMatrices();
                             @endphp
                             <option value="{{ $componente->id }}"
                                 data-precio="{{ number_format($componente->precio ?? 0, 2, '.', '') }}"
                                 data-matriz="{{ $matrizDisplay }}"
-                                @php
-                                    $matricesCodigos = collect($componente->matrices->pluck('matriz_codigo')->all())
-                                        ->merge([(string) ($componente->matriz_codigo ?? '')])
-                                        ->map(fn($c) => trim((string) $c))
-                                        ->filter()
-                                        ->unique()
-                                        ->values()
-                                        ->all();
-                                @endphp
                                 data-matrices='@json($matricesCodigos)'
                                 data-metodo="{{ $metodoDisplay }}"
                                 data-limites_establecidos="{{ $componente->limites_establecidos ?? 'Sin límites' }}"
@@ -314,7 +267,8 @@
                     '<div class="d-flex flex-wrap gap-3 small text-muted">' +
                         '<span><strong>Límites:</strong> ' + limites + '</span>' +
                         '<span><strong>U. Med:</strong> ' + unidad + '</span>' +
-                        '<span><strong>Método:</strong> ' + metodo + '</span>' +
+                        '<span><strong>Matriz:</strong> ' + matriz + '</span>' +
+                        '<span><strong>Mét. análisis:</strong> ' + metodo + '</span>' +
                     '</div>' +
                 '</div>'
             );
@@ -328,9 +282,10 @@
             const $option = $(option.element);
             const precio = $option.data('precio') || '0.00';
             const matriz = $option.data('matriz') || 'Sin matriz';
+            const metodo = $option.data('metodo') || 'Sin método';
             const descripcion = option.text;
 
-            return descripcion + ' | $' + parseFloat(precio).toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' | ' + matriz;
+            return descripcion + ' | $' + parseFloat(precio).toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' | ' + matriz + ' | ' + metodo;
         }
 
         if (select.length) {

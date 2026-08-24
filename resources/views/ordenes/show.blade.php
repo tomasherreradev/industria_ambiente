@@ -74,6 +74,7 @@
                             @foreach($instancias as $instancia)
                                 @php
                                     $muestra = $instancia['muestra'];
+                                    $esPrioriEfectiva = \App\Support\PrioridadListado::prioridadEfectivaMuestreo($categoria, $cotizacion, $muestra);
                                     $responsables = $muestra->responsablesAnalisis ?? collect();
                                     
                                     // Verificar si es una instancia virtual (no persistida)
@@ -131,7 +132,7 @@
                                     }
                                 @endphp
                                 <div class="mb-4">
-                                    <div class="card shadow-sm h-100" @if($muestra->es_priori) style="border: 2px solid #ffd700;" @endif>
+                                    <div class="card shadow-sm h-100" @if($esPrioriEfectiva) style="border: 3px solid #ffc107; box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.35);" @endif>
                                         <div class="card-header {{ $headerClass }} text-white d-flex align-items-center justify-content-between flex-wrap p-3">
                                             <div class="d-flex align-items-center gap-2 flex-grow-1">
                                                 <!-- Checkbox for Sample -->
@@ -183,8 +184,14 @@
                                                         >
                                                             <div class="d-flex align-items-center gap-2">
                                                                 <h6 class="mb-1 fw-bold">
-                                                                    {{ $categoria->cotio_descripcion }} (#{{ $muestra->otn ? $muestra->otn : $muestra->instance_number ?? 'N/A' }})
+                                                                    @if($esPrioriEfectiva)
+                                                                        <x-heroicon-o-star style="width: 18px; height: 18px; color: #ffc107;" class="me-1" />
+                                                                    @endif
+                                                                    {{ $categoria->cotio_descripcion }} (#{{ $muestra->otn ? $muestra->otn : $muestra->instance_number ?? 'N/A' }}@include('partials.muestra-precinto-sufijo', ['instancia' => $muestra]))
                                                                     <small class="fw-normal">(muestra {{ $muestra->instance_number }} / {{ $categoria->cotio_cantidad ?? '-' }})</small>
+                                                                    @if($esPrioriEfectiva)
+                                                                        <span class="badge bg-warning text-dark ms-1">Prioridad</span>
+                                                                    @endif
                                                                 </h6>
                                                                 @if($esInstanciaVirtual)
                                                                     <div class="ms-2">
@@ -201,9 +208,9 @@
                                                                     </div>
                                                                 @endif
                                                             </div>
-                                                            @if($muestra->active_ot && $muestra->coordinador)
+                                                            @if($muestra->active_ot && $muestra->coordinadorLab)
                                                                 <small class="text-light d-block">
-                                                                    Coordinado por {{ $muestra->coordinador->usu_descripcion }}
+                                                                    Coordinado por {{ trim($muestra->coordinadorLab->usu_descripcion) }}
                                                                 </small>
                                                             @endif
                                                         </a>
@@ -262,13 +269,13 @@
                                                 </div>
                                             @endif
 
-                                            @if($instancia['muestra']->es_priori)
+                                            @if($esPrioriEfectiva)
                                                 <div class="mb-2 d-flex align-items-center justify-content-between">
                                                     <span data-bs-toggle="tooltip" 
                                                           data-bs-placement="bottom" 
                                                           data-bs-html="true"
-                                                          data-bs-title="<i class='fas fa-star text-warning me-1'></i><strong>Muestra Prioritaria</strong><br><small>Esta muestra requiere atención especial</small>">
-                                                        <x-heroicon-o-star style="width: 20px; height: 20px; color: #ffd700; cursor: pointer;" />
+                                                          data-bs-title="<i class='fas fa-star text-warning me-1'></i><strong>Muestra prioritaria</strong><br><small>Marcada en ventas o en coordinación</small>">
+                                                        <x-heroicon-o-star style="width: 20px; height: 20px; color: #ffc107; cursor: pointer;" />
                                                     </span>
                                                 </div>
                                             @endif
@@ -321,7 +328,12 @@
                                                     </button>
                                                 </div>
                                             @endif
+                                            <div class="muestra-parametros-list">
                                             @foreach($instancia['analisis'] as $tarea)
+                                                @php
+                                                    $metodoAnalisisInfo = \App\Support\EtiquetaMetodoAnalisis::resolver($tarea);
+                                                    $metodoCodigo = $metodoAnalisisInfo['codigo'];
+                                                @endphp
                                                 <div class="mb-2 p-2 border rounded @if($tarea->modulo_origen == 'muestreo') bg-light @endif">
                                                     <div class="d-flex justify-content-between align-items-center">
                                                         <div>
@@ -329,13 +341,12 @@
                                                                 <input type="checkbox" class="form-check-input" disabled checked>
                                                                 <span class="text-muted">
                                                                     {{ $tarea->cotio_descripcion }}
+                                                                    @include('ordenes.partials.metodo-analisis-etiqueta', ['tarea' => $tarea, 'metodoAnalisisInfo' => $metodoAnalisisInfo])
                                                                 </span>
                                                             @else
                                                                 @php
                                                                     $instanciaActiva = $tarea->instancia && $tarea->instancia->active_ot;
                                                                     $tieneResultado = optional($tarea->instancia)->resultado !== null;
-                                                                    $metodoAnalisis = $tarea->instancia ? $tarea->instancia->getMetodoAnalisisConTrim() : null;
-                                                                    $metodoCodigo = $tarea->instancia && $tarea->instancia->cotio_codigometodo_analisis ? trim($tarea->instancia->cotio_codigometodo_analisis) : '';
                                                                     
                                                                     // Generar ID: usar ID real si es numérico, sino generar ID virtual
                                                                     $tareaInstanciaId = $tarea->instancia && is_numeric($tarea->instancia->id) && $tarea->instancia->exists
@@ -358,7 +369,8 @@
                                                                     data-user-toggled="false"
                                                                     @disabled($instanciaActiva)
                                                                 />
-                                                                {{ $tarea->cotio_descripcion }} {{ $metodoAnalisis ? ' - ' . $metodoAnalisis->metodo_descripcion : '' }}
+                                                                {{ $tarea->cotio_descripcion }}
+                                                                @include('ordenes.partials.metodo-analisis-etiqueta', ['tarea' => $tarea, 'metodoAnalisisInfo' => $metodoAnalisisInfo])
                                                             @endif
                                                         </div>
                                                         <div>
@@ -392,6 +404,7 @@
                                                     </div>
                                                 </div>
                                             @endforeach
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -441,7 +454,7 @@
                                 </option>
                             @endforeach
                         </select>
-                        <small class="text-muted">Seleccione uno o más responsables</small>
+                        <small class="text-muted">Seleccione uno o más laboratorios/sectores. Se asignarán automáticamente todos los usuarios vinculados a cada sector.</small>
                     </div>
 
                     <div class="mb-3">
@@ -593,8 +606,14 @@
     }
 
     .collapse-content.show {
-        max-height: 100%;
+        max-height: 12000px;
+        overflow: visible;
         opacity: 1;
+    }
+
+    .muestra-parametros-list {
+        max-height: min(70vh, 900px);
+        overflow-y: auto;
     }
 
     .rotate-180 {
@@ -1298,7 +1317,7 @@
                     text: data.message,
                     icon: 'success'
                 }).then(() => {
-                    window.location.href = '{{ route("ordenes.index") }}';
+                    window.location.reload();
                 });
             } else {
                 Swal.fire({
@@ -1485,26 +1504,17 @@
                         <h5 class="modal-title">CT ${coti} - Categoría: ${categoria} - Fecha: ${fechaAnalisis || 'No asignada'}</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
                     </div>
-                    <div class="modal-body">
-                        <div style="display: flex; justify-content: center; align-items: center; min-height: 250px;">
+                    <div class="modal-body text-center">
+                        <div style="display: flex; justify-content: center; align-items: center; min-height: 180px;">
                             <div id="qrContainer" style="margin: 0 auto;"></div>
                         </div>
-                    </div>
-                    <div style="width: 100%; max-width: 60%; border: 1px solid #dee2e6; padding: 10px; border-radius: 8px; margin: 10px auto;">
-                        <p></p>
-                    </div>
-
-                    <div style="width: 100%; max-width: 60%; border: 1px solid #dee2e6; padding: 10px; border-radius: 8px; margin: 10px auto;">
-                        <p></p>
-                    </div>
-                    <div style="width: 100%; max-width: 60%; border: 1px solid #dee2e6; padding: 10px; border-radius: 8px; margin: 10px auto;">
-                        <p></p>
+                        <p class="mt-3 mb-0 text-muted small">Muestra #${instance}</p>
                     </div>
                     <div class="modal-footer justify-content-center">
-                        <button onclick="printQr('${url}', '${coti}', '${categoria}', '${instance}', '${fechaAnalisis}')" class="btn btn-primary">
+                        <button onclick="printQr('${url}', '${coti}', '${categoria}', '${instance}', '${fechaAnalisis}')" class="btn btn-primary font-weight-bold">
                             Imprimir CT 
                         </button>
-                        <a href="${url}" class="btn btn-primary">
+                        <a href="${url}" class="btn btn-outline-primary" target="_blank">
                             Ver Formulario
                         </a>
                     </div>
@@ -1522,11 +1532,11 @@
         
         new QRCode(container, {
             text: url,
-            width: 200,
-            height: 200,
+            width: 150,
+            height: 150,
             colorDark: "#000000",
             colorLight: "#ffffff",
-            correctLevel: QRCode.CorrectLevel.H
+            correctLevel: QRCode.CorrectLevel.M
         });
     }
 
@@ -1538,80 +1548,188 @@
             <head>
                 <title>Imprimir CT - Orden ${coti}</title>
                 <style>
+                    @page {
+                        size: 50mm 80mm;
+                        margin: 0;
+                    }
                     body {
                         display: flex;
                         flex-direction: column;
-                        justify-content: center;
-                        align-items: center;
-                        height: 100vh;
-                        margin: 0;
-                        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+                        justify-content: flex-start;
+                        align-items: flex-start;
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                        color: #000;
+                        background: #fff;
                     }
                     .print-container {
-                        text-align: center;
-                        padding: 20px;
+                        width: 50mm;
+                        height: 80mm;
+                        box-sizing: border-box;
+                        display: flex;
+                        flex-direction: row;
+                        justify-content: center;
+                        align-items: flex-start;
+                        padding: 1mm 0 0 1mm;
+                        gap: 0.5mm;
+                        overflow: hidden;
                     }
                     .qr-wrapper {
-                        margin: 20px auto;
-                        padding: 10px;
-                        border: 1px dashed #ccc;
-                        display: inline-block;
+                        width: 26mm;
+                        height: 26mm;
+                        flex-shrink: 0;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        background: #fff;
+                        padding: 0;
+                        box-sizing: border-box;
+                    }
+                    .qr-wrapper img, .qr-wrapper canvas {
+                        width: 100% !important;
+                        height: 100% !important;
+                        display: block;
+                        image-rendering: pixelated;
+                    }
+                    .qr-text-wrapper {
+                        width: 12mm;
+                        height: 78mm;
+                        position: relative;
+                        flex-shrink: 0;
+                    }
+                    .qr-content {
+                        width: 26mm;
+                        height: 12mm;
+                        transform: rotate(90deg);
+                        transform-origin: 0 0;
+                        position: absolute;
+                        left: 12mm;
+                        top: 0;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: flex-start;
+                        text-align: left;
+                        box-sizing: border-box;
+                        padding-left: 2mm;
+                        padding-top: 1mm;
                     }
                     h1 {
-                        font-size: 24px;
-                        margin-bottom: 20px;
-                        color: #333;
+                        font-size: 8.5px;
+                        font-weight: 700;
+                        margin: 0 0 1px 0;
+                        color: #000;
+                        display: -webkit-box;
+                        -webkit-line-clamp: 2;
+                        -webkit-box-orient: vertical;
+                        overflow: hidden;
+                        white-space: normal !important;
+                        word-break: break-word;
+                        line-height: 1.1;
                     }
-                    .info {
-                        margin-top: 20px;
-                        font-size: 14px;
+                    .item-desc {
+                        font-size: 7.5px;
+                        margin: 0 0 1px 0;
+                        color: #000;
+                        line-height: 1.1;
+                    }
+                    .meta-info {
+                        font-size: 7px;
+                        margin: 0.5px 0;
+                        color: #000;
+                        line-height: 1.1;
+                    }
+                    .extra-row {
+                        display: flex;
+                        align-items: flex-end;
+                        margin-bottom: 2px;
+                        font-size: 6.5px;
+                        font-weight: 600;
+                        height: 22px;
+                    }
+                    .line-under {
+                        flex-grow: 1;
+                        border-bottom: 0.5pt solid #000;
+                        height: 100%;
+                    }
+                    .left-extra-wrapper {
+                        width: 10mm;
+                        height: 78mm;
+                        position: relative;
+                        flex-shrink: 0;
+                    }
+                    .left-extra-content {
+                        width: 26mm;
+                        height: 10mm;
+                        transform: rotate(90deg);
+                        transform-origin: 0 0;
+                        position: absolute;
+                        left: 10mm;
+                        top: 0;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: flex-start;
+                        box-sizing: border-box;
+                        padding-left: 2mm;
+                        padding-top: 1mm;
+                    }
+                    .no-print {
+                        font-size: 12px;
                         color: #666;
+                        margin-top: 20px;
+                        text-align: center;
+                        width: 100%;
                     }
                     @media print {
                         body {
                             height: auto;
+                            display: block;
+                        }
+                        .print-container {
+                            margin: 0;
+                            padding: 1mm 0 0 0;
                         }
                         .no-print {
-                            display: none;
+                            display: none !important;
                         }
                     }
                 </style>
             </head>
             <body>
                 <div class="print-container">
-                    <h1>CT ${coti}</h1>
-                    <p><strong>Análisis:</strong> ${categoria}</p>
-                    <p><strong>Muestra:</strong> ${instance}</p>
-                    <p>
-                        <strong>Fecha y hora:</strong>
-                        <span style="display:inline-block; min-width: 140px; border-bottom: 1px solid #000; margin-left: 4px;">&nbsp;</span>
-                    </p>
-                    <div class="qr-wrapper">
-                        <div id="qr"></div>
-                        <div style="width: 100%; max-width: 90%; border: 1px solid #dee2e6; padding: 10px; border-radius: 8px; margin: 10px auto;">
-                            <p></p>
-                        </div>
-                        <div style="width: 100%; max-width: 90%; border: 1px solid #dee2e6; padding: 10px; border-radius: 8px; margin: 10px auto;">
-                            <p></p>
-                        </div>
-                        <div style="width: 100%; max-width: 90%; border: 1px solid #dee2e6; padding: 10px; border-radius: 8px; margin: 10px auto;">
-                            <p></p>
+                    <div class="left-extra-wrapper">
+                        <div class="left-extra-content">
+                            <div class="extra-row"><div class="line-under"></div></div>
+                            <div class="extra-row" style="margin-top: 5px;"><div class="line-under"></div></div>
+                            <div class="extra-row" style="margin-top: 5px;"><div class="line-under"></div></div>
                         </div>
                     </div>
-                    
-                    <p class="info">Escanee este código CT para ver los detalles</p>
-                    <p class="info no-print">Esta ventana se cerrará automáticamente después de imprimir</p>
+                    <div class="qr-wrapper">
+                        <div id="qr"></div>
+                    </div>
+                    <div class="qr-text-wrapper">
+                        <div class="qr-content">
+                            <h1>CT ${coti}</h1>
+                            <div class="item-desc">${categoria}</div>
+                            <div class="meta-info"><strong>Muestra:</strong> ${instance}</div>
+                            <div class="meta-info">
+                                <strong>Fecha:</strong>
+                                <span style="display:inline-block; min-width: 35px; border-bottom: 1px solid #000; margin-left: 2px;">&nbsp;</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
+                <p class="no-print">Esta ventana se cerrará automáticamente después de imprimir</p>
                 
                 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script>
                 <script>
                     new QRCode(document.getElementById("qr"), {
                         text: "${url}",
-                        width: 200,
-                        height: 200,
+                        width: 120,
+                        height: 120,
                         colorDark: "#000000",
                         colorLight: "#ffffff",
-                        correctLevel: QRCode.CorrectLevel.H
+                        correctLevel: QRCode.CorrectLevel.M
                     });
                     setTimeout(() => {
                         window.print();

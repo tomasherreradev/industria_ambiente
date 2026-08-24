@@ -15,16 +15,29 @@
                 <x-heroicon-o-magnifying-glass style="width: 16px; height: 16px;" class="me-1"/>
                 <span class="d-none d-sm-inline">Buscar</span>
             </button>
+
+            @if(userCanEditInformeProtocoloPdf())
+                <a href="{{ route('informes.notas.index') }}" class="btn btn-sm btn-outline-secondary me-2" title="Notas reutilizables para informes">
+                    <x-heroicon-o-document-text style="width: 16px; height: 16px;" class="me-1"/>
+                    <span class="d-none d-sm-inline">Notas</span>
+                </a>
+            @endif
             
-            <a href="{{ route('informes.index', ['view' => 'lista']) }}" 
+            @php
+                $informesViewQuery = array_merge(
+                    request()->except(['view', 'page']),
+                    ['view' => 'lista']
+                );
+            @endphp
+            <a href="{{ route('informes.index', array_merge($informesViewQuery, ['view' => 'lista'])) }}" 
                class="btn btn-sm {{ $viewType === 'lista' ? 'btn-primary' : 'btn-outline-secondary' }}">
                <x-heroicon-o-list-bullet style="width: 20px; height: 20px;" />
             </a>
-            <a href="{{ route('informes.index', ['view' => 'calendario']) }}" 
+            <a href="{{ route('informes.index', array_merge($informesViewQuery, ['view' => 'calendario'])) }}" 
                class="btn btn-sm {{ $viewType === 'calendario' ? 'btn-primary' : 'btn-outline-secondary' }}">
                <x-heroicon-o-calendar-days style="width: 20px; height: 20px;" />
             </a>
-            <a href="{{ route('informes.index', ['view' => 'documento']) }}" 
+            <a href="{{ route('informes.index', array_merge($informesViewQuery, ['view' => 'documento'])) }}" 
                class="btn btn-sm {{ $viewType === 'documento' ? 'btn-primary' : 'btn-outline-secondary' }}">
                <x-heroicon-o-document style="width: 20px; height: 20px;" />
             </a>
@@ -50,6 +63,15 @@
                             <option value="">Todos</option>
                             <option value="final" {{ request('tipo_informe') == 'final' ? 'selected' : '' }}>Final</option>
                             <option value="parcial" {{ request('tipo_informe') == 'parcial' ? 'selected' : '' }}>Parcial</option>
+                        </select>
+                    </div>
+
+                    <div class="col-md-2">
+                        <label for="estado_firma" class="form-label">Firma</label>
+                        <select class="form-select" id="estado_firma" name="estado_firma">
+                            <option value="">Todos</option>
+                            <option value="firmados" {{ request('estado_firma') === 'firmados' ? 'selected' : '' }}>Firmados</option>
+                            <option value="pendiente" {{ request('estado_firma') === 'pendiente' ? 'selected' : '' }}>Pendientes de firma</option>
                         </select>
                     </div>
 

@@ -97,7 +97,7 @@
     <div class="divider"></div>
 
     <div class="client-info">
-        <p><strong>{{ $cotizacion->coti_empresa }} - {{ $cotizacion->coti_establecimiento }}</strong></p>
+        <p><strong>{{ \App\Support\CotizacionClienteEtiqueta::lineaClienteConEstablecimiento($cotizacion) }}</strong></p>
         <p>{{ $cotizacion->coti_direccioncli }}, {{ $cotizacion->coti_localidad }}, {{ $cotizacion->coti_partido }}</p>
         
         <p>Atn. {{ $cotizacion->coti_contacto }}<br>

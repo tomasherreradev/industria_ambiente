@@ -5,6 +5,7 @@
 </head>
 
 @section('content')
+    <link rel="stylesheet" href="{{ asset('css/tareas-muestreo-mobile.css') }}?v={{ filemtime(public_path('css/tareas-muestreo-mobile.css')) }}">
     <div class="container py-4">
         @php
             $backUrl = url('/muestras');
@@ -12,6 +13,9 @@
                 switch ($canalParaFiltrar) {
                     case 'consultoria':
                         $backUrl = url('/consultoria');
+                        break;
+                    case 'mediciones':
+                        $backUrl = route('mediciones.index');
                         break;
                     case 'asp':
                         $backUrl = url('/asp');
@@ -21,6 +25,7 @@
                         break;
                 }
             }
+            $esPortalMediciones = $esPortalMediciones ?? CotizacionCanalEnsayo::esRequestPortalMediciones();
         @endphp
         <a href="{{ $backUrl }}" class="btn btn-outline-secondary mb-4">← Volver</a>
         <h2 class="mb-4">Muestras de Cotización <span class="text-primary">{{ $cotizacion->coti_num }}</span></h2>
@@ -40,11 +45,16 @@
                         <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center"
                             style="cursor: pointer;" onclick="toggleMuestras('muestras-pendientes-lg')">
                             <h5 class="mb-0">Muestras Pendientes</h5>
-                            <div class="d-flex align-items-center gap-2" onclick="event.stopPropagation();">
+                            <x-heroicon-o-chevron-up id="chevron-muestras-pendientes-lg"
+                                class="text-white rotate-180"
+                                style="width: 20px; height: 20px;" />
+                        </div>
+                        <div id="muestras-pendientes-lg" class="card-body collapse-content show">
+                            <div class="d-flex flex-wrap gap-2 mb-3 justify-content-end">
                                 @php
                                     $tiposParaSeleccionar = collect($agrupadas)
                                         ->map(fn($a) => $a['categoria']->cotio_descripcion ?? '')
-                                        ->filter(fn($d) => $d !== '' && $d !== 'TRABAJO TECNICO EN CAMPO' && $d !== 'VIATICOS')
+                                        ->filter(fn($d) => $d !== '' && ! \App\Support\TrabajoTecnicoCampo::esDescripcion($d) && $d !== 'VIATICOS')
                                         ->unique()
                                         ->values()
                                         ->toArray();
@@ -71,17 +81,13 @@
                                     </ul>
                                 </div>
                                 @if(empty($cotizacion->cancelada))
-                                    <button type="button" style="background-color: #b45050; color: white;"
+                                    <button type="button"
                                         class="btn btn-sm btn-outline-danger"
                                         onclick="cancelarMuestreo({{ $cotizacion->coti_num }})">
                                         <i class="fas fa-ban me-1"></i> Cancelar muestreo
                                     </button>
                                 @endif
-                                <x-heroicon-o-chevron-up id="chevron-muestras-pendientes-lg" class="text-white"
-                                    style="width: 20px; height: 20px;" />
                             </div>
-                        </div>
-                        <div id="muestras-pendientes-lg" class="card-body collapse-content">
                             @if($tareas->isEmpty())
                                 <div class="alert alert-warning">
                                     No hay muestras registradas para esta cotización.
@@ -98,7 +104,10 @@
                                         $descripcion = $categoria->cotio_descripcion;
                                     @endphp
 
-                                    @if($descripcion === 'TRABAJO TECNICO EN CAMPO' && !$mostradoTecnicoCampo)
+                                    @php
+                                        $esTrabajoTecnicoBanner = \App\Support\TrabajoTecnicoCampo::esDescripcion($descripcion);
+                                    @endphp
+                                    @if($esTrabajoTecnicoBanner && !$mostradoTecnicoCampo)
                                         <div class="mb-4">
                                             <div class="card shadow-sm mi-tarjeta h-100">
                                                 <p
@@ -131,10 +140,16 @@
                                         $requiereMuestreo = $categoria->requiere_muestreo;
                                         $instancia = $item['instancia'];
                                         $tareasItem = $item['tareas'];
-                                        // dd($tareasItem);
-                                        $responsables = $item['responsables'] ?? collect(); // Asegurar que siempre haya una colección
+                                        // Asegurar que siempre haya una colección
+                                        $responsables = $item['responsables'] ?? collect();
                                         $descripcion = $categoria->cotio_descripcion;
-                                        $isTecnicoCampo = $descripcion === 'TRABAJO TECNICO EN CAMPO';
+                                        $esFacturacionDirectaEnsayo = ! empty($categoria->facturacion_directa);
+                                        $esEnsayoMediciones = ($categoria->canal_ensayo ?? '') === 'mediciones';
+                                        $esPrioriEfectiva = \App\Support\PrioridadListado::prioridadEfectivaMuestreo($categoria, $cotizacion, $instancia);
+                                        $isTecnicoCampo = ! empty($categoria->es_trabajo_tecnico_campo)
+                                            || \App\Support\TrabajoTecnicoCampo::esDescripcion($descripcion);
+                                        $listoFacturarTrabajoTecnico = $isTecnicoCampo
+                                            && \App\Support\TrabajoTecnicoCampo::estadoEsMuestreado($instancia->cotio_estado ?? null);
                                         $isViaticos = $descripcion === 'VIATICOS';
 
                                         // Determinar clase de fondo según estado
@@ -176,7 +191,7 @@
                                         $tieneNotaInterna = !empty($notasInternas);
                                     @endphp
 
-                                    @if(!$isTecnicoCampo && !$isViaticos)
+                                    @if(!$isViaticos)
                                                     @php
                                                         $estado = $instancia->cotio_estado;
                                                         $badgeClass = match ($estado) {
@@ -194,37 +209,55 @@
                                                         };
                                                     @endphp
                                                     <div class="mb-4">
-                                                        <div class="card shadow-sm mi-tarjeta h-100" @if($instancia->es_priori)
-                                                        style="border: 1px solid #FFC107;" @endif>
+                                                        <div class="card shadow-sm mi-tarjeta h-100" @if($esPrioriEfectiva)
+                                                        style="border: 3px solid #ffc107; box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.35);" @endif>
                                                             <!-- Encabezado de la tarjeta -->
                                                             <div
-                                                                class="card-header text-white d-flex justify-content-between align-items-center flex-wrap {{ $headerClass }} {{ $instancia->active_ot ? 'bg-success' : '' }}">
+                                                                class="card-header text-white d-flex align-items-center justify-content-between flex-wrap p-3 {{ $headerClass }} {{ $instancia->active_ot ? 'bg-success' : '' }}">
                                                                 <div class="d-flex align-items-center gap-2 flex-wrap">
                                                                     <!-- Checkbox principal -->
+                                                                    @php
+                                                                        $muestraEnFacturacion = (bool) ($instancia->enable_inform ?? false);
+                                                                        $muestraCompletada = ($instancia->cotio_estado ?? '') === 'completado';
+                                                                        $bloqueoPorOt = ($instancia->enable_ot ?? false) && ! $esFacturacionDirectaEnsayo;
+                                                                    @endphp
                                                                     <input type="checkbox" class="form-check-input categoria-checkbox"
                                                                         data-item="{{ $categoria->original_item }}"
                                                                         data-instance="{{ $instancia->instance_number }}"
-                                                                        data-descripcion="{{ $descripcion }}" onchange="toggleTareas(this)"
-                                                                        @if($instancia->active_muestreo && $instancia->cotio_estado !== 'completado')
-                                                                        checked @endif @if(($instancia->enable_ot && !in_array($canalParaFiltrar ?? '', ['consultoria', 'asp', 'clarke_fire'])) || $instancia->cotio_estado === 'completado') disabled @endif />
+                                                                        data-descripcion="{{ $descripcion }}"
+                                                                        data-facturacion-directa="{{ $esFacturacionDirectaEnsayo ? '1' : '0' }}"
+                                                                        onchange="toggleTareas(this)"
+                                                                        @if(! $esFacturacionDirectaEnsayo && $instancia->active_muestreo && ! $muestraCompletada)
+                                                                        checked @endif
+                                                                        @if($bloqueoPorOt || $muestraCompletada || ($esFacturacionDirectaEnsayo && $muestraEnFacturacion)) disabled @endif />
 
 
                                                                     <!-- Información principal -->
                                                                     <div class="d-flex flex-column">
                                                                         <div class="d-flex align-items-center flex-wrap gap-2">
-                                                                            <a href="{{ route('muestras.ver', [
+                                                                            <a href="{{ !empty($esPortalMediciones) ? route('mediciones.ver', [
+                                            'cotizacion' => $cotizacion->coti_num,
+                                            'item' => $categoria->original_item,
+                                            'instance' => $instancia->instance_number,
+                                        ]) : route('muestras.ver', [
                                             'cotizacion' => $cotizacion->coti_num,
                                             'item' => $categoria->original_item,
                                             'instance' => $instancia->instance_number,
                                             'canal' => $canalParaFiltrar ?? null
                                         ]) }}"
                                                                                 class="text-decoration-none d-inline-flex align-items-center flex-wrap {{ $categoria->enable_ot ? 'text-dark' : 'text-white'}}">
-                                                                                <strong @if($instancia->es_priori) style="color: #FFC107;" @endif>
-                                                                                    @if($instancia->es_priori)
-                                                                                        <x-heroicon-o-star style="width: 18px; height: 18px;" />
+                                                                                <strong>{{ $descripcion }}</strong>
+                                                                                    @if($esEnsayoMediciones)
+                                                                                        <span class="badge bg-info text-dark ms-1">Mediciones</span>
+                                                                                    @elseif($esFacturacionDirectaEnsayo)
+                                                                                        <span class="badge bg-light text-dark ms-1">Consultoría</span>
+                                                                                    @elseif($listoFacturarTrabajoTecnico)
+                                                                                        <span class="badge bg-light text-success ms-1">Listo para facturar</span>
                                                                                     @endif
-                                                                                    {{ $descripcion }}
-                                                                                </strong>
+                                                                                    @if($esPrioriEfectiva)
+                                                                                        <x-heroicon-o-star style="width: 18px; height: 18px; color: #ffc107;" class="ms-1" title="Prioridad" />
+                                                                                        <span class="badge bg-warning text-dark ms-1">Prioridad</span>
+                                                                                    @endif
                                                                                 <span class="ms-2">(muestra {{ $instancia->instance_number }} /
                                                                                     {{ $categoria->cotio_cantidad ?? '-' }})</span>
                                                                                 @if($instancia->active_ot)
@@ -290,12 +323,18 @@
                                                                     $userRol = trim(Auth::user()->rol ?? '');
                                                                     $instanciaEstado = trim($instancia->cotio_estado ?? '');
                                                                     $mostrarSuspender = ($userRol == 'coordinador_muestreo' && $instanciaEstado == 'coordinado muestreo');
+                                                                    $mostrarRevertirCoordinacion = (
+                                                                        ($userRol === 'coordinador_muestreo' || (int) (Auth::user()->usu_nivel ?? 0) >= 900)
+                                                                        && $instanciaEstado === 'coordinado muestreo'
+                                                                        && ! ($instancia->enable_ot ?? false)
+                                                                        && ! ($instancia->active_ot ?? false)
+                                                                    );
                                                                     // El coordinador de muestreo puede enviar a OT, pero no debería poder quitarla
                                                                     $mostrarQuitarOT = (!$requiereMuestreo && $instancia->enable_ot && $userRol !== 'coordinador_muestreo');
                                                                     $mostrarDebeMuestreo = ($requiereMuestreo && !$instancia->enable_ot);
                                                                     $mostrarEditar = ($userRol === 'coordinador_muestreo');
                                                                 @endphp
-                                                                <div class="d-flex align-items-center justify-content-end gap-2 mt-2 mt-md-0">
+                                                                <div class="d-flex align-items-center gap-2">
                                                                     {{-- Estado --}}
                                                                     <p class="mb-0 badge bg-{{ $badgeClass }}">
                                                                         {{ ucfirst($instancia->cotio_estado) }}
@@ -309,158 +348,171 @@
                                             'cotio_subitem' => 0,
                                             'instance' => $instancia->instance_number
                                         ]) }}" data-coti="{{ $cotizacion->coti_num }}"
-                                                                        data-categoria="{{ $descripcion }}"
+                                            data-categoria="{{ $descripcion }}"
+                                            data-instance="{{ $instancia->instance_number }}"
+                                            data-fechaMuestreo="{{ $instancia->fecha_muestreo }}"
+                                            onclick="generateQr(this)">
+                                            <x-heroicon-o-qr-code class="text-white"
+                                                style="width: 24px; height: 24px;" />
+                                        </a>
+
+                                        {{-- Menú hamburguesa (oculta opciones por muestra) --}}
+                                        <div class="dropdown">
+                                            <button type="button" class="btn btn-sm btn-outline-light dropdown-toggle"
+                                                data-bs-toggle="dropdown" aria-expanded="false" title="Opciones">
+                                                <i class="fas fa-bars"></i>
+                                            </button>
+                                            <div class="dropdown-menu dropdown-menu-end p-2" style="min-width: 170px;">
+                                                {{-- Editar (acceso a tareas completas) --}}
+                                                @if($mostrarEditar)
+                                                                                    <a href="{{ route('tareas.all.show', [
+                                                        'cotio_numcoti' => $instancia->cotio_numcoti,
+                                                        'cotio_item' => $instancia->cotio_item,
+                                                        'cotio_subitem' => 0,
+                                                        'instance' => $instancia->instance_number,
+                                                        'canal' => $canalParaFiltrar ?? null
+                                                    ]) }}" class="btn btn-sm w-100 btn-outline-primary"
+                                                                                        style="text-align: center;"
+                                                                                        title="Editar / Cargar datos en vista completa">
+                                                                                        <i class="fas fa-edit me-1"></i> Editar
+                                                                                    </a>
+                                                @endif
+
+                                                {{-- Recoordinar --}}
+                                                <button type="button"
+                                                    class="btn btn-sm w-100 {{ $mostrarRecoordinar ? 'btn-outline-warning' : 'btn-outline-light opacity-50' }}"
+                                                    style="{{ $mostrarRecoordinar ? '' : 'display: none;' }}"
+                                                    @if($mostrarRecoordinar) data-bs-toggle="modal"
+                                                        data-bs-target="#recoordinarModal"
+                                                        data-instancia="{{ $instancia->id }}"
+                                                        data-cotizacion="{{ $cotizacion->coti_num }}"
+                                                        data-item="{{ $instancia->cotio_item }}"
+                                                        data-descripcion="{{ $categoria->cotio_descripcion ?? $instancia->cotio_descripcion ?? '' }}"
+                                                    data-instance="{{ $instancia->instance_number }}" @else disabled
+                                                    aria-disabled="true" @endif>
+                                                    Recoordinar
+                                                </button>
+
+                                                {{-- Suspender --}}
+                                                <button type="button"
+                                                    class="btn btn-sm w-100 mt-2 {{ $mostrarSuspender ? 'btn-warning' : 'btn-outline-light opacity-50' }}"
+                                                    style="{{ $mostrarSuspender ? '' : 'display: none;' }}"
+                                                    @if($mostrarSuspender) data-bs-toggle="modal"
+                                                    data-bs-target="#suspenderModal{{ $instancia->id }}" @else disabled
+                                                    aria-disabled="true" @endif>
+                                                    <i class="fas fa-pause me-1"></i> Suspender
+                                                </button>
+
+                                                {{-- Revertir coordinación --}}
+                                                <button type="button"
+                                                    class="btn btn-sm w-100 mt-2 {{ $mostrarRevertirCoordinacion ? 'btn-outline-danger' : 'btn-outline-light opacity-50' }}"
+                                                    style="{{ $mostrarRevertirCoordinacion ? '' : 'display: none;' }}"
+                                                    @if($mostrarRevertirCoordinacion) data-bs-toggle="modal"
+                                                    data-bs-target="#revertirCoordinacionModal{{ $instancia->id }}" @else disabled
+                                                    aria-disabled="true" @endif>
+                                                    <i class="fas fa-undo me-1"></i> Cancelar coordinación
+                                                </button>
+
+                                                {{-- Acción OT / Muestreo (3er botón) --}}
+                                                @if($mostrarQuitarOT)
+                                                    <button type="button"
+                                                        onclick="quitarDirectoAOT({ cotio_numcoti: {{ $instancia->cotio_numcoti }}, cotio_item: '{{ $instancia->cotio_item }}', instance_number: {{ $instancia->instance_number }} })"
+                                                        class="btn btn-danger btn-sm w-100 mt-2" data-bs-toggle="tooltip"
+                                                        data-bs-placement="bottom"
+                                                                    title="Quitar esta muestra de la Orden de Trabajo"
+                                                                >
+                                                                    Quitar de OT
+                                                                </button>
+                                                @elseif($mostrarDebeMuestreo)
+                                                            <button
+                                                                type="button"
+                                                                class="btn btn-sm btn-outline-light opacity-50 w-100 mt-2"
+                                                                disabled
+                                                                title="Esta muestra debe pasar por muestreo"
+                                                                aria-disabled="true"
+                                                            >
+                                                                Debe pasar por muestreo
+                                                            </button>
+                                                        @endif
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Cuerpo de la tarjeta -->
+                                        <div class="card-body">
+                                            @if(count($tareasItem) > 0)
+                                                <ul class="list-group muestra-parametros-list">
+                                                    @foreach($tareasItem as $tarea)
+                                                        <li class="list-group-item">
+                                                            <div class="d-flex justify-content-between align-items-center">
+                                                                <div class="d-flex align-items-center">
+                                                                    <!-- Checkbox de análisis -->
+                                                                    <input 
+                                                                        type="checkbox"
+                                                                        class="form-check-input tarea-checkbox me-2" 
+                                                                        name="cotio_items[]"
+                                                                        value="{{ $tarea->original_item }}-{{ $tarea->cotio_subitem }}-{{ $instancia->instance_number }}"
+                                                                        data-item="{{ $tarea->original_item }}"
+                                                                        data-subitem="{{ $tarea->cotio_subitem }}"
                                                                         data-instance="{{ $instancia->instance_number }}"
-                                                                        data-fechaMuestreo="{{ $instancia->fecha_muestreo }}"
-                                                                        onclick="generateQr(this)">
-                                                                        <x-heroicon-o-qr-code class="text-white"
-                                                                            style="width: 24px; height: 24px;" />
-                                                                    </a>
+                                                                        data-facturacion-directa="{{ $esFacturacionDirectaEnsayo ? '1' : '0' }}"
+                                                                        onchange="actualizarEstadoTarea(this)"
+                                                                        @if(! $esFacturacionDirectaEnsayo && filter_var($tarea->instancia->active_muestreo, FILTER_VALIDATE_BOOLEAN) && $tarea->instancia->cotio_estado !== 'completado' && $instancia->cotio_estado !== 'completado') checked @endif
+                                                                        @if($bloqueoPorOt || $tarea->instancia->cotio_estado === 'completado' || $instancia->cotio_estado === 'completado' || ($esFacturacionDirectaEnsayo && ($instancia->enable_inform ?? false))) disabled @endif
+                                                                    />
 
-                                                                    {{-- Menú hamburguesa (oculta opciones por muestra) --}}
-                                                                    <div class="dropdown">
-                                                                        <button type="button" class="btn btn-sm btn-outline-light dropdown-toggle"
-                                                                            data-bs-toggle="dropdown" aria-expanded="false" title="Opciones">
-                                                                            <i class="fas fa-bars"></i>
-                                                                        </button>
-                                                                        <div class="dropdown-menu dropdown-menu-end p-2" style="min-width: 170px;">
-                                                                            {{-- Editar (acceso a tareas completas) --}}
-                                                                            @if($mostrarEditar)
-                                                                                                                <a href="{{ route('tareas.all.show', [
-                                                                                    'cotio_numcoti' => $instancia->cotio_numcoti,
-                                                                                    'cotio_item' => $instancia->cotio_item,
-                                                                                    'cotio_subitem' => 0,
-                                                                                    'instance' => $instancia->instance_number,
-                                                                                    'canal' => $canalParaFiltrar ?? null
-                                                                                ]) }}" class="btn btn-sm w-100 btn-outline-primary"
-                                                                                                                    style="text-align: center;"
-                                                                                                                    title="Editar / Cargar datos en vista completa">
-                                                                                                                    <i class="fas fa-edit me-1"></i> Editar
-                                                                                                                </a>
-                                                                            @endif
 
-                                                                            {{-- Recoordinar --}}
-                                                                            <button type="button"
-                                                                                class="btn btn-sm w-100 {{ $mostrarRecoordinar ? 'btn-outline-warning' : 'btn-outline-light opacity-50' }}"
-                                                                                style="{{ $mostrarRecoordinar ? '' : 'display: none;' }}"
-                                                                                @if($mostrarRecoordinar) data-bs-toggle="modal"
-                                                                                    data-bs-target="#recoordinarModal"
-                                                                                    data-instancia="{{ $instancia->id }}"
-                                                                                    data-cotizacion="{{ $cotizacion->coti_num }}"
-                                                                                    data-item="{{ $instancia->cotio_item }}"
-                                                                                    data-descripcion="{{ $categoria->cotio_descripcion ?? $instancia->cotio_descripcion ?? '' }}"
-                                                                                data-instance="{{ $instancia->instance_number }}" @else disabled
-                                                                                aria-disabled="true" @endif>
-                                                                                Recoordinar
-                                                                            </button>
 
-                                                                            {{-- Suspender --}}
-                                                                            <button type="button"
-                                                                                class="btn btn-sm w-100 mt-2 {{ $mostrarSuspender ? 'btn-warning' : 'btn-outline-light opacity-50' }}"
-                                                                                style="{{ $mostrarSuspender ? '' : 'display: none;' }}"
-                                                                                @if($mostrarSuspender) data-bs-toggle="modal"
-                                                                                data-bs-target="#suspenderModal{{ $instancia->id }}" @else disabled
-                                                                                aria-disabled="true" @endif>
-                                                                                <i class="fas fa-pause me-1"></i> Suspender
-                                                                            </button>
-
-                                                                            {{-- Acción OT / Muestreo (3er botón) --}}
-                                                                            @if($mostrarQuitarOT)
-                                                                                <button type="button"
-                                                                                    onclick="quitarDirectoAOT({ cotio_numcoti: {{ $instancia->cotio_numcoti }}, cotio_item: '{{ $instancia->cotio_item }}', instance_number: {{ $instancia->instance_number }} })"
-                                                                                    class="btn btn-danger btn-sm w-100 mt-2" data-bs-toggle="tooltip"
-                                                                                    data-bs-placement="bottom"
-                                                                                                title="Quitar esta muestra de la Orden de Trabajo"
-                                                                                            >
-                                                                                                Quitar de OT
-                                                                                            </button>
-                                                                            @elseif($mostrarDebeMuestreo)
-                                                                                        <button
-                                                                                            type="button"
-                                                                                            class="btn btn-sm btn-outline-light opacity-50 w-100 mt-2"
-                                                                                            disabled
-                                                                                            title="Esta muestra debe pasar por muestreo"
-                                                                                            aria-disabled="true"
-                                                                                        >
-                                                                                            Debe pasar por muestreo
-                                                                                        </button>
-                                                                                    @endif
-                                                                                </div>
+                                                                    <div class="d-flex gap-2 align-items-start justify-content-center">
+                                                                        {{ $tarea->cotio_descripcion }}
+                                                                        @if(! $esFacturacionDirectaEnsayo)
+                                                                            <div>
+                                                                                @php
+                                                                                    $estado = $tarea->instancia->cotio_estado;
+                                                                                    $badgeClass = match ($estado) {
+                                                                                        'pendiente' => 'warning',
+                                                                                        'coordinado muestreo' => 'warning',
+                                                                                        'coordinado analisis' => 'warning',
+                                                                                        'en proceso' => 'info',
+                                                                                        'en revision muestreo' => 'info',
+                                                                                        'en revision analisis' => 'info',
+                                                                                        'finalizado' => 'success',
+                                                                                        'muestreado' => 'success',
+                                                                                        'analizado' => 'success',
+                                                                                        'suspension' => 'danger',
+                                                                                        default => 'secondary'
+                                                                                    };
+                                                                                @endphp
+                                                                                <p class="mb-0 badge bg-{{ $badgeClass }} ms-2">
+                                                                                    {{ ucfirst($tarea->instancia->cotio_estado) }}
+                                                                                </p>
                                                                             </div>
-                                                                        </div>
-                                                                    </div>
-
-                                                                    <!-- Cuerpo de la tarjeta -->
-                                                                    <div class="card-body">
-                                                                        @if(count($tareasItem) > 0)
-                                                                            <ul class="list-group">
-                                                                                @foreach($tareasItem as $tarea)
-                                                                                    <li class="list-group-item">
-                                                                                        <div class="d-flex justify-content-between align-items-center">
-                                                                                            <div class="d-flex align-items-center">
-                                                                                                <!-- Checkbox de análisis -->
-                                                                                                <input 
-                                                                                                    type="checkbox"
-                                                                                                    class="form-check-input tarea-checkbox me-2" 
-                                                                                                    name="cotio_items[]"
-                                                                                                    value="{{ $tarea->original_item }}-{{ $tarea->cotio_subitem }}-{{ $instancia->instance_number }}"
-                                                                                                    data-item="{{ $tarea->original_item }}"
-                                                                                                    data-subitem="{{ $tarea->cotio_subitem }}"
-                                                                                                    data-instance="{{ $instancia->instance_number }}"
-                                                                                                    onchange="actualizarEstadoTarea(this)"
-                                                                                                    @if(filter_var($tarea->instancia->active_muestreo, FILTER_VALIDATE_BOOLEAN) && $tarea->instancia->cotio_estado !== 'completado' && $instancia->cotio_estado !== 'completado') checked @endif
-                                                                                                    @if(($instancia->enable_ot && !in_array($canalParaFiltrar ?? '', ['consultoria', 'asp', 'clarke_fire'])) || $tarea->instancia->cotio_estado === 'completado' || $instancia->cotio_estado === 'completado') disabled @endif
-                                                                                                />
-
-
-
-                                                                                                <div class="d-flex gap-2 align-items-start justify-content-center">
-                                                                                                    {{ $tarea->cotio_descripcion }}
-                                                                                                    <div>
-                                                                                                        @php
-                                                                                                            $estado = $tarea->instancia->cotio_estado;
-                                                                                                            $badgeClass = match ($estado) {
-                                                                                                                'pendiente' => 'warning',
-                                                                                                                'coordinado muestreo' => 'warning',
-                                                                                                                'coordinado analisis' => 'warning',
-                                                                                                                'en proceso' => 'info',
-                                                                                                                'en revision muestreo' => 'info',
-                                                                                                                'en revision analisis' => 'info',
-                                                                                                                'finalizado' => 'success',
-                                                                                                                'muestreado' => 'success',
-                                                                                                                'analizado' => 'success',
-                                                                                                                'suspension' => 'danger',
-                                                                                                                default => 'secondary'
-                                                                                                            };
-                                                                                                        @endphp
-                                                                                                        <p class="mb-0 badge bg-{{ $badgeClass }} ms-2">
-                                                                                                            {{ ucfirst($tarea->instancia->cotio_estado) }}
-                                                                                                        </p>
-                                                                                                    </div>
-                                                                                                    @if($tarea->instancia->resultado)
-                                                                                                        <span class="badge bg-primary ms-2">Resultado: {{ $tarea->instancia->resultado }}</span>
-                                                                                                    @endif
-                                                                                                </div>
-                                                                                            </div>
-
-                                                                                            @if(filter_var($tarea->instancia->active_muestreo, FILTER_VALIDATE_BOOLEAN) && $tarea->instancia->fecha_muestreo)
-                                                                                                <small class="text-muted">
-                                                                                                    {{ $tarea->instancia->fecha_muestreo->format('d/m/Y H:i') }}
-                                                                                                    @if($tarea->instancia->coordinador)
-                                                                                                        <br><small>por {{ $tarea->instancia->coordinador->usu_descripcion }}</small>
-                                                                                                    @endif
-                                                                                                </small>
-                                                                                            @endif
-                                                                                        </div>
-                                                                                    </li>
-                                                                                @endforeach
-                                                                            </ul>
-                                                                        @else
-                                                                            <p class="text-muted">No hay análisis en esta muestra</p>
+                                                                        @endif
+                                                                        @if(! $esFacturacionDirectaEnsayo && $tarea->instancia->resultado)
+                                                                            <span class="badge bg-primary ms-2">Resultado: {{ $tarea->instancia->resultado }}</span>
                                                                         @endif
                                                                     </div>
                                                                 </div>
+
+                                                                @if(filter_var($tarea->instancia->active_muestreo, FILTER_VALIDATE_BOOLEAN) && $tarea->instancia->fecha_muestreo)
+                                                                    <small class="text-muted">
+                                                                        {{ $tarea->instancia->fecha_muestreo->format('d/m/Y H:i') }}
+                                                                        @if($tarea->instancia->coordinador)
+                                                                            <br><small>por {{ $tarea->instancia->coordinador->usu_descripcion }}</small>
+                                                                        @endif
+                                                                    </small>
+                                                                @endif
                                                             </div>
+                                                        </li>
+                                                    @endforeach
+                                                </ul>
+                                            @else
+                                                <p class="text-muted">No hay análisis en esta muestra</p>
+                                            @endif
+                                        </div>
+                                    </div>
+                                </div>
                                     @endif
                                 @endforeach
                             @endif
@@ -469,31 +521,30 @@
             </div>
         </div>
     </div>
+</div>
 
-    <!-- Botón flotante para aplicar cambios -->
-    <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 11">
-        <div class="d-flex gap-2">
-            @if(in_array($canalParaFiltrar ?? '', ['consultoria', 'asp', 'clarke_fire']))
-                <button 
-                    id="btn-asignacion-masiva" 
-                    class="btn btn-success shadow" 
-                    onclick="mostrarModalFacturacion()"
-                    disabled
-                >
-                   Pasar a facturación
-                </button>
-            @else
-                <button 
-                    id="btn-asignacion-masiva" 
-                    class="btn btn-success shadow" 
-                    onclick="mostrarModalAsignacion()"
-                    disabled
-                >
-                   Pasar a muestreo
-                </button>
-            @endif
-        </div>
-    </div>
+<div class="position-fixed bottom-0 end-0 p-3 d-flex flex-wrap gap-2 justify-content-end" style="z-index: 11">
+    @if(!empty($esCanalFacturacionDirecta) || (!empty($esPortalConsultoria) && !empty($tieneEnsayosFacturacionDirecta)))
+        <button 
+            id="btn-asignacion-informes" 
+            class="btn btn-success shadow" 
+            onclick="mostrarModalFacturacion()"
+            disabled
+        >
+           Pasar a informes
+        </button>
+    @endif
+    @if(empty($esCanalFacturacionDirecta) && (empty($esPortalConsultoria) || !empty($tieneEnsayosConMuestreo)))
+        <button 
+            id="btn-asignacion-masiva" 
+            class="btn btn-success shadow" 
+            onclick="mostrarModalAsignacion()"
+            disabled
+        >
+            <i class="fas fa-check-circle me-2"></i>Pasar a muestreo
+        </button>
+    @endif
+</div>
 
 
 
@@ -506,24 +557,47 @@
                 @csrf
                 <input type="hidden" name="cotio_numcoti" value="{{ $cotizacion->coti_num }}">
                 <input type="hidden" id="items_seleccionados_facturacion" name="items_seleccionados">
+                <input type="hidden" id="pasar_destino" name="destino" value="informes">
 
                 <div class="modal-content">
                     <div class="modal-header bg-success text-white">
-                        <h5 class="modal-title" id="pasarFacturacionModalLabel">Pasar a Facturación</h5>
+                        <h5 class="modal-title" id="pasarFacturacionModalLabel">Pasar trabajos</h5>
                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
                     </div>
                     <div class="modal-body">
-                        <p>Las muestras seleccionadas serán enviadas directamente a facturación.</p>
+                        @if(!empty($esPortalConsultoria))
+                            <p>Elegí cómo continuar con las muestras seleccionadas:</p>
+                            <ul class="mb-3">
+                                <li><strong>Pasar a informes:</strong> para trabajos que requieren informe y firma digital antes de facturar.</li>
+                                <li><strong>Pasar a facturar directo:</strong> para trabajos que no llevan informe.</li>
+                            </ul>
+                        @else
+                            <p>Las muestras seleccionadas serán enviadas directamente a informes.</p>
+                        @endif
 
-                        <div class="mb-3">
+                        <div class="mb-3" id="pasar_informe_file_group">
                             <label for="informe_file" class="form-label">Subir informe (Opcional)</label>
                             <input class="form-control" type="file" id="informe_file" name="informe_file" accept=".pdf,.doc,.docx,.xls,.xlsx">
                             <small class="text-muted">Si subes un archivo, este estará disponible en la sección de informes.</small>
                         </div>
                     </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                        <button type="submit" class="btn btn-success">Confirmar y Pasar a Facturación</button>
+                    <div class="modal-footer justify-content-between flex-wrap gap-2">
+                        @if(!empty($esPortalConsultoria))
+                            <button type="submit" class="btn btn-outline-primary" onclick="document.getElementById('pasar_destino').value='facturacion'">
+                                Pasar a facturar directo
+                            </button>
+                            <div class="d-flex flex-wrap gap-2 ms-auto">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                                <button type="submit" class="btn btn-success" onclick="document.getElementById('pasar_destino').value='informes'">
+                                    Pasar a Informes
+                                </button>
+                            </div>
+                        @else
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                            <button type="submit" class="btn btn-success" onclick="document.getElementById('pasar_destino').value='informes'">
+                                Confirmar y Pasar a Informes
+                            </button>
+                        @endif
                     </div>
                 </div>
             </form>
@@ -531,8 +605,57 @@
     </div>
 
     <script>
+        const esCanalFacturacionDirecta = @json(!empty($esCanalFacturacionDirecta));
+        const esPortalConsultoria = @json(!empty($esPortalConsultoria));
+
+        function ensayoEsFacturacionDirecta(el) {
+            if (!el) {
+                return esCanalFacturacionDirecta;
+            }
+            return el.dataset.facturacionDirecta === '1';
+        }
+
+        function selectorCheckboxesFacturacionDirecta() {
+            return '.categoria-checkbox:checked:not([disabled])[data-facturacion-directa="1"]';
+        }
+
+        function selectorCheckboxesMuestreo() {
+            return '.categoria-checkbox:checked:not([data-persisted]):not([disabled])[data-facturacion-directa="0"], .tarea-checkbox:checked:not([data-persisted]):not([disabled])[data-facturacion-directa="0"]';
+        }
+
+        window.descripcionMuestraDesdeCheckbox = function (checkbox) {
+            if (checkbox.dataset.descripcion) {
+                return checkbox.dataset.descripcion.trim();
+            }
+            const card = checkbox.closest('.mi-tarjeta');
+            const cat = card?.querySelector('.categoria-checkbox[data-descripcion]');
+            return (cat?.dataset.descripcion || '').trim();
+        };
+
+        window.variablesCheckedPorTipo = function (tipoMuestra) {
+            return Array.from(document.querySelectorAll('.variable-checkbox:checked'))
+                .filter(function (cb) { return cb.dataset.tipo === tipoMuestra; });
+        };
+
+        function selectorCheckboxesFacturacion() {
+            if (esCanalFacturacionDirecta || esPortalConsultoria) {
+                return selectorCheckboxesFacturacionDirecta();
+            }
+            return selectorCheckboxesMuestreo();
+        }
+
         function mostrarModalFacturacion() {
-            const checkboxes = document.querySelectorAll('.categoria-checkbox:checked:not([data-persisted]), .tarea-checkbox:checked:not([data-persisted])');
+            const checkboxes = document.querySelectorAll(selectorCheckboxesFacturacionDirecta());
+            const invalidos = Array.from(document.querySelectorAll('.categoria-checkbox:checked:not([disabled])'))
+                .filter(cb => cb.dataset.facturacionDirecta !== '1');
+            if (invalidos.length > 0) {
+                Swal.fire({
+                    title: 'Selección inválida',
+                    text: 'Solo puede pasar a informes las muestras de consultoría.',
+                    icon: 'warning'
+                });
+                return;
+            }
 
             const items = Array.from(checkboxes).map(checkbox => {
                 return checkbox.classList.contains('categoria-checkbox') 
@@ -540,13 +663,13 @@
                         item: checkbox.dataset.item, 
                         subitem: '0', 
                         instance: checkbox.dataset.instance, 
-                        descripcion: checkbox.closest('.card-header').querySelector('strong').textContent.trim()
+                        descripcion: window.descripcionMuestraDesdeCheckbox(checkbox)
                     }
                     : { 
                         item: checkbox.dataset.item, 
                         subitem: checkbox.dataset.subitem, 
                         instance: checkbox.dataset.instance, 
-                        descripcion: checkbox.closest('.list-group-item').querySelector('.d-flex.gap-2').childNodes[0].textContent.trim()
+                        descripcion: window.descripcionMuestraDesdeCheckbox(checkbox)
                     };
             });
 
@@ -685,6 +808,14 @@
                                     <div id="variables-container">
                                         <!-- Las variables se cargarán dinámicamente con JavaScript -->
                                     </div>
+                                </div>
+                            </div>
+
+                            <div class="col-md-12">
+                                <div class="mb-3">
+                                    <label for="observaciones_muestreo_coord" class="form-label">Observaciones de coordinación</label>
+                                    <textarea class="form-control" id="observaciones_muestreo_coord" name="observaciones_muestreo_coord" rows="3"
+                                              placeholder="Indicaciones para el muestreador (visibles en la tarea de campo)"></textarea>
                                 </div>
                             </div>
 
@@ -842,6 +973,47 @@
         @endif
     @endforeach
 
+    <!-- Modal para revertir coordinación -->
+    @foreach($agrupadas as $item)
+        @php
+            $instancia = $item['instancia'];
+        @endphp
+        @if(
+            trim($instancia->cotio_estado ?? '') === 'coordinado muestreo'
+            && ! ($instancia->enable_ot ?? false)
+            && ! ($instancia->active_ot ?? false)
+            && (trim(Auth::user()->rol ?? '') === 'coordinador_muestreo' || (int) (Auth::user()->usu_nivel ?? 0) >= 900)
+        )
+            <div class="modal fade" id="revertirCoordinacionModal{{ $instancia->id }}" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Cancelar coordinación</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p>¿Cancelar la coordinación y eliminar las instancias de esta muestra y sus análisis?</p>
+                            <p class="text-muted small mb-0">
+                                Se eliminarán los registros de la muestra y de sus análisis. La cotización no cambia; podrás volver a habilitarla desde cero.
+                            </p>
+                            <form id="revertirCoordinacionForm{{ $instancia->id }}" method="POST" action="{{ route('muestras.revertir-coordinacion', [
+                                'cotio_numcoti' => $instancia->cotio_numcoti,
+                                'cotio_item' => $instancia->cotio_item,
+                                'instance_number' => $instancia->instance_number,
+                            ]) }}">
+                                @csrf
+                            </form>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                            <button type="submit" class="btn btn-danger" form="revertirCoordinacionForm{{ $instancia->id }}">Revertir coordinación</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        @endif
+    @endforeach
+
     <!-- Modal de nota interna -->
     @foreach($agrupadas as $item)
         @php
@@ -959,20 +1131,27 @@
     function toggleTareas(checkbox) {
         const itemId = checkbox.dataset.item;
         const instance = checkbox.dataset.instance;
-        
-        cambiosPendientes[`${itemId}-0-${instance}`] = checkbox.checked;
-        hasChanges = true;
 
-        const checkboxesSeleccionados = document.querySelectorAll('.categoria-checkbox:checked, .tarea-checkbox:checked');
-        const btnAsignacionMasiva = document.getElementById('btn-asignacion-masiva');
-        
-        if (checkboxesSeleccionados.length > 0) {
-            btnAsignacionMasiva.disabled = false;
-        } else {
-            btnAsignacionMasiva.disabled = true;
+        if (!ensayoEsFacturacionDirecta(checkbox)) {
+            cambiosPendientes[`${itemId}-0-${instance}`] = checkbox.checked;
+            hasChanges = true;
         }
-        
-        actualizarEstadoBoton();
+
+        actualizarBotonAccionMasiva();
+        if (!ensayoEsFacturacionDirecta(checkbox)) {
+            actualizarEstadoBoton();
+        }
+    }
+
+    function actualizarBotonAccionMasiva() {
+        const btnInformes = document.getElementById('btn-asignacion-informes');
+        const btnMuestreo = document.getElementById('btn-asignacion-masiva');
+        if (btnInformes) {
+            btnInformes.disabled = document.querySelectorAll(selectorCheckboxesFacturacionDirecta()).length === 0;
+        }
+        if (btnMuestreo) {
+            btnMuestreo.disabled = document.querySelectorAll(selectorCheckboxesMuestreo()).length === 0;
+        }
     }
 
 
@@ -1101,22 +1280,31 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log('[Seleccionar muestras] DOMContentLoaded ejecutado');
     // Obtener variables requeridas y si son obligatorias
     const variablesRequeridas = @json($variablesRequeridas);
+    const prioridadPorCotioItem = @json($prioridadPorCotioItem ?? []);
     const mandatoryVariables = @json(\App\Models\VariableRequerida::where('obligatorio', true)->get()->groupBy('cotio_descripcion')->mapWithKeys(function ($variables, $tipoMuestra) {
         return [$tipoMuestra => $variables->pluck('id')->toArray()];
     }));
 
-    // Configuración inicial de checkboxes
-    document.querySelectorAll('.categoria-checkbox, .tarea-checkbox').forEach(checkbox => {
-        if (checkbox.checked) {
-            checkbox.setAttribute('data-persisted', 'true');
-            checkbox.setAttribute('data-original-checked', 'true');
-        }
-    });
+    function resolverCheckboxPrioridadAsignacion(items) {
+        return items.some(function (it) {
+            return String(it.subitem) === '0' && !!prioridadPorCotioItem[it.item];
+        });
+    }
+
+    // Configuración inicial de checkboxes (flujo muestreo: marcar coordinadas previas como persistidas)
+    if (!esCanalFacturacionDirecta) {
+        document.querySelectorAll('.categoria-checkbox[data-facturacion-directa="0"], .tarea-checkbox[data-facturacion-directa="0"]').forEach(checkbox => {
+            if (checkbox.checked) {
+                checkbox.setAttribute('data-persisted', 'true');
+                checkbox.setAttribute('data-original-checked', 'true');
+            }
+        });
+    }
 
     function handleCheckboxState() {
-        const btnAsignacionMasiva = document.getElementById('btn-asignacion-masiva');
-        const hasManualSelections = document.querySelectorAll('.categoria-checkbox:checked:not([data-persisted]), .tarea-checkbox:checked:not([data-persisted])').length > 0;
-        btnAsignacionMasiva.disabled = !hasManualSelections;
+        if (typeof actualizarBotonAccionMasiva === 'function') {
+            actualizarBotonAccionMasiva();
+        }
     }
 
     // Selección por tipo o todas: botón "Seleccionar muestras"
@@ -1134,8 +1322,10 @@ document.addEventListener('DOMContentLoaded', function() {
             e.stopPropagation();
             var accion = link.dataset.seleccion;
             var descripcion = (link.dataset.descripcion || '').toString().trim();
-            // Solo muestras disponibles: no deshabilitadas (no en OT) y no ya coordinadas (sin data-persisted)
-            var checkboxes = document.querySelectorAll('.categoria-checkbox:not([disabled]):not([data-persisted])');
+            // Solo muestras disponibles: no deshabilitadas; consultoría incluye ambos flujos
+            var checkboxes = (esCanalFacturacionDirecta || esPortalConsultoria)
+                ? document.querySelectorAll('.categoria-checkbox:not([disabled])')
+                : document.querySelectorAll('.categoria-checkbox:not([disabled]):not([data-persisted])');
             var count = 0;
             console.log('[Seleccionar muestras] Accion:', accion, 'descripcion:', descripcion, 'checkboxes:', checkboxes.length);
             if (accion === 'todas') {
@@ -1167,6 +1357,8 @@ document.addEventListener('DOMContentLoaded', function() {
         console.warn('[Seleccionar muestras] No se encontró #menu-seleccionar-muestras');
     }
 
+    handleCheckboxState();
+
     function validateFrecuenciaEligibility(items) {
         const muestras = items.filter(item => item.subitem === '0');
         if (muestras.length < 2) return false;
@@ -1180,7 +1372,17 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     window.mostrarModalAsignacion = function() {
-        const checkboxes = document.querySelectorAll('.categoria-checkbox:checked:not([data-persisted]), .tarea-checkbox:checked:not([data-persisted])');
+        const checkboxes = document.querySelectorAll(selectorCheckboxesMuestreo());
+        const invalidos = Array.from(document.querySelectorAll('.categoria-checkbox:checked:not([disabled])'))
+            .filter(cb => cb.dataset.facturacionDirecta === '1');
+        if (invalidos.length > 0) {
+            Swal.fire({
+                title: 'Selección inválida',
+                text: 'Las muestras de consultoría van directo a informes. Seleccione muestras que requieran muestreo.',
+                icon: 'warning'
+            });
+            return;
+        }
         
         const items = Array.from(checkboxes).map(checkbox => {
             return checkbox.classList.contains('categoria-checkbox') 
@@ -1189,7 +1391,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     subitem: '0', 
                     instance: checkbox.dataset.instance, 
                     isManual: true,
-                    descripcion: checkbox.closest('.card-header').querySelector('strong').textContent.trim(),
+                    descripcion: window.descripcionMuestraDesdeCheckbox(checkbox),
                     instanciaId: checkbox.closest('.mi-tarjeta').querySelector('input[type="checkbox"]').dataset.instanciaId // Add instanciaId
                 }
                 : { 
@@ -1197,7 +1399,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     subitem: checkbox.dataset.subitem, 
                     instance: checkbox.dataset.instance, 
                     isManual: true,
-                    descripcion: checkbox.closest('.list-group-item').querySelector('.d-flex.gap-2').childNodes[0].textContent.trim(),
+                    descripcion: window.descripcionMuestraDesdeCheckbox(checkbox),
                     instanciaId: checkbox.closest('.mi-tarjeta').querySelector('input[type="checkbox"]').dataset.instanciaId // Add instanciaId
                 };
         });
@@ -1228,9 +1430,7 @@ document.addEventListener('DOMContentLoaded', function() {
             });
 
             if (shouldInclude) {
-                const descripcion = checkbox.classList.contains('categoria-checkbox') 
-                    ? checkbox.closest('.card-header').querySelector('strong').textContent.trim()
-                    : checkbox.closest('.list-group-item').querySelector('.d-flex.gap-2').childNodes[0].textContent.trim();
+                const descripcion = window.descripcionMuestraDesdeCheckbox(checkbox);
                 
                 items.push({
                     item: checkbox.dataset.item,
@@ -1405,6 +1605,10 @@ document.addEventListener('DOMContentLoaded', function() {
         const modal = $('#asignacionMasivaModal');
         modal.find('select:not(#responsables_muestreo)').val('').trigger('change'); // Reset other selects
         modal.find('input[type="datetime-local"]').val('');
+        const chkPrioriModal = document.getElementById('es_priori');
+        if (chkPrioriModal) {
+            chkPrioriModal.checked = resolverCheckboxPrioridadAsignacion(items);
+        }
         modal.modal('show');
     }
 
@@ -1417,7 +1621,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 ? item.descripcion 
                 : items.find(i => i.item === item.item && i.subitem === '0' && i.instance === item.instance)?.descripcion || item.descripcion;
 
-            const variables = Array.from(document.querySelectorAll(`.variable-checkbox[data-tipo="${tipoMuestra}"]:checked`))
+            const variables = window.variablesCheckedPorTipo(tipoMuestra)
                 .map(cb => parseInt(cb.value));
 
             if (variables.length > 0) {
@@ -1507,6 +1711,12 @@ document.addEventListener('DOMContentLoaded', function() {
     handleCheckboxState();
 
     $('#asignacionMasivaModal').on('show.bs.modal', function() {
+        const itemsModal = JSON.parse(document.getElementById('items_seleccionados').value || '[]');
+        const chkPrioriModal = document.getElementById('es_priori');
+        if (chkPrioriModal) {
+            chkPrioriModal.checked = resolverCheckboxPrioridadAsignacion(itemsModal);
+        }
+
         // Solo establecer valores por defecto si los campos están vacíos
         const fechaInicioInput = document.getElementById('fecha_inicio_muestreo');
         const fechaFinInput = document.getElementById('fecha_fin_muestreo');
@@ -2153,8 +2363,14 @@ function cancelarMuestreo(cotiNum) {
         }
 
         .collapse-content.show {
-            max-height: 100%;
+            max-height: 12000px;
+            overflow: visible;
             opacity: 1;
+        }
+
+        .muestra-parametros-list {
+            max-height: min(70vh, 900px);
+            overflow-y: auto;
         }
 
         .rotate-180 {
@@ -2252,8 +2468,6 @@ function cancelarMuestreo(cotiNum) {
         const existing = document.getElementById('dynamicQrModal');
         if (existing) existing.remove();
 
-        // console.log(fechaMuestreo);
-
         const modal = document.createElement('div');
         modal.id = 'dynamicQrModal';
         modal.className = 'modal fade';
@@ -2263,29 +2477,20 @@ function cancelarMuestreo(cotiNum) {
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <h5 class="modal-title">CT ${coti} - Categoría: ${categoria} - Fecha: ${fechaMuestreo}</h5>
+                        <h5 class="modal-title">CT ${coti} - Categoría: ${categoria} - Fecha: ${fechaMuestreo || 'No asignada'}</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
                     </div>
-                    <div class="modal-body">
-                        <div style="display: flex; justify-content: center; align-items: center; min-height: 250px;">
+                    <div class="modal-body text-center">
+                        <div style="display: flex; justify-content: center; align-items: center; min-height: 180px;">
                             <div id="qrContainer" style="margin: 0 auto;"></div>
                         </div>
-                    </div>
-                    <div style="width: 100%; max-width: 60%; border: 1px solid #dee2e6; padding: 10px; border-radius: 8px; margin: 10px auto;">
-                        <p></p>
-                    </div>
-
-                    <div style="width: 100%; max-width: 60%; border: 1px solid #dee2e6; padding: 10px; border-radius: 8px; margin: 10px auto;">
-                        <p></p>
-                    </div>
-                    <div style="width: 100%; max-width: 60%; border: 1px solid #dee2e6; padding: 10px; border-radius: 8px; margin: 10px auto;">
-                        <p></p>
+                        <p class="mt-3 mb-0 text-muted small">Muestra #${instance}</p>
                     </div>
                     <div class="modal-footer justify-content-center">
-                        <button onclick="printQr('${url}', '${coti}', '${categoria}', '${instance}', '${fechaMuestreo}')" class="btn btn-primary">
+                        <button onclick="printQr('${url}', '${coti}', '${categoria}', '${instance}', '${fechaMuestreo}')" class="btn btn-primary font-weight-bold">
                             Imprimir CT 
                         </button>
-                        <a href="${url}" class="btn btn-primary">
+                        <a href="${url}" class="btn btn-outline-primary" target="_blank">
                             Ver Formulario
                         </a>
                     </div>
@@ -2303,11 +2508,11 @@ function cancelarMuestreo(cotiNum) {
         
         new QRCode(container, {
             text: url,
-            width: 200,
-            height: 200,
+            width: 150,
+            height: 150,
             colorDark: "#000000",
             colorLight: "#ffffff",
-            correctLevel: QRCode.CorrectLevel.H
+            correctLevel: QRCode.CorrectLevel.M
         });
     }
 
@@ -2319,80 +2524,194 @@ function cancelarMuestreo(cotiNum) {
             <head>
                 <title>Imprimir CT - Cotización ${coti}</title>
                 <style>
+                    @page {
+                        size: 50mm 80mm;
+                        margin: 0;
+                    }
                     body {
                         display: flex;
                         flex-direction: column;
-                        justify-content: center;
-                        align-items: center;
-                        height: 100vh;
-                        margin: 0;
-                        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+                        justify-content: flex-start;
+                        align-items: flex-start;
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                        color: #000;
+                        background: #fff;
                     }
                     .print-container {
-                        text-align: center;
-                        padding: 20px;
+                        width: 50mm;
+                        height: 80mm;
+                        box-sizing: border-box;
+                        display: flex;
+                        flex-direction: row;
+                        justify-content: center;
+                        align-items: flex-start;
+                        padding: 1mm 0 0 1mm;
+                        gap: 0.5mm;
+                        overflow: hidden;
                     }
                     .qr-wrapper {
-                        margin: 20px auto;
-                        padding: 10px;
-                        border: 1px dashed #ccc;
-                        display: inline-block;
+                        width: 22mm;
+                        height: 22mm;
+                        flex-shrink: 0;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        background: #fff;
+                        padding: 0;
+                        box-sizing: border-box;
                     }
-                    h1 {
-                        font-size: 24px;
-                        margin-bottom: 20px;
-                        color: #333;
+                    .qr-wrapper img, .qr-wrapper canvas {
+                        width: 100% !important;
+                        height: 100% !important;
+                        display: block;
+                        image-rendering: pixelated;
                     }
-                    .info {
-                        margin-top: 20px;
-                        font-size: 14px;
+                    .qr-text-wrapper {
+                        width: 12mm;
+                        height: 78mm;
+                        position: relative;
+                        flex-shrink: 0;
+                    }
+                    .qr-content {
+                        width: 22mm;
+                        height: 12mm;
+                        transform: rotate(90deg);
+                        transform-origin: 0 0;
+                        position: absolute;
+                        left: 12mm;
+                        top: 0;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: flex-start;
+                        text-align: left;
+                        box-sizing: border-box;
+                        padding-left: 2mm;
+                        padding-top: 1mm;
+                    }
+                    h1, .qr-title-ct {
+                        font-size: 8.5px;
+                        font-weight: 700;
+                        margin: 0 0 1px 0;
+                        color: #000;
+                        display: -webkit-box;
+                        -webkit-line-clamp: 2;
+                        -webkit-box-orient: vertical;
+                        overflow: hidden;
+                        white-space: normal !important;
+                        word-break: break-word;
+                        line-height: 1.1;
+                    }
+                    .item-desc {
+                        font-size: 7.5px;
+                        margin: 0 0 1px 0;
+                        color: #000;
+                        line-height: 1.1;
+                        display: -webkit-box;
+                        -webkit-line-clamp: 2;
+                        -webkit-box-orient: vertical;
+                        overflow: hidden;
+                        white-space: normal !important;
+                        word-break: break-word;
+                    }
+                    .meta-info {
+                        font-size: 7px;
+                        margin: 0.5px 0;
+                        color: #000;
+                        line-height: 1.1;
+                    }
+                    .extra-row {
+                        display: flex;
+                        align-items: flex-end;
+                        margin-bottom: 2px;
+                        font-size: 6.5px;
+                        font-weight: 600;
+                        height: 22px;
+                    }
+                    .line-under {
+                        flex-grow: 1;
+                        border-bottom: 0.5pt solid #000;
+                        height: 100%;
+                    }
+                    .left-extra-wrapper {
+                        width: 10mm;
+                        height: 78mm;
+                        position: relative;
+                        flex-shrink: 0;
+                    }
+                    .left-extra-content {
+                        width: 22mm;
+                        height: 10mm;
+                        transform: rotate(90deg);
+                        transform-origin: 0 0;
+                        position: absolute;
+                        left: 10mm;
+                        top: 0;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: flex-start;
+                        box-sizing: border-box;
+                        padding-left: 2mm;
+                        padding-top: 1mm;
+                    }
+                    .no-print {
+                        font-size: 12px;
                         color: #666;
+                        margin-top: 20px;
+                        text-align: center;
+                        width: 100%;
                     }
                     @media print {
                         body {
                             height: auto;
+                            display: block;
+                        }
+                        .print-container {
+                            margin: 0;
+                            padding: 1.5mm;
                         }
                         .no-print {
-                            display: none;
+                            display: none !important;
                         }
                     }
                 </style>
             </head>
             <body>
                 <div class="print-container">
-                    <h1>CT ${coti}</h1>
-                    <p><strong>Muestreo:</strong> ${categoria}</p>
-                    <p><strong>Muestra:</strong> ${instance}</p>
-                    <p>
-                        <strong>Fecha y hora:</strong>
-                        <span style="display:inline-block; min-width: 140px; border-bottom: 1px solid #000; margin-left: 4px;">&nbsp;</span>
-                    </p>
-                    <div class="qr-wrapper">
-                        <div id="qr"></div>
-                        <div style="width: 100%; max-width: 90%; border: 1px solid #dee2e6; padding: 10px; border-radius: 8px; margin: 10px auto;">
-                            <p></p>
-                        </div>
-                        <div style="width: 100%; max-width: 90%; border: 1px solid #dee2e6; padding: 10px; border-radius: 8px; margin: 10px auto;">
-                            <p></p>
-                        </div>
-                        <div style="width: 100%; max-width: 90%; border: 1px solid #dee2e6; padding: 10px; border-radius: 8px; margin: 10px auto;">
-                            <p></p>
+                    <div class="left-extra-wrapper">
+                        <div class="left-extra-content">
+                            <div class="extra-row"><div class="line-under"></div></div>
+                            <div class="extra-row" style="margin-top: 5px;"><div class="line-under"></div></div>
+                            <div class="extra-row" style="margin-top: 5px;"><div class="line-under"></div></div>
                         </div>
                     </div>
-                    
-                    <p class="info">Escanee este código CT para ver los detalles</p>
-                    <p class="info no-print">Esta ventana se cerrará automáticamente después de imprimir</p>
+                    <div class="qr-wrapper">
+                        <div id="qr"></div>
+                    </div>
+                    <div class="qr-text-wrapper">
+                        <div class="qr-content">
+                            <h1 class="qr-title-ct">CT ${coti}</h1>
+                            <div class="item-desc">${categoria}</div>
+                            <div class="meta-info"><strong>Muestra:</strong> ${instance}</div>
+                            <div class="meta-info">
+                                <strong>Fecha:</strong>
+                                <span style="display:inline-block; min-width: 35px; border-bottom: 1px solid #000; margin-left: 2px;">&nbsp;</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
+                <p class="no-print">Esta ventana se cerrará automáticamente después de imprimir</p>
                 
                 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script>
                 <script>
                     new QRCode(document.getElementById("qr"), {
                         text: "${url}",
-                        width: 200,
-                        height: 200,
+                        width: 110,
+                        height: 110,
                         colorDark: "#000000",
                         colorLight: "#ffffff",
-                        correctLevel: QRCode.CorrectLevel.H
+                        correctLevel: QRCode.CorrectLevel.M
                     });
                     setTimeout(() => {
                         window.print();

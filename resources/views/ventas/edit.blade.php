@@ -58,7 +58,7 @@
 
             <div class="card shadow-sm">
                 <div class="card-body p-0">
-                    <form method="POST" action="{{ route('ventas.update', $cotizacion->coti_num) }}" id="cotizacionForm">
+                    <form method="POST" action="{{ route('ventas.update', $cotizacion->coti_num) }}" id="cotizacionForm" enctype="multipart/form-data">
                         @csrf
                         @method('PUT')
                         
@@ -106,7 +106,7 @@
                                     <label for="sucursal" class="form-label fw-semibold mb-1">Sucursal:</label>
                                     <div id="sucursalWrapper">
                                         <input type="text" class="form-control form-control-sm" id="sucursal" name="coti_codigosuc"
-                                               value="{{ $cotizacion->coti_codigosuc }}" placeholder="Código sucursal">
+                                               value="{{ trim((string) ($cotizacion->coti_codigosuc ?? '')) }}" placeholder="Código sucursal">
                                         <select class="form-select form-select-sm d-none mt-1" id="sucursal_select">
                                             <option value="">Seleccionar sucursal...</option>
                                         </select>
@@ -122,7 +122,7 @@
                                     <div id="coti_para_wrapper">
                                         <input type="text" class="form-control form-control-sm" id="coti_para" name="coti_para" 
                                                value="{{ old('coti_para', $cotizacion->coti_para) }}" placeholder="Empresa relacionada...">
-                                        <select class="form-control form-control-sm d-none" id="coti_para_select" name="coti_para">
+                                        <select class="form-control form-control-sm d-none" id="coti_para_select">
                                             <option value="">Seleccionar empresa relacionada...</option>
                                         </select>
                                         <input type="hidden" id="coti_empresa_rel" name="coti_empresa_rel" value="{{ old('coti_empresa_rel', $cotizacion->coti_empresa_rel ?? $cotizacion->coti_cli_empresa) }}">
@@ -250,15 +250,24 @@
                                         <!-- Muestreo ahora se configura por ensayo, no a nivel general -->
                                     </div>
 
+                                    <div class="row mb-4">
+                                        <div class="col-md-12">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="coti_prioridad_global_chk" value="1">
+                                                <label class="form-check-label fw-semibold" for="coti_prioridad_global_chk">
+                                                    ★ Marcar todos los ensayos con prioridad de muestreo
+                                                </label>
+                                            </div>
+                                            <small class="text-muted">Activa o desactiva la prioridad en todos los ensayos ya cargados. Para uno solo, usá el checkbox dentro del modal al agregar o editar un ensayo.</small>
+                                        </div>
+                                    </div>
+
                                     <!-- Contactos del cliente -->
                                     @include('ventas.partials.cotizacion-contactos', ['cotizacion' => $cotizacion])
 
-                                    <div class="row mb-4">
-                                        <div class="col-md-12">
-                                            <label for="comentario" class="form-label">Comentario:</label>
-                                            <textarea class="form-control" id="comentario" name="coti_notas" rows="3">{{ $cotizacion->coti_notas }}</textarea>
-                                        </div>
-                                    </div>
+                                    @include('ventas.partials.cotizacion-notas-generales', [
+                                        'notasGeneralesRaw' => old('coti_notas', $cotizacion->coti_notas ?? null),
+                                    ])
 
                                     <!-- Sección de Descuentos / Aumentos -->
                                     <div class="row mb-4">
@@ -778,6 +787,60 @@ document.addEventListener('DOMContentLoaded', function() {
 
 @include('ventas.partials.cotizacion-scripts')
 
+@if(!empty($edicionLockActivo))
+<script>
+(function () {
+    var heartbeatUrl = @json(route('ventas.edicion-lock.heartbeat', $cotizacion->coti_num));
+    var releaseUrl = @json(route('ventas.edicion-lock.release', $cotizacion->coti_num));
+    var csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+    var intervaloMs = 60000;
+
+    function postLock(url) {
+        return fetch(url, {
+            method: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': csrf,
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            },
+            credentials: 'same-origin'
+        });
+    }
+
+    var enviandoFormulario = false;
+    var form = document.getElementById('cotizacionForm');
+    if (form) {
+        form.addEventListener('submit', function () {
+            enviandoFormulario = true;
+        }, true);
+    }
+
+    var timer = setInterval(function () {
+        postLock(heartbeatUrl).then(function (r) {
+            if (!r.ok) {
+                clearInterval(timer);
+            }
+        }).catch(function () {});
+    }, intervaloMs);
+
+    function liberarLock() {
+        if (enviandoFormulario) {
+            return;
+        }
+        if (navigator.sendBeacon) {
+            var fd = new FormData();
+            fd.append('_token', csrf);
+            navigator.sendBeacon(releaseUrl, fd);
+        } else {
+            postLock(releaseUrl);
+        }
+    }
+
+    window.addEventListener('pagehide', liberarLock);
+})();
+</script>
+@endif
+
 @php $idEmpresaRelEdicion = $cotizacion->coti_empresa_rel ?? $cotizacion->coti_cli_empresa; @endphp
 @if(optional($cotizacion->cliente)->es_consultor && !empty($idEmpresaRelEdicion))
 <script>
@@ -1004,7 +1067,9 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
         
-        document.getElementById('comentario').value = cotiData.coti_notas || '';
+        if (typeof window.cotizacionNotasGeneralesCargarDesdeAlmacenamiento === 'function') {
+            window.cotizacionNotasGeneralesCargarDesdeAlmacenamiento(cotiData.coti_notas || '');
+        }
         document.getElementById('descuento').value = (cotiData.coti_descuentoglobal !== null && cotiData.coti_descuentoglobal !== undefined) ? cotiData.coti_descuentoglobal : '0.00';
         if (document.getElementById('aumento')) {
             document.getElementById('aumento').value = (cotiData.coti_aumentoglobal !== null && cotiData.coti_aumentoglobal !== undefined)
@@ -1106,6 +1171,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     req_prot_mapba: !!item.req_prot_mapba,
                     ley_normativa_id: item.ley_aplicacion ? String(item.ley_aplicacion).trim() : null,
                     lleva_muestreo: typeof item.lleva_muestreo !== 'undefined' ? !!item.lleva_muestreo : true,
+                    es_priori: !!item.es_priori,
                     _cotio_precio_ensayo_row: item.cotio_precio,
                 });
             } else {
@@ -1123,13 +1189,22 @@ document.addEventListener('DOMContentLoaded', function() {
                     itemComponente: itemComponente
                 });
                 
+                const codigoProd = String(item.cotio_codigoprod || '').trim();
+                const analisisIdVersion = (function () {
+                    if (!codigoProd) return null;
+                    const sinCeros = codigoProd.replace(/^0+/, '') || '0';
+                    return /^\d+$/.test(sinCeros) ? parseInt(sinCeros, 10) : null;
+                })();
+                let precioComponenteVersion = parseFloat(item.cotio_precio) || 0;
+
                 componentes.push({
                     item: itemComponente, // Item único para el componente
+                    analisis_id: analisisIdVersion,
                     descripcion: item.cotio_descripcion || '',
-                    codigo: item.cotio_codigoprod || '',
+                    codigo: codigoProd,
                     cantidad: parseFloat(item.cotio_cantidad) || 1,
-                    precio: parseFloat(item.cotio_precio) || 0,
-                    total: (parseFloat(item.cotio_precio) || 0) * (parseFloat(item.cotio_cantidad) || 1),
+                    precio: precioComponenteVersion,
+                    total: precioComponenteVersion * (parseFloat(item.cotio_cantidad) || 1),
                     tipo: 'componente',
                     ensayo_asociado: ensayoAsociadoValue, // El item del ensayo al que pertenece
                     metodo_analisis_id: item.cotio_codigometodo_analisis ? item.cotio_codigometodo_analisis.trim() : null,
@@ -1143,6 +1218,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     nota_contenido: item.cotio_nota_contenido || null,
                     req_cadena_custodia: !!item.req_cadena_custodia,
                     req_prot_mapba: !!item.req_prot_mapba,
+                    de_agrupador: !!item.de_agrupador,
                 });
             }
         });

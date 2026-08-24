@@ -6,6 +6,7 @@ use App\Models\Clientes;
 use App\Models\ClienteContacto;
 use App\Models\ClienteEmpresaRelacionada;
 use App\Models\ClienteRazonSocialFacturacion;
+use App\Support\CliCampoLegacy;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -76,9 +77,9 @@ class MainClientesImport implements ToCollection, WithHeadingRow
                 $this->parent->setMapping($originalCodigo, $cliente->cli_codigo);
             }
 
-            $cliente->cli_razonsocial = str_pad(substr($razonSocial, 0, 60), 60, ' ', STR_PAD_RIGHT);
-            $cliente->cli_fantasia = !empty($row['nombre_fantasia_sucursal']) ? str_pad(substr($row['nombre_fantasia_sucursal'], 0, 60), 60, ' ', STR_PAD_RIGHT) : null;
-            $cliente->cli_direccion = !empty($row['direccion']) ? str_pad(substr($row['direccion'], 0, 60), 60, ' ', STR_PAD_RIGHT) : null;
+            $cliente->cli_razonsocial = CliCampoLegacy::truncarTexto($razonSocial, CliCampoLegacy::RAZON_SOCIAL, true);
+            $cliente->cli_fantasia = CliCampoLegacy::truncarTexto($row['nombre_fantasia_sucursal'] ?? null, CliCampoLegacy::FANTASIA);
+            $cliente->cli_direccion = CliCampoLegacy::truncarTexto($row['direccion'] ?? null, CliCampoLegacy::DIRECCION);
             $cliente->cli_localidad = !empty($row['localidad']) ? str_pad(substr($row['localidad'], 0, 50), 50, ' ', STR_PAD_RIGHT) : null;
             $cliente->cli_codigopostal = !empty($row['codigo_postal']) ? str_pad(substr($row['codigo_postal'], 0, 10), 10, ' ', STR_PAD_RIGHT) : null;
             $cliente->cli_codigopais = str_pad(substr($row['codigo_pais_ejem_arg'] ?? 'ARG', 0, 5), 5, ' ', STR_PAD_RIGHT);

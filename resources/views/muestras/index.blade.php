@@ -33,6 +33,12 @@
             <div class="card-body">
                 <form method="GET" action="{{ route('muestras.index') }}" class="row g-3">
                     <input type="hidden" name="view" value="{{ $viewType }}">
+                    @if(request('sort'))
+                        <input type="hidden" name="sort" value="{{ request('sort') }}">
+                    @endif
+                    @if(request('dir'))
+                        <input type="hidden" name="dir" value="{{ request('dir') }}">
+                    @endif
                     
                     <div class="col-md-4">
                         <label for="search" class="form-label">Buscar muestra</label>
@@ -42,12 +48,12 @@
                     </div>
                     
                     <div class="col-md-2">
-                        <label for="estado" class="form-label">Estado</label>
-                        <select class="form-select" id="estado" name="estado">
+                        <label for="estado_muestra" class="form-label">Estado muestra</label>
+                        <select class="form-select" id="estado_muestra" name="estado_muestra">
                             <option value="">Todos</option>
-                            <option value="A" {{ request('estado') == 'A' ? 'selected' : '' }}>Aprobado</option>
-                            <option value="E" {{ request('estado') == 'E' ? 'selected' : '' }}>En espera</option>
-                            <option value="S" {{ request('estado') == 'S' ? 'selected' : '' }}>Rechazado</option>
+                            <option value="coordinado" {{ request('estado_muestra') == 'coordinado' ? 'selected' : '' }}>Coordinado</option>
+                            <option value="en_revision" {{ request('estado_muestra') == 'en_revision' ? 'selected' : '' }}>En revision</option>
+                            <option value="muestreado" {{ request('estado_muestra') == 'muestreado' ? 'selected' : '' }}>Muestreado</option>
                         </select>
                     </div>
 
@@ -169,14 +175,6 @@
         const searchCollapse = document.getElementById('collapseSearch');
         const searchToggleBtn = document.getElementById('searchToggleBtn');
         
-        const hasFilters = {{ request()->hasAny(['search', 'estado', 'fecha_inicio_muestreo', 'fecha_fin_muestreo']) }};
-        
-        if (hasFilters) {
-            new bootstrap.Collapse(searchCollapse, { toggle: true });
-            searchToggleBtn.setAttribute('aria-expanded', 'true');
-            searchToggleBtn.classList.add('active');
-        }
-        
         searchCollapse.addEventListener('show.bs.collapse', function() {
             searchToggleBtn.classList.add('active');
         });
@@ -191,11 +189,14 @@
                 const viewType = this.getAttribute('data-view-type');
                 const url = new URL(this.href);
                 
-                @if(request()->hasAny(['search', 'estado', 'fecha_inicio_muestreo', 'fecha_fin_muestreo']))
+                @if(request()->hasAny(['search', 'estado_muestra', 'matriz', 'fecha_inicio_muestreo', 'fecha_fin_muestreo', 'sort', 'dir']))
                     url.searchParams.set('search', @json(request('search')));
-                    url.searchParams.set('estado', @json(request('estado')));
+                    url.searchParams.set('estado_muestra', @json(request('estado_muestra')));
+                    url.searchParams.set('matriz', @json(request('matriz')));
                     url.searchParams.set('fecha_inicio_muestreo', @json(request('fecha_inicio_muestreo')));
                     url.searchParams.set('fecha_fin_muestreo', @json(request('fecha_fin_muestreo')));
+                    url.searchParams.set('sort', @json(request('sort')));
+                    url.searchParams.set('dir', @json(request('dir')));
                 @endif
                 
                 window.location.href = url.toString();

@@ -11,6 +11,7 @@ use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithMapping;
 use Maatwebsite\Excel\Concerns\WithStyles;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
+use App\Support\CotizacionClienteEtiqueta;
 
 class ReporteAuditoriaExport implements FromCollection, WithHeadings, WithMapping, WithStyles
 {
@@ -25,7 +26,7 @@ class ReporteAuditoriaExport implements FromCollection, WithHeadings, WithMappin
 
     public function collection()
     {
-        $query = CotioInstancia::with(['coti.matriz']);
+        $query = CotioInstancia::with(['coti.matriz', 'coti.cliente', 'coti.sucursal']);
 
         // Aplicar filtros de fecha si existen
         if ($this->fechaDesde) {
@@ -36,7 +37,12 @@ class ReporteAuditoriaExport implements FromCollection, WithHeadings, WithMappin
             $query->whereDate('created_at', '<=', $this->fechaHasta);
         }
 
-        return $query->get();
+        $instancias = $query->get();
+        CotizacionClienteEtiqueta::precargarEmpresasRelacionadas(
+            $instancias->map->coti->filter()->values()
+        );
+
+        return $instancias;
     }
 
     public function headings(): array
@@ -61,7 +67,7 @@ class ReporteAuditoriaExport implements FromCollection, WithHeadings, WithMappin
         $matrizDescripcion = '';
         
         if ($instancia->coti) {
-            $empresa = $instancia->coti->coti_empresa ?? '';
+            $empresa = CotizacionClienteEtiqueta::paraLista($instancia->coti);
             
             // Obtener descripción de la matriz
             if ($instancia->coti->coti_codigomatriz) {

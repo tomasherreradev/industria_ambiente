@@ -22,6 +22,8 @@ use Illuminate\Support\Facades\Log;
 use App\Models\CotioValorVariable;
 
 use App\Models\SimpleNotification;
+use App\Support\CotizacionCanalEnsayo;
+use App\Support\CotizacionClienteEtiqueta;
 
 class CotioController extends Controller
 {
@@ -270,6 +272,11 @@ public function asignarSuspensionMuestra(Request $request)
             'cotio_subitem' => 0,
             'instance_number' => $validated['instance_number']
         ])->firstOrFail();
+
+        if (CotizacionCanalEnsayo::instanciaMedicionesEnDocumentacion($instancia)) {
+            return redirect()->back()
+                ->with('error', 'No se puede suspender la muestra: ya está en el módulo de documentación.');
+        }
 
         $instancia->update([
             'cotio_observaciones_suspension' => $validated['cotio_observaciones_suspension'],
@@ -599,6 +606,7 @@ public function asignarIdentificacionMuestra(Request $request)
             'image_base64' => 'nullable|string',
             'remove_image' => 'nullable|boolean',
             'fecha_identificacion' => 'nullable|date',
+            'observaciones_muestreo_muestreador' => 'nullable|string|max:5000',
         ]);
 
         Log::info('Datos recibidos:', $request->all());
@@ -656,6 +664,11 @@ public function asignarIdentificacionMuestra(Request $request)
             'cotio_identificacion' => $request->cotio_identificacion,
             'nro_precinto' => $request->nro_precinto,
         ];
+
+        if ($request->has('observaciones_muestreo_muestreador')) {
+            $obsMuestreador = trim((string) $request->input('observaciones_muestreo_muestreador', ''));
+            $data['observaciones_muestreo_muestreador'] = $obsMuestreador !== '' ? $obsMuestreador : null;
+        }
 
         if ($reqCadenaCustodia) {
             $data['nro_cadena'] = $request->nro_cadena;
@@ -1007,6 +1020,13 @@ public function actualizarEstado(Request $request)
                 'success' => false,
                 'message' => 'Elemento no encontrado'
             ], 404);
+        }
+
+        if (CotizacionCanalEnsayo::instanciaMedicionesEnDocumentacion($item)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No se puede cambiar el estado: la muestra ya está en el módulo de documentación.',
+            ], 403);
         }
 
         $vehiculoAsignado = $item->vehiculo_asignado;
@@ -1425,9 +1445,15 @@ public function updateMediciones(Request $request, $instanciaId)
             ]);
         }
 
-        $instancia->update([
-            'observaciones_medicion_muestreador' => trim($request->observaciones_medicion_muestreador),
-        ]);
+        $updateData = [
+            'observaciones_medicion_muestreador' => trim($request->observaciones_medicion_muestreador ?? ''),
+        ];
+
+        if ($request->boolean('avanzar_estado')) {
+            $updateData = array_merge($updateData, $this->datosAvanceEstadoMuestreoEnRevision($instancia));
+        }
+
+        $instancia->update($updateData);
 
         DB::commit();
 
@@ -1447,10 +1473,25 @@ public function updateMediciones(Request $request, $instanciaId)
     }
 }
 
+/**
+ * Pasa la muestra de coordinado/coordinado muestreo a en revision muestreo.
+ *
+ * @return array<string, mixed>
+ */
+private function datosAvanceEstadoMuestreoEnRevision(CotioInstancia $instancia): array
+{
+    $estadoActual = strtolower(trim((string) ($instancia->cotio_estado ?? '')));
+    if (! in_array($estadoActual, ['coordinado muestreo', 'coordinado'], true)) {
+        return [];
+    }
+
+    return ['cotio_estado' => 'en revision muestreo'];
+}
+
 
 public function showTarea($cotio_numcoti, $cotio_item, $cotio_subitem) 
 {
-    $tarea = Cotio::with('vehiculo', 'cotizacion')
+    $tarea = Cotio::with('instancias.vehiculo', 'cotizacion')
               ->where([
                   'cotio_numcoti' => $cotio_numcoti,
                   'cotio_item' => $cotio_item,
@@ -1483,7 +1524,7 @@ public function showTareasAll($cotio_numcoti, $cotio_item, $cotio_subitem = 0, $
     try {
         // Obtener la instancia de muestra principal con sus variables
         $muestraQuery = CotioInstancia::with([
-            'muestra.vehiculo',
+            'vehiculo',
             'muestra.cotizacion',
             'valoresVariables' => function($query) {
                 $query->select('id', 'cotio_instancia_id', 'variable', 'valor');
@@ -1510,7 +1551,7 @@ public function showTareasAll($cotio_numcoti, $cotio_item, $cotio_subitem = 0, $
 
         // Obtener TODOS los análisis de la muestra (subitems > 0) 
         $analisis = CotioInstancia::with([
-            'tarea.vehiculo',
+            'vehiculo',
             'tarea.cotizacion',
             'responsablesMuestreo' // Cargar responsables para mostrar quién está asignado
         ])
@@ -1740,9 +1781,10 @@ public function qrViewSelector($cotio_numcoti, $cotio_item, $cotio_subitem = 0, 
 public function generateAllQRs($cotizacion)
 {
     try {
-        $cotizacion = Coti::with('tareas')
+        $cotizacion = Coti::with(['tareas', 'cliente', 'sucursal'])
             ->where('coti_num', $cotizacion)
             ->firstOrFail();
+        CotizacionClienteEtiqueta::precargarEmpresasRelacionadas([$cotizacion]);
         
         $categorias = $cotizacion->tareas
             ->where('cotio_subitem', 0)
@@ -1756,8 +1798,8 @@ public function generateAllQRs($cotizacion)
             'data' => $categorias,
             'cotizacion' => [
                 'numero' => $cotizacion->coti_num,
-                'cliente' => $cotizacion->coti_empresa,
-                'establecimiento' => $cotizacion->coti_establecimiento
+                'cliente' => CotizacionClienteEtiqueta::paraLista($cotizacion),
+                'establecimiento' => CotizacionClienteEtiqueta::etiquetaSucursalEstablecimiento($cotizacion),
             ]
         ]);
         

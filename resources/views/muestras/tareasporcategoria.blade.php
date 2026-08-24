@@ -22,17 +22,44 @@
         return trim($str);
     };
 
-    $medicionesMapa = $instanciaActual->valoresVariables->mapWithKeys(function($v) use ($normalizeStr) {
-        return [$normalizeStr($v->variable) => $v->valor];
-    });
+    $medicionesMapa = collect();
+    if ($instanciaActual && $instanciaActual->valoresVariables) {
+        $medicionesMapa = $instanciaActual->valoresVariables->mapWithKeys(function ($v) use ($normalizeStr) {
+            return [$normalizeStr($v->variable) => $v->valor];
+        });
+    }
 
-    $analisisNormSet = $tareas->map(function($a) use ($normalizeStr) {
+    $analisisNormSet = collect($tareas ?? [])->map(function ($a) use ($normalizeStr) {
         return $normalizeStr($a->cotio_descripcion);
     })->filter()->unique()->values()->toArray();
+
+    $cotizacion->loadMissing('matriz');
+    $esEnsayoMediciones = \App\Support\CotizacionCanalEnsayo::resolverCanalEnsayo(
+        $categoria,
+        optional($cotizacion->matriz)->matriz_descripcion
+    ) === 'mediciones';
+    $esVistaMediciones = ($canalParaFiltrar ?? '') === 'mediciones' || !empty($esGestionMediciones);
+    $bloquearCambioEstadoMuestreo = $instanciaActual
+        && \App\Support\CotizacionCanalEnsayo::instanciaMedicionesEnDocumentacion($instanciaActual);
+    $canalDetalleMuestra = $canalParaFiltrar
+        ?: \App\Support\CotizacionCanalEnsayo::resolverCanalEnsayo(
+            $categoria,
+            optional($cotizacion->matriz)->matriz_descripcion
+        );
+    $mostrarBotonDeshabilitarOt = ! \App\Support\CotizacionCanalEnsayo::esCanalFacturacionDirecta($canalDetalleMuestra);
+    $esTrabajoTecnicoCampo = \App\Support\TrabajoTecnicoCampo::esDescripcion(
+        $categoria->cotio_descripcion ?? ($instanciaActual->cotio_descripcion ?? null)
+    );
+    $listoFacturacionTrabajoTecnico = $esTrabajoTecnicoCampo
+        && $instanciaActual
+        && \App\Support\TrabajoTecnicoCampo::estadoEsMuestreado($instanciaActual->cotio_estado ?? null);
+    if ($esTrabajoTecnicoCampo) {
+        $mostrarBotonDeshabilitarOt = false;
+    }
 @endphp
 <div class="container py-4">
     <div class="d-flex flex-column gap-2 flex-md-row justify-content-between align-items-center mb-4">
-        <a href="{{ route('muestras.show', ['coti_num' => $cotizacion->coti_num, 'canal' => $canalParaFiltrar ?? null]) }}" class="btn btn-outline-secondary d-flex align-items-center gap-2">
+        <a href="{{ $esVistaMediciones ? route('mediciones.show', $cotizacion->coti_num) : route('muestras.show', ['coti_num' => $cotizacion->coti_num, 'canal' => $canalParaFiltrar ?? null]) }}" class="btn btn-outline-secondary d-flex align-items-center gap-2">
             Volver a la cotización
         </a>
         <div class="d-flex flex-column flex-md-row gap-2">
@@ -44,14 +71,18 @@
                     @for($i = 1; $i <= $categoria->cotio_cantidad; $i++)
                         <li>
                             <a class="dropdown-item {{$i == $instance ? 'active' : ''}}" 
-                               href="{{ route('muestras.ver', [
+                               href="{{ $esVistaMediciones ? route('mediciones.ver', [
+                                   'cotizacion' => $cotizacion->coti_num,
+                                   'item' => $categoria->cotio_item,
+                                   'instance' => $i,
+                               ]) : route('muestras.ver', [
                                    'cotizacion' => $cotizacion->coti_num,
                                    'item' => $categoria->cotio_item,
                                    'instance' => $i,
                                    'canal' => $canalParaFiltrar ?? null
                                ]) }}">
                                 Muestra {{$i}}
-                                @if($instanciasMuestra[$i]->fecha_muestreo ?? false)
+                                @if(optional($instanciasMuestra[$i] ?? null)->fecha_muestreo)
                                     <small class="text-muted">(Muestreada)</small>
                                 @endif
                             </a>
@@ -64,24 +95,14 @@
 
     @include('cotizaciones.info')
 
-
-    @if(session('success'))
-        <div class="alert alert-success">
-            {{ session('success') }}
-        </div>
-    @endif
-
     
-    @if(session('error'))
-        <div class="alert alert-danger">
-            {{ session('error') }}
-        </div>
-    @endif
-
-    @if(!$instanciaActual) 
+    @if(!$instanciaActual)
             <div class="alert alert-info mb-3">
-                <strong>Muestra {{$instance}} de {{$categoria->cotio_cantidad}}</strong>
-                No hay una muestras.
+                <strong>Muestra {{ $instance }} de {{ $categoria->cotio_cantidad }}</strong>:
+                esta instancia aún no fue creada o no está habilitada para muestreo.
+                @if($instance > 1)
+                    <span class="d-block mt-2 small">Podés abrir otra muestra del menú superior o coordinarla desde el detalle de la cotización.</span>
+                @endif
             </div>
         @else
             <div class="card shadow-sm mb-4">
@@ -133,12 +154,13 @@
                                     'finalizado' => 'success',
                                     'muestreado' => 'success',
                                     'analizado' => 'success',
+                                    'completado' => 'success',
                                     'suspension' => 'danger',
                                     default => 'secondary'
                                 };
                             @endphp
                             <span class="badge bg-{{ $badgeClass }}">{{ ucfirst($instanciaActual->cotio_estado ?? $categoria->cotio_estado) }}</span>
-                            @if($instanciaActual->enable_ot == false)
+                            @if($instanciaActual->enable_ot == false && ! $bloquearCambioEstadoMuestreo)
                                 <button type="button" class="btn btn-sm btn-link" data-bs-toggle="modal" data-bs-target="#estadoModal" data-tipo="categoria">
                                     <x-heroicon-o-pencil style="width: 20px; height: 20px;" />
                                 </button>
@@ -178,7 +200,7 @@
                                     <span class="d-none d-md-inline ms-1">Gestionar</span>
                                 </button>
                             @endif
-                            @if(Auth::user()->rol == 'coordinador_muestreo')
+                            @if(Auth::user()->rol == 'coordinador_muestreo' && ! $bloquearCambioEstadoMuestreo)
                                 @if($instanciaActual->cotio_estado != 'suspension')
                                     <button type="button" class="btn btn-sm btn-warning ms-2" data-bs-toggle="modal" data-bs-target="#suspenderModal">
                                         <i class="fas fa-pause me-1"></i> Suspender
@@ -356,6 +378,16 @@
                                     <dt class="col-sm-4 text-muted">Fecha identificación</dt>
                                     <dd class="col-sm-8">{{ \Carbon\Carbon::parse($instanciaActual->fecha_identificacion)->format('d/m/Y H:i') }}</dd>
                                     @endif
+
+                                    @if(filled($instanciaActual->observaciones_muestreo_coord))
+                                    <dt class="col-sm-4 text-muted">Obs. coordinador</dt>
+                                    <dd class="col-sm-8" style="white-space: pre-wrap;">{{ trim($instanciaActual->observaciones_muestreo_coord) }}</dd>
+                                    @endif
+
+                                    @if(filled($instanciaActual->observaciones_muestreo_muestreador))
+                                    <dt class="col-sm-4 text-muted">Obs. muestreador</dt>
+                                    <dd class="col-sm-8" style="white-space: pre-wrap;">{{ trim($instanciaActual->observaciones_muestreo_muestreador) }}</dd>
+                                    @endif
                                 </dl>
                             </div>
                             @if($instanciaActual->image)
@@ -451,6 +483,18 @@
                 </div>
                 @endif
 
+                @if($instanciaActual)
+                <div class="card shadow-sm my-4">
+                    <div class="card-header bg-light py-3 px-3">
+                        <h5 class="mb-0 ps-1">Archivos adjuntos</h5>
+                        <small class="text-muted ps-1">PDF o imágenes de la cotización y de la revisión de muestreo</small>
+                    </div>
+                    <div class="card-body p-3">
+                        @include('muestras.partials.adjuntos-revision-coord')
+                    </div>
+                </div>
+                @endif
+
                 @if($instanciaActual->cotio_estado == 'suspension')
                     <div class="alert alert-danger">
                         <strong>Motivos de suspensión:</strong> {{ $instanciaActual->cotio_observaciones_suspension ?? 'N/A' }}
@@ -458,18 +502,48 @@
                 @endif
 
                 {{-- añadir boton para 'habilit en otro analisis' solo si la instancia actual y los analisis tienen un estado 'finalizado' --}}
-                @if($instanciaActual->cotio_estado == 'finalizado' || $instanciaActual->cotio_estado == 'muestreado' && $instanciaActual->enable_ot == false)
-                    @if($categoria->cotio_canal_especial === 'mediciones')
-                        <button type="button" class="btn btn-primary mt-2" data-bs-toggle="modal" data-bs-target="#pasarAInformesModal">
-                            <i class="fas fa-file-pdf me-1"></i> Pasar a Informes
-                        </button>
+                @if($instanciaActual->cotio_estado == 'finalizado' || ($instanciaActual->cotio_estado == 'muestreado' && $instanciaActual->enable_ot == false))
+                    @if($listoFacturacionTrabajoTecnico)
+                        <div class="alert alert-success mt-2 mb-0">
+                            <i class="fas fa-file-invoice-dollar me-1"></i>
+                            <strong>Trabajo técnico en campo finalizado.</strong>
+                            Este ítem está disponible para facturar en el módulo de <strong>Facturación</strong>
+                            @if($instanciaActual->enable_inform && $instanciaActual->aprobado_informe)
+                                <span class="badge bg-light text-success ms-1">Habilitado</span>
+                            @else
+                                <span class="badge bg-warning text-dark ms-1">Pendiente de habilitación</span>
+                            @endif
+                        </div>
+                    @elseif($esEnsayoMediciones)
+                        @if(($instanciaActual->enable_modulo_mediciones ?? false) && empty($esGestionMediciones))
+                            <div class="alert alert-info mt-2 mb-0">
+                                Esta muestra ya está en el módulo de documentación.
+                                @if((int) (Auth::user()->usu_nivel ?? 0) >= 900 || userHasRole('coordinador_mediciones'))
+                                    <a href="{{ route('mediciones.ver', ['cotizacion' => $categoria->cotio_numcoti, 'item' => $categoria->cotio_item, 'instance' => $instance]) }}" class="alert-link">Ir a gestionar informe</a>
+                                @endif
+                            </div>
+                        @elseif(! ($instanciaActual->enable_modulo_mediciones ?? false))
+                        <form action="{{ route('muestras.pasar-a-mediciones') }}" method="POST" class="mt-2 js-swal-confirm-form"
+                              data-swal-title="Pasar a documentación"
+                              data-swal-text="¿Enviar esta muestra al módulo de documentación?">
+                            @csrf
+                            <input type="hidden" name="cotio_numcoti" value="{{ $categoria->cotio_numcoti }}">
+                            <input type="hidden" name="cotio_item" value="{{ $categoria->cotio_item }}">
+                            <input type="hidden" name="instance_number" value="{{ $instance }}">
+                            <button type="submit" class="btn btn-primary mt-2">
+                                <i class="fas fa-folder-open me-1"></i> Pasar a documentación
+                            </button>
+                        </form>
+                        @endif
                     @else
                         <form action="{{ route('categorias.enable-ot', [
                             'cotio_numcoti' => $categoria->cotio_numcoti,
                             'cotio_item' => $categoria->cotio_item,
                             'cotio_subitem' => $categoria->cotio_subitem,
                             'instance' => $instance
-                        ]) }}" method="POST">
+                        ]) }}" method="POST" class="js-swal-confirm-form"
+                              data-swal-title="Pasar a Laboratorio"
+                              data-swal-text="¿Enviar esta muestra a laboratorio?">
                             @csrf
                             <input type="hidden" name="cotio_numcoti" value="{{ $categoria->cotio_numcoti }}">
                             <input type="hidden" name="cotio_item" value="{{ $categoria->cotio_item }}">
@@ -484,7 +558,119 @@
                     @endif
                 @endif
 
-                @if($instanciaActual->enable_ot == true && Auth::user()->rol !== 'coordinador_muestreo')
+                @if(!empty($esGestionMediciones) && $instanciaActual)
+                @php
+                    $informePdfMediciones = trim((string) ($instanciaActual->archivo_informe ?? ''));
+                    $tieneInformePdfMediciones = $informePdfMediciones !== '';
+                @endphp
+                <div class="card border-primary mt-3">
+                    <div class="card-header bg-primary text-white">
+                        <strong>Informe de medición</strong>
+                    </div>
+                    <div class="card-body">
+                        @if($instanciaActual->aprobado_informe && ! $tieneInformePdfMediciones)
+                            <div class="alert alert-warning mb-3">
+                                La muestra figura como aprobada pero no hay PDF cargado. Subí el informe para continuar.
+                            </div>
+                        @endif
+
+                        @if($tieneInformePdfMediciones)
+                            <p class="mb-2">
+                                <span class="badge bg-success">Informe cargado</span>
+                                @if($instanciaActual->aprobado_informe)
+                                    <span class="badge bg-primary ms-1">Aprobado</span>
+                                @endif
+                            </p>
+                            <div class="d-flex flex-wrap gap-2 mb-3">
+                                <a href="{{ route('mediciones.informe.ver', ['cotizacion' => $categoria->cotio_numcoti, 'item' => $categoria->cotio_item, 'instance' => $instance]) }}"
+                                   class="btn btn-outline-primary btn-sm" target="_blank">
+                                    Ver informe actual
+                                </a>
+                                @if(! $instanciaActual->aprobado_informe)
+                                <form action="{{ route('mediciones.informe.eliminar') }}" method="POST" class="d-inline js-swal-confirm-form"
+                                      data-swal-title="Eliminar informe"
+                                      data-swal-text="¿Eliminar el informe cargado? Esta acción no se puede deshacer."
+                                      data-swal-icon="warning"
+                                      data-swal-confirm-color="#d33">
+                                    @csrf
+                                    <input type="hidden" name="cotio_numcoti" value="{{ $categoria->cotio_numcoti }}">
+                                    <input type="hidden" name="cotio_item" value="{{ $categoria->cotio_item }}">
+                                    <input type="hidden" name="instance_number" value="{{ $instance }}">
+                                    <button type="submit" class="btn btn-outline-danger btn-sm">Eliminar informe</button>
+                                </form>
+                                @endif
+                            </div>
+                        @else
+                            <p class="text-muted mb-3">Todavía no se subió un informe para esta muestra.</p>
+                        @endif
+
+                        @if(! $instanciaActual->aprobado_informe || ! $tieneInformePdfMediciones)
+                        <form action="{{ route('mediciones.informe.subir') }}" method="POST" enctype="multipart/form-data" class="mb-3 js-form-subir-informe-mediciones">
+                            @csrf
+                            <input type="hidden" name="cotio_numcoti" value="{{ $categoria->cotio_numcoti }}">
+                            <input type="hidden" name="cotio_item" value="{{ $categoria->cotio_item }}">
+                            <input type="hidden" name="instance_number" value="{{ $instance }}">
+                            <div class="mb-2">
+                                <label class="form-label">Subir informe (PDF)</label>
+                                <input type="file" name="informe_pdf" class="form-control" accept="application/pdf" required>
+                            </div>
+                            <button type="submit" class="btn btn-primary btn-sm">Subir informe</button>
+                        </form>
+
+                        @if($tieneInformePdfMediciones)
+                        <form action="{{ route('mediciones.informe.aprobar') }}" method="POST" class="js-swal-confirm-form"
+                              data-swal-title="Aprobar informe"
+                              data-swal-text="¿Aprobar el informe y enviar la muestra a Informes?"
+                              data-swal-icon="question">
+                            @csrf
+                            <input type="hidden" name="cotio_numcoti" value="{{ $categoria->cotio_numcoti }}">
+                            <input type="hidden" name="cotio_item" value="{{ $categoria->cotio_item }}">
+                            <input type="hidden" name="instance_number" value="{{ $instance }}">
+                            <button type="submit" class="btn btn-success btn-sm">Aprobar informe</button>
+                        </form>
+                        @endif
+                        @endif
+                    </div>
+                </div>
+                @endif
+
+                @if(!empty($esFacturacionDirecta) && $instanciaActual)
+                @php
+                    $informePdfFd = trim((string) ($instanciaActual->archivo_informe ?? ''));
+                    $tieneInformePdfFd = $informePdfFd !== '';
+                @endphp
+                <div class="card border-success mt-3">
+                    <div class="card-header bg-success text-white">
+                        <strong>Informe de consultoría</strong>
+                    </div>
+                    <div class="card-body">
+                        @if($tieneInformePdfFd)
+                            <p class="mb-2">
+                                <span class="badge bg-success">Informe cargado</span>
+                                @if($instanciaActual->enable_inform || $instanciaActual->aprobado_informe)
+                                    <span class="badge bg-primary ms-1">En informes</span>
+                                @endif
+                                @if(($instanciaActual->cotio_estado ?? '') === 'completado')
+                                    <span class="badge bg-secondary ms-1">Completado</span>
+                                @endif
+                            </p>
+                            <a href="{{ asset('storage/' . $informePdfFd) }}"
+                               class="btn btn-outline-primary btn-sm" target="_blank" rel="noopener">
+                                Ver informe actual
+                            </a>
+                        @else
+                            <p class="text-muted mb-0">
+                                Todavía no hay informe cargado para esta muestra.
+                                @if(($instanciaActual->cotio_estado ?? '') !== 'completado')
+                                    Podés subirlo desde el detalle de la cotización con <strong>Pasar a informes</strong>.
+                                @endif
+                            </p>
+                        @endif
+                    </div>
+                </div>
+                @endif
+
+                @if($mostrarBotonDeshabilitarOt && $instanciaActual->enable_ot == true && Auth::user()->rol !== 'coordinador_muestreo')
                     <form action="{{ route('categorias.disable-ot', [
                         'cotio_numcoti' => $categoria->cotio_numcoti,
                         'cotio_item' => $categoria->cotio_item,
@@ -1761,6 +1947,165 @@ document.addEventListener('DOMContentLoaded', function () {
             });
         });
         
+        // Adjuntos de revisión (coordinador de muestreo)
+        const btnSubirAdjuntos = document.getElementById('btnSubirAdjuntosInstancia');
+        if (btnSubirAdjuntos) {
+            btnSubirAdjuntos.addEventListener('click', function () {
+                const input = document.getElementById('adjuntos_instancia_input');
+                const instanciaId = this.dataset.instanciaId;
+                const lista = document.getElementById('listaAdjuntosInstancia');
+
+                if (!input || !input.files || input.files.length === 0) {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Sin archivos',
+                        text: 'Seleccioná al menos un archivo PDF o imagen.',
+                    });
+                    return;
+                }
+
+                const formData = new FormData();
+                formData.append('instancia_id', instanciaId);
+                Array.from(input.files).forEach(function (file) {
+                    formData.append('archivos[]', file);
+                });
+
+                const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
+                    || document.querySelector('input[name="_token"]')?.value
+                    || '{{ csrf_token() }}';
+
+                btnSubirAdjuntos.disabled = true;
+                const textoOriginal = btnSubirAdjuntos.innerHTML;
+                btnSubirAdjuntos.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Subiendo...';
+
+                fetch('{{ route("muestras.adjuntos.subir") }}', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': csrfToken,
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    body: formData,
+                    credentials: 'same-origin',
+                })
+                .then(function (response) {
+                    return response.json().then(function (data) {
+                        if (!response.ok) {
+                            throw new Error(data.message || 'Error al subir archivos');
+                        }
+                        return data;
+                    });
+                })
+                .then(function (data) {
+                    input.value = '';
+                    const vacio = lista.querySelector('.adjuntos-vacio');
+                    if (vacio) {
+                        vacio.remove();
+                    }
+
+                    (data.adjuntos || []).forEach(function (adj) {
+                        const li = document.createElement('li');
+                        li.className = 'list-group-item d-flex justify-content-between align-items-center adjunto-instancia-item';
+                        li.dataset.adjuntoId = adj.id;
+                        const iconoSvg = adj.es_imagen
+                            ? '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="text-info flex-shrink-0" style="width:18px;height:18px"><path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z" /></svg>'
+                            : '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="text-danger flex-shrink-0" style="width:18px;height:18px"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" /></svg>';
+                        li.innerHTML = ''
+                            + '<div class="d-flex align-items-center gap-2 text-truncate me-2">'
+                            + iconoSvg
+                            + '<a href="' + adj.url + '" target="_blank" rel="noopener" class="text-truncate">' + adj.name + '</a>'
+                            + '</div>'
+                            + '<button type="button" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center justify-content-center btn-eliminar-adjunto-instancia" style="width:2rem;height:2rem;padding:0;" data-adjunto-id="' + adj.id + '" title="Eliminar" aria-label="Eliminar adjunto">'
+                            + '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width:16px;height:16px"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>'
+                            + '</button>';
+                        lista.appendChild(li);
+                    });
+
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Listo',
+                        text: data.message || 'Archivos subidos correctamente.',
+                        timer: 2000,
+                        showConfirmButton: false,
+                    });
+                })
+                .catch(function (error) {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Error',
+                        text: error.message || 'No se pudieron subir los archivos.',
+                    });
+                })
+                .finally(function () {
+                    btnSubirAdjuntos.disabled = false;
+                    btnSubirAdjuntos.innerHTML = textoOriginal;
+                });
+            });
+        }
+
+        document.getElementById('listaAdjuntosInstancia')?.addEventListener('click', function (event) {
+            const btnVentas = event.target.closest('.btn-eliminar-adjunto-ventas');
+            const btnInstancia = event.target.closest('.btn-eliminar-adjunto-instancia');
+            const btn = btnVentas || btnInstancia;
+            if (!btn) {
+                return;
+            }
+
+            const adjuntoId = btn.dataset.adjuntoId;
+            const item = btn.closest('.adjunto-ventas-item, .adjunto-instancia-item');
+            const urlEliminar = btnVentas
+                ? '{{ url("/muestras/adjuntos-ventas") }}/' + adjuntoId
+                : '{{ url("/muestras/adjuntos") }}/' + adjuntoId;
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
+                || document.querySelector('input[name="_token"]')?.value
+                || '{{ csrf_token() }}';
+
+            Swal.fire({
+                icon: 'question',
+                title: 'Eliminar archivo',
+                text: '¿Querés eliminar este adjunto?',
+                showCancelButton: true,
+                confirmButtonText: 'Eliminar',
+                cancelButtonText: 'Cancelar',
+            }).then(function (result) {
+                if (!result.isConfirmed) {
+                    return;
+                }
+
+                fetch(urlEliminar, {
+                    method: 'DELETE',
+                    headers: {
+                        'X-CSRF-TOKEN': csrfToken,
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    credentials: 'same-origin',
+                })
+                .then(function (response) {
+                    return response.json().then(function (data) {
+                        if (!response.ok) {
+                            throw new Error(data.message || 'Error al eliminar');
+                        }
+                        return data;
+                    });
+                })
+                .then(function () {
+                    item.remove();
+                    const lista = document.getElementById('listaAdjuntosInstancia');
+                    if (lista && lista.querySelectorAll('.adjunto-instancia-item, .adjunto-ventas-item').length === 0) {
+                        lista.innerHTML = '<li class="list-group-item text-muted adjuntos-vacio">No hay archivos adjuntos.</li>';
+                    }
+                })
+                .catch(function (error) {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Error',
+                        text: error.message || 'No se pudo eliminar el archivo.',
+                    });
+                });
+            });
+        });
+
         // Función para eliminar responsable de todas las tareas
         window.eliminarResponsableTodasTareas = function(usuCodigo) {
             if (!confirm('¿Estás seguro de que quieres eliminar este responsable de todas las tareas?')) {
@@ -2774,41 +3119,65 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 });
-</script>
 
-<!-- Modal para Pasar a Informes (Mediciones) -->
-<div class="modal fade" id="pasarAInformesModal" tabindex="-1" aria-labelledby="pasarAInformesModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <form action="{{ route('muestras.pasar-a-informes') }}" method="POST" enctype="multipart/form-data">
-                @csrf
-                <input type="hidden" name="cotio_numcoti" value="{{ $categoria->cotio_numcoti }}">
-                <input type="hidden" name="cotio_item" value="{{ $categoria->cotio_item }}">
-                <input type="hidden" name="instance_number" value="{{ $instance }}">
-                
-                <div class="modal-header">
-                    <h5 class="modal-title" id="pasarAInformesModalLabel">Pasar a Informes</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="alert alert-info">
-                        <i class="fas fa-info-circle me-1"></i>
-                        Esta muestra pertenece a <strong>Mediciones</strong> y pasará directamente al módulo de informes.
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="informe_pdf" class="form-label">Adjuntar Informe PDF (Opcional)</label>
-                        <input type="file" class="form-control" id="informe_pdf" name="informe_pdf" accept="application/pdf">
-                        <div class="form-text">Si ya tiene un informe generado, puede subirlo aquí.</div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="submit" class="btn btn-primary">Confirmar y Pasar a Informes</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
+document.addEventListener('DOMContentLoaded', function () {
+    @if(session('success'))
+        Swal.fire({
+            icon: 'success',
+            title: '¡Éxito!',
+            text: @json(session('success')),
+            confirmButtonColor: '#3085d6'
+        });
+    @endif
+
+    @if(session('error'))
+        Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: @json(session('error')),
+            confirmButtonColor: '#d33'
+        });
+    @endif
+
+    document.querySelectorAll('.js-swal-confirm-form').forEach(function (form) {
+        form.addEventListener('submit', function (e) {
+            e.preventDefault();
+            const title = form.dataset.swalTitle || '¿Confirmar?';
+            const text = form.dataset.swalText || '';
+            const icon = form.dataset.swalIcon || 'question';
+            const confirmColor = form.dataset.swalConfirmColor || '#3085d6';
+
+            Swal.fire({
+                title: title,
+                text: text,
+                icon: icon,
+                showCancelButton: true,
+                confirmButtonText: 'Sí, confirmar',
+                cancelButtonText: 'Cancelar',
+                confirmButtonColor: confirmColor,
+            }).then(function (result) {
+                if (result.isConfirmed) {
+                    form.submit();
+                }
+            });
+        });
+    });
+
+    document.querySelectorAll('.js-form-subir-informe-mediciones').forEach(function (form) {
+        form.addEventListener('submit', function (e) {
+            const input = form.querySelector('input[type="file"][name="informe_pdf"]');
+            if (input && (!input.files || !input.files.length)) {
+                e.preventDefault();
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Archivo requerido',
+                    text: 'Seleccioná un informe en PDF antes de subirlo.',
+                    confirmButtonColor: '#3085d6'
+                });
+            }
+        });
+    });
+});
+</script>
 
 @endsection

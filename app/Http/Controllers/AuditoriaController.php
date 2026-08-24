@@ -9,6 +9,7 @@ use App\Models\Matriz;
 use Illuminate\Http\Request;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\ReporteAuditoriaExport;
+use App\Support\CotizacionClienteEtiqueta;
 
 class AuditoriaController extends Controller
 {
@@ -40,7 +41,7 @@ class AuditoriaController extends Controller
         $fechaDesde = $request->fecha_desde;
         $fechaHasta = $request->fecha_hasta;
 
-        $query = CotioInstancia::with(['coti.matriz']);
+        $query = CotioInstancia::with(['coti.matriz', 'coti.cliente', 'coti.sucursal']);
 
         if ($fechaDesde) {
             $query->whereDate('created_at', '>=', $fechaDesde);
@@ -51,11 +52,16 @@ class AuditoriaController extends Controller
         }
 
         $instancias = $query->limit(5)->get();
+        CotizacionClienteEtiqueta::precargarEmpresasRelacionadas(
+            $instancias->map->coti->filter()->values()
+        );
 
         $data = [];
         foreach ($instancias as $instancia) {
             $data[] = [
-                'empresa' => $instancia->coti->coti_empresa ?? 'No encontrada',
+                'empresa' => $instancia->coti
+                    ? CotizacionClienteEtiqueta::paraLista($instancia->coti)
+                    : 'No encontrada',
                 'id' => $instancia->id,
                 'cotizacion' => $instancia->cotio_numcoti,
                 'matriz' => $instancia->coti->matriz->matriz_descripcion ?? 'No encontrada',

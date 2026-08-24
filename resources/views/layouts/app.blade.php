@@ -184,11 +184,52 @@
         #mobileNavbar.show {
             transform: translateX(0);
         }
-        
-        .main-content {
-            margin-top: var(--navbar-height);
+
+        @media (max-width: 767.98px) {
+            :root {
+                --navbar-height: 4.125rem;
+            }
+
+            .navbar-mobile-container .navbar {
+                --bs-navbar-padding-y: 0.375rem;
+                min-height: var(--navbar-height);
+            }
+
+            .navbar-mobile-container .navbar-brand {
+                padding-top: 0;
+                padding-bottom: 0;
+                margin-right: 0.5rem;
+                flex-shrink: 0;
+            }
+
+            .navbar-mobile-container .container-fluid {
+                flex-wrap: nowrap;
+                gap: 0.5rem;
+            }
+
+            .navbar-mobile-container .navbar-actions {
+                flex-shrink: 0;
+                margin-left: auto;
+            }
+
+            .navbar-mobile-container .navbar-toggler {
+                padding: 0.25rem 0.375rem;
+                font-size: 1rem;
+                line-height: 1;
+                border: 1px solid var(--gray-400);
+                border-radius: 0.375rem;
+            }
+
+            .navbar-mobile-container .navbar-toggler:focus {
+                box-shadow: none;
+            }
+
+            .main-content {
+                margin-top: var(--navbar-height);
+                padding-top: 0.75rem;
+            }
         }
-        
+
         body.navbar-open {
             overflow: hidden;
             position: fixed;
@@ -329,6 +370,16 @@
     </style>
 </head>
 <body>
+@php
+    $usuarioNivelMaximo = Auth::check() && (int) (Auth::user()->usu_nivel ?? 0) === 999;
+    $usuarioVeSeccionConfiguracion = Auth::check() && (
+        (Auth::user()->usu_nivel >= 900 || userHasAnyRole(['coordinador_lab', 'coordinador_muestreo', 'ventas']))
+        && (! userTieneBandejaSoloInformes() || Auth::user()->usu_nivel >= 900 || userHasAnyRole(['coordinador_muestreo', 'ventas']))
+    );
+    $usuarioVeMenuMobileConfig = Auth::check() && (
+        Auth::user()->usu_nivel >= 900 || userHasAnyRole(['coordinador_lab', 'coordinador_muestreo', 'ventas'])
+    );
+@endphp
 
     
 <div class="navbar-mobile-container">
@@ -342,13 +393,15 @@
                 @elseif(userHasRole('muestreador'))
                     {{ url('/mis-tareas') }}
                 @elseif(userHasRole('coordinador_lab'))
-                    {{ url('/dashboard/analisis') }}
+                    {{ userTieneBandejaSoloInformes() ? url('/informes') : url('/dashboard/analisis') }}
                 @elseif(userHasRole('coordinador_muestreo'))
                     {{ url('/dashboard/muestreo') }}
                 @elseif(userHasRole('ventas'))
                     {{ url('/ventas') }}
                 @elseif(userHasRole('coordinador_consul'))
                     {{ route('consultoria.index') }}
+                @elseif(userHasRole('coordinador_mediciones'))
+                    {{ route('mediciones.index') }}
                 @elseif(userHasRole('asp'))
                     {{ route('asp.index') }}
                 @elseif(userHasRole('clarke_fire'))
@@ -363,10 +416,10 @@
             </a>
 
             @if(Auth::user())
-                <div class="d-flex align-items-center">
-                    <div class="dropdown me-3">
+                <div class="d-flex align-items-center gap-2 navbar-actions">
+                    <div class="dropdown">
                         <a href="#" class="d-flex align-items-center text-decoration-none" id="notificationsDropdownDesktop" data-bs-toggle="dropdown" aria-expanded="false">
-                            <div class="position-relative">
+                            <div class="position-relative" style="margin-top: -3px;">
                                 <x-heroicon-o-bell style="width: 18px; height: 18px;" class="text-gray-500" id="notificationsBell"/>
                                 @php
                                     $notificacionesNoLeidas = App\Models\SimpleNotification::where('coordinador_codigo', auth()->user()->usu_codigo)
@@ -440,7 +493,7 @@
                     </div>
         
                     
-                    <div class="dropdown me-3">
+                    <div class="dropdown">
                         <a href="#" class="d-flex align-items-center text-decoration-none" id="settingsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
                             <x-heroicon-o-cog-6-tooth style="width: 18px; height: 18px;" class="text-gray-500" />
                         </a>
@@ -469,11 +522,15 @@
                             </li>
                         </ul>
                     </div>
-                @endif
                     <button class="navbar-toggler" type="button" id="mobileNavbarToggler" aria-label="Toggle navigation">
                         <span class="navbar-toggler-icon"></span>
                     </button>
-            </div>
+                </div>
+            @else
+                <button class="navbar-toggler ms-auto" type="button" id="mobileNavbarToggler" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+            @endif
 
         </div>
     </nav>
@@ -496,7 +553,7 @@
                     </a>
                 @endif
 
-                @if(userHasRole('coordinador_lab'))
+                @if(userHasRole('coordinador_lab') && !userTieneBandejaSoloInformes())
                     <a class="nav-link mobile-nav-link" href="{{ url('/dashboard/analisis') }}">
                         <x-heroicon-o-ticket style="width: 18px; height: 18px;" />
                         Dashboard Lab
@@ -510,7 +567,7 @@
                     </a>
                 @endif
 
-                @if(Auth::user()->usu_nivel >= 900 || userHasAnyRole(['coordinador_muestreo', 'coordinador_lab']))
+                @if((Auth::user()->usu_nivel >= 900 || userHasAnyRole(['coordinador_muestreo', 'coordinador_lab'])) && !userTieneBandejaSoloInformes())
                     <a class="nav-link mobile-nav-link" href="{{ url('/') }}">
                         <x-heroicon-o-ticket style="width: 18px; height: 18px;" />
                         Cotizaciones
@@ -538,7 +595,7 @@
                     </a>
                 @endif
 
-                @if(Auth::user()->usu_nivel >= 900 || userHasRole('coordinador_lab'))
+                @if((Auth::user()->usu_nivel >= 900 || userHasRole('coordinador_lab')) && !userTieneBandejaSoloInformes())
                     <a class="nav-link mobile-nav-link" href="{{ url('/inventarios') }}">
                         <x-heroicon-o-cog style="width: 18px; height: 18px;" />
                         Inventario Lab
@@ -553,14 +610,14 @@
                 @endif
 
                 
-                @if(Auth::user()->usu_nivel >= 900 || userHasAnyRole(['coordinador_muestreo', 'coordinador_lab']))
+                @if((Auth::user()->usu_nivel >= 900 || userHasAnyRole(['coordinador_muestreo', 'coordinador_lab'])) && !userTieneBandejaSoloInformes())
                     <a class="nav-link mobile-nav-link" href="{{ url('/variables-requeridas') }}">
                         <x-heroicon-o-cog style="width: 18px; height: 18px;" />
                         Mediciones de Campo
                     </a>
                 @endif
 
-                @if(Auth::user()->usu_nivel >= 900 || userHasRole('ventas') || userHasRole('coordinador_lab')) 
+                @if($usuarioNivelMaximo)
                     <a class="nav-link mobile-nav-link" href="{{ url('/leyes-normativas') }}">
                         <x-heroicon-o-cog style="width: 18px; height: 18px;" />
                         Leyes y Normativas
@@ -574,7 +631,7 @@
                     </a>
                 @endif --}}
 
-                @if(Auth::user()->usu_nivel >= 900 || userHasRole('ventas') || userHasRole('coordinador_lab'))
+                @if(userPuedeCargarItems() && $usuarioVeMenuMobileConfig)
                     <a class="nav-link mobile-nav-link" href="{{ url('/items') }}">
                         <x-heroicon-o-cog style="width: 18px; height: 18px;" />
                         Determinaciones
@@ -596,29 +653,31 @@
                 </a>
                 @endif
             @endif
+
+            @include('layouts.partials.nav-portales-canal', ['linkClass' => 'mobile-nav-link'])
             
-            @if(Auth::user()->usu_nivel >= 900 || userHasRole('coordinador_lab'))
+            @if((Auth::user()->usu_nivel >= 900 || userHasRole('coordinador_lab')) && !userTieneBandejaSoloInformes())
                 <a class="nav-link mobile-nav-link" href="{{ url('/ordenes') }}">
                     <x-heroicon-o-ticket style="width: 18px; height: 18px;" />
                     Ordenes de Trabajo
                 </a>
             @endif
 
-            @if(Auth::user()->usu_nivel >= 900 || userHasAnyRole(['coordinador_lab', 'coordinador_muestreo', 'firmador']))
+            @if(Auth::user()->usu_nivel >= 900 || userHasAnyRole(['coordinador_lab', 'coordinador_muestreo', 'firmador']) || userTieneBandejaSoloInformes())
                 <a class="nav-link mobile-nav-link" href="{{ url('/informes') }}">
                     <x-heroicon-o-ticket style="width: 18px; height: 18px;" />
                     Informes
                 </a>
             @endif
 
-            
-            @if(Auth::user()->usu_nivel >= 900 || userHasRole('facturador'))
-                <a class="nav-link mobile-nav-link" href="{{ url('/facturacion') }}">
-                    <x-heroicon-o-ticket style="width: 18px; height: 18px;" />
-                    Facturación
+            @if(userPuedeCargarItems() && ! $usuarioVeMenuMobileConfig)
+                <a class="nav-link mobile-nav-link" href="{{ url('/items') }}">
+                    <x-heroicon-o-cog style="width: 18px; height: 18px;" />
+                    Determinaciones
                 </a>
             @endif
 
+            
             @if(Auth::user()->usu_nivel >= 900)
                 <a class="nav-link mobile-nav-link" href="{{ url('/users') }}">
                     <x-heroicon-o-user style="width: 18px; height: 18px;" />
@@ -626,27 +685,6 @@
                 </a>
             @endif
 
-            @if(userHasRole('coordinador_consul'))
-                <a class="nav-link mobile-nav-link" href="{{ route('consultoria.index') }}">
-                    <x-heroicon-o-document-text style="width: 18px; height: 18px;" />
-                    Consultoría
-                </a>
-            @endif
-
-            @if(userHasRole('asp'))
-                <a class="nav-link mobile-nav-link" href="{{ route('asp.index') }}">
-                    <x-heroicon-o-document-text style="width: 18px; height: 18px;" />
-                    ASP
-                </a>
-            @endif
-
-            @if(userHasRole('clarke_fire'))
-                <a class="nav-link mobile-nav-link" href="{{ route('clarke-fire.index') }}">
-                    <x-heroicon-o-document-text style="width: 18px; height: 18px;" />
-                    Clarke Fire
-                </a>
-            @endif
-            
             <a class="nav-link mobile-nav-link" href="{{ url('/auth/' . Auth::user()->usu_codigo) }}">
                 <x-heroicon-o-user style="width: 18px; height: 18px;" />
                 Perfil
@@ -674,13 +712,15 @@
         @elseif(userHasRole('muestreador'))
             {{ url('/mis-tareas') }}
         @elseif(userHasRole('coordinador_lab'))
-            {{ url('/dashboard/analisis') }}
+            {{ userTieneBandejaSoloInformes() ? url('/informes') : url('/dashboard/analisis') }}
         @elseif(userHasRole('coordinador_muestreo'))
             {{ url('/dashboard/muestreo') }}
         @elseif(userHasRole('ventas'))
             {{ url('/ventas') }}
         @elseif(userHasRole('coordinador_consul'))
             {{ route('consultoria.index') }}
+        @elseif(userHasRole('coordinador_mediciones'))
+            {{ route('mediciones.index') }}
         @elseif(userHasRole('asp'))
             {{ route('asp.index') }}
         @elseif(userHasRole('clarke_fire'))
@@ -692,27 +732,6 @@
     
     <nav class="nav flex-column w-100 px-2">
 
-        @if(userHasRole('coordinador_consul'))
-            <a class="nav-link" href="{{ route('consultoria.index') }}">
-                <x-heroicon-o-document-text style="width: 16px; height: 16px;" class="me-2" />
-                Consultoría
-            </a>
-        @endif
-
-        @if(userHasRole('asp'))
-            <a class="nav-link" href="{{ route('asp.index') }}">
-                <x-heroicon-o-document-text style="width: 16px; height: 16px;" class="me-2" />
-                ASP
-            </a>
-        @endif
-
-        @if(userHasRole('clarke_fire'))
-            <a class="nav-link" href="{{ route('clarke-fire.index') }}">
-                <x-heroicon-o-document-text style="width: 16px; height: 16px;" class="me-2" />
-                Clarke Fire
-            </a>
-        @endif
-        
         @if(Auth::user())
             <div class="accordion-item">
                 <button class="accordion-button nav-group-title" type="button" data-bs-toggle="collapse" data-bs-target="#bandejaTrabajo">
@@ -741,7 +760,7 @@
                             </a>
                         @endif
 
-                        @if(userHasRole('coordinador_lab'))
+                        @if(userHasRole('coordinador_lab') && !userTieneBandejaSoloInformes())
                             <a class="nav-link" href="{{ url('/dashboard/analisis') }}">
                                 Dashboard Lab
                             </a>
@@ -752,6 +771,8 @@
                                 Dashboard Muestreo
                             </a>
                         @endif
+
+                        @include('layouts.partials.nav-portales-canal')
 
                         @if(userHasRole('ventas'))
                             <a class="nav-link" href="{{ url('/ventas') }}">
@@ -767,7 +788,7 @@
                     
                         
                         
-                        @if(Auth::user()->usu_nivel >= 900 || userHasAnyRole(['coordinador_muestreo', 'coordinador_lab']))
+                        @if((Auth::user()->usu_nivel >= 900 || userHasAnyRole(['coordinador_muestreo', 'coordinador_lab'])) && !userTieneBandejaSoloInformes())
                             <a class="nav-link" href="{{ url('/') }}">
                                 Cotizaciones
                             </a>
@@ -779,20 +800,26 @@
                             </a>
                         @endif
                         
-                        @if(Auth::user()->usu_nivel >= 900 || userHasRole('coordinador_lab'))
+                        @if((Auth::user()->usu_nivel >= 900 || userHasRole('coordinador_lab')) && !userTieneBandejaSoloInformes())
                             <a class="nav-link" href="{{ url('/ordenes') }}">
                                 Ordenes de Trabajo
                             </a>
                         @endif
 
-                        @if(Auth::user()->usu_nivel >= 900 || userHasAnyRole(['coordinador_lab', 'coordinador_muestreo', 'firmador']))
+                        @if(Auth::user()->usu_nivel >= 900 || userHasAnyRole(['coordinador_lab', 'coordinador_muestreo', 'firmador']) || userTieneBandejaSoloInformes())
                             <a class="nav-link mobile-nav-link" href="{{ url('/informes') }}">
                                 Informes
                             </a>
                         @endif
 
+                        @if(userPuedeCargarItems() && ! $usuarioVeSeccionConfiguracion)
+                            <a class="nav-link" href="{{ url('/items') }}">
+                                Determinaciones
+                            </a>
+                        @endif
+
                         @if(Auth::user()->usu_nivel >= 900 || userHasRole('facturador'))
-                            <a class="nav-link mobile-nav-link" href="{{ url('/facturacion') }}">
+                            <a class="nav-link" href="{{ url('/facturacion') }}">
                                 Facturación
                             </a>
                         @endif
@@ -801,7 +828,7 @@
             </div>
         @endif
 
-        @if(Auth::user()->usu_nivel >= 900 || userHasAnyRole(['coordinador_lab', 'coordinador_muestreo', 'ventas']))
+        @if($usuarioVeSeccionConfiguracion)
             <div class="accordion-item">
                 <button class="accordion-button nav-group-title" type="button" data-bs-toggle="collapse" data-bs-target="#configuracion">
                     Configuración
@@ -810,7 +837,7 @@
                 
                 <div id="configuracion" class="accordion-collapse collapse show">
                     <div class="accordion-body p-0">
-                        @if(Auth::user()->usu_nivel >= 900 || userHasRole('coordinador_lab'))
+                        @if((Auth::user()->usu_nivel >= 900 || userHasRole('coordinador_lab')) && !userTieneBandejaSoloInformes())
                             <a class="nav-link" href="{{ url('/inventarios') }}">
                                 Inventario Lab
                             </a>
@@ -822,7 +849,7 @@
                             </a>
                         @endif
 
-                        @if(Auth::user()->usu_nivel >= 900 || userHasAnyRole(['coordinador_muestreo', 'coordinador_lab']))
+                        @if((Auth::user()->usu_nivel >= 900 || userHasAnyRole(['coordinador_muestreo', 'coordinador_lab'])) && !userTieneBandejaSoloInformes())
                             <a class="nav-link" href="{{ url('/variables-requeridas') }}">
                                 Mediciones de Campo
                             </a>
@@ -834,7 +861,7 @@
                             </a>
                         @endif
 
-                        @if(Auth::user()->usu_nivel >= 900 || userHasRole('ventas') || userHasRole('coordinador_lab'))
+                        @if($usuarioNivelMaximo)
                             <a class="nav-link" href="{{ url('/leyes-normativas') }}">
                                 Leyes y Normativas
                             </a>
@@ -846,7 +873,7 @@
                             </a>
                         @endif --}}
 
-                        @if(Auth::user()->usu_nivel >= 900 || userHasRole('ventas') || userHasRole('coordinador_lab'))
+                        @if(userPuedeCargarItems() && $usuarioVeSeccionConfiguracion)
                             <a class="nav-link" href="{{ url('/items') }}">
                                 Determinaciones
                             </a>
@@ -880,10 +907,12 @@
                             <x-heroicon-o-beaker style="width: 16px; height: 16px;" class="me-2" />
                             Métodos
                         </a> --}}
-                        <a class="nav-link" href="{{ url('/leyes-normativas') }}">
-                            <x-heroicon-o-scale style="width: 16px; height: 16px;" class="me-2" />
-                            Leyes y Normativas
-                        </a>
+                        @if($usuarioNivelMaximo)
+                            <a class="nav-link" href="{{ url('/leyes-normativas') }}">
+                                <x-heroicon-o-scale style="width: 16px; height: 16px;" class="me-2" />
+                                Leyes y Normativas
+                            </a>
+                        @endif
                         {{-- <a class="nav-link" href="{{ url('/variables') }}">
                             <x-heroicon-o-beaker style="width: 16px; height: 16px;" class="me-2" />
                             Variables
@@ -919,139 +948,141 @@
 
 @if (Auth::check())
     <nav class="navbar navbar-expand-md navbar-light bg-white shadow-sm d-none d-md-flex justify-content-end px-4" style="margin-left: var(--sidebar-width); padding: 1rem 0;">
-        <div class="dropdown me-3">
-            <a href="#" class="d-flex align-items-center text-decoration-none" id="notificationsDropdownMobile" data-bs-toggle="dropdown" aria-expanded="false">
-                <div class="position-relative">
-                    <x-heroicon-o-bell style="width: 18px; height: 18px;" class="text-gray-500" />
-                    @php
-                        $notificacionesNoLeidas = App\Models\SimpleNotification::where('coordinador_codigo', auth()->user()->usu_codigo)
-                        ->where('leida', false)
-                        ->count();
-                    @endphp
-                    @if($notificacionesNoLeidas > 0)
-                    <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.6rem;">
-                        {{ $notificacionesNoLeidas }}
-                        <span class="visually-hidden">notificaciones no leídas</span>
-                    </span>
-                    @endif
-                </div>
-            </a>
-            <ul class="dropdown-menu dropdown-menu-end shadow-sm mt-2" aria-labelledby="notificationsDropdown" style="width: 300px;">
-                <li class="dropdown-header d-flex justify-content-between align-items-center">
-                    <span class="fw-semibold">Notificaciones</span>
-                    <small>
-                        <form action="{{ route('notificaciones.leer-todas') }}" method="POST" class="d-inline">
-                            @csrf
-                            <button type="submit" class="btn btn-link text-primary p-0">Marcar todas</button>
-                        </form>
-                    </small>
-                </li>
-                <li><hr class="dropdown-divider my-1"></li>
-                
-                @forelse(App\Models\SimpleNotification::where('coordinador_codigo', auth()->user()->usu_codigo)
-                    ->orderBy('created_at', 'desc')
-                    ->take(5)
-                    ->get() as $notificacion)
-                <li>
-
-
-                    @if($notificacion->url)
-                        <a href="{{ $notificacion->url }}" class="dropdown-item py-2 {{ $notificacion->leida ? '' : 'bg-light' }}">
-                    @else
-                        <span class="dropdown-item py-2 {{ $notificacion->leida ? '' : 'bg-light' }}">
-                    @endif
-
-                        <div class="d-flex gap-2">
-                            <div class="flex-shrink-0 text-primary">
-                                <x-heroicon-o-bell style="width: 16px; height: 16px;" />
-                            </div>
-                            <div style="min-width: 0;">
-                                <p class="mb-0 small text-truncate" 
-                                style="max-width: 220px;"
-                                data-bs-toggle="tooltip" 
-                                data-bs-placement="bottom" 
-                                title="{{ $notificacion->mensaje }}">
-                                    {{ $notificacion->mensaje }}
-                                </p>
-                                <small class="text-muted">{{ $notificacion->created_at->diffForHumans() }}</small>
-                            </div>
-                        </div>
-
-                    @if($notificacion->url)
-                        </a>
-                    @else
+        <div style="display: flex; align-items: center; justify-content: flex-end; padding-right: 2.5rem;">
+            <div class="dropdown me-3">
+                <a href="#" class="d-flex align-items-center text-decoration-none" id="notificationsDropdownMobile" data-bs-toggle="dropdown" aria-expanded="false">
+                    <div class="position-relative" style="margin-top: -4px;">
+                        <x-heroicon-o-bell style="width: 18px; height: 18px;" class="text-gray-500" />
+                        @php
+                            $notificacionesNoLeidas = App\Models\SimpleNotification::where('coordinador_codigo', auth()->user()->usu_codigo)
+                            ->where('leida', false)
+                            ->count();
+                        @endphp
+                        @if($notificacionesNoLeidas > 0)
+                        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.6rem;">
+                            {{ $notificacionesNoLeidas }}
+                            <span class="visually-hidden">notificaciones no leídas</span>
                         </span>
-                    @endif
-                </li>
+                        @endif
+                    </div>
+                </a>
+                <ul class="dropdown-menu dropdown-menu-end shadow-sm mt-2" aria-labelledby="notificationsDropdown" style="width: 300px;">
+                    <li class="dropdown-header d-flex justify-content-between align-items-center">
+                        <span class="fw-semibold">Notificaciones</span>
+                        <small>
+                            <form action="{{ route('notificaciones.leer-todas') }}" method="POST" class="d-inline">
+                                @csrf
+                                <button type="submit" class="btn btn-link text-primary p-0">Marcar todas</button>
+                            </form>
+                        </small>
+                    </li>
+                    <li><hr class="dropdown-divider my-1"></li>
+                    
+                    @forelse(App\Models\SimpleNotification::where('coordinador_codigo', auth()->user()->usu_codigo)
+                        ->orderBy('created_at', 'desc')
+                        ->take(5)
+                        ->get() as $notificacion)
+                    <li>
 
-                @empty
-                <li class="text-center py-2 text-muted">
-                    <small>No hay notificaciones</small>
-                </li>
-                @endforelse
-                
-                <li><hr class="dropdown-divider my-1"></li>
-                <li class="text-center">
-                    <a href="{{ route('notificaciones.index') }}" class="dropdown-item small text-primary">Ver todas</a>
-                </li>
-            </ul>
-        </div>
 
-        
-        <div class="dropdown me-3">
-            <a href="#" class="d-flex align-items-center text-decoration-none" id="settingsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-                <x-heroicon-o-cog-6-tooth style="width: 18px; height: 18px;" class="text-gray-500" />
-            </a>
-            <ul class="dropdown-menu dropdown-menu-end shadow-sm mt-2" aria-labelledby="settingsDropdown">
-                <li class="dropdown-header">
-                    <span class="fw-semibold">Configuración</span>
-                </li>
-                <li>
-                    <a class="dropdown-item d-flex align-items-center gap-2" href="{{ url('/auth/' . Auth::user()->usu_codigo) }}">
-                        <x-heroicon-o-user-circle style="width: 16px; height: 16px;" />
-                        Perfil de usuario
-                    </a>
-                </li>
-                <li>
-                    <a class="dropdown-item d-flex align-items-center gap-2" href="{{ url('/auth/' . Auth::user()->usu_codigo) . '/seguridad' }}">
-                        <x-heroicon-o-lock-closed style="width: 16px; height: 16px;" />
-                        Seguridad y contraseña
-                    </a>
-                </li>
-                <li><hr class="dropdown-divider"></li>
-                <li>
-                    <a class="dropdown-item d-flex align-items-center gap-2" href="{{ url('/auth/' . Auth::user()->usu_codigo) . '/ayuda' }}">
-                        <x-heroicon-o-question-mark-circle style="width: 16px; height: 16px;" />
-                        Ayuda y soporte
-                    </a>
-                </li>
-            </ul>
-        </div>
+                        @if($notificacion->url)
+                            <a href="{{ $notificacion->url }}" class="dropdown-item py-2 {{ $notificacion->leida ? '' : 'bg-light' }}">
+                        @else
+                            <span class="dropdown-item py-2 {{ $notificacion->leida ? '' : 'bg-light' }}">
+                        @endif
 
-        
-        <div class="dropdown">
-            <a href="#" class="d-flex align-items-center text-decoration-none dropdown-toggle" id="userDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-                <x-heroicon-o-user style="width: 18px; height: 18px;" class="text-gray-500" />
-                <span class="ms-2 fw-semibold">{{ Auth::user()->usu_descripcion }}</span>
-            </a>
-            <ul class="dropdown-menu dropdown-menu-end shadow-sm mt-2" aria-labelledby="userDropdown">
-                <li>
-                    <a class="dropdown-item d-flex align-items-center gap-2" href="{{ url('/auth/' . Auth::user()->usu_codigo) }}">
-                        <x-heroicon-o-user style="width: 16px; height: 16px;" />
-                        Ver Perfil
-                    </a>
-                </li>
-                <li><hr class="dropdown-divider"></li>
-                <li>
-                    <form method="POST" action="{{ route('logout') }}">
-                        @csrf
-                        <button type="submit" class="dropdown-item d-flex align-items-center gap-2 text-danger">
-                            <x-heroicon-o-arrow-left-on-rectangle style="width: 16px; height: 16px;" />
-                            Cerrar Sesión
-                        </button>
-                    </form>
-                </li>
-            </ul>
+                            <div class="d-flex gap-2">
+                                <div class="flex-shrink-0 text-primary">
+                                    <x-heroicon-o-bell style="width: 16px; height: 16px;" />
+                                </div>
+                                <div style="min-width: 0;">
+                                    <p class="mb-0 small text-truncate" 
+                                    style="max-width: 220px;"
+                                    data-bs-toggle="tooltip" 
+                                    data-bs-placement="bottom" 
+                                    title="{{ $notificacion->mensaje }}">
+                                        {{ $notificacion->mensaje }}
+                                    </p>
+                                    <small class="text-muted">{{ $notificacion->created_at->diffForHumans() }}</small>
+                                </div>
+                            </div>
+
+                        @if($notificacion->url)
+                            </a>
+                        @else
+                            </span>
+                        @endif
+                    </li>
+
+                    @empty
+                    <li class="text-center py-2 text-muted">
+                        <small>No hay notificaciones</small>
+                    </li>
+                    @endforelse
+                    
+                    <li><hr class="dropdown-divider my-1"></li>
+                    <li class="text-center">
+                        <a href="{{ route('notificaciones.index') }}" class="dropdown-item small text-primary">Ver todas</a>
+                    </li>
+                </ul>
+            </div>
+
+            
+            <div class="dropdown me-3">
+                <a href="#" class="d-flex align-items-center text-decoration-none" id="settingsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                    <x-heroicon-o-cog-6-tooth style="width: 18px; height: 18px;" class="text-gray-500" />
+                </a>
+                <ul class="dropdown-menu dropdown-menu-end shadow-sm mt-2" aria-labelledby="settingsDropdown">
+                    <li class="dropdown-header">
+                        <span class="fw-semibold">Configuración</span>
+                    </li>
+                    <li>
+                        <a class="dropdown-item d-flex align-items-center gap-2" href="{{ url('/auth/' . Auth::user()->usu_codigo) }}">
+                            <x-heroicon-o-user-circle style="width: 16px; height: 16px;" />
+                            Perfil de usuario
+                        </a>
+                    </li>
+                    <li>
+                        <a class="dropdown-item d-flex align-items-center gap-2" href="{{ url('/auth/' . Auth::user()->usu_codigo) . '/seguridad' }}">
+                            <x-heroicon-o-lock-closed style="width: 16px; height: 16px;" />
+                            Seguridad y contraseña
+                        </a>
+                    </li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li>
+                        <a class="dropdown-item d-flex align-items-center gap-2" href="{{ url('/auth/' . Auth::user()->usu_codigo) . '/ayuda' }}">
+                            <x-heroicon-o-question-mark-circle style="width: 16px; height: 16px;" />
+                            Ayuda y soporte
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            
+            <div class="dropdown">
+                <a href="#" class="d-flex align-items-center text-decoration-none dropdown-toggle" id="userDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                    <x-heroicon-o-user style="width: 18px; height: 18px;" class="text-gray-500" />
+                    <span class="ms-2 fw-semibold">{{ Auth::user()->usu_descripcion }}</span>
+                </a>
+                <ul class="dropdown-menu dropdown-menu-end shadow-sm mt-2" aria-labelledby="userDropdown">
+                    <li>
+                        <a class="dropdown-item d-flex align-items-center gap-2" href="{{ url('/auth/' . Auth::user()->usu_codigo) }}">
+                            <x-heroicon-o-user style="width: 16px; height: 16px;" />
+                            Ver Perfil
+                        </a>
+                    </li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li>
+                        <form method="POST" action="{{ route('logout') }}">
+                            @csrf
+                            <button type="submit" class="dropdown-item d-flex align-items-center gap-2 text-danger">
+                                <x-heroicon-o-arrow-left-on-rectangle style="width: 16px; height: 16px;" />
+                                Cerrar Sesión
+                            </button>
+                        </form>
+                    </li>
+                </ul>
+            </div>
         </div>
     </nav>
 @endif
@@ -1243,6 +1274,59 @@
     });
 });
 </script>
+
+    <!-- Global Scanner Listener for Zebra DS2208 -->
+    <script>
+        (function() {
+            let barcodeBuffer = "";
+            let lastKeyTime = Date.now();
+
+            document.addEventListener('keydown', function(e) {
+                const currentTime = Date.now();
+                const diff = currentTime - lastKeyTime;
+
+                // Los escáneres envían teclas muy rápido (usualmente < 20ms entre ellas)
+                // Si pasa más de 50ms, asumimos que es escritura manual y reseteamos.
+                if (diff > 50) {
+                    barcodeBuffer = "";
+                }
+
+                if (e.key === 'Enter') {
+                    if (barcodeBuffer.length > 10) {
+                        // Detectar si el contenido es una URL de nuestro sistema
+                        if (barcodeBuffer.includes('/muestras/show/') || 
+                            barcodeBuffer.includes('/ordenes/show/') || 
+                            barcodeBuffer.includes('/muestras/show-qr/') ||
+                            barcodeBuffer.includes('/qr-universal/') ||
+                            barcodeBuffer.includes('/qr-selector/') ||
+                            barcodeBuffer.includes('/tareas-all/') ||
+                            barcodeBuffer.includes('/ordenes-all/')) {
+                            
+                            // Mostrar indicador de carga
+                            const loader = document.createElement('div');
+                            loader.id = 'global-scan-loader';
+                            loader.innerHTML = `
+                                <div style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(255,255,255,0.9);z-index:99999;display:flex;flex-direction:column;justify-content:center;align-items:center;font-family:sans-serif;">
+                                    <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;"></div>
+                                    <h2 style="margin-top:20px; color:#333;">Procesando Escaneo...</h2>
+                                    <p style="color:#666;">Redirigiendo a la muestra detectada</p>
+                                </div>
+                            `;
+                            document.body.appendChild(loader);
+                            
+                            // Redirigir
+                            window.location.href = barcodeBuffer;
+                        }
+                    }
+                    barcodeBuffer = "";
+                } else if (e.key.length === 1) {
+                    barcodeBuffer += e.key;
+                }
+
+                lastKeyTime = currentTime;
+            });
+        })();
+    </script>
 
 </body>
 </html>

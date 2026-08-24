@@ -57,11 +57,6 @@
                                 value="{{ old('otn', $cab['otn']) }}">
                         </div>
                         <div class="col-md-3">
-                            <label class="form-label fw-bold" for="protocolo_opds">Protocolo OPDS</label>
-                            <input type="text" class="form-control" id="protocolo_opds" name="protocolo_opds"
-                                value="{{ old('protocolo_opds', $cab['protocolo_opds']) }}">
-                        </div>
-                        <div class="col-md-3">
                             <label class="form-label fw-bold" for="razon_social">Razón social</label>
                             <input type="text" class="form-control" id="razon_social" name="razon_social"
                                 value="{{ old('razon_social', $cab['razon_social']) }}">
@@ -100,6 +95,11 @@
                             <label class="form-label fw-bold" for="cadena_custodia">Cadena de Custodia N°</label>
                             <input type="text" class="form-control" id="cadena_custodia" name="cadena_custodia"
                                 value="{{ old('cadena_custodia', $cab['cadena_custodia']) }}">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-bold" for="protocolo_opds">Protocolo de informe N</label>
+                            <input type="text" class="form-control" id="protocolo_opds" name="protocolo_opds"
+                                value="{{ old('protocolo_opds', $cab['protocolo_opds']) }}">
                         </div>
                         <div class="col-12">
                             <label class="form-label fw-bold" for="identificacion_muestra">Identificación de muestra</label>
@@ -185,15 +185,16 @@
             {{-- SECCIÓN 3: NOTAS DEL INFORME --}}
             <div class="card shadow-sm mb-4">
                 <div class="card-header bg-light">
+                    <h5 class="card-title mb-0">3. Notas del Informe</h5>
                 </div>
                 <div class="card-body">
-                    <div class="col-12">
-                        <label class="form-label fw-bold" for="notas_informe">Notas Adicionales (se agregarán a las notas
-                            predeterminadas del catálogo)</label>
+                    @include('informes.partials.protocolo-notas-catalogo')
+
+                    <div class="col-12 mt-3 pt-3 border-top informe-notas-lista">
+                        <label class="form-label fw-bold" for="notas_informe">Notas adicionales (texto libre)</label>
                         <textarea class="form-control" id="notas_informe" name="notas_informe" rows="3"
-                            placeholder="Añada aquí notas técnicas adicionales. Estas se mostrarán después de las notas predeterminadas que ya tienen los componentes...">{{ old('notas_informe', $cab['notas_informe'] ?? '') }}</textarea>
-                        <small class="text-muted">Las notas que escribas aquí aparecerán en el informe justo debajo de las
-                            notas automáticas de cada determinación.</small>
+                            placeholder="Texto extra que se agregará después de las notas del catálogo...">{{ old('notas_informe', $cab['notas_informe'] ?? '') }}</textarea>
+                        <small class="text-muted">Opcional. Se muestra al final del bloque de notas en el PDF. Podés usar <code>**negrita**</code>.</small>
                     </div>
                 </div>
             </div>
@@ -280,6 +281,15 @@
 
         .sticky-bottom {
             box-shadow: 0 -5px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        .informe-notas-lista {
+            max-width: 640px;
+        }
+
+        .protocolo-nota-item-texto {
+            overflow-wrap: anywhere;
+            word-break: break-word;
         }
     </style>
 @endpush

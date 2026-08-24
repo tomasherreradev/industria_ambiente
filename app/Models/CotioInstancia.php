@@ -30,6 +30,8 @@ class CotioInstancia extends Model
         'observaciones',
         'observaciones_medicion_muestreador',
         'observaciones_medicion_coord_muestreo',
+        'observaciones_muestreo_coord',
+        'observaciones_muestreo_muestreador',
         'resultado', 
         'resultado_2',
         'resultado_3',
@@ -55,6 +57,7 @@ class CotioInstancia extends Model
         'nro_cadena',
         'coordinador_codigo',
         'enable_inform',
+        'enable_modulo_mediciones',
         'enable_ot',
         'cotio_estado_analisis',
         'observacion_resultado',
@@ -80,6 +83,7 @@ class CotioInstancia extends Model
         'coordinador_codigo_lab',
         'aprobado_informe',
         'fecha_aprobacion_informe',
+        'aprobado_informe_usuario',
         'firmado',
         'identificador_documento_firma',
         'fecha_firma',
@@ -104,6 +108,7 @@ class CotioInstancia extends Model
         'fecha_carga_ot' => 'datetime',
         'fecha_identificacion' => 'datetime',
         'enable_ot' => 'boolean',
+        'enable_modulo_mediciones' => 'boolean',
         'es_priori' => 'boolean',
         'aprobado_informe' => 'boolean',
         'firmado' => 'boolean',
@@ -142,9 +147,28 @@ class CotioInstancia extends Model
           ->withPivot(['created_at', 'updated_at']);
     }
 
+    /**
+     * Códigos exactos de usu asignados como responsables de análisis (evita pluck ambiguo en PostgreSQL).
+     *
+     * @return array<int, string>
+     */
+    public function codigosResponsablesAnalisisAsignados(): array
+    {
+        return $this->responsablesAnalisis()
+            ->get()
+            ->map(fn (User $usuario) => $usuario->usu_codigo)
+            ->values()
+            ->all();
+    }
+
     public function valoresVariables()
     {
         return $this->hasMany(CotioValorVariable::class, 'cotio_instancia_id');
+    }
+
+    public function adjuntos()
+    {
+        return $this->hasMany(CotioInstanciaAdjunto::class, 'cotio_instancia_id');
     }
 
     public function muestraRaw()
@@ -216,6 +240,16 @@ class CotioInstancia extends Model
     public function coordinador()
     {
         return $this->belongsTo(User::class, 'coordinador_codigo', 'usu_codigo');
+    }
+
+    public function coordinadorLab()
+    {
+        return $this->belongsTo(User::class, 'coordinador_codigo_lab', 'usu_codigo');
+    }
+
+    public function aprobadorInforme()
+    {
+        return $this->belongsTo(User::class, 'aprobado_informe_usuario', 'usu_codigo');
     }
 
     public function vehiculo()

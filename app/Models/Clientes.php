@@ -178,8 +178,8 @@ class Clientes extends Model
     {
         return $query
             ->whereNotNull('cli_cuit')
-            ->whereRaw("TRIM(cli_cuit) <> ''")
-            ->whereRaw("TRIM(cli_cuit) <> '__-________-_'");
+            ->whereRaw("LTRIM(RTRIM(cli_cuit)) <> ''")
+            ->whereRaw("LTRIM(RTRIM(cli_cuit)) <> '__-________-_'");
     }
 
     // Sucursales: mismos datos de razón social pero sin CUIT real
@@ -189,8 +189,8 @@ class Clientes extends Model
             ->where('cli_codigo', '!=', $this->cli_codigo)
             ->where(function ($q) {
                 $q->whereNull('cli_cuit')
-                  ->orWhereRaw("TRIM(cli_cuit) = ''")
-                  ->orWhereRaw("TRIM(cli_cuit) = '__-________-_'");
+                  ->orWhereRaw("LTRIM(RTRIM(cli_cuit)) = ''")
+                  ->orWhereRaw("LTRIM(RTRIM(cli_cuit)) = '__-________-_'");
             });
     }
 

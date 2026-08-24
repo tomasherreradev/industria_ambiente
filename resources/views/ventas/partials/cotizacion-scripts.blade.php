@@ -7,7 +7,201 @@
         ensayosIniciales: [],
         componentesIniciales: [],
         coti_req_cadena_custodia_relacionada: false,
+        coti_prioridad_global: false,
     };
+
+    const MAX_NOTA_ITEM_CARACTERES = 150;
+
+    function truncarTextoNotaItem(texto) {
+        const s = String(texto ?? '');
+        return s.length > MAX_NOTA_ITEM_CARACTERES ? s.slice(0, MAX_NOTA_ITEM_CARACTERES) : s;
+    }
+
+    function aplicarLimiteNotasItem(notas) {
+        if (!Array.isArray(notas)) {
+            return [];
+        }
+        return notas
+            .map(function (nota) {
+                const contenido = truncarTextoNotaItem(nota && nota.contenido != null ? nota.contenido : '');
+                if (!contenido) {
+                    return null;
+                }
+                return {
+                    tipo: (nota && nota.tipo) || 'imprimible',
+                    contenido: contenido,
+                };
+            })
+            .filter(Boolean);
+    }
+
+    const ADJUNTOS_MAX_BYTES = 10 * 1024 * 1024;
+    const ADJUNTOS_EXTENSIONES = ['pdf', 'jpg', 'jpeg', 'png', 'gif', 'webp'];
+
+    function esArchivoAdjuntoValido(file) {
+        if (!file) {
+            return false;
+        }
+        const extension = String(file.name || '').split('.').pop().toLowerCase();
+        if (!ADJUNTOS_EXTENSIONES.includes(extension)) {
+            return false;
+        }
+        return file.size <= ADJUNTOS_MAX_BYTES;
+    }
+
+    function iconoAdjunto(nombre) {
+        const extension = String(nombre || '').split('.').pop().toLowerCase();
+        return ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(extension)
+            ? 'fa-image text-info'
+            : 'fa-file-pdf text-danger';
+    }
+
+    function renderEnsayoAdjuntosEnModal(listaId, ensayo) {
+        const lista = document.getElementById(listaId);
+        if (!lista || !ensayo) {
+            return;
+        }
+
+        lista.innerHTML = '';
+        const items = [];
+
+        (ensayo.adjuntos_existentes || []).forEach(function (adj) {
+            if ((ensayo.adjuntos_eliminar || []).includes(adj.id)) {
+                return;
+            }
+            items.push({
+                tipo: 'existente',
+                id: adj.id,
+                name: adj.name,
+                url: adj.url,
+            });
+        });
+
+        (ensayo.adjuntos_pendientes || []).forEach(function (file, index) {
+            items.push({
+                tipo: 'pendiente',
+                index: index,
+                name: file.name,
+            });
+        });
+
+        if (items.length === 0) {
+            lista.innerHTML = '<li class="list-group-item text-muted small py-1">Sin archivos adjuntos.</li>';
+            return;
+        }
+
+        items.forEach(function (item) {
+            const li = document.createElement('li');
+            li.className = 'list-group-item d-flex justify-content-between align-items-center py-1 px-2';
+
+            const info = document.createElement('div');
+            info.className = 'd-flex align-items-center gap-2 text-truncate me-2';
+            info.innerHTML = '<i class="fas ' + iconoAdjunto(item.name) + '"></i>';
+
+            if (item.url) {
+                const link = document.createElement('a');
+                link.href = item.url;
+                link.target = '_blank';
+                link.rel = 'noopener';
+                link.className = 'text-truncate';
+                link.textContent = item.name;
+                info.appendChild(link);
+            } else {
+                const span = document.createElement('span');
+                span.className = 'text-truncate';
+                span.textContent = item.name + ' (nuevo)';
+                info.appendChild(span);
+            }
+
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'btn btn-sm btn-outline-danger';
+            btn.innerHTML = '<i class="fas fa-times"></i>';
+            btn.addEventListener('click', function () {
+                if (item.tipo === 'existente') {
+                    ensayo.adjuntos_eliminar = ensayo.adjuntos_eliminar || [];
+                    if (!ensayo.adjuntos_eliminar.includes(item.id)) {
+                        ensayo.adjuntos_eliminar.push(item.id);
+                    }
+                } else {
+                    ensayo.adjuntos_pendientes = (ensayo.adjuntos_pendientes || []).filter(function (_, idx) {
+                        return idx !== item.index;
+                    });
+                }
+                renderEnsayoAdjuntosEnModal(listaId, ensayo);
+            });
+
+            li.appendChild(info);
+            li.appendChild(btn);
+            lista.appendChild(li);
+        });
+    }
+
+    function capturarAdjuntosDesdeInput(inputId, ensayo, listaId) {
+        const input = document.getElementById(inputId);
+        if (!input || !ensayo) {
+            return;
+        }
+
+        const nuevos = Array.from(input.files || []).filter(esArchivoAdjuntoValido);
+        if (nuevos.length === 0) {
+            return;
+        }
+
+        ensayo.adjuntos_pendientes = (ensayo.adjuntos_pendientes || []).concat(nuevos);
+        input.value = '';
+        renderEnsayoAdjuntosEnModal(listaId, ensayo);
+    }
+
+    function limpiarAdjuntosModalAgregar() {
+        const input = document.getElementById('ensayo_adjuntos_input');
+        if (input) {
+            input.value = '';
+        }
+        const lista = document.getElementById('ensayoAdjuntosLista');
+        if (lista) {
+            lista.innerHTML = '';
+        }
+    }
+
+    function appendAdjuntosAlFormulario(form) {
+        if (!form) {
+            return;
+        }
+
+        form.querySelectorAll('.ensayo-adjunto-dinamico').forEach(function (el) {
+            el.remove();
+        });
+
+        let eliminarInput = form.querySelector('#ensayos_adjuntos_eliminar');
+        if (!eliminarInput) {
+            eliminarInput = document.createElement('input');
+            eliminarInput.type = 'hidden';
+            eliminarInput.name = 'ensayos_adjuntos_eliminar';
+            eliminarInput.id = 'ensayos_adjuntos_eliminar';
+            form.appendChild(eliminarInput);
+        }
+
+        const todosEliminar = [];
+        state.ensayos.forEach(function (ensayo) {
+            (ensayo.adjuntos_eliminar || []).forEach(function (id) {
+                todosEliminar.push(id);
+            });
+
+            (ensayo.adjuntos_pendientes || []).forEach(function (file) {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.name = 'ensayo_adjuntos[' + ensayo.item + '][]';
+                input.className = 'ensayo-adjunto-dinamico d-none';
+                const dt = new DataTransfer();
+                dt.items.add(file);
+                input.files = dt.files;
+                form.appendChild(input);
+            });
+        });
+
+        eliminarInput.value = JSON.stringify(todosEliminar);
+    }
 
         // console.log('[cotizacion] Inicializando state con config:', {
         //     modo: config.modo,
@@ -18,8 +212,14 @@
         //     componentesInicialesSample: (config.componentesIniciales || []).slice(0, 2)
         // });
         
+        const ensayosInicialesNorm = (config.ensayosIniciales || []).map(normalizarEnsayo);
+        if (config.coti_prioridad_global) {
+            ensayosInicialesNorm.forEach(function (e) {
+                e.es_priori = true;
+            });
+        }
         const state = {
-        ensayos: (config.ensayosIniciales || []).map(normalizarEnsayo),
+        ensayos: ensayosInicialesNorm,
         componentes: (config.componentesIniciales || []).map(normalizarComponente),
         contador: calcularContadorInicial(
             config.ensayosIniciales || [],
@@ -128,6 +328,54 @@
             });
         }
 
+        function ensayoEsPrioritarioEnState(ensayo) {
+            return !!ensayo.es_priori;
+        }
+        function aplicarPrioridadATodosLosEnsayos(marcar) {
+            state.ensayos.forEach(function (ensayo) {
+                ensayo.es_priori = !!marcar;
+            });
+        }
+        function sincronizarCheckboxGlobalPrioridad() {
+            const chkGlobal = document.getElementById('coti_prioridad_global_chk');
+            if (!chkGlobal) {
+                return;
+            }
+            if (!state.ensayos.length) {
+                chkGlobal.checked = false;
+                return;
+            }
+            chkGlobal.checked = state.ensayos.every(function (e) {
+                return !!e.es_priori;
+            });
+        }
+        function prepararCheckboxPrioridadModalAgregar() {
+            const chk = document.getElementById('ensayo_es_priori');
+            const chkGlobal = document.getElementById('coti_prioridad_global_chk');
+            if (chk) {
+                chk.checked = !!(chkGlobal && chkGlobal.checked);
+            }
+        }
+        function inicializarCotiPrioridadGlobalUi() {
+            const chkGlobal = document.getElementById('coti_prioridad_global_chk');
+            if (!chkGlobal) {
+                return;
+            }
+            sincronizarCheckboxGlobalPrioridad();
+            if (chkGlobal.dataset.cotiPrioridadBound !== '1') {
+                chkGlobal.dataset.cotiPrioridadBound = '1';
+                chkGlobal.addEventListener('change', function () {
+                    aplicarPrioridadATodosLosEnsayos(!!this.checked);
+                    renderTabla();
+                    sincronizarCheckboxGlobalPrioridad();
+                });
+            }
+            if (elements.btnAgregarEnsayo && elements.btnAgregarEnsayo.dataset.prioridadModalBound !== '1') {
+                elements.btnAgregarEnsayo.dataset.prioridadModalBound = '1';
+                elements.btnAgregarEnsayo.addEventListener('click', prepararCheckboxPrioridadModalAgregar);
+            }
+        }
+
         elements.camposComponenteInteractivos = [
         elements.campoPrecioComponente,
     ].filter(Boolean);
@@ -154,6 +402,7 @@
             await cargarCatalogos();
             inicializarEventosModales();
             inicializarCotiReqCadenaCustodiaRelacionadaUi();
+            inicializarCotiPrioridadGlobalUi();
             inicializarEventosSector();
             inicializarEventosDescuentos();
             inicializarEventosDivisa();
@@ -1804,6 +2053,10 @@
 
     function inicializarEventosModales() {
         if (elements.modalEnsayo) {
+            elements.modalEnsayo.addEventListener('hidden.bs.modal', function () {
+                destruirSelectLeyNormativa(elements.selectEnsayoLeyNormativa);
+            });
+
             elements.modalEnsayo.addEventListener('shown.bs.modal', function () {
                 cargarOpcionesEnsayos();
                 cargarLeyesNormativas();
@@ -1833,6 +2086,16 @@
             });
         }
 
+        const modalEditarEnsayo = document.getElementById('modalEditarEnsayo');
+        if (modalEditarEnsayo) {
+            modalEditarEnsayo.addEventListener('hidden.bs.modal', function () {
+                destruirSelectLeyNormativa(document.getElementById('edit_ensayo_ley_normativa'));
+                if (window.$ && window.$('#edit_ensayo_muestra').length && window.$('#edit_ensayo_muestra').data('select2')) {
+                    window.$('#edit_ensayo_muestra').select2('destroy');
+                }
+            });
+        }
+
         if (elements.modalComponente) {
             // Limpiar Select2 cuando se cierra el modal
             elements.modalComponente.addEventListener('hidden.bs.modal', function () {
@@ -1843,6 +2106,10 @@
                     }
                     // Limpiar selección
                     $select.val(null);
+                }
+                const buscar = document.getElementById('componentes_seleccionados_buscar');
+                if (buscar) {
+                    buscar.value = '';
                 }
             });
 
@@ -1870,25 +2137,10 @@
                     $selectComponentes.select2({
                         dropdownParent: window.$('#modalAgregarComponente'),
                         width: '100%',
-                        placeholder: 'Seleccionar análisis...',
+                        placeholder: 'Buscar y agregar análisis...',
                         closeOnSelect: false,
                         templateResult: renderComponenteOptionTemplate,
-                        templateSelection: function(data, container) {
-                            if (!data.id || !data.element) {
-                                return data.text;
-                            }
-                            const dataset = data.element.dataset || {};
-                            let descripcion = data.text || dataset.descripcion || '';
-                            // Limpiar el prefijo [AGRUPADOR] si existe
-                            descripcion = descripcion.replace(/^\[AGRUPADOR\]\s*/, '');
-                            const esAgrupador = dataset.esAgrupador === '1';
-                            
-                            // Para el template de selección, mostrar descripción con indicador si es agrupador
-                            if (esAgrupador) {
-                                return escapeHtml(descripcion) + ' [AGRUPADOR]';
-                            }
-                            return escapeHtml(descripcion);
-                        },
+                        templateSelection: renderComponenteSelectionTemplate,
                         escapeMarkup: function (markup) {
                             return markup;
                         }
@@ -1917,6 +2169,7 @@
             elements.selectComponente.addEventListener('change', handleCambioComponenteModal);
         }
 
+        inicializarPanelSeleccionComponentes();
     }
 
     function inicializarBotonesAccion() {
@@ -1989,10 +2242,10 @@
                 if (option && option.dataset) {
                     document.getElementById('edit_componente_precio').value = parseFloat(option.dataset.precio || 0).toFixed(2);
                     document.getElementById('edit_componente_unidad').value = option.dataset.unidadMedida || '';
-                    if (option.dataset.metodoCodigo) {
+                    if (option.dataset.metodoAnalisisId) {
                         const selectMetodo = document.getElementById('edit_componente_metodo');
                         if (selectMetodo) {
-                            selectMetodo.value = option.dataset.metodoCodigo;
+                            selectMetodo.value = option.dataset.metodoAnalisisId;
                         }
                     }
                 }
@@ -2067,10 +2320,7 @@
 
         // Verificar si el nuevo análisis es un componente sugerido del ensayo asociado
         const ensayoAsociado = state.ensayos.find(e => e.item === componente.ensayo_asociado);
-        const esSugeridoEdit = ensayoAsociado && 
-                              Array.isArray(ensayoAsociado.componentes_sugeridos) && 
-                              ensayoAsociado.componentes_sugeridos.map(id => id.toString()).includes(analisisId.toString());
-        componente.de_agrupador = esSugeridoEdit;
+        componente.de_agrupador = resolverDeAgrupadorComponente(ensayoAsociado, analisisId, componente.de_agrupador);
 
         // Actualizar requerimientos
         if (chkReqCadena) {
@@ -2349,8 +2599,11 @@
         const celda = document.querySelector(`[data-componente-total="${itemId}"]`);
         const componente = state.componentes.find(c => c.item === itemId);
         if (celda && componente) {
+            const ensayo = state.ensayos.find(e => e.item === Number(componente.ensayo_asociado));
+            const esParametroPack = componenteEsParametroPackAgrupador(ensayo, componente);
             const factorAumento = 1 + (clampPercent(getAumentoGlobal()) / 100);
-            const totalConAumento = (parseFloat(componente.total) || 0) * factorAumento;
+            const totalBase = esParametroPack ? 0 : (parseFloat(componente.total) || 0);
+            const totalConAumento = totalBase * factorAumento;
             
             const spanVal = celda.querySelector('.cotizacion-total-componente-valor');
             if (spanVal) {
@@ -2531,24 +2784,86 @@
         return Array.from(elements.selectComponente.options || []).filter(option => option.selected);
     }
 
+    function textoOpcionLeyNormativa(ley) {
+        const cod = ley.codigo != null && ley.codigo !== '' ? String(ley.codigo).trim() : '';
+        if (!cod) {
+            return '';
+        }
+        if (ley.text) {
+            return ley.text;
+        }
+        const nombre = ley.nombre_completo || ley.nombre || '';
+        return nombre ? `${cod} - ${nombre}` : cod;
+    }
+
+    function poblarSelectLeyesNormativas(selectEl, leyesCatalogo) {
+        if (!selectEl) {
+            return;
+        }
+
+        selectEl.innerHTML = '<option value="">Seleccionar normativa...</option>';
+
+        if (!leyesCatalogo || !Array.isArray(leyesCatalogo)) {
+            return;
+        }
+
+        leyesCatalogo.forEach(ley => {
+            const cod = ley.codigo != null && ley.codigo !== '' ? String(ley.codigo).trim() : '';
+            if (!cod) {
+                return;
+            }
+            const option = document.createElement('option');
+            option.value = cod;
+            option.textContent = textoOpcionLeyNormativa(ley);
+            option.dataset.codigo = cod;
+            option.dataset.grupo = ley.grupo || '';
+            selectEl.appendChild(option);
+        });
+    }
+
+    function destruirSelectLeyNormativa(selectEl) {
+        if (!selectEl || !window.$ || !window.$.fn.select2) {
+            return;
+        }
+        const $select = window.$(selectEl);
+        if ($select.hasClass('select2-hidden-accessible')) {
+            $select.select2('destroy');
+        }
+    }
+
+    function inicializarSelectLeyNormativa(selectEl, modalId) {
+        if (!selectEl || !window.$ || !window.$.fn.select2) {
+            return;
+        }
+
+        destruirSelectLeyNormativa(selectEl);
+
+        const $select = window.$(selectEl);
+        const $parent = modalId ? window.$(`#${modalId}`) : $select.closest('.modal');
+
+        $select.select2({
+            width: '100%',
+            placeholder: 'Buscar ley o normativa...',
+            allowClear: true,
+            dropdownParent: $parent.length ? $parent : undefined,
+            language: {
+                noResults: function () {
+                    return 'No se encontraron normativas';
+                },
+                searching: function () {
+                    return 'Buscando...';
+                },
+            },
+        });
+    }
+
     function cargarLeyesNormativas() {
         if (!elements.selectEnsayoLeyNormativa) {
             return;
         }
 
-        elements.selectEnsayoLeyNormativa.innerHTML = '<option value="">Seleccionar normativa...</option>';
-
-        catalogs.leyes.forEach(ley => {
-            const option = document.createElement('option');
-            // FK en BD es leyes_normativas.codigo, no el id numérico
-            option.value = (ley.codigo != null && ley.codigo !== '') ? String(ley.codigo) : '';
-            option.textContent = ley.text;
-            option.dataset.codigo = ley.codigo;
-            option.dataset.grupo = ley.grupo;
-            if (option.value) {
-                elements.selectEnsayoLeyNormativa.appendChild(option);
-            }
-        });
+        poblarSelectLeyesNormativas(elements.selectEnsayoLeyNormativa, catalogs.leyes);
+        inicializarSelectLeyNormativa(elements.selectEnsayoLeyNormativa, 'modalAgregarEnsayo');
     }
 
     function actualizarEnsayosDisponiblesParaComponentes() {
@@ -2636,28 +2951,14 @@
         const isEdit = select.id === 'edit_ensayo_muestra';
         const chkId = isEdit ? 'edit_ensayo_lleva_muestreo' : 'ensayo_no_lleva_muestreo';
         const chk = document.getElementById(chkId);
-        if (chk) {
-            // Mediciones SI lleva muestreo por defecto. Los otros canales especiales NO.
-            // Para Mediciones, BLOQUEAMOS el checkbox para que no puedan marcar "No lleva muestreo"
-            if (canal === 'mediciones') {
-                chk.checked = false;
-                chk.disabled = true;
-            } else if (canal) {
-                // Otros canales especiales (ASP, Consultoría, etc) NO llevan muestreo por defecto
-                chk.checked = true;
-                chk.disabled = false;
-            } else {
-                // Análisis normales LLEVAN muestreo por defecto
-                chk.checked = false;
-                chk.disabled = false;
-            }
-        }
+        aplicarEstadoCheckboxNoLlevaMuestreo(chk, canal);
     }
 
     function handleCambioComponenteModal() {
         const selectedOptions = obtenerOpcionesSeleccionadasComponente();
 
         actualizarResumenComponentesSeleccionados(selectedOptions);
+        actualizarPanelSeleccionComponentes();
         aplicarEstadoCamposComponente(selectedOptions);
 
         if (selectedOptions.length !== 1) {
@@ -2690,7 +2991,7 @@
             elements.campoCodigoComponente.value = dataset.codigo || '';
         }
         if (elements.campoPrecioComponente) {
-            const precio = parseFloat(dataset.precio ?? dataset.precioRaw ?? '0') || 0;
+            const precio = precioReferenciaDesdeOptionDataset(dataset);
             elements.campoPrecioComponente.value = precio.toFixed(2);
         }
     }
@@ -2785,6 +3086,184 @@
         });
     }
 
+    const UMBRAL_FILTRO_LISTA_COMPONENTES = 8;
+
+    function quitarValoresComponenteSelect(ids) {
+        if (!ids || !ids.length || !elements.selectComponente) {
+            return;
+        }
+
+        const idsSet = new Set(ids.map(id => id.toString()));
+
+        if (window.$ && window.$('#componente_analisis').length) {
+            const $select = window.$('#componente_analisis');
+            const actuales = ($select.val() || []).map(v => v.toString());
+            const finales = actuales.filter(v => !idsSet.has(v));
+            $select.val(finales.length ? finales : null).trigger('change');
+            return;
+        }
+
+        Array.from(elements.selectComponente.options || []).forEach(option => {
+            if (idsSet.has(option.value.toString())) {
+                option.selected = false;
+            }
+        });
+        elements.selectComponente.dispatchEvent(new Event('change'));
+    }
+
+    function actualizarModoAgregarSelect2Componentes(cantidad) {
+        if (!window.$ || !window.$('#componente_analisis').length) {
+            return;
+        }
+
+        const $select = window.$('#componente_analisis');
+        if (!$select.data('select2')) {
+            return;
+        }
+
+        const $container = $select.next('.select2-container');
+        $container.toggleClass('select2-solo-agregar', cantidad > 0);
+
+        const placeholder = cantidad > 0 ? 'Buscar y agregar más...' : 'Buscar y agregar análisis...';
+        $container.find('.select2-search__field').attr('placeholder', placeholder);
+    }
+
+    function actualizarPanelSeleccionComponentes() {
+        const panel = document.getElementById('componentes_seleccionados_panel');
+        const lista = document.getElementById('componentes_seleccionados_lista');
+        const countSpan = document.getElementById('componentes_seleccionados_count');
+        const buscar = document.getElementById('componentes_seleccionados_buscar');
+        const btnVaciar = document.getElementById('btnComponentesQuitarTodos');
+        if (!panel || !lista) {
+            return;
+        }
+
+        const opciones = obtenerOpcionesSeleccionadasComponente();
+        actualizarModoAgregarSelect2Componentes(opciones.length);
+
+        if (!opciones.length) {
+            panel.classList.add('d-none');
+            lista.innerHTML = '';
+            if (countSpan) {
+                countSpan.textContent = '0';
+            }
+            if (buscar) {
+                buscar.classList.add('d-none');
+                buscar.value = '';
+            }
+            return;
+        }
+
+        panel.classList.remove('d-none');
+        if (countSpan) {
+            countSpan.textContent = String(opciones.length);
+        }
+        if (btnVaciar) {
+            btnVaciar.classList.toggle('d-none', opciones.length < 2);
+        }
+        if (buscar) {
+            buscar.classList.toggle('d-none', opciones.length < UMBRAL_FILTRO_LISTA_COMPONENTES);
+        }
+
+        const filtro = ((buscar && buscar.value) || '').trim().toLowerCase();
+        lista.innerHTML = '';
+        let visibles = 0;
+
+        opciones.forEach(option => {
+            const id = option.value.toString();
+            const dataset = option.dataset || {};
+            let descripcion = (dataset.descripcion || option.textContent || '').trim();
+            descripcion = descripcion.replace(/^\[AGRUPADOR\]\s*/, '').replace(/\s*\(ID:\s*\d+\)\s*$/, '').trim();
+            const metodo = construirEtiquetaMetodoAnalisis(dataset);
+            const textoBusqueda = `${descripcion} ${id} ${metodo || ''}`.toLowerCase();
+
+            if (filtro && !textoBusqueda.includes(filtro)) {
+                return;
+            }
+
+            visibles++;
+
+            const row = document.createElement('div');
+            row.className = 'componentes-seleccionados-item';
+            row.dataset.componenteId = id;
+
+            const info = document.createElement('div');
+            info.className = 'componentes-seleccionados-item-info';
+
+            const nombre = document.createElement('div');
+            nombre.className = 'componentes-seleccionados-item-nombre';
+            nombre.textContent = descripcion;
+
+            info.appendChild(nombre);
+            if (metodo) {
+                const meta = document.createElement('div');
+                meta.className = 'componentes-seleccionados-item-meta';
+                meta.textContent = metodo;
+                info.appendChild(meta);
+            }
+
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'btn btn-sm btn-outline-danger componentes-seleccionados-item-quitar';
+            removeBtn.textContent = 'Quitar';
+            removeBtn.addEventListener('click', function (e) {
+                e.preventDefault();
+                quitarValoresComponenteSelect([id]);
+            });
+
+            row.appendChild(info);
+            row.appendChild(removeBtn);
+            lista.appendChild(row);
+        });
+
+        if (filtro && visibles === 0) {
+            const vacio = document.createElement('div');
+            vacio.className = 'componentes-seleccionados-vacio-filtro';
+            vacio.textContent = 'Ningún análisis coincide con el filtro.';
+            lista.appendChild(vacio);
+        }
+    }
+
+    function inicializarPanelSeleccionComponentes() {
+        const buscar = document.getElementById('componentes_seleccionados_buscar');
+        const btnTodos = document.getElementById('btnComponentesQuitarTodos');
+
+        if (buscar) {
+            buscar.addEventListener('input', actualizarPanelSeleccionComponentes);
+        }
+
+        if (btnTodos) {
+            btnTodos.addEventListener('click', function () {
+                const opciones = obtenerOpcionesSeleccionadasComponente();
+                if (!opciones.length) {
+                    return;
+                }
+
+                const ejecutar = () => {
+                    quitarValoresComponenteSelect(opciones.map(opt => opt.value));
+                };
+
+                if (window.Swal) {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: '¿Vaciar la lista?',
+                        text: `Se quitarán los ${opciones.length} análisis seleccionados.`,
+                        showCancelButton: true,
+                        confirmButtonText: 'Sí, vaciar',
+                        cancelButtonText: 'Cancelar',
+                        confirmButtonColor: '#d33',
+                    }).then(result => {
+                        if (result.isConfirmed) {
+                            ejecutar();
+                        }
+                    });
+                } else if (confirm(`¿Vaciar los ${opciones.length} análisis seleccionados?`)) {
+                    ejecutar();
+                }
+            });
+        }
+    }
+
     function construirEtiquetaMatriz(dataset = {}) {
         const codigo = (dataset.matrizCodigo || '').trim();
         const descripcion = (dataset.matrizDescripcion || '').trim();
@@ -2800,20 +3279,36 @@
         return codigo;
     }
 
+    function construirEtiquetaMetodoAnalisis(dataset = {}) {
+        const codigo = (dataset.metodoAnalisisId || '').trim();
+        const descripcion = (dataset.metodoDescripcion || '').trim();
+
+        if (!codigo && !descripcion) {
+            return null;
+        }
+
+        if (codigo && descripcion) {
+            return `${codigo} - ${descripcion}`;
+        }
+
+        return codigo || descripcion;
+    }
+
     function construirMetaComponente(dataset = {}) {
         const partes = [];
         const matrizEtiqueta = construirEtiquetaMatriz(dataset);
         if (matrizEtiqueta) {
             partes.push(`Matriz: ${matrizEtiqueta}`);
         }
-        if (dataset.metodoCodigo) {
-            partes.push(`Método: ${dataset.metodoCodigo}${dataset.metodoDescripcion ? ` - ${dataset.metodoDescripcion}` : ''}`);
+        const metodoAnalisis = construirEtiquetaMetodoAnalisis(dataset);
+        if (metodoAnalisis) {
+            partes.push(`Mét. análisis: ${metodoAnalisis}`);
         }
         if (dataset.unidadMedida) {
             partes.push(`U.M.: ${dataset.unidadMedida}`);
         }
         const precio = parseFloat(dataset.precio ?? dataset.precioRaw);
-        if (!isNaN(precio) && precio > 0) {
+        if (dataset.precioDefinido === '1' && !isNaN(precio) && precio > 0) {
             partes.push(`Precio: ${formatCurrency(precio)}`);
         }
 
@@ -2859,15 +3354,18 @@
         }
         const dataset = data.element.dataset || {};
         let descripcion = data.text || dataset.descripcion || '';
-        // Limpiar el prefijo [AGRUPADOR] si existe
-        descripcion = descripcion.replace(/^\[AGRUPADOR\]\s*/, '');
+        descripcion = descripcion.replace(/^\[AGRUPADOR\]\s*/, '').replace(/\s*\(ID:\s*\d+\)\s*$/, '').trim();
         const esAgrupador = dataset.esAgrupador === '1';
-        
-        // Para el template de selección, mostrar descripción con indicador si es agrupador
-        if (esAgrupador) {
-            return escapeHtml(descripcion) + ` (ID: ${data.id}) [AGRUPADOR]`;
+        const metodoAnalisis = construirEtiquetaMetodoAnalisis(dataset);
+
+        let label = escapeHtml(descripcion) + ` (ID: ${data.id})`;
+        if (metodoAnalisis) {
+            label += ` | ${escapeHtml(metodoAnalisis)}`;
         }
-        return escapeHtml(descripcion) + ` (ID: ${data.id})`;
+        if (esAgrupador) {
+            label += ' [AGRUPADOR]';
+        }
+        return label;
     }
 
     function handleComponenteChangeFromSelect(selectEl) {
@@ -2891,16 +3389,18 @@
         }
 
         const info = document.getElementById('componente_metodo_info');
-        let metodoCodigo = selectedOption && selectedOption.dataset ? selectedOption.dataset.metodoCodigo : '';
-        let metodoDesc = selectedOption && selectedOption.dataset ? selectedOption.dataset.metodoDescripcion : '';
+        const metodoAnalisisId = selectedOption && selectedOption.dataset ? (selectedOption.dataset.metodoAnalisisId || '').trim() : '';
+        let metodoDesc = selectedOption && selectedOption.dataset ? (selectedOption.dataset.metodoDescripcion || '').trim() : '';
         let unidadMedida = selectedOption && selectedOption.dataset ? selectedOption.dataset.unidadMedida : '';
         let limiteEstablecido = selectedOption && selectedOption.dataset ? selectedOption.dataset.limitesEstablecidos : '';
-        let precio = selectedOption && selectedOption.dataset ? (selectedOption.dataset.precio || '') : '';
+        const precio = selectedOption && selectedOption.dataset
+            ? precioReferenciaDesdeOptionDataset(selectedOption.dataset)
+            : 0;
 
         if (info) {
             info.textContent = '';
-            if (metodoCodigo) {
-                info.textContent += `Método: ${metodoCodigo}${metodoDesc ? ` - ${metodoDesc}` : ''}`;
+            if (metodoAnalisisId || metodoDesc) {
+                info.textContent += `Mét. análisis: ${metodoAnalisisId}${metodoDesc ? ` - ${metodoDesc}` : ''}`;
             }
             if (unidadMedida) {
                 info.textContent += `U.M.: ${unidadMedida}`;
@@ -2910,12 +3410,10 @@
             }
         }
 
-        // Autocompletar precio del componente
+        // Autocompletar precio del componente (solo si tiene precio definido en catálogo)
         const precioField = document.getElementById('comp_precio_final');
-        if (precioField && precio) {
-            const precioNum = parseFloat(precio) || 5000.00;
-            precioField.value = precioNum.toFixed(2);
-            // console.log('[componente change] precio autocompletado:', precioNum);
+        if (precioField) {
+            precioField.value = (parseFloat(precio) || 0).toFixed(2);
         }
     }
 
@@ -2953,7 +3451,8 @@
                         </div>
                     </div>
                 </div>
-                <textarea class="form-control nota-contenido" id="${notaId}_contenido" rows="3" placeholder="Escriba el contenido de la nota...">${notaContenido}</textarea>
+                <textarea class="form-control nota-contenido" id="${notaId}_contenido" rows="3" maxlength="${MAX_NOTA_ITEM_CARACTERES}" placeholder="Escriba el contenido de la nota...">${truncarTextoNotaItem(notaContenido)}</textarea>
+                <small class="text-muted d-block mt-1">Máximo ${MAX_NOTA_ITEM_CARACTERES} caracteres.</small>
             </div>
         `;
         return div;
@@ -3009,7 +3508,7 @@
                 if (contenido) { // Solo agregar si tiene contenido
                     notas.push({
                         tipo: tipo,
-                        contenido: contenido
+                        contenido: truncarTextoNotaItem(contenido)
                     });
                 }
             }
@@ -3026,10 +3525,10 @@
         const ni = notaImprimible != null && String(notaImprimible).trim() !== '' ? String(notaImprimible).trim() : '';
         const nin = notaInterna != null && String(notaInterna).trim() !== '' ? String(notaInterna).trim() : '';
         if (ni) {
-            notas.push({ tipo: 'imprimible', contenido: ni });
+            notas.push({ tipo: 'imprimible', contenido: truncarTextoNotaItem(ni) });
         }
         if (nin) {
-            notas.push({ tipo: 'interna', contenido: nin });
+            notas.push({ tipo: 'interna', contenido: truncarTextoNotaItem(nin) });
         }
         return notas;
     }
@@ -3079,8 +3578,12 @@
             intEl.value = '';
             return;
         }
-        impEl.value = catalogoEntry.nota_imprimible != null ? String(catalogoEntry.nota_imprimible) : '';
-        intEl.value = catalogoEntry.nota_interna != null ? String(catalogoEntry.nota_interna) : '';
+        impEl.value = catalogoEntry.nota_imprimible != null
+            ? truncarTextoNotaItem(String(catalogoEntry.nota_imprimible))
+            : '';
+        intEl.value = catalogoEntry.nota_interna != null
+            ? truncarTextoNotaItem(String(catalogoEntry.nota_interna))
+            : '';
     }
 
     function limpiarTextareasNotasComponenteAgregar() {
@@ -3121,6 +3624,42 @@
             return 'mediciones';
         }
         return null;
+    }
+
+    /** Canales que nunca llevan muestreo en campo (checkbox bloqueado en true). */
+    function canalSinMuestreoEnCampo(canal) {
+        return ['consultoria', 'clarke_fire', 'asp'].includes(canal);
+    }
+
+    function resolverLlevaMuestreoEnsayo(chkNoLlevaMuestreo, canalDetectado) {
+        if (canalDetectado === 'mediciones') {
+            return true;
+        }
+        if (canalSinMuestreoEnCampo(canalDetectado)) {
+            return false;
+        }
+        if (chkNoLlevaMuestreo && chkNoLlevaMuestreo.checked) {
+            return false;
+        }
+        return !canalDetectado;
+    }
+
+    function aplicarEstadoCheckboxNoLlevaMuestreo(chk, canal) {
+        if (!chk) {
+            return;
+        }
+        if (canal === 'mediciones') {
+            chk.checked = false;
+            chk.disabled = true;
+            return;
+        }
+        if (canalSinMuestreoEnCampo(canal)) {
+            chk.checked = true;
+            chk.disabled = true;
+            return;
+        }
+        chk.checked = false;
+        chk.disabled = false;
     }
 
     function agregarEnsayo() {
@@ -3195,17 +3734,7 @@
         // Lleva muestreo: igual que en edición — checkbox "No lleva muestreo" fuerza false; si no, regla por canal (matriz/descripción).
         const canalDetectado = canalEspecialDesdeMatrizYDescripcion(matrizDescripcion, descripcion);
         const chkNoLlevaMuestreo = document.getElementById('ensayo_no_lleva_muestreo');
-        let llevaMuestreo = true;
-        if (chkNoLlevaMuestreo && chkNoLlevaMuestreo.checked) {
-            llevaMuestreo = false;
-        } else {
-            // Mediciones SI lleva muestreo (true). Otros canales especiales NO (false).
-            if (canalDetectado === 'mediciones') {
-                llevaMuestreo = true;
-            } else {
-                llevaMuestreo = canalDetectado ? false : true;
-            }
-        }
+        const llevaMuestreo = resolverLlevaMuestreoEnsayo(chkNoLlevaMuestreo, canalDetectado);
 
         // Protocolo MAPBA
         const reqProtMapbaCheckbox = document.getElementById('req_prot_mapba');
@@ -3246,9 +3775,19 @@
             canal_especial: canalDetectado,
             precio_extra_ensayo: precioExtraEnsayo,
             ley_normativa_id: leyNormativaCodigo || null,
+            es_priori: (function () {
+                const chk = document.getElementById('ensayo_es_priori');
+                return !!(chk && chk.checked);
+            })(),
+            adjuntos_pendientes: [],
+            adjuntos_existentes: [],
+            adjuntos_eliminar: [],
         });
 
+        capturarAdjuntosDesdeInput('ensayo_adjuntos_input', nuevoEnsayo, 'ensayoAdjuntosLista');
+
         state.ensayos.push(nuevoEnsayo);
+        recalcularPreciosEnsayo(nuevoEnsayo.item);
         renderTabla();
         cerrarModal(elements.modalEnsayo, 'formEnsayo');
 
@@ -3367,9 +3906,9 @@
             const unidadMedida = componenteCatalogo.unidad_medida || '';
             const limiteDeteccion = componenteCatalogo.limites_establecidos || '';
             const cantidad = 1;
-            const precioCatalogo = toPositiveNumber(componenteCatalogo.precio || 0, 0);
+            const precioCatalogo = precioReferenciaDesdeCatalogo(componenteCatalogo);
             const precio = (precioForzado !== null) ? toPositiveNumber(precioForzado, 0) : precioCatalogo;
-            const precioMinimoVenta = toPositiveNumber(componenteCatalogo.precio_minimo_venta || precioCatalogo || 0, 0);
+            const precioMinimoVenta = precioMinimoVentaDesdeCatalogo(componenteCatalogo);
 
             const notasComp = notasParaNuevoComponenteDesdeModalYCatalogo(componenteCatalogo, false);
             const np = notasAObjetoPersistencia(notasComp);
@@ -3377,6 +3916,7 @@
             const esSugerido = ensayoRegistro && 
                                Array.isArray(ensayoRegistro.componentes_sugeridos) && 
                                ensayoRegistro.componentes_sugeridos.map(id => id.toString()).includes(analisisId.toString());
+            const deAgrupadorFinal = resolverDeAgrupadorComponente(ensayoRegistro, analisisId, !!deAgrupador || esSugerido);
 
             state.contador += 1;
             const nuevoComponente = normalizarComponente({
@@ -3397,7 +3937,7 @@
                 ley_normativa_id: leyNormativaId,
                 nota_tipo: np.nota_tipo,
                 nota_contenido: np.nota_contenido,
-                de_agrupador: !!deAgrupador || esSugerido,
+                de_agrupador: deAgrupadorFinal,
             });
 
             state.componentes.push(nuevoComponente);
@@ -3437,7 +3977,7 @@
 
                 let precio = precioManual;
                 if (!precio) {
-                    precio = toPositiveNumber(option.dataset.precio || 0, 0);
+                    precio = precioReferenciaDesdeOptionDataset(option.dataset);
                 }
 
                 const catPrincipal = catalogs.componentes.find(c => String(c.id) === String(analisisId));
@@ -3447,6 +3987,7 @@
                 const esSugeridoPrincipal = ensayoRegistro && 
                                            Array.isArray(ensayoRegistro.componentes_sugeridos) && 
                                            ensayoRegistro.componentes_sugeridos.map(id => id.toString()).includes(analisisId.toString());
+                const deAgrupadorPrincipal = resolverDeAgrupadorComponente(ensayoRegistro, analisisId, esSugeridoPrincipal);
 
                 state.contador += 1;
                 const nuevoComponente = normalizarComponente({
@@ -3466,7 +4007,7 @@
                     ley_normativa_id: leyNormativaId,
                     nota_tipo: npPrincipal.nota_tipo,
                     nota_contenido: npPrincipal.nota_contenido,
-                    de_agrupador: esSugeridoPrincipal,
+                    de_agrupador: deAgrupadorPrincipal,
                 });
 
                 state.componentes.push(nuevoComponente);
@@ -3553,6 +4094,16 @@
         const errorEditar = document.getElementById('custodia_error_editar');
         if (groupEditar) groupEditar.classList.remove('border-danger');
         if (errorEditar) errorEditar.classList.add('d-none');
+
+        if (formId === 'formEnsayo') {
+            limpiarAdjuntosModalAgregar();
+        }
+        if (formId === 'formEditarEnsayo') {
+            const inputEdit = document.getElementById('edit_ensayo_adjuntos_input');
+            if (inputEdit) {
+                inputEdit.value = '';
+            }
+        }
     }
 
     function eliminarItem(tipo, itemId) {
@@ -3629,6 +4180,7 @@
              `;
              actualizarTotalGeneral();
              actualizarEnsayosDisponiblesParaComponentes();
+             sincronizarCheckboxGlobalPrioridad();
              return;
          }
 
@@ -3714,6 +4266,7 @@
          
          actualizarTotalGeneral();
          actualizarEnsayosDisponiblesParaComponentes();
+         sincronizarCheckboxGlobalPrioridad();
      }
 
     function inicializarTogglesComponentes() {
@@ -3972,6 +4525,18 @@
             ? '<span class="badge bg-info text-dark ms-1" title="Requiere Cadena de Custodia">Cadena</span>'
             : '';
 
+        const badgePriori = ensayoEsPrioritarioEnState(ensayo)
+            ? '<span class="badge bg-warning text-dark ms-1" title="Prioridad de muestreo">★ Prioridad</span>'
+            : '';
+
+        const existentesActivos = (ensayo.adjuntos_existentes || []).filter(function (adj) {
+            return !(ensayo.adjuntos_eliminar || []).includes(adj.id);
+        }).length;
+        const totalAdjuntos = existentesActivos + (ensayo.adjuntos_pendientes || []).length;
+        const badgeAdjuntos = totalAdjuntos > 0
+            ? '<span class="badge bg-secondary ms-1" title="Archivos adjuntos"><i class="fas fa-paperclip"></i> ' + totalAdjuntos + '</span>'
+            : '';
+
         const llevaMuestreo = (typeof ensayo.lleva_muestreo !== 'undefined') ? !!ensayo.lleva_muestreo : true;
         const canal = canalEspecialDesdeMatrizYDescripcion(ensayo.matriz_descripcion, ensayo.descripcion);
         
@@ -4020,7 +4585,7 @@
             <tr data-tipo="ensayo" data-item="${ensayo.item}" class="sortable-ensayo" style="cursor: ${state.puedeEditar ? 'move' : 'default'};">
                 <td>${dragHandle} ${iconoExpandir} ${numeroSecuencial}</td>
                 <td>${escapeHtml(ensayo.codigo || '-')}</td>
-                <td>${escapeHtml(ensayo.descripcion || '')} ${badgeCadena} ${badgeMuestreo}</td>
+                <td>${escapeHtml(ensayo.descripcion || '')} ${badgeCadena} ${badgeMuestreo} ${badgePriori} ${badgeAdjuntos}</td>
                 <td>-</td>
                 <td>${botonEditar}</td>
                 <td>${cantidadCampo}</td>
@@ -4041,15 +4606,17 @@
 
         const aumentoPercent = clampPercent(getAumentoGlobal());
         const factorAumento = 1 + (aumentoPercent / 100);
+        const esParametroPack = componenteEsParametroPackAgrupador(ensayo, componente);
         const esDeAgrupador = componente.de_agrupador === true;
-        const precioReal = esDeAgrupador ? 0 : (parseFloat(componente.precio) || 0);
-        const totalReal = esDeAgrupador ? 0 : (parseFloat(componente.total) || 0);
+        // Mostrar siempre el precio de catálogo/referencia; el importe en $0 solo si no suma al pack
+        const precioMostrar = precioComponenteParaMostrar(componente);
+        const totalMostrar = esParametroPack ? 0 : (parseFloat(componente.total) || 0);
 
-        const precioConAumento = precioReal * factorAumento;
-        const totalConAumento = totalReal * factorAumento;
+        const precioConAumento = precioMostrar * factorAumento;
+        const totalConAumento = totalMostrar * factorAumento;
 
         const precioCampo = state.puedeEditar
-            ? `<input type="number" class="form-control form-control-sm input-precio-componente" data-item="${componente.item}" value="${formatNumber(precioConAumento)}" min="${formatNumber(0)}" step="0.01" ${esDeAgrupador ? 'readonly style="background-color: #f8f9fa;"' : ''}>`
+            ? `<input type="number" class="form-control form-control-sm input-precio-componente" data-item="${componente.item}" value="${formatNumber(precioConAumento)}" min="${formatNumber(0)}" step="0.01" ${esParametroPack ? 'readonly style="background-color: #f8f9fa;"' : ''}>`
             : `<span>${formatCurrency(precioConAumento)}</span>`;
 
         const acciones = state.puedeEditar
@@ -4091,7 +4658,7 @@
                 <td class="text-end cotizacion-col-precio">${precioCampo}</td>
                 <td data-componente-total="${componente.item}" class="text-end cotizacion-col-precio">
                     <span class="cotizacion-total-componente-valor">${formatCurrency(totalConAumento)}</span>
-                    ${componente.de_agrupador ? '<small class="text-muted d-block">(incluido)</small>' : ''}
+
                 </td>
                 <td>${acciones}</td>
             </tr>
@@ -4158,7 +4725,8 @@
                 option.dataset.precio = comp.precio || '0';
                 option.dataset.unidadMedida = comp.unidad_medida || '';
                 option.dataset.metodoAnalisisId = (comp.metodo_analisis_id || '').toString().trim();
-                option.dataset.metodoCodigo = (comp.metodo_codigo || '').toString().trim(); // muestreo
+                option.dataset.metodoCodigo = (comp.metodo_codigo || '').toString().trim();
+                option.dataset.metodoDescripcion = comp.metodo_descripcion || '';
                 option.dataset.matrizCodigo = comp.matriz_codigo || '';
                 option.dataset.matrizDescripcion = comp.matriz_descripcion || '';
                 
@@ -4245,6 +4813,77 @@
         abrirModalEditarEnsayo(ensayo);
     }
 
+    function resolverMuestraIdEnsayo(ensayo) {
+        if (!ensayo) {
+            return null;
+        }
+
+        if (ensayo.muestra_id !== null && ensayo.muestra_id !== undefined && String(ensayo.muestra_id).trim() !== '') {
+            return String(ensayo.muestra_id).trim();
+        }
+
+        const catalogo = catalogs.ensayos || [];
+        const codigoRaw = ensayo.codigo ? String(ensayo.codigo).trim() : '';
+        if (codigoRaw !== '') {
+            const codNorm = codigoRaw.replace(/^0+/, '') || codigoRaw;
+            const porCodigo = catalogo.find(function (ens) {
+                return String(ens.id) === codNorm || String(ens.id) === codigoRaw;
+            });
+            if (porCodigo) {
+                return String(porCodigo.id);
+            }
+        }
+
+        if (ensayo.descripcion) {
+            const desc = ensayo.descripcion.trim().toLowerCase();
+            const porDesc = catalogo.find(function (ens) {
+                return (ens.descripcion || '').trim().toLowerCase() === desc;
+            });
+            if (porDesc) {
+                return String(porDesc.id);
+            }
+        }
+
+        return null;
+    }
+
+    function crearOpcionEnsayoCatalogo(ens) {
+        const option = document.createElement('option');
+        option.value = ens.id;
+        option.textContent = `${ens.descripcion} (ID: ${ens.id})`;
+        option.dataset.descripcion = ens.descripcion || '';
+        option.dataset.codigo = ens.codigo || '';
+        option.dataset.componentes = JSON.stringify(Array.isArray(ens.componentes_default) ? ens.componentes_default : []);
+        option.dataset.matrizCodigo = (ens.matriz_codigo || '').toString().trim();
+        option.dataset.matrizDescripcion = ens.matriz_descripcion || '';
+        const precioNum = parseFloat(ens.precio);
+        const precioOk = Number.isFinite(precioNum) && precioNum >= 0;
+        option.dataset.precio = precioOk ? precioNum.toFixed(2) : '';
+        option.dataset.precioRaw = precioOk ? String(precioNum) : '0';
+        return option;
+    }
+
+    function inicializarSelectEnsayoEditar(muestraIdSeleccionada) {
+        const select = document.getElementById('edit_ensayo_muestra');
+        if (!select || !window.$) {
+            return;
+        }
+
+        const $select = window.$('#edit_ensayo_muestra');
+        if ($select.data('select2')) {
+            $select.select2('destroy');
+        }
+
+        $select.select2({
+            dropdownParent: window.$('#modalEditarEnsayo'),
+            width: '100%',
+        });
+
+        if (muestraIdSeleccionada) {
+            $select.val(String(muestraIdSeleccionada)).trigger('change');
+        }
+    }
+
     function abrirModalEditarEnsayo(ensayo) {
         const modal = document.getElementById('modalEditarEnsayo');
         if (!modal) {
@@ -4263,64 +4902,66 @@
 
         // Cargar opciones de muestras/ensayos
         const selectMuestra = document.getElementById('edit_ensayo_muestra');
+        const muestraIdResuelto = resolverMuestraIdEnsayo(ensayo);
+        if (muestraIdResuelto && !ensayo.muestra_id) {
+            ensayo.muestra_id = muestraIdResuelto;
+        }
+
         if (selectMuestra) {
             selectMuestra.innerHTML = '<option value="">Seleccionar muestra...</option>';
-            
-            // Verificar que el catálogo esté cargado
+
             if (catalogs.ensayos && Array.isArray(catalogs.ensayos)) {
-                catalogs.ensayos.forEach(ens => {
-                const option = document.createElement('option');
-                option.value = ens.id;
-                option.textContent = `${ens.descripcion} (ID: ${ens.id})`;
-                option.dataset.descripcion = ens.descripcion;
-                option.dataset.codigo = ens.codigo || '';
-                option.dataset.componentes = JSON.stringify(Array.isArray(ens.componentes_default) ? ens.componentes_default : []);
-                option.dataset.matrizCodigo = (ens.matriz_codigo || '').toString().trim();
-                option.dataset.matrizDescripcion = ens.matriz_descripcion || '';
-                const precioNum = parseFloat(ens.precio);
-                const precioOk = Number.isFinite(precioNum) && precioNum >= 0;
-                option.dataset.precio = precioOk ? precioNum.toFixed(2) : '';
-                option.dataset.precioRaw = precioOk ? String(precioNum) : '0';
-                
-                if (String(ens.id) === String(ensayo.muestra_id)) {
-                    option.selected = true;
-                }
-                
-                selectMuestra.appendChild(option);
+                catalogs.ensayos.forEach(function (ens) {
+                    const option = crearOpcionEnsayoCatalogo(ens);
+                    if (muestraIdResuelto && String(ens.id) === String(muestraIdResuelto)) {
+                        option.selected = true;
+                    }
+                    selectMuestra.appendChild(option);
                 });
-                
-                // Asegurarse de que el select tenga el valor correcto
-                if (ensayo.muestra_id) {
-                    selectMuestra.value = String(ensayo.muestra_id);
-                }
-            } else {
-                // console.warn('Catálogo de ensayos no está cargado aún');
-                // Intentar cargar las opciones desde el select original si no están disponibles
-                if (elements.selectEnsayo && elements.selectEnsayo.options.length > 1) {
-                    for (let i = 1; i < elements.selectEnsayo.options.length; i++) {
-                        const originalOption = elements.selectEnsayo.options[i];
-                        const option = document.createElement('option');
-                        option.value = originalOption.value;
-                        option.textContent = originalOption.textContent;
-                        option.dataset.codigo = originalOption.dataset.codigo || '';
-                        option.dataset.componentes = originalOption.dataset.componentes || '[]';
-                        option.dataset.matrizCodigo = originalOption.dataset.matrizCodigo || '';
-                        option.dataset.matrizDescripcion = originalOption.dataset.matrizDescripcion || '';
-                        option.dataset.precio = originalOption.dataset.precio || '';
-                        option.dataset.precioRaw = originalOption.dataset.precioRaw || '0';
-                        
-                        if (String(originalOption.value) === String(ensayo.muestra_id)) {
-                            option.selected = true;
-                        }
-                        
-                        selectMuestra.appendChild(option);
+            } else if (elements.selectEnsayo && elements.selectEnsayo.options.length > 1) {
+                for (let i = 1; i < elements.selectEnsayo.options.length; i++) {
+                    const originalOption = elements.selectEnsayo.options[i];
+                    const option = document.createElement('option');
+                    option.value = originalOption.value;
+                    option.textContent = originalOption.textContent;
+                    option.dataset.descripcion = originalOption.dataset.descripcion || '';
+                    option.dataset.codigo = originalOption.dataset.codigo || '';
+                    option.dataset.componentes = originalOption.dataset.componentes || '[]';
+                    option.dataset.matrizCodigo = originalOption.dataset.matrizCodigo || '';
+                    option.dataset.matrizDescripcion = originalOption.dataset.matrizDescripcion || '';
+                    option.dataset.precio = originalOption.dataset.precio || '';
+                    option.dataset.precioRaw = originalOption.dataset.precioRaw || '0';
+
+                    if (muestraIdResuelto && String(originalOption.value) === String(muestraIdResuelto)) {
+                        option.selected = true;
                     }
-                    
-                    if (ensayo.muestra_id) {
-                        selectMuestra.value = String(ensayo.muestra_id);
-                    }
+
+                    selectMuestra.appendChild(option);
                 }
             }
+
+            if (muestraIdResuelto && !Array.from(selectMuestra.options).some(function (opt) {
+                return String(opt.value) === String(muestraIdResuelto);
+            })) {
+                const optionFallback = document.createElement('option');
+                optionFallback.value = muestraIdResuelto;
+                optionFallback.textContent = (ensayo.descripcion || 'Ensayo') + ` (ID: ${muestraIdResuelto})`;
+                optionFallback.dataset.descripcion = ensayo.descripcion || '';
+                optionFallback.dataset.codigo = ensayo.codigo || '';
+                optionFallback.dataset.componentes = JSON.stringify(ensayo.componentes_sugeridos || []);
+                optionFallback.dataset.matrizCodigo = ensayo.matriz_codigo || '';
+                optionFallback.dataset.matrizDescripcion = ensayo.matriz_descripcion || '';
+                optionFallback.dataset.precio = '';
+                optionFallback.dataset.precioRaw = String(Math.max(0, parseFloat(ensayo.precio_extra_ensayo) || 0));
+                optionFallback.selected = true;
+                selectMuestra.appendChild(optionFallback);
+            }
+
+            if (muestraIdResuelto) {
+                selectMuestra.value = String(muestraIdResuelto);
+            }
+
+            inicializarSelectEnsayoEditar(muestraIdResuelto);
         }
 
         const editSelectMuestra = document.getElementById('edit_ensayo_muestra');
@@ -4346,31 +4987,24 @@
         // Cargar leyes/normativas
         const selectLey = document.getElementById('edit_ensayo_ley_normativa');
         if (selectLey) {
-            selectLey.innerHTML = '<option value="">Seleccionar normativa...</option>';
-            
-            // Verificar que el catálogo esté cargado
             const leyesCatalogo = catalogs.leyesNormativas || catalogs.leyes;
-            if (leyesCatalogo && Array.isArray(leyesCatalogo)) {
-                leyesCatalogo.forEach(ley => {
-                    const cod = ley.codigo != null && ley.codigo !== '' ? String(ley.codigo).trim() : '';
-                    if (!cod) {
-                        return;
-                    }
-                    const option = document.createElement('option');
-                    option.value = cod;
-                    option.textContent = ley.text || ley.nombre || cod;
-                    selectLey.appendChild(option);
-                });
-            }
+            poblarSelectLeyesNormativas(selectLey, leyesCatalogo);
 
             const leyGuardada = ensayo.ley_normativa_id ? String(ensayo.ley_normativa_id).trim() : '';
-            selectLey.value = leyGuardada || '';
-            if (leyGuardada && selectLey.value !== leyGuardada) {
-                const optExtra = document.createElement('option');
-                optExtra.value = leyGuardada;
-                optExtra.textContent = leyGuardada;
-                selectLey.appendChild(optExtra);
+            if (leyGuardada) {
                 selectLey.value = leyGuardada;
+                if (selectLey.value !== leyGuardada) {
+                    const optExtra = document.createElement('option');
+                    optExtra.value = leyGuardada;
+                    optExtra.textContent = leyGuardada;
+                    selectLey.appendChild(optExtra);
+                    selectLey.value = leyGuardada;
+                }
+            }
+
+            inicializarSelectLeyNormativa(selectLey, 'modalEditarEnsayo');
+            if (leyGuardada && window.$) {
+                window.$(selectLey).val(leyGuardada).trigger('change');
             }
         }
 
@@ -4406,6 +5040,11 @@
         if (chkReqProt) {
             chkReqProt.checked = !!ensayo.req_prot_mapba;
         }
+
+        const chkPrioriEdit = document.getElementById('edit_ensayo_es_priori');
+        if (chkPrioriEdit) {
+            chkPrioriEdit.checked = !!ensayo.es_priori;
+        }
         
         // Cargar múltiples notas
         let notasParaCargar = [];
@@ -4437,6 +5076,11 @@
         
         // Cargar notas en el contenedor
         cargarNotasEnContenedor('notasEditEnsayoContainer', notasParaCargar);
+
+        ensayo.adjuntos_existentes = ensayo.adjuntos_existentes || ensayo.adjuntos || [];
+        ensayo.adjuntos_pendientes = ensayo.adjuntos_pendientes || [];
+        ensayo.adjuntos_eliminar = ensayo.adjuntos_eliminar || [];
+        renderEnsayoAdjuntosEnModal('editEnsayoAdjuntosLista', ensayo);
 
         syncCotiReqCadenaRelCheckboxesFromHidden();
 
@@ -4547,10 +5191,18 @@
         if (chkReqProt) {
             ensayo.req_prot_mapba = !!chkReqProt.checked;
         }
-        if (chkLlevaMuestreo) {
-            // checked = "No lleva muestreo" => lleva_muestreo = false
-            ensayo.lleva_muestreo = !chkLlevaMuestreo.checked;
-        }
+
+        const matrizDescEdit = option.dataset.matrizDescripcion || ensayo.matriz_descripcion || '';
+        const descripcionEdit = option.dataset.descripcion || ensayo.descripcion || '';
+        const canalDetectadoEdit = canalEspecialDesdeMatrizYDescripcion(matrizDescEdit, descripcionEdit)
+            || ensayo.canal_especial
+            || null;
+        ensayo.canal_especial = canalDetectadoEdit;
+        ensayo.lleva_muestreo = resolverLlevaMuestreoEnsayo(chkLlevaMuestreo, canalDetectadoEdit);
+
+        const chkPrioriEditSave = document.getElementById('edit_ensayo_es_priori');
+        ensayo.es_priori = !!(chkPrioriEditSave && chkPrioriEditSave.checked);
+        sincronizarCheckboxGlobalPrioridad();
 
         const chkRelEdit = document.getElementById('edit_ensayo_chk_req_cadena_relacionada');
         if (chkRelEdit) {
@@ -4581,6 +5233,8 @@
             }
         }
 
+        capturarAdjuntosDesdeInput('edit_ensayo_adjuntos_input', ensayo, 'editEnsayoAdjuntosLista');
+
         // Recalcular precios
         recalcularPreciosEnsayo(ensayo.item);
         renderTabla();
@@ -4607,7 +5261,186 @@
         }
     }
 
+    function ensayoTienePrecioPackAgrupador(ensayo) {
+        if (!ensayo) {
+            return false;
+        }
+        const extra = Math.max(0, parseFloat(ensayo.precio_extra_ensayo) || 0);
+        if (extra <= 0) {
+            return false;
+        }
+        return obtenerComponentesSugeridosDeEnsayo(ensayo).length > 0;
+    }
+
+    function componenteEsParametroPackAgrupador(ensayo, componente) {
+        if (!ensayo || !componente) {
+            return false;
+        }
+        if (componente.de_agrupador === true) {
+            return true;
+        }
+        if (!ensayoTienePrecioPackAgrupador(ensayo)) {
+            return false;
+        }
+        const analisisId = String(componente.analisis_id ?? '').trim();
+        if (!analisisId) {
+            return false;
+        }
+        const sugeridos = obtenerComponentesSugeridosDeEnsayo(ensayo).map(id => String(id));
+        return sugeridos.includes(analisisId);
+    }
+
+    function resolverDeAgrupadorComponente(ensayo, analisisId, deAgrupadorActual) {
+        if (deAgrupadorActual === true) {
+            return true;
+        }
+        if (!ensayo || analisisId === null || analisisId === undefined || String(analisisId).trim() === '') {
+            return false;
+        }
+        return componenteEsParametroPackAgrupador(ensayo, {
+            analisis_id: analisisId,
+            de_agrupador: false,
+        });
+    }
+
+    function buscarCatalogoComponente(componente) {
+        if (!catalogs.componentes || !catalogs.componentes.length || !componente) {
+            return null;
+        }
+
+        const codigosGenericos = new Set(['000010000100006', '000010000000000']);
+        const descripcion = String(componente.descripcion || '').trim().toLowerCase();
+        if (descripcion) {
+            const porDescripcion = catalogs.componentes.find(c =>
+                String(c.descripcion || '').trim().toLowerCase() === descripcion
+            );
+            if (porDescripcion) {
+                return porDescripcion;
+            }
+        }
+
+        if (componente.analisis_id) {
+            const porId = catalogs.componentes.find(c => String(c.id) === String(componente.analisis_id));
+            if (porId) {
+                return porId;
+            }
+        }
+
+        const codigo = String(componente.codigo || '').trim();
+        if (codigo && !codigosGenericos.has(codigo)) {
+            const codSinCeros = codigo.replace(/^0+/, '') || '0';
+            const porCodigo = catalogs.componentes.find(c =>
+                String(c.id) === codigo
+                || String(c.id) === codSinCeros
+                || String(c.codigo || '').trim() === codigo
+            );
+            if (porCodigo) {
+                return porCodigo;
+            }
+        }
+
+        return null;
+    }
+
+    function catalogoTienePrecioDefinido(item) {
+        if (!item) {
+            return false;
+        }
+        return item.precio_definido === true
+            || item.precio_definido === 1
+            || item.precio_definido === '1';
+    }
+
+    function precioMinimoVentaDesdeCatalogo(item) {
+        if (!item) {
+            return 5000;
+        }
+        const min = parseFloat(item.precio_minimo_venta);
+        if (Number.isFinite(min) && min > 0) {
+            return min;
+        }
+        if (catalogoTienePrecioDefinido(item)) {
+            const p = parseFloat(item.precio);
+            return Number.isFinite(p) && p > 0 ? p : 5000;
+        }
+        return 5000;
+    }
+
+    function precioReferenciaDesdeCatalogo(item) {
+        if (!catalogoTienePrecioDefinido(item)) {
+            return 0;
+        }
+        const precio = parseFloat(item && item.precio);
+        return Number.isFinite(precio) && precio >= 0 ? precio : 0;
+    }
+
+    function precioReferenciaDesdeOptionDataset(dataset) {
+        if (!dataset || dataset.precioDefinido !== '1') {
+            return 0;
+        }
+        const precio = parseFloat(dataset.precio ?? dataset.precioRaw ?? '0') || 0;
+        return precio >= 0 ? precio : 0;
+    }
+
+    function precioComponenteParaMostrar(componente) {
+        const precioGuardado = parseFloat(componente.precio) || 0;
+        if (precioGuardado > 0) {
+            return precioGuardado;
+        }
+        const cat = buscarCatalogoComponente(componente);
+        if (cat) {
+            return precioReferenciaDesdeCatalogo(cat);
+        }
+        return 0;
+    }
+
+    function asegurarPreciosReferenciaComponentes() {
+        state.componentes.forEach(componente => {
+            const cat = buscarCatalogoComponente(componente);
+
+            if (cat && !componente.analisis_id) {
+                componente.analisis_id = cat.id;
+            }
+
+            componente.precio_minimo_venta = precioMinimoVentaDesdeCatalogo(cat);
+
+            const precioActual = parseFloat(componente.precio) || 0;
+            const cantidad = parseFloat(componente.cantidad) || 1;
+
+            // Precio persistido en cotio (edición): no sobrescribir con catálogo
+            if (precioActual > 0) {
+                componente.total = precioActual * cantidad;
+                return;
+            }
+
+            if (cat && catalogoTienePrecioDefinido(cat)) {
+                const precioCat = precioReferenciaDesdeCatalogo(cat);
+                if (precioCat > 0) {
+                    componente.precio = precioCat;
+                    componente.total = precioCat * cantidad;
+                }
+            }
+        });
+    }
+
+    function asegurarDeAgrupadorEnComponentes() {
+        state.componentes.forEach(componente => {
+            if (!componente.ensayo_asociado) {
+                return;
+            }
+            const ensayo = state.ensayos.find(e => e.item === Number(componente.ensayo_asociado));
+            if (!ensayo) {
+                return;
+            }
+            if (resolverDeAgrupadorComponente(ensayo, componente.analisis_id, componente.de_agrupador)) {
+                componente.de_agrupador = true;
+            }
+        });
+    }
+
     function sincronizarTotales() {
+        asegurarPreciosReferenciaComponentes();
+        asegurarDeAgrupadorEnComponentes();
         state.ensayos.forEach(ensayo => {
             recalcularPreciosEnsayo(ensayo.item);
         });
@@ -4625,9 +5458,8 @@
         // Sumar componentes asociados para mostrar el total consolidado en la fila del ensayo
         const componentes = state.componentes.filter(c => c.ensayo_asociado === ensayoItemId);
         const sumaComponentesUnitaria = componentes.reduce((suma, c) => {
-            // Si el componente viene del agrupador, no sumamos su precio individualmente
-            // porque ya está incluido en el precio base del agrupador (ensayo.precio_extra_ensayo)
-            if (c.de_agrupador === true) {
+            // Parámetros del agrupador con precio pack: no sumar (ya incluidos en precio_extra_ensayo)
+            if (componenteEsParametroPackAgrupador(ensayo, c)) {
                 return suma;
             }
             const p = parseFloat(c.precio) || 0;
@@ -4806,6 +5638,13 @@
             }
         }
 
+        if (notas && notas.length > 0) {
+            notas = aplicarLimiteNotasItem(notas);
+            if (notas.length === 0) {
+                notas = null;
+            }
+        }
+
         // req_cadena_custodia:
         //  - si viene explícito, usarlo
         //  - si no, inferir desde no_requiere_custodia (dato histórico)
@@ -4865,6 +5704,12 @@
             lleva_muestreo: llevaMuestreo,
             precio_extra_ensayo: precioExtraEnsayo,
             ley_normativa_id: leyNormativaId,
+            es_priori: !!raw.es_priori,
+            adjuntos_pendientes: Array.isArray(raw.adjuntos_pendientes) ? raw.adjuntos_pendientes : [],
+            adjuntos_existentes: Array.isArray(raw.adjuntos_existentes)
+                ? raw.adjuntos_existentes
+                : (Array.isArray(raw.adjuntos) ? raw.adjuntos : []),
+            adjuntos_eliminar: Array.isArray(raw.adjuntos_eliminar) ? raw.adjuntos_eliminar : [],
         };
     }
 
@@ -4907,6 +5752,13 @@
                 notasComp = raw.nota_contenido
                     ? [{ tipo: raw.nota_tipo || 'imprimible', contenido: raw.nota_contenido }]
                     : null;
+            }
+        }
+
+        if (notasComp && notasComp.length > 0) {
+            notasComp = aplicarLimiteNotasItem(notasComp);
+            if (notasComp.length === 0) {
+                notasComp = null;
             }
         }
 
@@ -5021,9 +5873,39 @@
         }
     }
 
+    function sincronizarDestinatarioAntesDeEnviar() {
+        const sucursalInput = document.getElementById('sucursal');
+        const sucursalSelect = document.getElementById('sucursal_select');
+        if (sucursalInput && sucursalSelect && !sucursalSelect.classList.contains('d-none')) {
+            sucursalInput.value = (sucursalSelect.value || '').trim();
+        }
+
+        const inputPara = document.getElementById('coti_para');
+        const selectPara = document.getElementById('coti_para_select');
+        const hiddenEmpresaId = document.getElementById('coti_empresa_rel');
+        if (selectPara && !selectPara.classList.contains('d-none') && (selectPara.value || '').trim() !== '') {
+            const valor = String(selectPara.value).trim();
+            const selectedOption = Array.from(selectPara.options).find(function (o) {
+                return String(o.value || '').trim() === valor;
+            });
+            if (hiddenEmpresaId) {
+                hiddenEmpresaId.value = valor;
+            }
+            if (inputPara && selectedOption) {
+                inputPara.value = (
+                    selectedOption.dataset.razonSocial
+                    || selectedOption.getAttribute('data-razon-social')
+                    || selectedOption.textContent
+                    || ''
+                ).trim();
+            }
+        }
+    }
+
     if (elements.form) {
         // Usar fase de captura (true) para rellenar hidden antes de cualquier otro listener (p. ej. confirmación en edit)
         elements.form.addEventListener('submit', function () {
+            sincronizarDestinatarioAntesDeEnviar();
             const ensayosJson = JSON.stringify(state.ensayos.map(serializarEnsayo));
             const componentesJson = JSON.stringify(state.componentes.map(serializarComponente));
             if (elements.ensayosHidden) {
@@ -5035,6 +5917,10 @@
             if (typeof window.cotizacionReferenciaFactSyncHidden === 'function') {
                 window.cotizacionReferenciaFactSyncHidden();
             }
+            if (typeof window.cotizacionNotasGeneralesSyncHidden === 'function') {
+                window.cotizacionNotasGeneralesSyncHidden();
+            }
+            appendAdjuntosAlFormulario(elements.form);
             console.log('[Cotización submit] Ensayos:', state.ensayos.length, 'Componentes:', state.componentes.length, 'componentes_data length:', componentesJson.length, 'preview:', componentesJson.substring(0, 300));
         }, true);
     }
@@ -5063,10 +5949,17 @@
             ley_normativa_id: ensayo.ley_normativa_id
                 ? String(ensayo.ley_normativa_id).trim()
                 : null,
+            es_priori: !!ensayo.es_priori,
         };
     }
 
     function serializarComponente(componente) {
+        const ensayoAsociado = state.ensayos.find(e => e.item === Number(componente.ensayo_asociado));
+        const deAgrupador = resolverDeAgrupadorComponente(ensayoAsociado, componente.analisis_id, componente.de_agrupador);
+        if (deAgrupador) {
+            componente.de_agrupador = true;
+        }
+
         return {
             item: Number(componente.item) || 0,
             analisis_id: componente.analisis_id,
@@ -5085,7 +5978,7 @@
             ley_normativa_id: componente.ley_normativa_id,
             nota_tipo: componente.nota_tipo || null,
             nota_contenido: componente.nota_contenido || null,
-            de_agrupador: componente.de_agrupador || false,
+            de_agrupador: deAgrupador,
             req_cadena_custodia: componente.req_cadena_custodia === true,
             req_prot_mapba: componente.req_prot_mapba === true,
         };
@@ -5529,6 +6422,8 @@
             }, 50); // Pequeño delay para asegurar que el DOM se actualice
         },
         syncCotiReqCadenaRelCheckboxesFromHidden: syncCotiReqCadenaRelCheckboxesFromHidden,
+        sincronizarCheckboxGlobalPrioridad: sincronizarCheckboxGlobalPrioridad,
+        aplicarPrioridadATodosLosEnsayos: aplicarPrioridadATodosLosEnsayos,
         sincronizarResumenEmpresaRelacionadaDesdeCotiData: function (cotiData) {
             if (!cotiData) {
                 limpiarPanelEmpresaRelacionada();

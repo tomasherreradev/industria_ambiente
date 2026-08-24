@@ -1,41 +1,62 @@
 @extends('layouts.app')
 
-
-<?php 
-    // dd($ordenesCombinadas);
-?>
+@php
+    $esBandejaAnalisisLab = Auth::user()->hasAnyRole(['laboratorio', 'coordinador_lab']) || Auth::user()->isAdminLab();
+    $tituloMisOrdenes = $esBandejaAnalisisLab ? 'análisis' : 'muestras';
+@endphp
 
 <head>
-    <title>Mis {{ Auth::user()->rol == 'laboratorio' ? 'análisis' : 'muestras' }}</title>
+    <title>Mis {{ $tituloMisOrdenes }}</title>
 </head>
 
 @section('content')
-<div class="container py-3 py-md-4">
-    <header class="d-flex flex-md-row justify-content-between align-items-center align-items-md-center">
-        <h1 class="mb-md-4">Mis {{ Auth::user()->rol == 'laboratorio' ? 'análisis' : 'muestras' }}</h1>
+@php
+    $misOrdenesViewQuery = array_merge(
+        request()->except(['view', 'page']),
+        !empty($soloMisAsignaciones) ? ['solo_mis_asignaciones' => 1] : []
+    );
+    $misOrdenesTieneFiltrosBusqueda = request()->hasAny([
+        'search',
+        'cotio_descripcion_analisis',
+        'fecha_inicio_ot',
+        'fecha_fin_ot',
+        'estado',
+    ]);
+@endphp
+<link rel="stylesheet" href="{{ asset('css/tareas-muestreo-mobile.css') }}?v={{ filemtime(public_path('css/tareas-muestreo-mobile.css')) }}">
+<div class="container py-3 py-md-4 tareas-muestreo-page">
+    {{-- Header desktop --}}
+    <header class="d-none d-md-flex flex-md-row justify-content-between align-items-center align-items-md-center tareas-muestreo-header">
+        <h1 class="mb-md-4">Mis {{ $tituloMisOrdenes }}</h1>
 
-        <div class="d-flex gap-2 align-items-center mb-2">
-            <button class="btn btn-sm btn-outline-primary me-2" type="button" data-bs-toggle="collapse" 
-                    data-bs-target="#collapseSearch" aria-expanded="false" aria-controls="collapseSearch"
+        <div class="d-flex flex-wrap gap-2 align-items-center mb-2 tareas-muestreo-toolbar">
+            @include('mis-ordenes.partials.toggle-solo-mis-asignaciones', [
+                'puedeAlternarVistaAsignaciones' => $puedeAlternarVistaAsignaciones ?? false,
+                'soloMisAsignaciones' => $soloMisAsignaciones ?? false,
+                'wrapperClass' => 'me-1',
+            ])
+
+            <button class="btn btn-sm btn-outline-primary me-2 btn-search-toggle {{ $misOrdenesTieneFiltrosBusqueda ? 'active' : '' }}" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#collapseSearch" aria-expanded="{{ $misOrdenesTieneFiltrosBusqueda ? 'true' : 'false' }}" aria-controls="collapseSearch"
                     id="searchToggleBtn">
                 <x-heroicon-o-magnifying-glass style="width: 16px; height: 16px;" class="me-1"/>
-                <span class="d-none d-sm-inline">Buscar</span>
+                <span>Buscar</span>
             </button>
-            
-            <a href="{{ route('mis-ordenes', ['view' => 'lista']) }}" 
+
+            <a href="{{ route('mis-ordenes', array_merge($misOrdenesViewQuery, ['view' => 'lista'])) }}"
                class="btn btn-sm {{ $viewType === 'lista' ? 'btn-primary' : 'btn-outline-secondary' }}">
                <x-heroicon-o-list-bullet style="width: 20px; height: 20px;" />
             </a>
-            <a href="{{ route('mis-ordenes', ['view' => 'calendario']) }}" 
+            <a href="{{ route('mis-ordenes', array_merge($misOrdenesViewQuery, ['view' => 'calendario'])) }}"
                class="btn btn-sm {{ $viewType === 'calendario' ? 'btn-primary' : 'btn-outline-secondary' }}">
                <x-heroicon-o-calendar-days style="width: 20px; height: 20px;" />
             </a>
-            <a href="{{ route('mis-ordenes', ['view' => 'documento']) }}" 
+            <a href="{{ route('mis-ordenes', array_merge($misOrdenesViewQuery, ['view' => 'documento'])) }}"
                class="btn btn-sm {{ $viewType === 'documento' ? 'btn-primary' : 'btn-outline-secondary' }}">
                <x-heroicon-o-document style="width: 20px; height: 20px;" />
             </a>
 
-            @if($viewType === 'lista' && Auth::user()->rol == 'laboratorio')
+            @if($viewType === 'lista' && $esBandejaAnalisisLab)
                 <a
                     href="{{ route('mis-ordenes', array_merge(request()->query(), ['view' => 'lista', 'print' => 1])) }}"
                     target="_blank"
@@ -43,23 +64,139 @@
                     class="btn btn-sm btn-outline-dark ms-2"
                     title="Imprimir listado">
                     <x-heroicon-o-printer style="width: 18px; height: 18px;" class="me-1" />
-                    <span class="d-none d-sm-inline">Imprimir</span>
+                    <span>Imprimir</span>
                 </a>
             @endif
         </div>
     </header>
 
-    <div class="collapse mb-4" id="collapseSearch">
+    {{-- Header móvil --}}
+    <div class="tareas-mobile-header d-md-none">
+        <h1>Mis {{ $tituloMisOrdenes }}</h1>
+
+        <form method="GET" action="{{ route('mis-ordenes') }}" class="tareas-mobile-search-wrap">
+            <input type="hidden" name="view" value="{{ $viewType }}">
+            @if(!empty($soloMisAsignaciones))
+                <input type="hidden" name="solo_mis_asignaciones" value="1">
+            @endif
+            <div class="input-group">
+                <span class="input-group-text bg-white">
+                    <x-heroicon-o-magnifying-glass style="width: 18px; height: 18px;" />
+                </span>
+                <input type="search"
+                       class="form-control"
+                       name="search"
+                       placeholder="Buscar cotización, cliente o análisis..."
+                       value="{{ request('search') }}">
+            </div>
+        </form>
+
+        <div class="tareas-mobile-toolbar">
+            <button class="btn btn-outline-secondary" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#collapseSearchMobile" aria-expanded="{{ $misOrdenesTieneFiltrosBusqueda ?? false ? 'true' : 'false' }}"
+                    aria-label="Filtros avanzados">
+                <x-heroicon-o-funnel style="width: 20px; height: 20px;" />
+            </button>
+            <a href="{{ route('mis-ordenes', array_merge($misOrdenesViewQuery, ['view' => 'lista'])) }}"
+               class="btn btn-outline-secondary {{ $viewType === 'lista' ? 'btn-view-active' : '' }}">
+                <x-heroicon-o-list-bullet style="width: 20px; height: 20px;" />
+            </a>
+            <a href="{{ route('mis-ordenes', array_merge($misOrdenesViewQuery, ['view' => 'calendario'])) }}"
+               class="btn btn-outline-secondary {{ $viewType === 'calendario' ? 'btn-view-active' : '' }}">
+                <x-heroicon-o-calendar-days style="width: 20px; height: 20px;" />
+            </a>
+            <a href="{{ route('mis-ordenes', array_merge($misOrdenesViewQuery, ['view' => 'documento'])) }}"
+               class="btn btn-outline-secondary {{ $viewType === 'documento' ? 'btn-view-active' : '' }}">
+                <x-heroicon-o-document style="width: 20px; height: 20px;" />
+            </a>
+        </div>
+
+        @if($puedeAlternarVistaAsignaciones ?? false)
+            <div class="mt-2">
+                @include('mis-ordenes.partials.toggle-solo-mis-asignaciones', [
+                    'puedeAlternarVistaAsignaciones' => $puedeAlternarVistaAsignaciones ?? false,
+                    'soloMisAsignaciones' => $soloMisAsignaciones ?? false,
+                    'wrapperClass' => '',
+                ])
+            </div>
+        @endif
+
+        <div class="collapse tareas-mobile-search-advanced {{ ($misOrdenesTieneFiltrosBusqueda ?? false) ? 'show' : '' }}" id="collapseSearchMobile">
+            <form method="GET" action="{{ route('mis-ordenes') }}" class="card card-body border mt-2 p-3">
+                <input type="hidden" name="view" value="{{ $viewType }}">
+                @if(!empty($soloMisAsignaciones))
+                    <input type="hidden" name="solo_mis_asignaciones" value="1">
+                @endif
+                @if(request('search'))
+                    <input type="hidden" name="search" value="{{ request('search') }}">
+                @endif
+                <div class="row g-2">
+                    <div class="col-12">
+                        <label for="cotio_descripcion_analisis_mobile" class="form-label">Nombre de análisis</label>
+                        <input type="text" class="form-control form-control-sm" id="cotio_descripcion_analisis_mobile"
+                               name="cotio_descripcion_analisis" value="{{ request('cotio_descripcion_analisis') }}"
+                               placeholder="Ej: pH, CONDUCTIVIDAD">
+                    </div>
+                    <div class="col-6">
+                        <label for="fecha_inicio_ot_mobile" class="form-label">Desde</label>
+                        <input type="date" class="form-control form-control-sm" id="fecha_inicio_ot_mobile"
+                               name="fecha_inicio_ot" value="{{ request('fecha_inicio_ot') }}">
+                    </div>
+                    <div class="col-6">
+                        <label for="fecha_fin_ot_mobile" class="form-label">Hasta</label>
+                        <input type="date" class="form-control form-control-sm" id="fecha_fin_ot_mobile"
+                               name="fecha_fin_ot" value="{{ request('fecha_fin_ot') }}">
+                    </div>
+                    <div class="col-12">
+                        <label for="estado_mobile" class="form-label">Estado</label>
+                        <select class="form-select form-select-sm" id="estado_mobile" name="estado">
+                            <option value="">Todos</option>
+                            <option value="coordinado analisis" @selected(request('estado') === 'coordinado analisis')>Coordinado</option>
+                            <option value="en revision analisis" @selected(request('estado') === 'en revision analisis')>En revisión</option>
+                            <option value="analizado" @selected(request('estado') === 'analizado')>Analizado</option>
+                            <option value="suspension" @selected(request('estado') === 'suspension')>Suspensión</option>
+                        </select>
+                    </div>
+                    <div class="col-12 d-flex gap-2">
+                        <button type="submit" class="btn btn-primary btn-sm flex-grow-1">Aplicar</button>
+                        <a href="{{ route('mis-ordenes', ['view' => $viewType]) }}" class="btn btn-outline-secondary btn-sm">Limpiar</a>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="collapse mb-4 d-none d-md-block {{ $misOrdenesTieneFiltrosBusqueda ? 'show' : '' }}" id="collapseSearch">
         <div class="card shadow-sm">
+            <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2 px-3">
+                <span class="small fw-semibold text-muted">Filtros de búsqueda</span>
+                <button type="button"
+                        class="btn btn-sm btn-link text-muted p-0"
+                        data-bs-toggle="collapse"
+                        data-bs-target="#collapseSearch"
+                        aria-label="Cerrar filtros">
+                    <x-heroicon-o-x-mark style="width: 20px; height: 20px;" />
+                </button>
+            </div>
             <div class="card-body">
                 <form method="GET" action="{{ route('mis-ordenes') }}" class="row g-3">
                     <input type="hidden" name="view" value="{{ $viewType }}">
+                    @if(!empty($soloMisAsignaciones))
+                        <input type="hidden" name="solo_mis_asignaciones" value="1">
+                    @endif
                     
                     <div class="col-md-6">
                         <label for="search" class="form-label">Buscar por cotización</label>
                         <input type="text" class="form-control" id="search" name="search" 
                                placeholder="Número, empresa o establecimiento" 
                                value="{{ request('search') }}">
+                    </div>
+
+                    <div class="col-md-6">
+                        <label for="cotio_descripcion_analisis" class="form-label">Nombre de análisis</label>
+                        <input type="text" class="form-control" id="cotio_descripcion_analisis" name="cotio_descripcion_analisis"
+                               placeholder="Ej: pH, CONDUCTIVIDAD, PCB" value="{{ request('cotio_descripcion_analisis') }}">
+                        <small class="text-muted">Coincidencia parcial en el nombre del análisis. Solo muestra ítems con OT activa (como en el listado).</small>
                     </div>
                     
                     <div class="col-md-3">
@@ -85,12 +222,6 @@
                         </select>
                     </div>
                     
-                    <div class="col-md-3" id="descripcionContainer" style="display: none;">
-                        <label for="cotio_descripcion_analisis" class="form-label">Descripción análisis</label>
-                        <input type="text" class="form-control" id="cotio_descripcion_analisis" name="cotio_descripcion_analisis" oninput="filtrarAnalitos()"
-                               placeholder="Ej: CONDUCTIVIDAD ELECTRICA" value="{{ request('cotio_descripcion_analisis') }}">
-                    </div>
-                    
                     <div class="col-12">
                         <div class="d-flex justify-content-end gap-2">
                             <button type="submit" class="btn btn-primary">
@@ -107,28 +238,55 @@
         </div>
     </div>
 
-    {{-- SUGERENCIAS DE ANALITOS POR ESTADO --}}
-    @if(request('estado') && isset($analitosSugeridos) && $analitosSugeridos->count())
+    {{-- SUGERENCIAS DE ANALITOS (por estado y/o nombre de análisis) --}}
+    @if(isset($analitosSugeridos) && $analitosSugeridos->count() && (request('estado') || request('cotio_descripcion_analisis')))
     @php
-        $bagdeClass = match (request('estado')) {
+        $estadoFiltroGlobal = request('estado');
+        $bagdeClassGlobal = $estadoFiltroGlobal ? match ($estadoFiltroGlobal) {
             'coordinado analisis' => 'warning',
             'en revision analisis' => 'info',
             'analizado' => 'success',
             'suspension' => 'danger',
+            default => 'primary',
+        } : 'primary';
+
+        $badgeClassPorEstado = function (?string $estadoAnalito) {
+            return match (strtolower(trim((string) $estadoAnalito))) {
+                'coordinado analisis', 'coordinado' => 'warning',
+                'en revision analisis', 'en revision' => 'info',
+                'analizado' => 'success',
+                'suspension' => 'danger',
+                default => 'secondary',
+            };
         };
     @endphp
-    <div class="card mb-3 shadow-sm border-{{ $bagdeClass }}" id="analitosSugeridosContainer">
+    <div class="card mb-3 shadow-sm border-{{ $bagdeClassGlobal }}" id="analitosSugeridosContainer">
         <div class="card-body py-2">
             <div class="mb-2 fw-bold text-dark">
-                Análisis con estado "{{ ucfirst(request('estado')) }}":
+                @if($estadoFiltroGlobal && request('cotio_descripcion_analisis'))
+                    Análisis «{{ request('cotio_descripcion_analisis') }}» con estado "{{ ucfirst($estadoFiltroGlobal) }}":
+                @elseif($estadoFiltroGlobal)
+                    Análisis con estado "{{ ucfirst($estadoFiltroGlobal) }}":
+                @else
+                    Análisis que coinciden con «{{ request('cotio_descripcion_analisis') }}»:
+                @endif
             </div>
             <ul class="list-group list-group-flush" id="listaAnalitos">
                 @foreach($analitosSugeridos as $analito)
+                    @php
+                        $bagdeClass = $estadoFiltroGlobal
+                            ? $bagdeClassGlobal
+                            : $badgeClassPorEstado($analito->cotio_estado_analisis ?? null);
+                    @endphp
                     <li class="list-group-item d-flex justify-content-between align-items-center table-{{ $bagdeClass }} analito-item" 
                         data-descripcion="{{ strtolower($analito->cotio_descripcion ?? '') }}">
                         <span>
                             {{ $analito->cotio_descripcion ?? 'Sin descripción' }}
+                            @include('ordenes.partials.metodo-analisis-etiqueta', ['tarea' => $analito])
                             <span class="text-muted small">(Cotización N° {{ $analito->cotio_numcoti }})</span>
+                            @unless($estadoFiltroGlobal)
+                                <span class="badge bg-{{ $bagdeClass }} ms-1">{{ ucfirst($analito->cotio_estado_analisis ?? 'Sin estado') }}</span>
+                            @endunless
                         </span>
                         <a href="/ordenes-all/{{ $analito->cotio_numcoti }}/{{ $analito->cotio_item }}/{{ $analito->cotio_subitem }}/{{ $analito->instance_number }}?openModal={{ $analito->cotio_subitem }}" 
                             class="btn bg-{{ $bagdeClass }} text-white btn-sm">Ver análisis</a>
@@ -151,11 +309,11 @@
         </div>
     @endif
 
-    @if($ordenesAgrupadas->isEmpty())
+    @if($ordenesAgrupadas->isEmpty() && (empty($analitosSugeridos) || $analitosSugeridos->isEmpty()))
         <div class="alert alert-warning">
             No tienes muestras asignadas.
         </div>
-    @else
+    @elseif(!$ordenesAgrupadas->isEmpty())
         @switch($viewType)
             @case('lista')
                 @include('mis-ordenes.partials.lista')
@@ -169,96 +327,7 @@
         @endswitch
     @endif
 </div>
-@endsection
 
-<script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const searchCollapse = document.getElementById('collapseSearch');
-        const searchToggleBtn = document.getElementById('searchToggleBtn');
-        
-        const hasFilters = @json(request()->hasAny(['search', 'fecha_inicio_ot', 'fecha_fin_ot']));
-        
-        if (hasFilters) {
-            new bootstrap.Collapse(searchCollapse, { toggle: true });
-            searchToggleBtn.setAttribute('aria-expanded', 'true');
-            searchToggleBtn.classList.add('active');
-        }
-        
-        searchCollapse.addEventListener('show.bs.collapse', function() {
-            searchToggleBtn.classList.add('active');
-        });
-        
-        searchCollapse.addEventListener('hide.bs.collapse', function() {
-            searchToggleBtn.classList.remove('active');
-        });
-        
-        document.querySelectorAll('[data-view-type]').forEach(btn => {
-            btn.addEventListener('click', function(e) {
-                e.preventDefault();
-                const viewType = this.getAttribute('data-view-type');
-                const url = new URL(this.href);
-                
-                @if(request()->hasAny(['search', 'fecha_inicio_ot', 'fecha_fin_ot']))
-                    url.searchParams.set('search', @json(request('search')));
-                    url.searchParams.set('fecha_inicio_ot', @json(request('fecha_inicio_ot')));
-                    url.searchParams.set('fecha_fin_ot', @json(request('fecha_fin_ot')));
-                @endif
-                
-                window.location.href = url.toString();
-            });
-        });
-    });
-</script>
-
-<script>
-    function filtrarAnalitos() {
-        const filtroDescripcion = document.getElementById('cotio_descripcion_analisis').value.toLowerCase();
-        const items = document.querySelectorAll('.analito-item');
-        
-        items.forEach(item => {
-            const descripcion = item.getAttribute('data-descripcion');
-            if (descripcion.includes(filtroDescripcion) || filtroDescripcion === '') {
-                item.style.display = 'flex';
-            } else {
-                item.style.display = 'none';
-            }
-        });
-    }
-    
-    document.addEventListener('DOMContentLoaded', function() {
-        // Si hay un valor en el filtro de descripción al cargar la página, aplica el filtro
-        if (document.getElementById('cotio_descripcion_analisis').value) {
-            filtrarAnalitos();
-        }
-    });
-</script>
-
-
-<script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const estadoSelect = document.getElementById('estado');
-        const descripcionContainer = document.getElementById('descripcionContainer');
-        
-        // Mostrar/ocultar al cargar la página según el estado seleccionado
-        if (estadoSelect.value) {
-            descripcionContainer.style.display = 'block';
-        }
-        
-        // Manejar cambios en el select de estado
-        estadoSelect.addEventListener('change', function() {
-            if (this.value) {
-                descripcionContainer.style.display = 'block';
-                // Opcional: enfocar el campo de descripción
-                document.getElementById('cotio_descripcion_analisis').focus();
-            } else {
-                descripcionContainer.style.display = 'none';
-                // Limpiar el campo al seleccionar "Todos"
-                document.getElementById('cotio_descripcion_analisis').value = '';
-            }
-        });
-    });
-    </script>
-    
 <style>
     #searchToggleBtn.active {
         background-color: var(--bs-primary);
@@ -267,23 +336,8 @@
     #searchToggleBtn.active:hover {
         background-color: var(--bs-primary-dark);
     }
-    
+
     @media (max-width: 768px) {
-        header {
-            flex-direction: column !important;
-            align-items: flex-start !important;
-        }
-        .btn-group {
-            margin-top: 0.5rem;
-            width: 100%;
-        }
-        .btn-group .btn {
-            flex: 1;
-        }
-        #searchToggleBtn {
-            margin-right: 0 !important;
-            width: 100%;
-        }
         .card-body .row {
             gap: 12px 0;
         }
@@ -295,3 +349,42 @@
         }
     }
 </style>
+@endsection
+
+@push('scripts')
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const searchCollapse = document.getElementById('collapseSearch');
+        const searchToggleBtn = document.getElementById('searchToggleBtn');
+
+        if (searchCollapse && searchToggleBtn) {
+            searchCollapse.addEventListener('show.bs.collapse', function() {
+                searchToggleBtn.classList.add('active');
+                searchToggleBtn.setAttribute('aria-expanded', 'true');
+            });
+
+            searchCollapse.addEventListener('hide.bs.collapse', function() {
+                searchToggleBtn.classList.remove('active');
+                searchToggleBtn.setAttribute('aria-expanded', 'false');
+            });
+        }
+
+        document.querySelectorAll('[data-view-type]').forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                e.preventDefault();
+                const url = new URL(this.href);
+
+                @if($misOrdenesTieneFiltrosBusqueda)
+                    url.searchParams.set('search', @json(request('search')));
+                    url.searchParams.set('cotio_descripcion_analisis', @json(request('cotio_descripcion_analisis')));
+                    url.searchParams.set('fecha_inicio_ot', @json(request('fecha_inicio_ot')));
+                    url.searchParams.set('fecha_fin_ot', @json(request('fecha_fin_ot')));
+                    url.searchParams.set('estado', @json(request('estado')));
+                @endif
+
+                window.location.href = url.toString();
+            });
+        });
+    });
+</script>
+@endpush

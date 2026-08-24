@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\CotioInstancia;
+use App\Models\InformeNota;
 use App\Models\CotioItems;
 use App\Models\Metodo;
 use App\Models\Matriz;
@@ -10,12 +11,15 @@ use Illuminate\Http\Request;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Barryvdh\DomPDF\Facade\Pdf;
 use App\Services\FirmaDigitalService;
 use Illuminate\Http\Response;
 use Illuminate\Support\Collection;
 use App\Support\LeyNormativaPresentacion;
 use App\Support\ProtocoloInformePdfCabecera;
+use App\Support\CotizacionCanalEnsayo;
+use App\Support\CotizacionClienteEtiqueta;
 
 
 class InformeController extends Controller
@@ -56,7 +60,7 @@ class InformeController extends Controller
         
         // Obtener todas las muestras principales
         $muestras = \App\Models\CotioInstancia::with([
-            'muestra.leyNormativa',
+            'muestra.leyNormativa.variables',
             'responsablesMuestreo',
             'tareas' => function($query) {
                 $query->where('enable_inform', true)->orderBy('cotio_subitem');
@@ -76,11 +80,15 @@ class InformeController extends Controller
         ])
         ->where('cotio_numcoti', $cotizacion)
         ->where('enable_inform', true)
-        ->where('cotio_subitem', 0)
-        ->orderBy('cotio_item')
-        ->orderBy('instance_number')
-        ->get();
-    
+        ->where('aprobado_informe', true)
+        ->where('cotio_subitem', 0);
+
+        CotizacionCanalEnsayo::aplicarWhereInstanciaVisibleEnInformes($muestras);
+
+        $muestras = $muestras->orderBy('cotio_item')
+            ->orderBy('instance_number')
+            ->get();
+
         // Directorio temporal para mapas
         $tempDir = storage_path('app/temp_maps/');
         if (!file_exists($tempDir)) {
@@ -181,22 +189,22 @@ class InformeController extends Controller
             ->get(['metodo_codigo', 'metodo_descripcion'])
             ->keyBy(fn ($m) => trim((string) $m->metodo_codigo));
     
-        // Generar PDF
+        // Generar PDF (los mapas temporales deben existir hasta después de output())
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('informes.pdf_masivo', [
             'cotizacion' => $cotizacionObj,
             'muestras'   => $muestras,
             'metodosByCodigo' => $metodosAnalisisByCodigo,
         ]);
-    
-        // Limpiar archivos temporales de mapas
+
+        $output = $pdf->output();
+
         foreach ($mapPaths as $mapPath) {
             if (file_exists($mapPath)) {
                 unlink($mapPath);
             }
         }
 
-        // Mostrar PDF masivo directamente en el navegador
-        return response()->make($pdf->output(), 200, [
+        return response()->make($output, 200, [
             'Content-Type' => 'application/pdf',
             'Content-Disposition' => 'inline; filename="informe-masivo-cotizacion-' . $cotizacion . '.pdf"',
         ]);
@@ -215,7 +223,9 @@ class InformeController extends Controller
         // Consulta base para informes
         $baseQuery = CotioInstancia::with([
             'cotizacion.matriz',
-            'muestra.leyNormativa',
+            'cotizacion.cliente',
+            'cotizacion.sucursal',
+            'muestra.leyNormativa.variables',
             'tareas' => function($query) {
                 $query->where('enable_inform', true)
                       ->orderBy('cotio_subitem');
@@ -225,6 +235,8 @@ class InformeController extends Controller
         ->where('enable_inform', true)
         ->where('aprobado_informe', true)
         ->where('cotio_subitem', 0);
+
+        CotizacionCanalEnsayo::aplicarWhereInstanciaVisibleEnInformes($baseQuery);
 
         // Aplicar filtros comunes
         if ($request->has('search') && !empty($request->search)) {
@@ -258,13 +270,28 @@ class InformeController extends Controller
             $baseQuery->whereDate('fecha_fin_muestreo', '<=', $request->fecha_fin);
         }
 
+        if ($request->filled('estado_firma')) {
+            if ($request->estado_firma === 'firmados') {
+                $baseQuery->where('firmado', true);
+            } elseif ($request->estado_firma === 'pendiente') {
+                $baseQuery->where(function ($q) {
+                    $q->where('firmado', false)->orWhereNull('firmado');
+                });
+            }
+        }
+
         // Vista de calendario
         if ($viewType === 'calendario') {
             $instancias = $baseQuery->orderBy('fecha_inicio_muestreo', 'asc')->get();
 
+            CotizacionClienteEtiqueta::precargarEmpresasRelacionadas(
+                $instancias->map->cotizacion->unique(fn ($c) => $c->coti_num)->filter()->values()
+            );
+
             $events = $instancias->map(function($instancia) {
+                $clienteEtiqueta = CotizacionClienteEtiqueta::paraLista($instancia->cotizacion);
                 return [
-                    'title' => $instancia->cotizacion->coti_empresa . ' - ' . $instancia->cotio_numcoti,
+                    'title' => $clienteEtiqueta . ' - ' . $instancia->cotio_numcoti,
                     'start' => $instancia->fecha_creacion_inform,
                     'url' => route('informes.pdf', [
                         'cotio_numcoti' => $instancia->cotio_numcoti,
@@ -272,7 +299,7 @@ class InformeController extends Controller
                         'instance_number' => $instancia->instance_number
                     ]),
                     'extendedProps' => [
-                        'empresa' => $instancia->cotizacion->coti_empresa,
+                        'empresa' => $clienteEtiqueta,
                         'muestra' => $instancia->cotio_descripcion,
                         'instancia' => $instancia->instance_number,
                         'identificacion' => trim((string) ($instancia->cotio_identificacion ?? '')),
@@ -291,11 +318,21 @@ class InformeController extends Controller
         }
 
         // Vista de lista o documento
+        $perPage = $viewType === 'documento' ? 50 : 30;
+        if ($request->filled('per_page')) {
+            $perPage = max(10, min(100, (int) $request->get('per_page')));
+        }
+
         $pagination = $baseQuery
             ->orderBy('cotio_numcoti', $request->get('orden_cotizacion', 'desc'))
             ->orderBy('cotio_item', 'asc')
             ->orderBy('instance_number', 'asc')
-            ->paginate($viewType === 'documento' ? 20 : 10);
+            ->paginate($perPage)
+            ->withQueryString();
+
+        CotizacionClienteEtiqueta::precargarEmpresasRelacionadas(
+            $pagination->getCollection()->map->cotizacion->unique(fn ($c) => $c->coti_num)->filter()->values()
+        );
 
         // Agrupar por cotización
         $informesPorCotizacion = $pagination->groupBy('cotio_numcoti')->map(function ($group) {
@@ -338,10 +375,13 @@ class InformeController extends Controller
      */
     protected function getMuestrasPorTipoInforme($tipo)
     {
-        return CotioInstancia::where('enable_inform', true)
+        $query = CotioInstancia::where('enable_inform', true)
             ->where('aprobado_informe', true)
-            ->where('cotio_subitem', 0)
-            ->get()
+            ->where('cotio_subitem', 0);
+
+        CotizacionCanalEnsayo::aplicarWhereInstanciaVisibleEnInformes($query);
+
+        return $query->get()
             ->filter(function($muestra) use ($tipo) {
                 return $this->determinarTipoInforme($muestra) === $tipo;
             })
@@ -374,7 +414,7 @@ class InformeController extends Controller
     {
         // Obtener la muestra específica con sus análisis
         $muestra = CotioInstancia::with([
-            'muestra.leyNormativa',
+            'muestra.leyNormativa.variables',
             'tareas' => function ($query) {
                 $query->where('enable_inform', true)
                     ->orderBy('cotio_subitem');
@@ -399,7 +439,7 @@ class InformeController extends Controller
     public function generarPdf($cotio_numcoti, $cotio_item, $instance_number)
     {
         $muestra = CotioInstancia::with([
-            'muestra.leyNormativa',
+            'muestra.leyNormativa.variables',
             'responsablesMuestreo',
             'tareas',
             'cotizacion.matriz',
@@ -421,8 +461,8 @@ class InformeController extends Controller
         ->where('cotio_subitem', 0)
         ->firstOrFail();
 
-        if (!empty($muestra->archivo_informe) && \Illuminate\Support\Facades\Storage::disk('public')->exists($muestra->archivo_informe)) {
-            $path = \Illuminate\Support\Facades\Storage::disk('public')->path($muestra->archivo_informe);
+        if (!empty($muestra->archivo_informe) && Storage::disk('public')->exists($muestra->archivo_informe)) {
+            $path = Storage::disk('public')->path($muestra->archivo_informe);
             return response()->file($path, [
                 'Content-Type' => 'application/pdf',
                 'Content-Disposition' => 'inline; filename="' . basename($path) . '"'
@@ -546,9 +586,8 @@ class InformeController extends Controller
             return response()->json(['error' => 'Este informe ya está firmado'], 400);
         }
 
-        // Generar PDF para firmar
-        $pdf = $this->generarPdfParaFirma($cotio_numcoti, $cotio_item, $instance_number);
-        $pdfBinary = $pdf->output();
+        // Usar PDF subido manualmente si existe; si no, generar protocolo automático
+        $pdfBinary = $this->obtenerBinarioPdfParaFirma($cotio_numcoti, $cotio_item, $instance_number);
 
         // Enviar a la API de firma digital
         $firmaService = new FirmaDigitalService();
@@ -611,12 +650,66 @@ class InformeController extends Controller
     }
 
     /**
+     * PDF binario para firma: informe subido por el usuario o protocolo generado.
+     */
+    private function obtenerBinarioPdfParaFirma($cotio_numcoti, $cotio_item, $instance_number): string
+    {
+        $muestra = CotioInstancia::where('cotio_numcoti', $cotio_numcoti)
+            ->where('cotio_item', $cotio_item)
+            ->where('instance_number', $instance_number)
+            ->where('cotio_subitem', 0)
+            ->firstOrFail();
+
+        $pdfSubido = $this->obtenerBinarioInformeSubido($muestra);
+        if ($pdfSubido !== null) {
+            Log::info('Firma informe: usando PDF subido manualmente', [
+                'cotio_numcoti' => $cotio_numcoti,
+                'cotio_item' => $cotio_item,
+                'instance_number' => $instance_number,
+                'archivo_informe' => $muestra->archivo_informe,
+            ]);
+
+            return $pdfSubido;
+        }
+
+        Log::info('Firma informe: generando protocolo automático', [
+            'cotio_numcoti' => $cotio_numcoti,
+            'cotio_item' => $cotio_item,
+            'instance_number' => $instance_number,
+        ]);
+
+        return $this->generarPdfParaFirma($cotio_numcoti, $cotio_item, $instance_number)->output();
+    }
+
+    /**
+     * Contenido del PDF subido manualmente (mediciones, consultoría, ASP, etc.), o null si no hay.
+     */
+    private function obtenerBinarioInformeSubido(CotioInstancia $muestra): ?string
+    {
+        $path = trim((string) ($muestra->archivo_informe ?? ''));
+        if ($path === '') {
+            return null;
+        }
+
+        if (! Storage::disk('public')->exists($path)) {
+            Log::warning('Informe subido referenciado pero no encontrado en disco', [
+                'instancia_id' => $muestra->id,
+                'archivo_informe' => $path,
+            ]);
+
+            return null;
+        }
+
+        return Storage::disk('public')->get($path);
+    }
+
+    /**
      * Método auxiliar para generar PDF sin exponer la lógica de generación
      */
     private function generarPdfParaFirma($cotio_numcoti, $cotio_item, $instance_number)
     {
         $muestra = CotioInstancia::with([
-            'muestra.leyNormativa',
+            'muestra.leyNormativa.variables',
             'responsablesMuestreo',
             'tareas',
             'cotizacion.matriz',
@@ -722,7 +815,7 @@ class InformeController extends Controller
             'cotizacion.matriz',
             'cotizacion.cliente',
             'cotizacion.sucursal',
-            'muestra.leyNormativa',
+            'muestra.leyNormativa.variables',
             'tareas',
             'valoresVariables' => function($query) {
                 $query->select('id', 'cotio_instancia_id', 'variable', 'valor')
@@ -741,6 +834,11 @@ class InformeController extends Controller
         ->where('cotio_subitem', 0)
         ->firstOrFail();
 
+        CotizacionClienteEtiqueta::precargarEmpresasRelacionadas([$muestra->cotizacion]);
+        $cotizacionData = $muestra->cotizacion->toArray();
+        $cotizacionData['cliente_etiqueta'] = CotizacionClienteEtiqueta::paraLista($muestra->cotizacion);
+        $cotizacionData['cliente_establecimiento'] = trim((string) ($muestra->cotizacion->coti_establecimiento ?? ''));
+
         Log::info($muestra->valoresVariables);
     
         $analisis = CotioInstancia::with([
@@ -758,7 +856,7 @@ class InformeController extends Controller
         ->get();
     
         return response()->json([
-            'cotizacion' => $muestra->cotizacion,
+            'cotizacion' => $cotizacionData,
             'muestra' => $muestra,
             'ley_categoria_texto' => LeyNormativaPresentacion::textoPlano($muestra->muestra),
             'analisis' => $analisis,
@@ -1013,12 +1111,12 @@ class InformeController extends Controller
     /**
      * Formulario para editar la cabecera del PDF (recuadro de datos del protocolo).
      */
-    public function editarProtocoloPdf($cotio_numcoti, $cotio_item, $instance_number)
+    public function editarProtocoloPdf(Request $request, $cotio_numcoti, $cotio_item, $instance_number)
     {
         abort_unless(userCanEditInformeProtocoloPdf(), 403);
 
         $muestra = CotioInstancia::with([
-            'muestra.leyNormativa',
+            'muestra.leyNormativa.variables',
             'responsablesMuestreo',
             'cotizacion.matriz',
             'cotizacion.cliente',
@@ -1045,7 +1143,31 @@ class InformeController extends Controller
 
         $cab = ProtocoloInformePdfCabecera::forPdf($muestra);
 
-        return view('informes.protocolo-pdf-edit', compact('muestra', 'analisis', 'cab'));
+        $notasCatalogoDisponibles = InformeNota::activas()->ordenadas()->get(['id', 'titulo', 'contenido']);
+        $idsSeleccionados = ProtocoloInformePdfCabecera::notasCatalogoIdsGuardados($muestra);
+        if (is_array(old('notas_catalogo_ids'))) {
+            $idsSeleccionados = array_values(array_filter(
+                array_map('intval', old('notas_catalogo_ids')),
+                fn (int $id) => $id > 0
+            ));
+        }
+        $notasCatalogoSeleccionadas = collect();
+        if ($idsSeleccionados !== []) {
+            $map = InformeNota::query()->whereIn('id', $idsSeleccionados)->get()->keyBy('id');
+            foreach ($idsSeleccionados as $id) {
+                if ($map->has($id)) {
+                    $notasCatalogoSeleccionadas->push($map->get($id));
+                }
+            }
+        }
+
+        return view('informes.protocolo-pdf-edit', compact(
+            'muestra',
+            'analisis',
+            'cab',
+            'notasCatalogoDisponibles',
+            'notasCatalogoSeleccionadas'
+        ));
     }
 
     public function actualizarProtocoloPdf(Request $request, $cotio_numcoti, $cotio_item, $instance_number)
@@ -1065,13 +1187,15 @@ class InformeController extends Controller
             'analisis.*.id' => 'required|integer',
             'analisis.*.resultado_final' => 'nullable|string',
             'analisis.*.observacion_resultado' => 'nullable|string',
+            'notas_catalogo_ids' => 'nullable|array',
+            'notas_catalogo_ids.*' => 'integer|exists:informe_notas,id',
         ];
         foreach (ProtocoloInformePdfCabecera::KEYS as $k) {
             $rules[$k] = 'nullable|string|max:4000';
         }
         $validated = $request->validate($rules);
 
-        DB::transaction(function() use ($muestra, $validated, $request) {
+        DB::transaction(function () use ($muestra, $validated, $request) {
             // 1. Actualizar campos de cabecera en JSON
             $defaults = ProtocoloInformePdfCabecera::defaults($muestra);
             $json = [];
@@ -1082,6 +1206,25 @@ class InformeController extends Controller
                     $json[$k] = $reqVal;
                 }
             }
+
+            $idsSolicitados = $request->input('notas_catalogo_ids', []);
+            if (! is_array($idsSolicitados)) {
+                $idsSolicitados = [];
+            }
+            $idsSolicitados = array_values(array_filter(array_map('intval', $idsSolicitados), fn (int $id) => $id > 0));
+            if ($idsSolicitados !== []) {
+                $activos = InformeNota::activas()->whereIn('id', $idsSolicitados)->pluck('id')->all();
+                $ordenados = [];
+                foreach ($idsSolicitados as $id) {
+                    if (in_array($id, $activos, true)) {
+                        $ordenados[] = $id;
+                    }
+                }
+                if ($ordenados !== []) {
+                    $json[ProtocoloInformePdfCabecera::KEY_NOTAS_CATALOGO_IDS] = $ordenados;
+                }
+            }
+
             $muestra->protocolo_informe_json = count($json) > 0 ? $json : null;
 
             // 2. Actualizar observaciones de la muestra

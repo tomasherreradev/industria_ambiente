@@ -214,7 +214,10 @@ document.addEventListener('DOMContentLoaded', function() {
                             'E' => 'warning',
                             'S' => 'danger'
                         ][$estado] ?? 'secondary';
-                        $empresa = $cotizacion->coti_empresa ?? 'Sin empresa';
+                        $empresa = \App\Support\CotizacionClienteEtiqueta::paraLista($cotizacion);
+                        if ($empresa === '—') {
+                            $empresa = 'Sin empresa';
+                        }
                         $localidad = $cotizacion->coti_localidad ?? 'Sin localidad';
                         $contacto = $cotizacion->coti_contacto ?? 'Sin contacto';
                         $importe = number_format(floatval($cotizacion->coti_importe), 2, ',', '.');

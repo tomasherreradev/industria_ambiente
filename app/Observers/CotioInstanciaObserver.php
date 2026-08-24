@@ -13,6 +13,8 @@ class CotioInstanciaObserver
         'cotio_identificacion',
         'observaciones_medicion_muestreador',
         'observaciones_medicion_coord_muestreo',
+        'observaciones_muestreo_coord',
+        'observaciones_muestreo_muestreador',
         'resultado',
         'resultado_2',
         'resultado_3',
@@ -48,6 +50,10 @@ class CotioInstanciaObserver
      */
     public function updated(CotioInstancia $cotioInstancia): void
     {
+        if ($cotioInstancia->wasChanged('cotio_estado')) {
+            \App\Support\TrabajoTecnicoCampo::aplicarSiCorresponde($cotioInstancia);
+        }
+
         foreach ($this->campos as $campo) {
             if ($cotioInstancia->isDirty($campo)) {
                 CotioHistorialCambios::create([

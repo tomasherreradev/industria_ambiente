@@ -81,7 +81,7 @@
                             <th>Límite de detección</th>
                             <th>Unidad de medida</th>
                             <th>Método Muestreo</th>
-                            <th>Método</th>
+                            <th>Método Análisis</th>
                             <th>Matriz</th>
                             <th>Componentes asociados</th>
                             <th>Precio</th>
@@ -110,8 +110,8 @@
                                 <td class="align-middle">{{ $item->es_muestra ? 'Agrupador' : 'Componente' }}</td>
                                 <td class="align-middle">{{ $item->limites_establecidos ?? '-' }}</td>
                                 <td class="align-middle">{{ $item->unidad_medida ?? '-' }}</td>
-                                <td class="align-middle">{{ optional($item->metodoMuestreo)->metodo_descripcion ?? '-' }}</td>
-                                <td class="align-middle">{{ optional($item->metodoAnalitico)->metodo_descripcion ?? '-' }}</td>
+                                <td class="align-middle">{{ optional($item->metodoMuestreo)->metodo_descripcion ?? ($item->metodo_muestreo ? trim($item->metodo_muestreo) : '-') }}</td>
+                                <td class="align-middle">{{ optional($item->metodoAnalitico)->metodo_descripcion ?? ($item->metodo ? trim($item->metodo) : '-') }}</td>
                                 <td class="align-middle">
                                     @if($item->matrices->isNotEmpty())
                                         {{ $item->matrices->pluck('matriz_descripcion')->join(', ') }}

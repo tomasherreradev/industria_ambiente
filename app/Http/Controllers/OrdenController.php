@@ -21,8 +21,14 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Str;
 use App\Models\SimpleNotification;
+use App\Support\CotizacionCanalEnsayo;
 use App\Support\CotizacionClienteEtiqueta;
+use App\Support\AsignacionSectorLaboratorio;
 use App\Support\LeyNormativaPresentacion;
+use App\Support\PrioridadListado;
+use App\Support\EtiquetaMetodoAnalisis;
+use App\Support\OrdenesLaboratorioListado;
+use App\Models\Metodo;
 
 class OrdenController extends Controller
 {
@@ -43,8 +49,9 @@ class OrdenController extends Controller
         if ($viewType === 'calendario') {
             $query = CotioInstancia::query()
                 ->where('cotio_subitem', 0)
-                ->whereHas('tarea', function($q) {
-                    $q->whereNull('cotio_canal_especial');
+                ->whereHas('tarea', function ($q) {
+                    $q->where('cotio_subitem', 0);
+                    CotizacionCanalEnsayo::aplicarWhereCotioEnsayoIncluidoEnOrdenes($q);
                 })
                 ->with(['cotizacion.cliente', 'cotizacion.sucursal', 'responsablesAnalisis', 'tarea'])
                 // Alinear con lista/documento: directo a lab (sin muestreo) O ya en circuito lab (enable_ot)
@@ -244,192 +251,15 @@ class OrdenController extends Controller
             ]);
         }
     
-        // Vista de Lista/Documento - Empezar desde Coti para incluir cotizaciones sin instancias
-        $baseQuery = Coti::query()
-            ->with(['matriz', 'tareas', 'instancias', 'cliente', 'sucursal'])
-            // Prioridad: si una cotización tiene al menos UNA instancia de muestra (cotio_subitem = 0)
-            // con enable_ot=true, se muestra aunque existan otras tareas con req_cadena_custodia o
-            // trabajos/visitas técnicas.
-            // Si NO tiene enable_ot=true, entonces se aplican las exclusiones históricas.
-            ->where(function ($q) {
-                $q->whereHas('instancias', function ($subQ) {
-                    $subQ->where('cotio_subitem', 0)->where('enable_ot', true);
-                })->orWhere(function ($q2) {
-                    $q2->whereDoesntHave('tareas', function ($subQ) {
-                        $subQ->where('req_cadena_custodia', true);
-                    })
-                    ->whereDoesntHave('tareas', function ($q3) {
-                        $q3->where('cotio_subitem', 0)
-                            ->where(function ($subQ2) {
-                                $subQ2->whereRaw("UPPER(TRIM(cotio_descripcion)) LIKE '%TRABAJO TECNICO%'")
-                                      ->orWhereRaw("UPPER(TRIM(cotio_descripcion)) LIKE '%VISITA TECNICA%'");
-                            });
-                    });
-                });
-            })
-            ->where(function($q) {
-                // Al menos una muestra sin muestreo (va directo a lab)
-                // O tiene instancias que ya pasaron muestreo (enable_ot)
-                $q->whereHas('tareas', function($subQ) {
-                    $subQ->where('cotio_subitem', 0)
-                         ->where(function($subQ2) {
-                             $subQ2->where('lleva_muestreo', false)
-                                   ->orWhereNull('lleva_muestreo');
-                         });
-                })
-                ->orWhereHas('instancias', function($subQ) {
-                    $subQ->where('cotio_subitem', 0)->where('enable_ot', true);
-                });
-            })
-            // Excluir canales especiales (consultoria, asp, clarke_fire)
-            ->whereDoesntHave('tareas', function($q) {
-                $q->whereNotNull('cotio_canal_especial');
-            });
-    
-        // Filtro de búsqueda
-        if ($request->has('search') && !empty($request->search)) {
-            $searchTerm = $request->search;
-            $searchTermLike = '%'.$searchTerm.'%';
-            $cleanedIdSearch = ltrim(preg_replace('/[^0-9]/', '', $searchTerm), '0');
-            
-            $baseQuery->where(function($q) use ($searchTermLike, $cleanedIdSearch) {
-                $q->where('coti_num', 'like', $searchTermLike)
-                  ->orWhereRaw('LOWER(coti_empresa) LIKE ?', [strtolower($searchTermLike)])
-                  ->orWhereRaw('LOWER(coti_establecimiento) LIKE ?', [strtolower($searchTermLike)]);
-                
-                // Búsqueda por número de OT en instancias
-                $q->orWhereHas('instancias', function($subQ) use ($searchTermLike) {
-                    $subQ->where('otn', 'like', $searchTermLike);
-                });
-            });
-        }
-    
-        // Filtro por matriz
-        if ($request->has('matriz') && !empty($request->matriz)) {
-            $baseQuery->where('coti_codigomatriz', $request->matriz);
-        }
+        // Vista de Lista/Documento - misma base que OrdenesLaboratorioListado
+        $baseQuery = OrdenesLaboratorioListado::baseCotiQuery($request);
 
-        // Filtro por fecha de aprobación (mismos campos Desde/Hasta del formulario)
-        if ($request->filled('fecha_inicio_ot')) {
-            $baseQuery->whereDate('coti_fechaaprobado', '>=', $request->fecha_inicio_ot);
-        }
-        if ($request->filled('fecha_fin_ot')) {
-            $baseQuery->whereDate('coti_fechaaprobado', '<=', $request->fecha_fin_ot);
-        }
-    
-        // Filtro por estado
-        if ($request->has('estado') && !empty($request->estado)) {
-            if ($request->estado == 'pendiente por coordinar') {
-                // Cotizaciones que tienen instancias sin estado o no tienen instancias
-                $baseQuery->where(function($q) {
-                    $q->whereDoesntHave('instancias', function($subQ) {
-                        $subQ->where('cotio_subitem', 0)->where('enable_ot', true);
-                    })
-                    ->orWhereHas('instancias', function($subQ) {
-                        $subQ->where('cotio_subitem', 0)
-                             ->where('enable_ot', true)
-                             ->whereNull('cotio_estado_analisis');
-                    });
-                });
-            } else {
-                $baseQuery->whereHas('instancias', function($q) use ($request) {
-                    $q->where('cotio_estado_analisis', $request->estado);
-                });
-            }
-        } elseif (!$verTodas) {
-            $baseQuery->where('coti_estado', 'A');
-        }
-    
-        // Paginación
         $pagination = $baseQuery->orderBy('coti_num', 'desc')
             ->paginate($viewType === 'documento' ? 100 : 100);
 
         CotizacionClienteEtiqueta::precargarEmpresasRelacionadas($pagination->getCollection());
-    
-        // Procesar las cotizaciones paginadas
-        $ordenes = collect();
-        foreach ($pagination as $coti) {
-            $instancias = $coti->instancias->where('cotio_subitem', 0);
-            $tareasMuestra = $coti->tareas->where('cotio_subitem', 0);
 
-            // Instancias relevantes para lab: sin muestreo (lleva_muestreo=false) o con enable_ot (pasaron muestreo)
-            $muestrasRelevantes = collect();
-            foreach ($tareasMuestra as $tarea) {
-                if ($tarea->lleva_muestreo === false) {
-                    $cantidad = max(1, (int)$tarea->cotio_cantidad);
-                    for ($i = 1; $i <= $cantidad; $i++) {
-                        $inst = $instancias->first(fn($x) => $x->cotio_item == $tarea->cotio_item && $x->instance_number == $i);
-                        if ($inst) {
-                            $muestrasRelevantes->push($inst);
-                        } else {
-                            $muestrasRelevantes->push(new CotioInstancia([
-                                'cotio_numcoti' => $coti->coti_num,
-                                'cotio_item' => $tarea->cotio_item,
-                                'cotio_subitem' => 0,
-                                'instance_number' => $i,
-                                'cotio_descripcion' => $tarea->cotio_descripcion,
-                                'enable_ot' => false,
-                                'cotio_estado_analisis' => null,
-                            ]));
-                        }
-                    }
-                } else {
-                    foreach ($instancias->where('cotio_item', $tarea->cotio_item)->where('enable_ot', true) as $inst) {
-                        $muestrasRelevantes->push($inst);
-                    }
-                }
-            }
-
-            $total = $muestrasRelevantes->count();
-            $completadas = $muestrasRelevantes->where('cotio_estado_analisis', 'analizado')->count();
-            $enProceso = $muestrasRelevantes->where('cotio_estado_analisis', 'en revision analisis')->count();
-            $coordinadas = $muestrasRelevantes->where('cotio_estado_analisis', 'coordinado analisis')->count();
-            $porcentaje = $total > 0 ? round(($completadas / $total) * 100) : 0;
-
-            $fecha_orden = $muestrasRelevantes->min('fecha_inicio_ot') ?? $muestrasRelevantes->min('fecha_muestreo');
-
-            $has_priority = $muestrasRelevantes->contains(function ($instancia) {
-                return $instancia->es_priori && strtolower(trim($instancia->cotio_estado_analisis ?? '')) != 'analizado';
-            });
-
-            $has_suspension = $muestrasRelevantes->contains(function ($instancia) {
-                return strtolower(trim($instancia->cotio_estado_analisis ?? '')) === 'suspension';
-            });
-
-            // Determinar estado predominante
-            $estadoPredominante = 'pendiente_coordinar';
-            $conEstado = $muestrasRelevantes->filter(fn($i) => !empty(trim($i->cotio_estado_analisis ?? '')));
-            if ($conEstado->isNotEmpty()) {
-                $estadoPredominante = $this->determinarEstadoPredominanteConActiveOt($conEstado);
-            }
-
-            $ordenes[$coti->coti_num] = [
-                'instancias' => $coti->instancias,
-                'muestras_relevantes' => $muestrasRelevantes,
-                'cotizacion' => $coti,
-                'total' => $total,
-                'completadas' => $completadas,
-                'en_proceso' => $enProceso,
-                'coordinadas' => $coordinadas,
-                'porcentaje' => $porcentaje,
-                'has_suspension' => $has_suspension,
-                'has_priority' => $has_priority,
-                'fecha_orden' => $fecha_orden,
-                'estado_predominante' => $estadoPredominante,
-                'tiene_instancias' => $instancias->isNotEmpty()
-            ];
-        }
-
-        // Ordenar las órdenes según el criterio mejorado
-        $ordenes = $ordenes->sortBy(function($orden) {
-            $esPrioritaria = $orden['has_priority'];
-            $estadoPredominante = $orden['estado_predominante'];
-            $fechaOrden = $orden['fecha_orden'];
-            
-
-            
-            return $this->calcularOrdenValorSimple($esPrioritaria, $estadoPredominante);
-        });
+        $ordenes = OrdenesLaboratorioListado::construirOrdenesDesdeCotizaciones($pagination->getCollection());
     
         return view('ordenes.index', [
             'ordenes' => $ordenes,
@@ -573,13 +403,11 @@ class OrdenController extends Controller
             $muestrasDelGrupo = $group->where('cotio_subitem', 0);
             $estadoPredominante = $this->determinarEstadoPredominanteConActiveOt($muestrasDelGrupo);
             
-            $has_priority = $group->contains(function ($instancia) {
-                return $instancia->es_priori && strtolower(trim($instancia->cotio_estado_analisis ?? '')) != 'analizado';
-            });
+            $has_priority = PrioridadListado::grupoTienePrioridad($group);
             
             return [
                 'cotio_numcoti' => $group->first()->cotio_numcoti,
-                'cotizacion' => $group->first()->cotizacion->coti_empresa ?? 'N/A',
+                'cotizacion' => CotizacionClienteEtiqueta::paraLista($group->first()->cotizacion) ?: 'N/A',
                 'estado_predominante' => $estadoPredominante,
                 'has_priority' => $has_priority,
                 'muestras_active_ot' => $muestrasDelGrupo->pluck('active_ot')->toArray(),
@@ -607,34 +435,12 @@ class OrdenController extends Controller
 
     private function calcularOrdenValor($esPrioritaria, $estadoPredominante)
     {
-        // Si está analizada y es prioritaria, no va primero
-        if ($estadoPredominante === 'analizado' && $esPrioritaria) {
-            return 500;
-        }
-        
-        // Orden de prioridad
-        if ($esPrioritaria && $estadoPredominante !== 'analizado') {
-            return 100 + $this->getEstadoOrden($estadoPredominante);
-        }
-        
-        // Orden por estado
-        return 200 + $this->getEstadoOrden($estadoPredominante);
+        return PrioridadListado::valorOrdenGrupo($esPrioritaria, $this->getEstadoOrden($estadoPredominante));
     }
 
     private function calcularOrdenValorSimple($esPrioritaria, $estadoPredominante)
     {
-        // Si está analizada y es prioritaria, no va primero
-        if ($estadoPredominante === 'analizado' && $esPrioritaria) {
-            return 500;
-        }
-        
-        // Orden de prioridad
-        if ($esPrioritaria && $estadoPredominante !== 'analizado') {
-            return 100 + $this->getEstadoOrden($estadoPredominante);
-        }
-        
-        // Orden por estado
-        return 200 + $this->getEstadoOrden($estadoPredominante);
+        return PrioridadListado::valorOrdenGrupo($esPrioritaria, $this->getEstadoOrden($estadoPredominante));
     }
 
 
@@ -648,6 +454,7 @@ public function showOrdenes(Request $request)
     $viewType = $request->get('view', 'lista');
     $perPage = 50;
     $searchTerm = $request->get('search');
+    $nombreAnalisis = trim((string) $request->get('cotio_descripcion_analisis', ''));
     $fechaInicio = $request->get('fecha_inicio_ot');
     $fechaFin = $request->get('fecha_fin_ot');
     $estado = $request->get('estado');
@@ -659,31 +466,30 @@ public function showOrdenes(Request $request)
     // Initialize queries
     $queryMuestras = CotioInstancia::with([
         'muestra.cotizado',
-        'muestra.vehiculo',
-        'vehiculo',
         'herramientas',
         'responsablesAnalisis',
         'tareas.responsablesAnalisis'
     ])
     ->where('cotio_subitem', 0)
     ->where('active_ot', true)
-    ->whereHas('tarea', function($q) {
-        $q->whereNull('cotio_canal_especial');
+    ->whereHas('tarea', function ($q) {
+        $q->where('cotio_subitem', 0);
+        CotizacionCanalEnsayo::aplicarWhereCotioEnsayoIncluidoEnOrdenes($q);
     })
     ->orderBy('fecha_inicio_ot', 'desc')
     ->orderByRaw("CASE WHEN cotio_estado_analisis = 'coordinado' THEN 0 ELSE 1 END");
 
     $queryAnalisis = CotioInstancia::with([
+        'tarea' => fn ($q) => $q->with(['metodoLegacy', 'metodoMuestreo', 'metodoAnalisis']),
         'tarea.cotizado',
-        'tarea.vehiculo',
-        'vehiculo',
         'herramientas',
-        'responsablesAnalisis'
+        'responsablesAnalisis',
     ])
     ->where('cotio_subitem', '>', 0)
     ->where('active_ot', true)
-    ->whereHas('tarea', function($q) {
-        $q->whereNull('cotio_canal_especial');
+    ->whereHas('tarea', function ($q) {
+        $q->where('cotio_subitem', 0);
+        CotizacionCanalEnsayo::aplicarWhereCotioEnsayoIncluidoEnOrdenes($q);
     })
     ->orderBy('fecha_inicio_ot', 'desc')
     ->orderByRaw("CASE WHEN cotio_estado_analisis = 'coordinado' THEN 0 ELSE 1 END");
@@ -697,28 +503,15 @@ public function showOrdenes(Request $request)
         }
     }
 
-    // Apply filters - usar lógica de documento para consistencia
-    $esPrivilegiado = ((int) $user->usu_nivel >= 900) || $user->hasRole('coordinador_lab');
-    
-    // Para muestras: solo si el usuario es responsable de muestreo O tiene análisis asignados
-    $queryMuestras->where(function ($query) use ($codigo) {
-        $query->whereHas('responsablesAnalisis', function ($q) use ($codigo) {
-            $q->where('usu.usu_codigo', $codigo);
-        })->orWhereHas('tareas', function ($q) use ($codigo) {
-            $q->where('cotio_subitem', '>', 0)
-                ->where('active_ot', true)
-                ->whereHas('responsablesAnalisis', function ($subQ) use ($codigo) {
-                    $subQ->where('usu.usu_codigo', $codigo);
-                });
-        });
-    });
+    $esPrivilegiado = $this->usuarioEsPrivilegiadoMisOrdenes($user);
+    $puedeAlternarVistaAsignaciones = $esPrivilegiado;
+    $soloMisAsignaciones = $this->resolverSoloMisAsignacionesMisOrdenes($user, $request);
 
-    // Para análisis: aplicar filtro solo si no es privilegiado (igual que documento)
-    if (!$esPrivilegiado) {
-        $queryAnalisis->whereHas('responsablesAnalisis', function ($q) use ($codigo) {
-            $q->where('usu.usu_codigo', $codigo);
-        });
+    if ($soloMisAsignaciones) {
+        $this->aplicarFiltroUsuarioResponsableAnalisisInstancia($queryAnalisis, $codigo);
+        $queryMuestras->whereRaw('1 = 0');
     }
+    // Privilegiado sin filtro: todas las muestras/análisis activos (resto de filtros aplican después)
 
     // Apply search filter
     if ($searchTerm) {
@@ -739,6 +532,10 @@ public function showOrdenes(Request $request)
         $queryMuestras->whereHas('muestra.cotizado', $searchClosure);
     }
 
+    if ($nombreAnalisis !== '') {
+        $this->aplicarFiltroNombreAnalisisMisOrdenes($queryAnalisis, $queryMuestras, $nombreAnalisis);
+    }
+
     // Apply date filters
     if ($fechaInicio) {
         $queryAnalisis->whereDate('fecha_inicio_ot', '>=', $fechaInicio);
@@ -756,42 +553,28 @@ public function showOrdenes(Request $request)
     }
 
     // Get data
-    $muestras = $queryMuestras->get();
-    $todosAnalisis = $queryAnalisis->get();
+    $todosAnalisis = $queryAnalisis->get()->each(function ($item) {
+        $item->setRelation('vehiculo', null);
+    });
 
-    // Build suggested analytes list when filtering by status
-    $analitosSugeridos = collect();
-    if ($estado) {
-        // "$todosAnalisis" ya viene filtrado por estado si se envió "estado",
-        // pero aplicamos un filtro defensivo y normalizamos para evitar discrepancias de mayúsculas.
-        $estadoLower = strtolower($estado);
-        $analitosSugeridos = $todosAnalisis
-            ->filter(function ($analito) use ($estadoLower) {
-                return strtolower($analito->cotio_estado_analisis ?? '') === $estadoLower;
-            })
-            // Filtrar por descripción si viene el parámetro
-            ->when($request->filled('cotio_descripcion_analisis'), function ($collection) use ($request) {
-                $needle = mb_strtolower(trim($request->get('cotio_descripcion_analisis')));
-                return $collection->filter(function ($a) use ($needle) {
-                    $descripcion = mb_strtolower($a->cotio_descripcion ?? '');
-                    return $needle === '' || str_contains($descripcion, $needle);
-                });
-            })
-            // Mantener orden consistente: por descripción y luego por cotización
-            ->sortBy([
-                fn ($a) => strtolower($a->cotio_descripcion ?? ''),
-                fn ($a) => $a->cotio_numcoti,
-            ])
-            // Evitar duplicados exactos por clave compuesta relevante para el link de detalle
-            ->unique(function ($a) {
-                return strtolower($a->cotio_descripcion ?? '') . '|' .
-                    ($a->cotio_numcoti ?? '') . '|' .
-                    ($a->cotio_item ?? '') . '|' .
-                    ($a->cotio_subitem ?? '') . '|' .
-                    ($a->instance_number ?? '');
-            })
-            ->values();
+    if ($esPrivilegiado && !$soloMisAsignaciones) {
+        $muestras = $queryMuestras->get()->each(function ($item) {
+            $item->setRelation('vehiculo', null);
+        });
+    } else {
+        $muestras = $this->cargarMuestrasPadreDeAnalisisAsignados($todosAnalisis, [
+            'muestra.cotizado',
+            'herramientas',
+            'responsablesAnalisis',
+            'tareas.responsablesAnalisis',
+        ]);
     }
+
+    $analitosSugeridos = $this->construirAnalitosSugeridosMisOrdenes(
+        $todosAnalisis,
+        $estado,
+        $nombreAnalisis
+    );
 
     // Group data correctly
     $ordenesAgrupadas = collect();
@@ -811,8 +594,10 @@ public function showOrdenes(Request $request)
 
             $grupo = $ordenesAgrupadas->get($key);
             
-            // Update priority status
-            if ($muestra->es_priori) {
+            $cotioLinea = $muestra->muestra ?? $muestra->tarea ?? null;
+            $esPrioriFila = PrioridadListado::prioridadEfectivaMuestreo($cotioLinea, $grupo['cotizado'] ?? null, $muestra);
+
+            if ($esPrioriFila) {
                 $grupo['has_priority'] = true;
             }
 
@@ -821,9 +606,9 @@ public function showOrdenes(Request $request)
                 'muestra' => $muestra->muestra,
                 'instancia_muestra' => $muestra,
                 'analisis' => collect(),
-                'vehiculo' => $muestra->vehiculo ?? null,
+                'vehiculo' => null,
                 'responsables_muestreo' => $muestra->responsablesAnalisis,
-                'is_priority' => $muestra->es_priori
+                'is_priority' => $esPrioriFila,
             ]);
 
             $ordenesAgrupadas->put($key, $grupo);
@@ -840,7 +625,7 @@ public function showOrdenes(Request $request)
                 if ($instancia) {
                     $instancia['analisis']->push($analisis);
                 } else {
-                    $relatedSample = CotioInstancia::with(['muestra.cotizado', 'vehiculo', 'responsablesAnalisis'])
+                    $relatedSample = CotioInstancia::with(['muestra.cotizado', 'responsablesAnalisis'])
                         ->where([
                             'cotio_numcoti' => $analisis->cotio_numcoti,
                             'cotio_item' => $analisis->cotio_item,
@@ -850,19 +635,22 @@ public function showOrdenes(Request $request)
                         ])->first();
 
                     if ($relatedSample) {
+                        $cotioLineaRel = $relatedSample->muestra ?? null;
+                        $cotizadoRel = $cotioLineaRel->cotizado ?? null;
+                        $esPrioriRel = PrioridadListado::prioridadEfectivaMuestreo($cotioLineaRel, $cotizadoRel, $relatedSample);
+
                         $newInstancia = [
                             'muestra' => $relatedSample->muestra,
                             'instancia_muestra' => $relatedSample,
                             'analisis' => collect([$analisis]),
-                            'vehiculo' => $relatedSample->vehiculo ?? null,
+                            'vehiculo' => null,
                             'responsables_muestreo' => $relatedSample->responsablesAnalisis,
-                            'is_priority' => $relatedSample->es_priori
+                            'is_priority' => $esPrioriRel,
                         ];
                         
                         $grupo['instancias']->push($newInstancia);
                         
-                        // Update group priority if needed
-                        if ($relatedSample->es_priori) {
+                        if ($esPrioriRel) {
                             $grupo['has_priority'] = true;
                         }
                         
@@ -871,7 +659,7 @@ public function showOrdenes(Request $request)
                 }
             } else {
                 // Si no existe el grupo de la cotización (no había muestras por falta de asignación), crearlo
-                $relatedSample = CotioInstancia::with(['muestra.cotizado', 'vehiculo', 'responsablesAnalisis'])
+                $relatedSample = CotioInstancia::with(['muestra.cotizado', 'responsablesAnalisis'])
                     ->where([
                         'cotio_numcoti' => $analisis->cotio_numcoti,
                         'cotio_item' => $analisis->cotio_item,
@@ -881,19 +669,23 @@ public function showOrdenes(Request $request)
                     ])->first();
 
                 if ($relatedSample) {
+                    $cotioLineaRel = $relatedSample->muestra ?? null;
+                    $cotizadoRel = $cotioLineaRel->cotizado ?? null;
+                    $esPrioriRel = PrioridadListado::prioridadEfectivaMuestreo($cotioLineaRel, $cotizadoRel, $relatedSample);
+
                     $ordenesAgrupadas->put($key, [
                         'instancias' => collect([
                             [
                                 'muestra' => $relatedSample->muestra,
                                 'instancia_muestra' => $relatedSample,
                                 'analisis' => collect([$analisis]),
-                                'vehiculo' => $relatedSample->vehiculo ?? null,
+                                'vehiculo' => null,
                                 'responsables_muestreo' => $relatedSample->responsablesAnalisis,
-                                'is_priority' => $relatedSample->es_priori
+                                'is_priority' => $esPrioriRel,
                             ]
                         ]),
-                        'cotizado' => $relatedSample->muestra->cotizado ?? null,
-                        'has_priority' => (bool) $relatedSample->es_priori
+                        'cotizado' => $cotizadoRel,
+                        'has_priority' => $esPrioriRel,
                     ]);
                 }
             }
@@ -932,7 +724,7 @@ public function showOrdenes(Request $request)
                 'instancia_muestra' => $muestra,
                 'analisis' => collect(),
                 'cotizado' => $muestra->muestra->cotizado ?? null,
-                'vehiculo' => $muestra->vehiculo ?? null,
+                'vehiculo' => null,
                 'responsables_muestreo' => $muestra->responsablesAnalisis,
                 'is_priority' => $muestra->es_priori
             ]);
@@ -948,7 +740,7 @@ public function showOrdenes(Request $request)
             } else {
                 // Si la muestra no está presente (p.ej., no asignada explícitamente),
                 // intentar traer la instancia de muestra relacionada para poder agrupar el análisis asignado
-                $relatedSample = CotioInstancia::with(['muestra.cotizado', 'vehiculo', 'responsablesAnalisis'])
+                $relatedSample = CotioInstancia::with(['muestra.cotizado', 'responsablesAnalisis'])
                     ->where([
                         'cotio_numcoti' => $analisis->cotio_numcoti,
                         'cotio_item' => $analisis->cotio_item,
@@ -963,7 +755,7 @@ public function showOrdenes(Request $request)
                         'instancia_muestra' => $relatedSample,
                         'analisis' => collect([$analisis]),
                         'cotizado' => $relatedSample->muestra->cotizado ?? null,
-                        'vehiculo' => $relatedSample->vehiculo ?? null,
+                        'vehiculo' => null,
                         'responsables_muestreo' => $relatedSample->responsablesAnalisis,
                         'is_priority' => $relatedSample->es_priori
                     ]);
@@ -987,9 +779,8 @@ public function showOrdenes(Request $request)
     if ($viewType === 'calendario') {
         $events = $muestras->map(function ($muestra) use ($user) {
             $descripcion = $muestra->cotio_descripcion ?? ($muestra->muestra->cotio_descripcion ?? 'Muestra sin descripción');
-            $empresa = $muestra->muestra && $muestra->muestra->cotizacion 
-                ? $muestra->muestra->cotizacion->coti_empresa 
-                : '';
+            $cotC = optional($muestra->muestra)->cotizacion;
+            $empresa = $cotC ? CotizacionClienteEtiqueta::paraLista($cotC) : '';
             
             $estado = strtolower($muestra->cotio_estado_analisis ?? 'coordinado');
             $className = match ($estado) {
@@ -1031,7 +822,11 @@ public function showOrdenes(Request $request)
     $cotizacionesIds = $todosAnalisis->pluck('cotio_numcoti')
         ->merge($muestras->pluck('cotio_numcoti'))
         ->unique();
-    $cotizaciones = Coti::whereIn('coti_num', $cotizacionesIds)->get()->keyBy('coti_num');
+    $cotizaciones = Coti::with(['cliente', 'sucursal'])
+        ->whereIn('coti_num', $cotizacionesIds)
+        ->get()
+        ->keyBy('coti_num');
+    CotizacionClienteEtiqueta::precargarEmpresasRelacionadas($cotizaciones->values());
 
     $userCode = Auth::user()->usu_codigo;
 
@@ -1048,7 +843,9 @@ public function showOrdenes(Request $request)
         'currentMonth' => $currentMonth,
         'events' => $events,
         'analitosSugeridos' => $analitosSugeridos,
-        'currentUserCode' => $userCode
+        'currentUserCode' => $userCode,
+        'puedeAlternarVistaAsignaciones' => $puedeAlternarVistaAsignaciones,
+        'soloMisAsignaciones' => $soloMisAsignaciones,
 
     ]);
 }
@@ -1066,7 +863,11 @@ public function showDetalle($ordenId)
         ->orderBy('cotio_item')
         ->get();
 
-    $categoriasHabilitadas = $todasLasCategorias->filter(function($cat) use ($cotizacion) {
+    $matrizDescOrden = trim((string) (optional($cotizacion->matriz)->matriz_descripcion ?? ''));
+    $categoriasHabilitadas = $todasLasCategorias->filter(function ($cat) use ($cotizacion, $matrizDescOrden) {
+        if (CotizacionCanalEnsayo::ensayoExcluidoDeOrdenes($cat, $matrizDescOrden)) {
+            return false;
+        }
         // Sin muestreo (explícitamente false): va directo a lab
         if ($cat->lleva_muestreo === false) {
             return true;
@@ -1083,19 +884,16 @@ public function showDetalle($ordenId)
 
     // Obtener todos los análisis (subitems > 0) de las categorías
     $tareas = $cotizacion->tareas()
+        ->with(['metodoAnalisis', 'metodoLegacy', 'metodoMuestreo'])
         ->whereIn('cotio_item', $categoriasIds)
         ->where('cotio_subitem', '!=', 0)
         ->orderBy('cotio_item')
         ->orderBy('cotio_subitem')
         ->get();
 
-    $usuarios = User::withCount(['instanciasAnalisis' => function($query) use ($ordenId) {
-        $query->where('cotio_numcoti', $ordenId)
-              ->where('cotio_estado_analisis', '!=', 'analizado');
-    }])
-    ->whereIn('usu_codigo', ['LAB1', 'LAB'])
-    ->orderBy('usu_descripcion')
-    ->get();
+    $usuarios = User::where('rol', 'sector')
+        ->orderBy('usu_descripcion')
+        ->get();
 
     $agrupadas = [];
     $metodosUnicos = collect();
@@ -1105,7 +903,7 @@ public function showDetalle($ordenId)
         $cantidad = max(1, (int)$categoria->cotio_cantidad); // Mínimo 1 instancia
 
         // Obtener instancias existentes
-        $instanciasExistentes = CotioInstancia::with('herramientas', 'responsablesAnalisis')
+        $instanciasExistentes = CotioInstancia::with('herramientas', 'responsablesAnalisis', 'coordinadorLab')
             ->where([
                 'cotio_numcoti' => $cotizacion->coti_num,
                 'cotio_item' => $item,
@@ -1159,17 +957,7 @@ public function showDetalle($ordenId)
 
                 if ($instanciaAnalisis) {
                     $tareaClonada->instancia = $instanciaAnalisis;
-                    
-                    // Recopilar métodos únicos
-                    $metodo = $instanciaAnalisis->getMetodoAnalisisConTrim();
-                    if ($metodo) {
-                        $metodosUnicos->push([
-                            'codigo' => trim($instanciaAnalisis->cotio_codigometodo_analisis ?? ''),
-                            'metodo' => $metodo
-                        ]);
-                    }
                 } else {
-                    // Crear instancia virtual para el análisis
                     $instanciaVirtual = new CotioInstancia([
                         'cotio_numcoti' => (int)$cotizacion->coti_num,
                         'cotio_item' => (int)$tarea->cotio_item,
@@ -1178,20 +966,20 @@ public function showDetalle($ordenId)
                         'active_ot' => false,
                         'enable_ot' => false,
                         'cotio_codigometodo_analisis' => $tarea->cotio_codigometodo_analisis,
+                        'cotio_codigometodo' => $tarea->cotio_codigometodo,
                     ]);
-                    // ID virtual sin espacios (usando integers)
                     $instanciaVirtual->id = (int)$cotizacion->coti_num . "_" . (int)$tarea->cotio_item . "_" . (int)$tarea->cotio_subitem . "_" . (int)$instanceNumber;
                     $tareaClonada->instancia = $instanciaVirtual;
-                    
-                    // Obtener método desde la tarea original
-                    if ($tarea->cotio_codigometodo_analisis) {
-                        $metodo = MetodoAnalisis::where('codigo', trim($tarea->cotio_codigometodo_analisis))->first();
-                        if ($metodo) {
-                            $metodosUnicos->push([
-                                'codigo' => trim($tarea->cotio_codigometodo_analisis),
-                                'metodo' => $metodo
-                            ]);
-                        }
+                }
+
+                $codigoMetodo = EtiquetaMetodoAnalisis::codigo($tareaClonada);
+                if ($codigoMetodo !== '') {
+                    $metodoLegacy = Metodo::whereRaw('TRIM(metodo_codigo) = ?', [$codigoMetodo])->first();
+                    if ($metodoLegacy) {
+                        $metodosUnicos->push([
+                            'codigo' => $codigoMetodo,
+                            'metodo' => $metodoLegacy,
+                        ]);
                     }
                 }
 
@@ -1225,9 +1013,14 @@ public function showDetalle($ordenId)
 
 public function verOrden($cotizacion, $item, $instance = null)
 {
-    $cotizacion = Coti::findOrFail($cotizacion);
+    if (! $cotizacion instanceof Coti) {
+        $cotizacion = Coti::findOrFail($cotizacion);
+    }
     $instance = $instance ?? 1;
     $usuariosAnalistas = User::where('rol', '!=', 'sector')
+                ->orderBy('usu_descripcion')
+                ->get();
+    $usuariosSectores = User::where('rol', 'sector')
                 ->orderBy('usu_descripcion')
                 ->get();
 
@@ -1238,7 +1031,7 @@ public function verOrden($cotizacion, $item, $instance = null)
                 ->firstOrFail();
 
     // Obtener la instancia de la muestra con responsables de análisis
-    $instanciaMuestra = CotioInstancia::with(['responsablesAnalisis', 'valoresVariables'])
+    $instanciaMuestra = CotioInstancia::with(['responsablesAnalisis', 'valoresVariables', 'aprobadorInforme'])
                 ->where([
                     'cotio_numcoti' => $cotizacion->coti_num,
                     'cotio_item' => $item,
@@ -1317,7 +1110,8 @@ public function verOrden($cotizacion, $item, $instance = null)
             'variablesMuestra' => $variablesOrdenadas,
             'instanciasMuestra' => collect(),
             'historialCambios' => collect(),
-            'usuariosAnalistas' => $usuariosAnalistas
+            'usuariosAnalistas' => $usuariosAnalistas,
+            'usuariosSectores' => $usuariosSectores,
         ]);
     }
 
@@ -1358,6 +1152,7 @@ public function verOrden($cotizacion, $item, $instance = null)
             $instancia->setAttribute(
                 'puede_editar_fechas_informe',
                 $this->userCanEditAnalistaFechasInforme(Auth::user(), $instancia)
+                    && ! $this->instanciaMuestraEstaAnalizada($instancia)
             );
             $tarea->instancia = $instancia;
             return $tarea;
@@ -1402,7 +1197,8 @@ public function verOrden($cotizacion, $item, $instance = null)
         'variablesMuestra' => $variablesOrdenadas,
         'todosResponsablesTareas' => $todosResponsablesTareas,
         'historialCambios' => $historialCambios,
-        'usuariosAnalistas' => $usuariosAnalistas
+        'usuariosAnalistas' => $usuariosAnalistas,
+        'usuariosSectores' => $usuariosSectores,
     ]);
 }
 
@@ -1627,12 +1423,14 @@ public function pasarAnalisis(Request $request)
 }
 
 
-public function showOrdenesAll($cotio_numcoti, $cotio_item, $cotio_subitem = 0, $instance = null)
+public function showOrdenesAll(Request $request, $cotio_numcoti, $cotio_item, $cotio_subitem = 0, $instance = null)
 {
     $instance = $instance ?? 1;
     $usuario = Auth::user();
     $usuarioActual = trim($usuario->usu_codigo);
-    $esPrivilegiado = ((int) $usuario->usu_nivel >= 900) || $usuario->hasRole('coordinador_lab');
+    $esPrivilegiado = $this->usuarioEsPrivilegiadoMisOrdenes($usuario);
+    $puedeAlternarVistaAsignaciones = $esPrivilegiado;
+    $soloMisAsignaciones = $this->resolverSoloMisAsignacionesMisOrdenes($usuario, $request);
     $allHerramientas = InventarioLab::all();
 
     try {
@@ -1656,7 +1454,6 @@ public function showOrdenesAll($cotio_numcoti, $cotio_item, $cotio_subitem = 0, 
 
         // Obtener la instancia de muestra principal sin exigir responsable directo
         $instanciaMuestra = CotioInstancia::with([
-            'muestra.vehiculo',
             'muestra.cotizacion',
             'muestra.leyNormativa.variables',
             'valoresVariables' => function ($query) {
@@ -1675,6 +1472,10 @@ public function showOrdenesAll($cotio_numcoti, $cotio_item, $cotio_subitem = 0, 
         ->where('instance_number', $instance)
         ->first();
 
+        if ($instanciaMuestra) {
+            $instanciaMuestra->setRelation('vehiculo', null);
+        }
+
         if (!$instanciaMuestra) {
             Log::warning('No se encontró instancia de muestra', [
                 'user' => $usuarioActual,
@@ -1688,6 +1489,8 @@ public function showOrdenesAll($cotio_numcoti, $cotio_item, $cotio_subitem = 0, 
                 'instanceNumber' => $instance,
                 'allHerramientas' => $allHerramientas,
                 'error' => 'No se encontró la muestra principal.',
+                'puedeAlternarVistaAsignaciones' => $puedeAlternarVistaAsignaciones,
+                'soloMisAsignaciones' => $soloMisAsignaciones,
             ]);
         }
 
@@ -1698,7 +1501,7 @@ public function showOrdenesAll($cotio_numcoti, $cotio_item, $cotio_subitem = 0, 
 
         // Obtener análisis - coordinadores pueden ver todos, otros solo los asignados
         $analisisQuery = CotioInstancia::with([
-            'tarea.vehiculo',
+            'tarea' => fn ($q) => $q->with(['metodoLegacy', 'metodoMuestreo', 'metodoAnalisis']),
             'tarea.cotizacion',
             'responsablesAnalisis',
             'herramientasLab' => function ($query) {
@@ -1712,19 +1515,31 @@ public function showOrdenesAll($cotio_numcoti, $cotio_item, $cotio_subitem = 0, 
         ->where('active_ot', true)
         ->where('instance_number', $instance);
 
-        // Si no es privilegiado, filtrar solo análisis asignados al usuario
-        if (!$esPrivilegiado) {
-            $analisisQuery->whereHas('responsablesAnalisis', function ($query) use ($usuarioActual) {
-                $query->whereRaw('TRIM(instancia_responsable_analisis.usu_codigo) = ?', [$usuarioActual]);
-            });
+        if ($soloMisAsignaciones) {
+            $this->aplicarFiltroUsuarioResponsableAnalisisInstancia($analisisQuery, $usuarioActual);
         }
 
-        $analisis = $analisisQuery->orderBy('cotio_subitem')->get();
+        $analisis = $analisisQuery->orderBy('cotio_subitem')->get()->each(function ($item) {
+            $item->setRelation('vehiculo', null);
+        });
+
+        if ($soloMisAsignaciones && $analisis->isEmpty()) {
+            return view('mis-ordenes.show-by-categoria', [
+                'instancia' => $instanciaMuestra,
+                'analisis' => collect(),
+                'instanceNumber' => $instance,
+                'allHerramientas' => $allHerramientas,
+                'error' => 'No tiene análisis asignados en esta muestra.',
+                'puedeAlternarVistaAsignaciones' => $puedeAlternarVistaAsignaciones,
+                'soloMisAsignaciones' => $soloMisAsignaciones,
+            ]);
+        }
 
         foreach ($analisis as $itemAnalisis) {
             $itemAnalisis->setAttribute(
                 'puede_editar_fechas_informe',
                 $this->userCanEditAnalistaFechasInforme($usuario, $itemAnalisis)
+                    && ! $this->instanciaMuestraEstaAnalizada($instanciaMuestra)
             );
         }
 
@@ -1741,6 +1556,8 @@ public function showOrdenesAll($cotio_numcoti, $cotio_item, $cotio_subitem = 0, 
             'analisis' => $analisis,
             'instanceNumber' => $instance,
             'allHerramientas' => $allHerramientas,
+            'puedeAlternarVistaAsignaciones' => $puedeAlternarVistaAsignaciones,
+            'soloMisAsignaciones' => $soloMisAsignaciones,
         ]);
 
     } catch (\Exception $e) {
@@ -1759,6 +1576,8 @@ public function showOrdenesAll($cotio_numcoti, $cotio_item, $cotio_subitem = 0, 
             'instanceNumber' => $instance,
             'allHerramientas' => $allHerramientas,
             'error' => 'Error al cargar la muestra: ' . $e->getMessage(),
+            'puedeAlternarVistaAsignaciones' => $puedeAlternarVistaAsignaciones ?? false,
+            'soloMisAsignaciones' => $soloMisAsignaciones ?? true,
         ]);
     }
 }
@@ -1768,6 +1587,13 @@ public function showOrdenesAll($cotio_numcoti, $cotio_item, $cotio_subitem = 0, 
 public function updateHerramientas(Request $request, $instanciaId)
 {
     $instancia = CotioInstancia::findOrFail($instanciaId);
+
+    if ($this->instanciaMuestraEstaAnalizada($instancia)) {
+        return response()->json([
+            'success' => false,
+            'message' => 'No se pueden editar herramientas: la muestra ya está analizada.',
+        ], 403);
+    }
 
     $request->validate([
         'herramientas' => 'nullable|array',
@@ -1797,6 +1623,27 @@ public function updateHerramientas(Request $request, $instanciaId)
         'success' => true,
         'message' => 'Estado actualizado correctamente'
     ]);
+}
+
+/**
+ * La muestra principal (cotio_subitem = 0) de la instancia indicada está en estado analizado.
+ */
+private function instanciaMuestraEstaAnalizada(CotioInstancia $instancia): bool
+{
+    $muestra = (int) $instancia->cotio_subitem === 0
+        ? $instancia
+        : CotioInstancia::query()
+            ->where('cotio_numcoti', $instancia->cotio_numcoti)
+            ->where('cotio_item', $instancia->cotio_item)
+            ->where('cotio_subitem', 0)
+            ->where('instance_number', $instancia->instance_number)
+            ->first();
+
+    if (! $muestra) {
+        return false;
+    }
+
+    return strtolower(trim((string) ($muestra->cotio_estado_analisis ?? ''))) === 'analizado';
 }
 
 /**
@@ -1837,6 +1684,10 @@ public function updateAnalistaFechasAnalisis(Request $request, CotioInstancia $i
     $user = Auth::user();
     if (! $this->userCanEditAnalistaFechasInforme($user, $instancia)) {
         abort(403, 'No autorizado para editar estas fechas.');
+    }
+
+    if ($this->instanciaMuestraEstaAnalizada($instancia)) {
+        abort(403, 'No se pueden editar fechas: la muestra ya está analizada.');
     }
 
     $inicio = $request->input('analista_fecha_inicio');
@@ -1906,33 +1757,13 @@ public function asignacionMasiva(Request $request, $ordenId)
             'aplicar_a_gemelas' => $aplicarAGemelas
         ]);
 
-        // 1. Obtener todos los usuarios de los sectores seleccionados
-        $usuariosDelSector = collect();
-        foreach ($responsablesAnalisis as $responsableCodigo) {
-            $responsable = User::where('usu_codigo', $responsableCodigo)->first();
-            if (!$responsable) {
-                Log::error('Usuario no encontrado', ['responsable_codigo' => $responsableCodigo]);
-                throw new \Exception("Usuario con código '$responsableCodigo' no encontrado.");
-            }
-
-            // Si el usuario es un líder de sector (LAB, LAB1), obtenemos sus miembros
-            if ($responsable->miembros()->exists()) {
-                $miembros = $responsable->miembros()->pluck('usu_codigo')->toArray();
-                $usuariosDelSector = $usuariosDelSector->merge($responsable->miembros);
-                Log::debug('Miembros del sector encontrados', [
-                    'sector' => $responsableCodigo,
-                    'miembros' => $miembros
-                ]);
-            }
-            // Siempre incluimos al propio responsable (LAB/LAB1)
-            $usuariosDelSector->push($responsable);
+        // 1. Expandir sectores (rol=sector) y líderes legacy a usuarios reales
+        $usuariosParaAsignar = AsignacionSectorLaboratorio::expandirSeleccionAResponsables($responsablesAnalisis);
+        if ($responsablesAnalisis !== [] && $usuariosParaAsignar->isEmpty()) {
+            throw new \Exception('No se encontraron usuarios para los sectores o responsables seleccionados.');
         }
 
-        // Eliminar duplicados y obtener solo los códigos
-        $usuariosASincronizar = $usuariosDelSector->unique('usu_codigo')
-            ->pluck('usu_codigo')
-            ->map('trim')
-            ->toArray();
+        $usuariosASincronizar = $usuariosParaAsignar->pluck('usu_codigo')->values()->all();
 
         Log::info('Usuarios a sincronizar', [
             'usuarios' => $usuariosASincronizar,
@@ -2225,12 +2056,8 @@ public function asignacionMasiva(Request $request, $ordenId)
                 }
                 
                 $muestra->save();
-                
-                if (!empty($usuariosASincronizar)) {
-                    $muestra->responsablesAnalisis()->sync($usuariosASincronizar);
-                }
-                
-                $this->asignarHerramientas($muestra, $herramientasLab);
+
+                // No copiar responsables ni herramientas del análisis a la muestra padre (evita pisar otros sectores)
                 $muestrasActualizadas->push($muestra->id);
                 $updatedCount++;
                 
@@ -2530,6 +2357,31 @@ protected function actualizarInstancia(CotioInstancia $instancia, array $validat
     }
 
     $instancia->save();
+}
+
+/**
+ * Resuelve códigos de usuario (con espacios legacy en BD) a partir de valores trimmeados.
+ *
+ * @param  array<int, string>  $codigos
+ * @return array<int, string>
+ */
+protected function resolverCodigosUsuExactos(array $codigos): array
+{
+    $codigos = array_values(array_unique(array_filter(array_map('trim', $codigos))));
+
+    if ($codigos === []) {
+        return [];
+    }
+
+    return User::query()
+        ->where(function ($q) use ($codigos) {
+            foreach ($codigos as $codigo) {
+                $q->orWhereRaw('TRIM(usu_codigo) = ?', [$codigo]);
+            }
+        })
+        ->pluck('usu_codigo')
+        ->values()
+        ->all();
 }
 
 protected function asignarHerramientas(CotioInstancia $instancia, array $herramientasLab)
@@ -2850,6 +2702,7 @@ public function aprobarInforme($instancia_id)
 
         $instancia->aprobado_informe = true;
         $instancia->fecha_aprobacion_informe = now();
+        $instancia->aprobado_informe_usuario = Auth::user()->usu_codigo;
         $instancia->save();
 
         DB::commit();
@@ -2911,6 +2764,8 @@ public function aprobarInforme($instancia_id)
         private function generarContenidoInforme($instancia, $analisis)
     {
         $cotizacion = $instancia->cotizacion;
+        $cotizacion->loadMissing(['cliente', 'sucursal']);
+        CotizacionClienteEtiqueta::precargarEmpresasRelacionadas([$cotizacion]);
         $matriz = $cotizacion->matriz;
 
         $codigosCargaResultados = collect();
@@ -2952,8 +2807,8 @@ public function aprobarInforme($instancia_id)
         $html .= '<div class="row">';
         $html .= '<div class="col-md-6">';
         $html .= '<p><strong>Cotización:</strong> ' . $cotizacion->coti_num . '</p>';
-        $html .= '<p><strong>Empresa:</strong> ' . $cotizacion->coti_empresa . '</p>';
-        $html .= '<p><strong>Establecimiento:</strong> ' . $cotizacion->coti_establecimiento . '</p>';
+        $html .= '<p><strong>Empresa:</strong> ' . e(CotizacionClienteEtiqueta::paraLista($cotizacion)) . '</p>';
+        $html .= '<p><strong>Establecimiento:</strong> ' . e(CotizacionClienteEtiqueta::etiquetaSucursalEstablecimiento($cotizacion) ?: 'N/A') . '</p>';
         $html .= '</div>';
         $html .= '<div class="col-md-6">';
         $html .= '<p><strong>Matriz:</strong> ' . ($matriz ? $matriz->matriz_descripcion : 'N/A') . '</p>';
@@ -3396,6 +3251,20 @@ public function actualizarEstado(Request $request)
 
         $item->save();
 
+        if (
+            (int) $validated['cotio_subitem'] === 0
+            && $validated['estado'] === 'analizado'
+            && (Auth::user()->hasRole('coordinador_lab') || Auth::user()->usu_nivel >= 900)
+        ) {
+            CotioInstancia::where([
+                'cotio_numcoti' => $validated['cotio_numcoti'],
+                'cotio_item' => $validated['cotio_item'],
+                'instance_number' => $validated['instance_number'],
+            ])
+                ->where('cotio_subitem', '>', 0)
+                ->update(['cotio_estado_analisis' => 'analizado']);
+        }
+
         DB::commit();
 
         return response()->json([
@@ -3566,16 +3435,14 @@ public function apiHerramientasInstancia($instanciaId)
                 ]);
             }
 
-            $responsables = $instanciaAnalisis->responsablesAnalisis()
-                ->get()
-                ->map(function($responsable) {
-                    return trim($responsable->usu_codigo); // Quitar espacios para la respuesta
-                })
-                ->toArray();
+            $responsables = $instanciaAnalisis->responsablesAnalisis()->get();
 
             return response()->json([
                 'success' => true,
                 'responsables' => $responsables
+                    ->map(fn ($responsable) => trim($responsable->usu_codigo))
+                    ->toArray(),
+                'sectores' => AsignacionSectorLaboratorio::sectoresConResponsablesAsignadosParaApi($responsables),
             ]);
 
         } catch (\Exception $e) {
@@ -3611,34 +3478,21 @@ public function apiHerramientasInstancia($instanciaId)
             }
 
             // Obtener responsables enviados, asegurándonos de que sea un array válido
-            $nuevosResponsables = $validated['responsables_analisis'] ?? [];
-            
-            // Validar que si hay responsables, no estén vacíos
-            $nuevosResponsables = array_filter($nuevosResponsables, function($responsable) {
-                return !empty(trim($responsable));
-            });
+            $nuevosResponsables = array_values(array_filter(array_map('trim', $validated['responsables_analisis'] ?? [])));
 
-            // Obtener responsables actuales del análisis específico
-            $responsablesActualesAnalisis = $instanciaAnalisis->responsablesAnalisis()
-                ->get()
-                ->map(function($responsable) {
-                    return trim($responsable->usu_codigo); // Normalizar quitando espacios
-                })
-                ->toArray();
+            $responsablesActualesAnalisis = $instanciaAnalisis->codigosResponsablesAnalisisAsignados();
 
-            // Combinar responsables actuales con los nuevos (sin duplicados, comparando sin espacios)
-            $todosLosResponsables = array_merge($responsablesActualesAnalisis, $nuevosResponsables);
-            $responsablesFinales = array_unique(array_map('trim', $todosLosResponsables));
+            $codigosNuevosUsuarios = AsignacionSectorLaboratorio::codigosUsuariosParaAsignar($nuevosResponsables);
 
-            // Buscar los códigos exactos en la base de datos para el sync
-            $usuariosExactos = User::whereIn('usu_codigo', function($query) use ($responsablesFinales) {
-                $query->select('usu_codigo')->from('usu');
-                foreach ($responsablesFinales as $codigo) {
-                    $query->orWhere('usu_codigo', 'LIKE', trim($codigo) . '%');
-                }
-            })->get();
+            $responsablesFinales = array_values(array_unique(array_map(
+                'trim',
+                array_merge(
+                    array_map('trim', $responsablesActualesAnalisis),
+                    $codigosNuevosUsuarios
+                )
+            )));
 
-            $codigosExactos = $usuariosExactos->pluck('usu_codigo')->toArray();
+            $codigosExactosParaSync = $this->resolverCodigosUsuExactos($responsablesFinales);
 
             Log::info('Editando responsables de análisis específico', [
                 'cotio_numcoti' => $cotio_numcoti,
@@ -3648,13 +3502,12 @@ public function apiHerramientasInstancia($instanciaId)
                 'responsables_recibidos' => $validated['responsables_analisis'] ?? 'null',
                 'responsables_actuales' => $responsablesActualesAnalisis,
                 'nuevos_responsables' => $nuevosResponsables,
-                'responsables_finales_trimmed' => $responsablesFinales,
-                'codigos_exactos_bd' => $codigosExactos,
+                'codigos_finales' => $responsablesFinales,
+                'codigos_exactos_sync' => $codigosExactosParaSync,
                 'instancia_id' => $instanciaAnalisis->id
             ]);
 
-            // Actualizar responsables del análisis específico usando códigos exactos
-            $instanciaAnalisis->responsablesAnalisis()->sync($codigosExactos);
+            $instanciaAnalisis->responsablesAnalisis()->sync($codigosExactosParaSync);
 
             DB::commit();
 
@@ -3664,8 +3517,7 @@ public function apiHerramientasInstancia($instanciaId)
                 'debug' => [
                     'responsables_anteriores' => $responsablesActualesAnalisis,
                     'nuevos_responsables' => $nuevosResponsables,
-                    'responsables_finales_trimmed' => $responsablesFinales,
-                    'codigos_exactos_usados' => $codigosExactos
+                    'codigos_finales' => $responsablesFinales,
                 ]
             ]);
 
@@ -3689,7 +3541,8 @@ public function apiHerramientasInstancia($instanciaId)
                 'cotio_item' => 'required',
                 'cotio_subitem' => 'required',
                 'instance_number' => 'required',
-                'responsable_codigo' => 'required|exists:usu,usu_codigo'
+                'responsable_codigo' => 'required_without:sector_codigo|nullable|string',
+                'sector_codigo' => 'required_without:responsable_codigo|nullable|string',
             ]);
 
             Log::info('DEBUG - Iniciando quitarResponsable', [
@@ -3699,7 +3552,6 @@ public function apiHerramientasInstancia($instanciaId)
 
             DB::beginTransaction();
 
-            // Obtener el análisis específico
             $instanciaAnalisis = CotioInstancia::where([
                 'cotio_numcoti' => $cotio_numcoti,
                 'cotio_item' => $validated['cotio_item'],
@@ -3707,19 +3559,37 @@ public function apiHerramientasInstancia($instanciaId)
                 'instance_number' => $validated['instance_number']
             ])->first();
 
-            Log::info('DEBUG - Búsqueda de instancia', [
-                'instancia_encontrada' => $instanciaAnalisis ? true : false,
-                'instancia_id' => $instanciaAnalisis ? $instanciaAnalisis->id : null,
-                'criterios_busqueda' => [
-                    'cotio_numcoti' => $cotio_numcoti,
-                    'cotio_item' => $validated['cotio_item'],
-                    'cotio_subitem' => $validated['cotio_subitem'],
-                    'instance_number' => $validated['instance_number']
-                ]
-            ]);
-
             if (!$instanciaAnalisis) {
                 throw new \Exception('Análisis no encontrado');
+            }
+
+            if (! empty($validated['sector_codigo'])) {
+                $sectorCodigo = trim((string) $validated['sector_codigo']);
+                $responsablesActuales = $instanciaAnalisis->responsablesAnalisis()->get();
+                $porCodigoExacto = $responsablesActuales->keyBy(
+                    fn (User $r) => trim((string) $r->usu_codigo)
+                );
+
+                $miembrosSector = AsignacionSectorLaboratorio::usuariosDelSector($sectorCodigo)
+                    ->filter(fn (User $u) => $porCodigoExacto->has(trim((string) $u->usu_codigo)));
+
+                if ($miembrosSector->isEmpty()) {
+                    throw new \Exception('No hay responsables de ese sector asignados a este análisis');
+                }
+
+                foreach ($miembrosSector as $miembro) {
+                    $asignado = $porCodigoExacto->get(trim((string) $miembro->usu_codigo));
+                    if ($asignado) {
+                        $instanciaAnalisis->responsablesAnalisis()->detach($asignado->usu_codigo);
+                    }
+                }
+
+                DB::commit();
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Sector removido correctamente del análisis.',
+                ]);
             }
 
             $responsableCodigo = $validated['responsable_codigo'];
@@ -4213,9 +4083,7 @@ public function apiHerramientasInstancia($instanciaId)
                 ], 400);
             }
 
-            // Buscar los códigos exactos en la base de datos
-            $usuariosExactos = User::whereIn('usu_codigo', $responsablesAnalisis)->get();
-            $codigosExactos = $usuariosExactos->pluck('usu_codigo')->toArray();
+            $codigosExactos = AsignacionSectorLaboratorio::codigosUsuariosParaAsignar($responsablesAnalisis);
 
             if (empty($codigosExactos)) {
                 return response()->json([
@@ -4228,24 +4096,16 @@ public function apiHerramientasInstancia($instanciaId)
 
             $updatedCount = 0;
             foreach ($instancias as $instancia) {
-                // Obtener responsables actuales
-                $responsablesActuales = $instancia->responsablesAnalisis()
-                    ->get()
-                    ->map(function($responsable) {
-                        return trim($responsable->usu_codigo);
-                    })
-                    ->toArray();
+                $responsablesActuales = $instancia->codigosResponsablesAnalisisAsignados();
 
-                // Combinar responsables actuales con los nuevos (sin duplicados)
-                $todosLosResponsables = array_merge($responsablesActuales, $codigosExactos);
-                $responsablesFinales = array_unique(array_map('trim', $todosLosResponsables));
+                $todosLosResponsables = array_merge(
+                    array_map('trim', $responsablesActuales),
+                    array_map('trim', $codigosExactos)
+                );
+                $responsablesFinales = array_values(array_unique($todosLosResponsables));
 
-                // Buscar códigos exactos para el sync
-                $codigosFinales = User::whereIn('usu_codigo', $responsablesFinales)
-                    ->pluck('usu_codigo')
-                    ->toArray();
+                $codigosFinales = $this->resolverCodigosUsuExactos($responsablesFinales);
 
-                // Sincronizar responsables
                 $instancia->responsablesAnalisis()->sync($codigosFinales);
                 $updatedCount++;
             }
@@ -4265,5 +4125,171 @@ public function apiHerramientasInstancia($instanciaId)
                 'message' => 'Error al asignar responsables: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    private function usuarioEsPrivilegiadoMisOrdenes(User $user): bool
+    {
+        return (int) $user->usu_nivel >= 900 || $user->hasRole('coordinador_lab');
+    }
+
+    /**
+     * Analistas: siempre solo sus asignaciones. Coordinador/admin: según ?solo_mis_asignaciones=1
+     */
+    private function resolverSoloMisAsignacionesMisOrdenes(User $user, Request $request): bool
+    {
+        if (!$this->usuarioEsPrivilegiadoMisOrdenes($user)) {
+            return true;
+        }
+
+        return $request->boolean('solo_mis_asignaciones');
+    }
+
+    /**
+     * Lista de analitos para la vista de sugerencias (filtro por estado y/o nombre).
+     */
+    private function construirAnalitosSugeridosMisOrdenes($todosAnalisis, ?string $estado, string $nombreAnalisis)
+    {
+        if (! $estado && $nombreAnalisis === '') {
+            return collect();
+        }
+
+        $coleccion = $todosAnalisis;
+
+        if ($estado) {
+            $estadoLower = strtolower($estado);
+            $coleccion = $coleccion->filter(function ($analito) use ($estadoLower) {
+                return strtolower($analito->cotio_estado_analisis ?? '') === $estadoLower;
+            });
+        }
+
+        if ($nombreAnalisis !== '' && $estado) {
+            $needle = mb_strtolower($nombreAnalisis);
+            $coleccion = $coleccion->filter(function ($analito) use ($needle) {
+                $descripcionInstancia = mb_strtolower(trim((string) ($analito->cotio_descripcion ?? '')));
+                if (str_contains($descripcionInstancia, $needle)) {
+                    return true;
+                }
+
+                $descripcionTarea = mb_strtolower(trim((string) ($analito->tarea->cotio_descripcion ?? '')));
+
+                return str_contains($descripcionTarea, $needle);
+            });
+        }
+
+        return $coleccion
+            ->sortBy([
+                fn ($a) => strtolower($a->cotio_descripcion ?? ''),
+                fn ($a) => $a->cotio_numcoti,
+            ])
+            ->unique(function ($a) {
+                return strtolower($a->cotio_descripcion ?? '').'|'.
+                    ($a->cotio_numcoti ?? '').'|'.
+                    ($a->cotio_item ?? '').'|'.
+                    ($a->cotio_subitem ?? '').'|'.
+                    ($a->instance_number ?? '');
+            })
+            ->values();
+    }
+
+    /**
+     * Filtro por nombre/descripción de análisis (instancia o línea cotio de la tarea).
+     */
+    private function aplicarFiltroNombreAnalisisMisOrdenes($queryAnalisis, $queryMuestras, string $nombreAnalisis): void
+    {
+        $needle = '%'.mb_strtolower($nombreAnalisis).'%';
+        $tablaInstancias = (new CotioInstancia)->getTable();
+
+        $filtroPorDescripcionAnalisis = function ($sub, string $aliasInstancia) use ($needle) {
+            $sub->whereRaw(
+                'LOWER(TRIM(COALESCE('.$aliasInstancia.'.cotio_descripcion, \'\'))) LIKE ?',
+                [$needle]
+            )->orWhereExists(function ($ex) use ($needle, $aliasInstancia) {
+                $ex->select(DB::raw(1))
+                    ->from('cotio')
+                    ->whereColumn('cotio.cotio_numcoti', $aliasInstancia.'.cotio_numcoti')
+                    ->whereColumn('cotio.cotio_item', $aliasInstancia.'.cotio_item')
+                    ->whereColumn('cotio.cotio_subitem', $aliasInstancia.'.cotio_subitem')
+                    ->whereRaw('LOWER(TRIM(COALESCE(cotio.cotio_descripcion, \'\'))) LIKE ?', [$needle]);
+            });
+        };
+
+        $queryAnalisis->where(function ($q) use ($filtroPorDescripcionAnalisis, $tablaInstancias) {
+            $filtroPorDescripcionAnalisis($q, $tablaInstancias);
+        });
+
+        $queryMuestras->whereExists(function ($ex) use ($filtroPorDescripcionAnalisis, $tablaInstancias) {
+            $ex->select(DB::raw(1))
+                ->from($tablaInstancias.' as ci_filtro_analisis')
+                ->whereColumn('ci_filtro_analisis.cotio_numcoti', $tablaInstancias.'.cotio_numcoti')
+                ->whereColumn('ci_filtro_analisis.cotio_item', $tablaInstancias.'.cotio_item')
+                ->whereColumn('ci_filtro_analisis.instance_number', $tablaInstancias.'.instance_number')
+                ->where('ci_filtro_analisis.cotio_subitem', '>', 0)
+                ->where('ci_filtro_analisis.active_ot', true)
+                ->where(function ($sub) use ($filtroPorDescripcionAnalisis) {
+                    $filtroPorDescripcionAnalisis($sub, 'ci_filtro_analisis');
+                });
+        });
+    }
+
+    /**
+     * Filtra instancias cotio por responsable de análisis (pivot instancia_responsable_analisis).
+     */
+    private function aplicarFiltroUsuarioResponsableAnalisisInstancia($query, string $usuCodigo): void
+    {
+        $usuCodigo = trim($usuCodigo);
+        if ($usuCodigo === '') {
+            $query->whereRaw('1 = 0');
+
+            return;
+        }
+
+        $query->whereExists(function ($sub) use ($usuCodigo) {
+            $sub->select(DB::raw(1))
+                ->from('instancia_responsable_analisis as ira')
+                ->whereColumn('ira.cotio_instancia_id', 'cotio_instancias.id')
+                ->whereRaw('TRIM(ira.usu_codigo) = ?', [$usuCodigo]);
+        });
+    }
+
+    /**
+     * Carga filas muestra (subitem 0) asociadas a análisis ya filtrados por usuario.
+     *
+     * @param  \Illuminate\Support\Collection<int, CotioInstancia>  $analisis
+     * @param  array<int, string>  $with
+     * @return \Illuminate\Support\Collection<int, CotioInstancia>
+     */
+    private function cargarMuestrasPadreDeAnalisisAsignados($analisis, array $with = []): \Illuminate\Support\Collection
+    {
+        if ($analisis->isEmpty()) {
+            return collect();
+        }
+
+        $claves = $analisis
+            ->map(fn (CotioInstancia $a) => $a->cotio_numcoti.'|'.$a->cotio_item.'|'.$a->instance_number)
+            ->unique()
+            ->values();
+
+        $query = CotioInstancia::query()
+            ->where('cotio_subitem', 0)
+            ->where('active_ot', true);
+
+        if ($with !== []) {
+            $query->with($with);
+        }
+
+        $query->where(function ($outer) use ($claves) {
+            foreach ($claves as $clave) {
+                [$numcoti, $item, $instance] = explode('|', $clave, 3);
+                $outer->orWhere(function ($w) use ($numcoti, $item, $instance) {
+                    $w->where('cotio_numcoti', $numcoti)
+                        ->where('cotio_item', $item)
+                        ->where('instance_number', $instance);
+                });
+            }
+        });
+
+        return $query->get()->each(function ($item) {
+            $item->setRelation('vehiculo', null);
+        });
     }
 }

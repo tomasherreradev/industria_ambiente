@@ -160,6 +160,81 @@
         <div class="alert alert-danger">{{ session('error') }}</div>
     @endif
 
+    @isset($contactosEnvioFactura, $estadoEnvioFactura)
+        @php
+            $emailsCoincidentes = collect($estadoEnvioFactura['emails_coincidentes'] ?? []);
+            $contactosCotiEnvio = collect($estadoEnvioFactura['contactos_coti'] ?? []);
+            $requiereSeleccionEmail = ! empty($estadoEnvioFactura['requiere_seleccion']);
+            $tieneEnvioConfigurado = ! empty($estadoEnvioFactura['tiene_envio_configurado']);
+        @endphp
+        <div class="card border-primary mb-4 shadow-sm" id="card-emails-envio-factura">
+            <div class="card-header bg-primary text-white py-2 d-flex flex-wrap align-items-center justify-content-between gap-2">
+                <span class="fw-semibold mb-0">Email de envío de factura</span>
+                <small class="opacity-75">Se enviará la factura PDF al confirmar</small>
+            </div>
+            <div class="card-body py-3">
+                @if ($tieneEnvioConfigurado)
+                    <div class="alert alert-success py-2 mb-3 small">
+                        La cotización ya tiene contacto(s) de tipo «Envío de factura». Se usarán al facturar.
+                    </div>
+                    <ul class="list-unstyled mb-0">
+                        @foreach ($contactosCotiEnvio as $contactoCoti)
+                            @php
+                                $emailNorm = \App\Support\CotizacionContactosFacturacion::normalizarEmail($contactoCoti['correo'] ?? '');
+                                $coincideCliente = $emailsCoincidentes->contains($emailNorm);
+                            @endphp
+                            <li class="@if(! $loop->last) mb-2 pb-2 border-bottom @endif">
+                                <div class="d-flex flex-wrap align-items-center gap-2">
+                                    <input type="hidden" name="emails_envio_factura[]" value="{{ $contactoCoti['correo'] }}" form="facturarForm">
+                                    @if ($coincideCliente)
+                                        <span class="badge bg-success">En cliente</span>
+                                    @else
+                                        <span class="badge bg-secondary">Solo en cotización</span>
+                                    @endif
+                                    @if (trim((string) ($contactoCoti['nombre'] ?? '')) !== '')
+                                        <span class="fw-semibold">{{ $contactoCoti['nombre'] }}</span>
+                                        <span class="text-muted">·</span>
+                                    @endif
+                                    <span>{{ $contactoCoti['correo'] }}</span>
+                                </div>
+                            </li>
+                        @endforeach
+                    </ul>
+                @elseif ($contactosEnvioFactura->isNotEmpty())
+                    <div class="alert alert-warning py-2 mb-3 small">
+                        La cotización no tiene email de envío de factura. Seleccione uno o más contactos del cliente antes de facturar.
+                    </div>
+                    <ul class="list-unstyled mb-0">
+                        @foreach ($contactosEnvioFactura as $contacto)
+                            @php $email = trim((string) $contacto->email); @endphp
+                            <li class="@if(! $loop->last) mb-2 pb-2 border-bottom @endif">
+                                <label class="d-flex flex-wrap align-items-center gap-2 mb-0 cursor-pointer">
+                                    <input type="checkbox"
+                                           class="form-check-input email-envio-factura-check mt-0"
+                                           name="emails_envio_factura[]"
+                                           value="{{ $email }}"
+                                           form="facturarForm">
+                                    @if (trim((string) ($contacto->nombre ?? '')) !== '')
+                                        <span class="fw-semibold">{{ trim($contacto->nombre) }}</span>
+                                        <span class="text-muted">·</span>
+                                    @endif
+                                    <span>{{ $email }}</span>
+                                    @if (trim((string) ($contacto->telefono ?? '')) !== '')
+                                        <small class="text-muted">{{ trim($contacto->telefono) }}</small>
+                                    @endif
+                                </label>
+                            </li>
+                        @endforeach
+                    </ul>
+                @else
+                    <p class="text-muted mb-0 small">
+                        No hay contactos de tipo «Envío de factura» en el cliente ni en la cotización. La factura se generará sin envío por email.
+                    </p>
+                @endif
+            </div>
+        </div>
+    @endisset
+
     @isset($refsFacturacion)
         <div class="card border-secondary mb-4 shadow-sm">
             <div class="card-header bg-light py-2 d-flex flex-wrap align-items-center justify-content-between gap-2">
@@ -805,15 +880,23 @@
         updateHiddenInputs();
     }
 
+    function emailEnvioFacturaValido() {
+        const card = document.getElementById('card-emails-envio-factura');
+        if (!card) return true;
+        const checks = card.querySelectorAll('.email-envio-factura-check');
+        if (checks.length === 0) return true;
+        return Array.from(checks).some(cb => cb.checked);
+    }
+
     function updateFacturarButton() {
         const btnFacturar = document.getElementById('btnFacturar');
         if (!btnFacturar || btnFacturar.type === 'button') return; // Bloqueado por backend
 
-        // Solo considerar checkboxes que no están deshabilitados
         const anyChecked = document.querySelectorAll('.sample-checkbox:checked:not(:disabled), .analysis-checkbox:checked:not(:disabled), .cuota-checkbox:checked:not(:disabled)').length > 0;
-        btnFacturar.disabled = !anyChecked;
-        btnFacturar.classList.toggle('btn-primary', anyChecked);
-        btnFacturar.classList.toggle('btn-secondary', !anyChecked);
+        const emailOk = emailEnvioFacturaValido();
+        btnFacturar.disabled = !anyChecked || !emailOk;
+        btnFacturar.classList.toggle('btn-primary', anyChecked && emailOk);
+        btnFacturar.classList.toggle('btn-secondary', !anyChecked || !emailOk);
     }
 
     function updateHiddenInputs() {
@@ -904,6 +987,19 @@
         document.querySelectorAll('.cuota-checkbox').forEach(checkbox => {
             checkbox.addEventListener('change', () => handleCuotaChange(checkbox));
         });
+        document.querySelectorAll('.email-envio-factura-check').forEach(checkbox => {
+            checkbox.addEventListener('change', () => updateFacturarButton());
+        });
+
+        const facturarForm = document.getElementById('facturarForm');
+        if (facturarForm) {
+            facturarForm.addEventListener('submit', function(e) {
+                if (!emailEnvioFacturaValido()) {
+                    e.preventDefault();
+                    alert('Seleccione al menos un email de envío de factura antes de continuar.');
+                }
+            });
+        }
         
         // Verificar estado inicial de cada muestra
         document.querySelectorAll('.sample-checkbox').forEach(checkbox => {

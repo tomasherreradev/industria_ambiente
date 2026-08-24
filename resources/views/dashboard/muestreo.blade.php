@@ -217,7 +217,8 @@
                                     <th>Descripción</th>
                                     <th>Fecha Muestreo</th>
                                     <th>Responsables</th>
-                                    <th class="pe-4 d-flex flex-column align-items-center">Estado</th>
+                                    <th class="text-center" style="min-width: 7rem;" title="Pasada a laboratorio (OT) o documentación (mediciones)">Pasada a Laboratorio</th>
+                                    <th class="pe-4 text-center">Estado</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -244,7 +245,10 @@
                                                 $nombreClienteM = trim((string) (optional($cliM)->cli_fantasia ?? ''));
                                             }
                                             if ($nombreClienteM === '') {
-                                                $nombreClienteM = trim((string) ($muestra->cotizacion->coti_empresa ?? ''));
+                                                $nombreClienteM = \App\Support\CotizacionClienteEtiqueta::paraLista($muestra->cotizacion);
+                                                if ($nombreClienteM === '—') {
+                                                    $nombreClienteM = '';
+                                                }
                                             }
                                         @endphp
                                         <span class="d-block text-truncate" title="{{ $nombreClienteM }}">{{ $nombreClienteM !== '' ? $nombreClienteM : '—' }}</span>
@@ -279,6 +283,32 @@
                                             <span class="text-muted">Sin asignar</span>
                                         @endif
                                     </td>
+                                    <td class="text-center align-middle">
+                                        @php
+                                            $matrizDashboard = optional($muestra->cotizacion?->matriz)->matriz_descripcion;
+                                            $pasadaLab = \App\Support\CotizacionCanalEnsayo::instanciaPasadaALaboratorio($muestra);
+                                            $pendientePasarLab = \App\Support\CotizacionCanalEnsayo::instanciaPendientePasarALaboratorio($muestra, $matrizDashboard);
+                                            $enDocumentacion = \App\Support\CotizacionCanalEnsayo::instanciaMedicionesEnDocumentacion($muestra);
+                                        @endphp
+                                        @if($pasadaLab)
+                                            <span class="d-inline-flex align-items-center justify-content-center rounded-circle bg-success text-white fw-bold"
+                                                  style="width: 1.5rem; height: 1.5rem; font-size: 0.85rem;"
+                                                  title="Pasada a laboratorio"
+                                                  aria-label="Pasada a laboratorio">✓</span>
+                                        @elseif($enDocumentacion)
+                                            <span class="text-muted small" title="En documentación (mediciones; no aplica laboratorio)">—</span>
+                                        @elseif($pendientePasarLab)
+                                            <span class="d-inline-flex align-items-center justify-content-center rounded-circle bg-danger text-white fw-bold"
+                                                  style="width: 1.5rem; height: 1.5rem; font-size: 0.85rem;"
+                                                  title="Muestreada, pendiente de pasar a laboratorio"
+                                                  aria-label="Pendiente de pasar a laboratorio">✕</span>
+                                        @else
+                                            <span class="d-inline-block border rounded"
+                                                  style="width: 1.1rem; height: 1.1rem; background: #fff;"
+                                                  title="Aún no aplica"
+                                                  aria-label="No aplica"></span>
+                                        @endif
+                                    </td>
                                     <td class="pe-4">
                                         @php
                                             $badgeColor = match($muestra->cotio_estado) {
@@ -293,18 +323,12 @@
                                             <span class="badge rounded-pill bg-{{ $badgeColor }} text-capitalize">
                                                 {{ str_replace('_', ' ', $muestra->cotio_estado) }}
                                             </span>
-                                            
-                                            @if($muestra->enable_ot)
-                                                <small class="badge bg-info text-white px-2 py-1 rounded-pill">
-                                                    En OT
-                                                </small>
-                                            @endif
                                         </div>
                                     </td>
                                 </tr>
                                 @empty
                                 <tr>
-                                    <td colspan="6" class="text-center py-4 text-muted">
+                                    <td colspan="7" class="text-center py-4 text-muted">
                                         <i class="fas fa-calendar-times fa-2x mb-2"></i>
                                         <p class="mb-0">No hay muestras asignadas actualmente</p>
                                     </td>

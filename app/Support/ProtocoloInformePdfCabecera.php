@@ -30,6 +30,86 @@ class ProtocoloInformePdfCabecera
         'protocolo_opds',
     ];
 
+    public const KEY_NOTAS_CATALOGO_IDS = 'notas_catalogo_ids';
+
+    /**
+     * IDs de notas reutilizables (informe_notas) seleccionadas para este informe, en orden de inserción.
+     *
+     * @return list<int>
+     */
+    public static function notasCatalogoIdsGuardados(CotioInstancia $muestra): array
+    {
+        $o = $muestra->protocolo_informe_json;
+        if (! is_array($o) || ! isset($o[self::KEY_NOTAS_CATALOGO_IDS])) {
+            return [];
+        }
+        $ids = $o[self::KEY_NOTAS_CATALOGO_IDS];
+        if (! is_array($ids)) {
+            return [];
+        }
+
+        return array_values(array_filter(array_map('intval', $ids), fn (int $id) => $id > 0));
+    }
+
+    public static function formatearNotaInforme(?string $titulo, string $contenido): string
+    {
+        $titulo = trim((string) $titulo);
+        $contenido = trim($contenido);
+        if ($contenido === '') {
+            return '';
+        }
+        if ($titulo !== '') {
+            return '**'.$titulo.'**: '.$contenido;
+        }
+
+        return $contenido;
+    }
+
+    /**
+     * Texto de notas del catálogo global (informe_notas) en el orden guardado en el informe.
+     */
+    public static function obtenerTextoNotasCatalogo(CotioInstancia $muestra): string
+    {
+        $ids = self::notasCatalogoIdsGuardados($muestra);
+        if ($ids === []) {
+            return '';
+        }
+
+        $notas = \App\Models\InformeNota::query()
+            ->whereIn('id', $ids)
+            ->get()
+            ->keyBy('id');
+
+        $partes = [];
+        foreach ($ids as $id) {
+            $nota = $notas->get($id);
+            if (! $nota) {
+                continue;
+            }
+            $texto = self::formatearNotaInforme($nota->titulo, (string) $nota->contenido);
+            if ($texto !== '') {
+                $partes[] = $texto;
+            }
+        }
+
+        return implode("\n\n", $partes);
+    }
+
+    /**
+     * Notas completas para el PDF: catálogo determinaciones + notas guardadas + texto adicional manual.
+     */
+    public static function compilarNotasInformePdf(CotioInstancia $muestra): string
+    {
+        $jsonProtocolo = self::forPdf($muestra);
+        $bloques = array_filter([
+            trim(self::obtenerNotasPredeterminadas($muestra)),
+            trim(self::obtenerTextoNotasCatalogo($muestra)),
+            trim((string) ($jsonProtocolo['notas_informe'] ?? '')),
+        ], fn (string $b) => $b !== '');
+
+        return implode("\n\n", $bloques);
+    }
+
     public static function defaults(CotioInstancia $muestra): array
     {
         $muestra->loadMissing(['cotizacion', 'muestra.leyNormativa', 'responsablesMuestreo']);
@@ -48,6 +128,14 @@ class ProtocoloInformePdfCabecera
 
         $otn = $muestra->otn !== null && trim((string) $muestra->otn) !== '' ? trim((string) $muestra->otn) : '—';
 
+        $sitioExtraccion = '—';
+        if ($cotiInf) {
+            $sitioExtraccion = trim(CotizacionClienteEtiqueta::etiquetaSucursalEstablecimiento($cotiInf));
+            if ($sitioExtraccion === '') {
+                $sitioExtraccion = '—';
+            }
+        }
+
         return [
             'fecha_emision' => Carbon::parse($fechaEmision)->format('d/m/Y'),
             'otn' => $otn,
@@ -62,9 +150,7 @@ class ProtocoloInformePdfCabecera
             'datos_muestra' => $muestra->cotio_descripcion !== null && trim((string) $muestra->cotio_descripcion) !== ''
                 ? trim((string) $muestra->cotio_descripcion)
                 : '—',
-            'sitio_extraccion' => $cotiInf && ($cotiInf->coti_establecimiento ?? '') !== ''
-                ? trim((string) $cotiInf->coti_establecimiento)
-                : '—',
+            'sitio_extraccion' => $sitioExtraccion,
             'precinto' => $muestra->nro_precinto !== null && trim((string) $muestra->nro_precinto) !== ''
                 ? trim((string) $muestra->nro_precinto)
                 : '—',
@@ -126,17 +212,10 @@ class ProtocoloInformePdfCabecera
         // 4. Devolvemos el contenido de las notas, ordenadas por el campo 'orden'
         return $todasLasNotas->sortBy('orden')
             ->unique('contenido')
-            ->map(function($nota) {
-                $titulo = trim((string)$nota->titulo);
-                $contenido = trim((string)$nota->contenido);
-
-                if ($titulo !== '') {
-                    return "**" . $titulo . "**: " . $contenido;
-                }
-
-                return $contenido;
+            ->map(function ($nota) {
+                return static::formatearNotaInforme($nota->titulo ?? null, (string) ($nota->contenido ?? ''));
             })
-            ->map(fn($c) => trim((string)$c))
+            ->map(fn ($c) => trim((string) $c))
             ->filter()
             ->implode("\n\n");
     }

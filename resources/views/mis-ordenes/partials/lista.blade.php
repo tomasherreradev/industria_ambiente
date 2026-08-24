@@ -1,5 +1,15 @@
 <?php
 // Ordenar los grupos por estado y fecha
+$misOrdenesDetalleQuery = !empty($soloMisAsignaciones) ? ['solo_mis_asignaciones' => 1] : [];
+$misOrdenesDetalleUrl = static function ($instanciaMuestra) use ($misOrdenesDetalleQuery) {
+    return route('ordenes.all.show', array_merge([
+        'cotio_numcoti' => $instanciaMuestra->cotio_numcoti ?? 'N/A',
+        'cotio_item' => $instanciaMuestra->cotio_item ?? 'N/A',
+        'cotio_subitem' => $instanciaMuestra->cotio_subitem ?? 'N/A',
+        'instance' => $instanciaMuestra->instance_number ?? 'N/A',
+    ], $misOrdenesDetalleQuery));
+};
+
 $gruposRevisionResultados = []; // New group for orders needing result review
 $gruposVencidas = [];
 $gruposPrioritarios = [];
@@ -197,6 +207,13 @@ usort($gruposFinalizados, $sortFunction);
 </style>
 
 @if(count($ordenesAgrupadas) > 0)
+    <div class="d-md-none">
+        @include('mis-ordenes.partials.lista-mobile', [
+            'soloMisAsignaciones' => $soloMisAsignaciones ?? false,
+        ])
+    </div>
+
+    <div class="d-none d-md-block mis-ordenes-lista-desktop">
     <!-- Control para mostrar/ocultar órdenes vencidas -->
     @if(count($gruposVencidas) > 0)
         <div class="mb-3 d-flex justify-content-between align-items-center">
@@ -253,8 +270,7 @@ usort($gruposFinalizados, $sortFunction);
                                             - ({{ $grupo['instancias']->count() }} Muestras)
                                         @else
                                             - {{ $grupo['instancia_muestra']->cotio_descripcion ?? 'N/A' }}
-                                            (OT
-                                            {{ $grupo['instancia_muestra']->otn ?? '—' }})
+                                            @include('partials.muestra-ot-precinto', ['instancia' => $grupo['instancia_muestra'], 'envoltura' => 'parens'])
                                         @endif
                                     </h4>
                                     <div class="d-flex align-items-center gap-2 mt-1">
@@ -342,10 +358,8 @@ usort($gruposFinalizados, $sortFunction);
                                                                     </span>
                                                                 @endif
                                                                 <span>MUESTRA: {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }}
-                                                                    (OT
-                                                                    {{ $instanciaMuestra->otn ?? '—' }})</span>
-                                                                <small class="text-muted d-block mt-1">OT:
-                                                                    {{ $instanciaMuestra->otn ?? '—' }}</small>
+                                                                    @include('partials.muestra-ot-precinto', ['instancia' => $instanciaMuestra, 'envoltura' => 'parens'])</span>
+                                                                <small class="text-muted d-block mt-1">@include('partials.muestra-ot-precinto', ['instancia' => $instanciaMuestra, 'conDosPuntos' => true])</small>
                                                                 @if($esFrecuente && $frecuenciaDias > 0)
                                                                     <span class="badge bg-light text-dark border mt-1">
                                                                         <x-heroicon-o-arrow-path class="me-1"
@@ -354,7 +368,7 @@ usort($gruposFinalizados, $sortFunction);
                                                                     </span>
                                                                 @endif
                                                             </div>
-                                                            <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}"
+                                                            <a href="{{ $misOrdenesDetalleUrl($instanciaMuestra) }}"
                                                                 class="btn btn-sm btn-dark">
                                                                 <x-heroicon-o-eye class="me-1" style="width: 16px; height: 16px;" />
                                                                 Ver
@@ -385,7 +399,7 @@ usort($gruposFinalizados, $sortFunction);
                                                         <td class="small">
                                                             <div class="d-flex justify-content-between align-items-center">
                                                                 <div>
-                                                                    <span>ANÁLISIS: {{ $tarea->cotio_descripcion }}</span>
+                                                                    <span>ANÁLISIS: {{ $tarea->cotio_descripcion }}@include('ordenes.partials.metodo-analisis-etiqueta', ['tarea' => $tarea])</span>
                                                                     <small class="text-muted d-block mt-1">ID: {{ $tarea->id }}</small>
                                                                     @if($tarea->resultado)
                                                                         <span class="badge bg-dark mt-1">RESULTADO: {{ $tarea->resultado }}</span>
@@ -439,8 +453,7 @@ usort($gruposFinalizados, $sortFunction);
                                                                 </span>
                                                             @endif
                                                             <span>MUESTRA: {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }}</span>
-                                                            <small class="text-muted d-block mt-1">OT:
-                                                                {{ $instanciaMuestra->otn ?? '—' }}</small>
+                                                            <small class="text-muted d-block mt-1">@include('partials.muestra-ot-precinto', ['instancia' => $instanciaMuestra, 'conDosPuntos' => true])</small>
                                                             @if($esFrecuente && $frecuenciaDias > 0)
                                                                 <span class="badge bg-light text-dark border mt-1">
                                                                     <x-heroicon-o-arrow-path class="me-1"
@@ -449,7 +462,7 @@ usort($gruposFinalizados, $sortFunction);
                                                                 </span>
                                                             @endif
                                                         </div>
-                                                        <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}"
+                                                        <a href="{{ $misOrdenesDetalleUrl($instanciaMuestra) }}"
                                                             class="btn btn-sm btn-dark">
                                                             <x-heroicon-o-eye class="me-1" style="width: 16px; height: 16px;" />
                                                             Ver
@@ -480,7 +493,7 @@ usort($gruposFinalizados, $sortFunction);
                                                     <td class="small">
                                                         <div class="d-flex justify-content-between align-items-center">
                                                             <div>
-                                                                <span>ANÁLISIS: {{ $tarea->cotio_descripcion }}</span>
+                                                                <span>ANÁLISIS: {{ $tarea->cotio_descripcion }}@include('ordenes.partials.metodo-analisis-etiqueta', ['tarea' => $tarea])</span>
                                                                 <small class="text-muted d-block mt-1">ID: {{ $tarea->id }}</small>
                                                                 @if($tarea->resultado)
                                                                     <span class="badge bg-dark mt-1">RESULTADO: {{ $tarea->resultado }}</span>
@@ -557,8 +570,7 @@ usort($gruposFinalizados, $sortFunction);
                                             - ({{ $grupo['instancias']->count() }} Muestras)
                                         @else
                                             - {{ $grupo['instancia_muestra']->cotio_descripcion ?? 'N/A' }}
-                                            (OT
-                                            {{ $grupo['instancia_muestra']->otn ?? '—' }})
+                                            @include('partials.muestra-ot-precinto', ['instancia' => $grupo['instancia_muestra'], 'envoltura' => 'parens'])
                                         @endif
                                     </h4>
                                     <div class="d-flex align-items-center gap-2 mt-1 flex-wrap">
@@ -650,10 +662,8 @@ usort($gruposFinalizados, $sortFunction);
                                                                     </span>
                                                                 @endif
                                                                 <span>MUESTRA: {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }}
-                                                                    (OT
-                                                                    {{ $instanciaMuestra->otn ?? '—' }})</span>
-                                                                <small class="text-muted d-block mt-1">OT:
-                                                                    {{ $instanciaMuestra->otn ?? '—' }}</small>
+                                                                    @include('partials.muestra-ot-precinto', ['instancia' => $instanciaMuestra, 'envoltura' => 'parens'])</span>
+                                                                <small class="text-muted d-block mt-1">@include('partials.muestra-ot-precinto', ['instancia' => $instanciaMuestra, 'conDosPuntos' => true])</small>
                                                                 @if($esFrecuente && $frecuenciaDias > 0)
                                                                     <span class="badge bg-light text-dark border mt-1">
                                                                         <x-heroicon-o-arrow-path class="me-1"
@@ -662,7 +672,7 @@ usort($gruposFinalizados, $sortFunction);
                                                                     </span>
                                                                 @endif
                                                             </div>
-                                                            <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}"
+                                                            <a href="{{ $misOrdenesDetalleUrl($instanciaMuestra) }}"
                                                                 class="btn btn-sm btn-dark">
                                                                 <x-heroicon-o-eye class="me-1" style="width: 16px; height: 16px;" />
                                                                 Ver
@@ -690,7 +700,7 @@ usort($gruposFinalizados, $sortFunction);
                                                         <td class="small">
                                                             <div class="d-flex justify-content-between align-items-center">
                                                                 <div>
-                                                                    <span>ANÁLISIS: {{ $tarea->cotio_descripcion }}</span>
+                                                                    <span>ANÁLISIS: {{ $tarea->cotio_descripcion }}@include('ordenes.partials.metodo-analisis-etiqueta', ['tarea' => $tarea])</span>
                                                                     <small class="text-muted d-block mt-1">ID: {{ $tarea->id }}</small>
                                                                     @if($tarea->resultado)
                                                                         <span class="badge bg-dark mt-1">RESULTADO: {{ $tarea->resultado }}</span>
@@ -740,8 +750,7 @@ usort($gruposFinalizados, $sortFunction);
                                                                 </span>
                                                             @endif
                                                             <span>MUESTRA: {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }}</span>
-                                                            <small class="text-muted d-block mt-1">OT:
-                                                                {{ $instanciaMuestra->otn ?? '—' }}</small>
+                                                            <small class="text-muted d-block mt-1">@include('partials.muestra-ot-precinto', ['instancia' => $instanciaMuestra, 'conDosPuntos' => true])</small>
                                                             @if($esFrecuente && $frecuenciaDias > 0)
                                                                 <span class="badge bg-light text-dark border mt-1">
                                                                     <x-heroicon-o-arrow-path class="me-1"
@@ -750,7 +759,7 @@ usort($gruposFinalizados, $sortFunction);
                                                                 </span>
                                                             @endif
                                                         </div>
-                                                        <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}"
+                                                        <a href="{{ $misOrdenesDetalleUrl($instanciaMuestra) }}"
                                                             class="btn btn-sm btn-dark">
                                                             <x-heroicon-o-eye class="me-1" style="width: 16px; height: 16px;" />
                                                             Ver
@@ -778,7 +787,7 @@ usort($gruposFinalizados, $sortFunction);
                                                     <td class="small">
                                                         <div class="d-flex justify-content-between align-items-center">
                                                             <div>
-                                                                <span>ANÁLISIS: {{ $tarea->cotio_descripcion }}</span>
+                                                                <span>ANÁLISIS: {{ $tarea->cotio_descripcion }}@include('ordenes.partials.metodo-analisis-etiqueta', ['tarea' => $tarea])</span>
                                                                 <small class="text-muted d-block mt-1">ID: {{ $tarea->id }}</small>
                                                                 @if($tarea->resultado)
                                                                     <span class="badge bg-dark mt-1">RESULTADO: {{ $tarea->resultado }}</span>
@@ -854,8 +863,7 @@ usort($gruposFinalizados, $sortFunction);
                                         @if($isLista)
                                             - ({{ $grupo['instancias']->count() }} Muestras)
                                         @else
-                                            - {{ $grupo['instancia_muestra']->cotio_descripcion ?? 'N/A' }} (OT
-                                            {{ $grupo['instancia_muestra']->otn ?? '—' }})
+                                            - {{ $grupo['instancia_muestra']->cotio_descripcion ?? 'N/A' }} @include('partials.muestra-ot-precinto', ['instancia' => $grupo['instancia_muestra'], 'envoltura' => 'parens'])
                                         @endif
                                     </h4>
                                     <div class="d-flex align-items-center gap-2 mt-1">
@@ -935,10 +943,8 @@ usort($gruposFinalizados, $sortFunction);
                                                                         Prioritaria
                                                                     </span>
                                                                 @endif
-                                                                <span>MUESTRA: {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }} (OT
-                                                                    {{ $instanciaMuestra->otn ?? '—' }})</span>
-                                                                <small class="text-muted d-block mt-1">OT:
-                                                                    {{ $instanciaMuestra->otn ?? '—' }}</small>
+                                                                <span>MUESTRA: {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }} @include('partials.muestra-ot-precinto', ['instancia' => $instanciaMuestra, 'envoltura' => 'parens'])</span>
+                                                                <small class="text-muted d-block mt-1">@include('partials.muestra-ot-precinto', ['instancia' => $instanciaMuestra, 'conDosPuntos' => true])</small>
                                                                 @if($esFrecuente && $frecuenciaDias > 0)
                                                                     <span class="badge bg-light text-dark border mt-1">
                                                                         <x-heroicon-o-arrow-path class="me-1"
@@ -947,7 +953,7 @@ usort($gruposFinalizados, $sortFunction);
                                                                     </span>
                                                                 @endif
                                                             </div>
-                                                            <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}"
+                                                            <a href="{{ $misOrdenesDetalleUrl($instanciaMuestra) }}"
                                                                 class="btn btn-sm btn-dark">
                                                                 <x-heroicon-o-eye class="me-1" style="width: 16px; height: 16px;" />
                                                                 Ver
@@ -977,7 +983,7 @@ usort($gruposFinalizados, $sortFunction);
                                                         <td class="small">
                                                             <div class="d-flex justify-content-between align-items-center">
                                                                 <div>
-                                                                    <span>ANÁLISIS: {{ $tarea->cotio_descripcion }}</span>
+                                                                    <span>ANÁLISIS: {{ $tarea->cotio_descripcion }}@include('ordenes.partials.metodo-analisis-etiqueta', ['tarea' => $tarea])</span>
                                                                     <small class="text-muted d-block mt-1">ID: {{ $tarea->id }}</small>
                                                                     @if($tarea->resultado)
                                                                         <span class="badge bg-dark mt-1">RESULTADO: {{ $tarea->resultado }}</span>
@@ -1024,8 +1030,7 @@ usort($gruposFinalizados, $sortFunction);
                                                                 </span>
                                                             @endif
                                                             <span>MUESTRA: {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }}</span>
-                                                            <small class="text-muted d-block mt-1">OT:
-                                                                {{ $instanciaMuestra->otn ?? '—' }}</small>
+                                                            <small class="text-muted d-block mt-1">@include('partials.muestra-ot-precinto', ['instancia' => $instanciaMuestra, 'conDosPuntos' => true])</small>
                                                             @if($esFrecuente && $frecuenciaDias > 0)
                                                                 <span class="badge bg-light text-dark border mt-1">
                                                                     <x-heroicon-o-arrow-path class="me-1"
@@ -1034,7 +1039,7 @@ usort($gruposFinalizados, $sortFunction);
                                                                 </span>
                                                             @endif
                                                         </div>
-                                                        <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}"
+                                                        <a href="{{ $misOrdenesDetalleUrl($instanciaMuestra) }}"
                                                             class="btn btn-sm btn-dark">
                                                             <x-heroicon-o-eye class="me-1" style="width: 16px; height: 16px;" />
                                                             Ver
@@ -1064,7 +1069,7 @@ usort($gruposFinalizados, $sortFunction);
                                                     <td class="small">
                                                         <div class="d-flex justify-content-between align-items-center">
                                                             <div>
-                                                                <span>ANÁLISIS: {{ $tarea->cotio_descripcion }}</span>
+                                                                <span>ANÁLISIS: {{ $tarea->cotio_descripcion }}@include('ordenes.partials.metodo-analisis-etiqueta', ['tarea' => $tarea])</span>
                                                                 <small class="text-muted d-block mt-1">ID: {{ $tarea->id }}</small>
                                                                 @if($tarea->resultado)
                                                                     <span class="badge bg-dark mt-1">RESULTADO: {{ $tarea->resultado }}</span>
@@ -1141,8 +1146,7 @@ usort($gruposFinalizados, $sortFunction);
                                         @if($isLista)
                                             - ({{ $grupo['instancias']->count() }} Muestras)
                                         @else
-                                            - {{ $grupo['instancia_muestra']->cotio_descripcion ?? 'N/A' }} (OT
-                                            {{ $grupo['instancia_muestra']->otn ?? '—' }})
+                                            - {{ $grupo['instancia_muestra']->cotio_descripcion ?? 'N/A' }} @include('partials.muestra-ot-precinto', ['instancia' => $grupo['instancia_muestra'], 'envoltura' => 'parens'])
                                         @endif
                                     </h4>
                                     <div class="d-flex align-items-center gap-2 mt-1">
@@ -1226,10 +1230,8 @@ usort($gruposFinalizados, $sortFunction);
                                                                         Prioritaria
                                                                     </span>
                                                                 @endif
-                                                                <span>MUESTRA: {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }} (OT
-                                                                    {{ $instanciaMuestra->otn ?? '—' }})</span>
-                                                                <small class="text-muted d-block mt-1">OT
-                                                                    {{ $instanciaMuestra->otn ?? '—' }}</small>
+                                                                <span>MUESTRA: {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }} @include('partials.muestra-ot-precinto', ['instancia' => $instanciaMuestra, 'envoltura' => 'parens'])</span>
+                                                                <small class="text-muted d-block mt-1">@include('partials.muestra-ot-precinto', ['instancia' => $instanciaMuestra])</small>
                                                                 @if($esFrecuente && $frecuenciaDias > 0)
                                                                     <span class="badge bg-light text-dark border mt-1">
                                                                         <x-heroicon-o-arrow-path class="me-1"
@@ -1238,7 +1240,7 @@ usort($gruposFinalizados, $sortFunction);
                                                                     </span>
                                                                 @endif
                                                             </div>
-                                                            <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}"
+                                                            <a href="{{ $misOrdenesDetalleUrl($instanciaMuestra) }}"
                                                                 class="btn btn-sm btn-dark">
                                                                 <x-heroicon-o-eye class="me-1" style="width: 16px; height: 16px;" />
                                                                 Ver
@@ -1268,7 +1270,7 @@ usort($gruposFinalizados, $sortFunction);
                                                         <td class="small">
                                                             <div class="d-flex justify-content-between align-items-center">
                                                                 <div>
-                                                                    <span>ANÁLISIS: {{ $tarea->cotio_descripcion }}</span>
+                                                                    <span>ANÁLISIS: {{ $tarea->cotio_descripcion }}@include('ordenes.partials.metodo-analisis-etiqueta', ['tarea' => $tarea])</span>
                                                                     <small class="text-muted d-block mt-1">ID: {{ $tarea->id }}</small>
                                                                     @if($tarea->resultado)
                                                                         <span class="badge bg-dark mt-1">RESULTADO: {{ $tarea->resultado }}</span>
@@ -1315,8 +1317,7 @@ usort($gruposFinalizados, $sortFunction);
                                                                 </span>
                                                             @endif
                                                             <span>MUESTRA: {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }}</span>
-                                                            <small class="text-muted d-block mt-1">OT:
-                                                                {{ $instanciaMuestra->otn ?? '—' }}</small>
+                                                            <small class="text-muted d-block mt-1">@include('partials.muestra-ot-precinto', ['instancia' => $instanciaMuestra, 'conDosPuntos' => true])</small>
                                                             @if($esFrecuente && $frecuenciaDias > 0)
                                                                 <span class="badge bg-light text-dark border mt-1">
                                                                     <x-heroicon-o-arrow-path class="me-1"
@@ -1325,7 +1326,7 @@ usort($gruposFinalizados, $sortFunction);
                                                                 </span>
                                                             @endif
                                                         </div>
-                                                        <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}"
+                                                        <a href="{{ $misOrdenesDetalleUrl($instanciaMuestra) }}"
                                                             class="btn btn-sm btn-dark">
                                                             <x-heroicon-o-eye class="me-1" style="width: 16px; height: 16px;" />
                                                             Ver
@@ -1355,7 +1356,7 @@ usort($gruposFinalizados, $sortFunction);
                                                     <td class="small">
                                                         <div class="d-flex justify-content-between align-items-center">
                                                             <div>
-                                                                <span>ANÁLISIS: {{ $tarea->cotio_descripcion }}</span>
+                                                                <span>ANÁLISIS: {{ $tarea->cotio_descripcion }}@include('ordenes.partials.metodo-analisis-etiqueta', ['tarea' => $tarea])</span>
                                                                 <small class="text-muted d-block mt-1">ID: {{ $tarea->id }}</small>
                                                                 @if($tarea->resultado)
                                                                     <span class="badge bg-dark mt-1">RESULTADO: {{ $tarea->resultado }}</span>
@@ -1431,8 +1432,7 @@ usort($gruposFinalizados, $sortFunction);
                                             - ({{ $grupo['instancias']->count() }} Muestras)
                                         @else
                                             - {{ $grupo['instancia_muestra']->cotio_descripcion ?? 'N/A' }}
-                                            (OT
-                                            {{ $grupo['instancia_muestra']->otn ?? '—' }})
+                                            @include('partials.muestra-ot-precinto', ['instancia' => $grupo['instancia_muestra'], 'envoltura' => 'parens'])
                                         @endif
                                     </h4>
                                     <div class="d-flex align-items-center gap-2 mt-1">
@@ -1521,8 +1521,7 @@ usort($gruposFinalizados, $sortFunction);
                                                                     </span>
                                                                 @endif
                                                                 <span>MUESTRA: {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }}
-                                                                    (OT
-                                                                    {{ $instanciaMuestra->otn ?? '—' }})</span>
+                                                                    @include('partials.muestra-ot-precinto', ['instancia' => $instanciaMuestra, 'envoltura' => 'parens'])</span>
                                                                 @if($esFrecuente && $frecuenciaDias > 0)
                                                                     <span class="badge bg-light text-dark border mt-1">
                                                                         <x-heroicon-o-arrow-path class="me-1"
@@ -1531,7 +1530,7 @@ usort($gruposFinalizados, $sortFunction);
                                                                     </span>
                                                                 @endif
                                                             </div>
-                                                            <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}"
+                                                            <a href="{{ $misOrdenesDetalleUrl($instanciaMuestra) }}"
                                                                 class="btn btn-sm btn-dark">
                                                                 <x-heroicon-o-eye class="me-1" style="width: 16px; height: 16px;" />
                                                                 Ver
@@ -1560,7 +1559,7 @@ usort($gruposFinalizados, $sortFunction);
                                                         <td class="small">
                                                             <div class="d-flex justify-content-between align-items-center">
                                                                 <div>
-                                                                    <span>ANÁLISIS: {{ $tarea->cotio_descripcion }}</span>
+                                                                    <span>ANÁLISIS: {{ $tarea->cotio_descripcion }}@include('ordenes.partials.metodo-analisis-etiqueta', ['tarea' => $tarea])</span>
                                                                     <small class="text-muted d-block mt-1">ID: {{ $tarea->id }}</small>
                                                                     @if($tarea->resultado)
                                                                         <span class="badge bg-dark mt-1">RESULTADO: {{ $tarea->resultado }}</span>
@@ -1607,8 +1606,7 @@ usort($gruposFinalizados, $sortFunction);
                                                                 </span>
                                                             @endif
                                                             <span>MUESTRA: {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }}</span>
-                                                            <small class="text-muted d-block mt-1">OT
-                                                                {{ $instanciaMuestra->otn ?? '—' }}</small>
+                                                            <small class="text-muted d-block mt-1">@include('partials.muestra-ot-precinto', ['instancia' => $instanciaMuestra])</small>
                                                             @if($esFrecuente && $frecuenciaDias > 0)
                                                                 <span class="badge bg-light text-dark border mt-1">
                                                                     <x-heroicon-o-arrow-path class="me-1"
@@ -1617,7 +1615,7 @@ usort($gruposFinalizados, $sortFunction);
                                                                 </span>
                                                             @endif
                                                         </div>
-                                                        <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}"
+                                                        <a href="{{ $misOrdenesDetalleUrl($instanciaMuestra) }}"
                                                             class="btn btn-sm btn-dark">
                                                             <x-heroicon-o-eye class="me-1" style="width: 16px; height: 16px;" />
                                                             Ver
@@ -1647,7 +1645,7 @@ usort($gruposFinalizados, $sortFunction);
                                                     <td class="small">
                                                         <div class="d-flex justify-content-between align-items-center">
                                                             <div>
-                                                                <span>ANÁLISIS: {{ $tarea->cotio_descripcion }}</span>
+                                                                <span>ANÁLISIS: {{ $tarea->cotio_descripcion }}@include('ordenes.partials.metodo-analisis-etiqueta', ['tarea' => $tarea])</span>
                                                                 <small class="text-muted d-block mt-1">ID: {{ $tarea->id }}</small>
                                                                 @if($tarea->resultado)
                                                                     <span class="badge bg-dark mt-1">RESULTADO: {{ $tarea->resultado }}</span>
@@ -1723,8 +1721,7 @@ usort($gruposFinalizados, $sortFunction);
                                             - ({{ $grupo['instancias']->count() }} Muestras)
                                         @else
                                             - {{ $grupo['instancia_muestra']->cotio_descripcion ?? 'N/A' }}
-                                            (OT
-                                            {{ $grupo['instancia_muestra']->otn ?? '—' }})
+                                            @include('partials.muestra-ot-precinto', ['instancia' => $grupo['instancia_muestra'], 'envoltura' => 'parens'])
                                         @endif
                                     </h4>
                                     <div class="d-flex align-items-center gap-2 mt-1">
@@ -1812,10 +1809,8 @@ usort($gruposFinalizados, $sortFunction);
                                                                         Prioritaria
                                                                     </span>
                                                                 @endif
-                                                                <span>MUESTRA: {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }} (OT
-                                                                    {{ $instanciaMuestra->otn ?? '—' }})</span>
-                                                                <small class="text-muted d-block mt-1">OT:
-                                                                    {{ $instanciaMuestra->otn ?? '—' }}</small>
+                                                                <span>MUESTRA: {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }} @include('partials.muestra-ot-precinto', ['instancia' => $instanciaMuestra, 'envoltura' => 'parens'])</span>
+                                                                <small class="text-muted d-block mt-1">@include('partials.muestra-ot-precinto', ['instancia' => $instanciaMuestra, 'conDosPuntos' => true])</small>
                                                                 @if($esFrecuente && $frecuenciaDias > 0)
                                                                     <span class="badge bg-light text-dark border mt-1">
                                                                         <x-heroicon-o-arrow-path class="me-1"
@@ -1824,7 +1819,7 @@ usort($gruposFinalizados, $sortFunction);
                                                                     </span>
                                                                 @endif
                                                             </div>
-                                                            <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}"
+                                                            <a href="{{ $misOrdenesDetalleUrl($instanciaMuestra) }}"
                                                                 class="btn btn-sm btn-dark">
                                                                 <x-heroicon-o-eye class="me-1" style="width: 16px; height: 16px;" />
                                                                 Ver
@@ -1854,7 +1849,7 @@ usort($gruposFinalizados, $sortFunction);
                                                         <td class="small">
                                                             <div class="d-flex justify-content-between align-items-center">
                                                                 <div>
-                                                                    <span>ANÁLISIS: {{ $tarea->cotio_descripcion }}</span>
+                                                                    <span>ANÁLISIS: {{ $tarea->cotio_descripcion }}@include('ordenes.partials.metodo-analisis-etiqueta', ['tarea' => $tarea])</span>
                                                                     <small class="text-muted d-block mt-1">ID: {{ $tarea->id }}</small>
                                                                     @if($tarea->resultado)
                                                                         <span class="badge bg-dark mt-1">RESULTADO: {{ $tarea->resultado }}</span>
@@ -1901,8 +1896,7 @@ usort($gruposFinalizados, $sortFunction);
                                                                 </span>
                                                             @endif
                                                             <span>MUESTRA: {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }}</span>
-                                                            <small class="text-muted d-block mt-1">OT:
-                                                                {{ $instanciaMuestra->otn ?? '—' }}</small>
+                                                            <small class="text-muted d-block mt-1">@include('partials.muestra-ot-precinto', ['instancia' => $instanciaMuestra, 'conDosPuntos' => true])</small>
                                                             @if($esFrecuente && $frecuenciaDias > 0)
                                                                 <span class="badge bg-light text-dark border mt-1">
                                                                     <x-heroicon-o-arrow-path class="me-1"
@@ -1911,7 +1905,7 @@ usort($gruposFinalizados, $sortFunction);
                                                                 </span>
                                                             @endif
                                                         </div>
-                                                        <a href="{{ route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}"
+                                                        <a href="{{ $misOrdenesDetalleUrl($instanciaMuestra) }}"
                                                             class="btn btn-sm btn-dark">
                                                             <x-heroicon-o-eye class="me-1" style="width: 16px; height: 16px;" />
                                                             Ver
@@ -1941,7 +1935,7 @@ usort($gruposFinalizados, $sortFunction);
                                                     <td class="small">
                                                         <div class="d-flex justify-content-between align-items-center">
                                                             <div>
-                                                                <span>ANÁLISIS: {{ $tarea->cotio_descripcion }}</span>
+                                                                <span>ANÁLISIS: {{ $tarea->cotio_descripcion }}@include('ordenes.partials.metodo-analisis-etiqueta', ['tarea' => $tarea])</span>
                                                                 <small class="text-muted d-block mt-1">ID: {{ $tarea->id }}</small>
                                                                 @if($tarea->resultado)
                                                                     <span class="badge bg-dark mt-1">RESULTADO: {{ $tarea->resultado }}</span>
@@ -1967,6 +1961,7 @@ usort($gruposFinalizados, $sortFunction);
             @endforeach
         </div>
     @endif
+    </div>
 @else
     <div class="alert alert-info">
         No hay órdenes para mostrar.

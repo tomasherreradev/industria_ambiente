@@ -1,4 +1,24 @@
 <div class="d-none d-lg-block">
+    @php
+        $sortActual = request('sort');
+        $dirActual = strtolower((string) request('dir', 'asc')) === 'desc' ? 'desc' : 'asc';
+        $urlOrdenColumna = function (string $columna) use ($sortActual, $dirActual) {
+            $nuevaDir = ($sortActual === $columna && $dirActual === 'asc') ? 'desc' : 'asc';
+
+            return request()->fullUrlWithQuery([
+                'sort' => $columna,
+                'dir' => $nuevaDir,
+                'page' => null,
+            ]);
+        };
+        $claseIconoOrden = function (string $columna) use ($sortActual, $dirActual) {
+            if ($sortActual !== $columna) {
+                return 'text-muted opacity-50';
+            }
+
+            return 'text-primary';
+        };
+    @endphp
     @if($muestras->contains(fn($c) => !empty($c->coti_cuotas)))
         <p class="small text-muted mb-2 d-flex align-items-center flex-wrap gap-2">
             <span class="badge bg-info text-white me-0"><x-heroicon-o-check class="d-inline" style="width: 11px; height: 11px;" /></span>
@@ -9,10 +29,43 @@
         <table class="table table-hover align-middle">
             <thead class="table-light">
                 <tr>
-                    <th width="100">Muestra</th>
-                    <th>Cliente</th>
+                    <th width="100">
+                        <a href="{{ $urlOrdenColumna('muestra') }}" class="text-decoration-none text-dark d-inline-flex align-items-center gap-1">
+                            Muestra
+                            <span class="{{ $claseIconoOrden('muestra') }}" style="font-size: 0.75rem;" aria-hidden="true">
+                                @if($sortActual === 'muestra')
+                                    {{ $dirActual === 'desc' ? '↓' : '↑' }}
+                                @else
+                                    ↕
+                                @endif
+                            </span>
+                        </a>
+                    </th>
+                    <th>
+                        <a href="{{ $urlOrdenColumna('cliente') }}" class="text-decoration-none text-dark d-inline-flex align-items-center gap-1">
+                            Cliente
+                            <span class="{{ $claseIconoOrden('cliente') }}" style="font-size: 0.75rem;" aria-hidden="true">
+                                @if($sortActual === 'cliente')
+                                    {{ $dirActual === 'desc' ? '↓' : '↑' }}
+                                @else
+                                    ↕
+                                @endif
+                            </span>
+                        </a>
+                    </th>
                     <th width="140" class="text-center">Muestras</th>
-                    <th width="120" class="text-center">Fecha</th>
+                    <th width="140" class="text-center">
+                        <a href="{{ $urlOrdenColumna('fecha') }}" class="text-decoration-none text-dark d-inline-flex align-items-center justify-content-center gap-1 w-100">
+                            Fecha de aprobación
+                            <span class="{{ $claseIconoOrden('fecha') }}" style="font-size: 0.75rem;" aria-hidden="true">
+                                @if($sortActual === 'fecha')
+                                    {{ $dirActual === 'desc' ? '↓' : '↑' }}
+                                @else
+                                    ↕
+                                @endif
+                            </span>
+                        </a>
+                    </th>
                     <th width="150" class="text-center">Acciones</th>
                 </tr>
             </thead>
@@ -45,6 +98,13 @@
                             @if($coti->total_instancias > 0)
                                 <div class="d-flex align-items-center gap-2">
                                     <div class="progress flex-grow-1" style="height: 20px;">
+                                        @if(($portalTipo ?? '') === 'mediciones')
+                                            <div class="progress-bar bg-success"
+                                                 role="progressbar"
+                                                 style="width: {{ $coti->porcentaje_progreso['con_informe'] ?? 0 }}%"
+                                                 title="Informe subido: {{ round($coti->porcentaje_progreso['con_informe'] ?? 0) }}%">
+                                            </div>
+                                        @else
                                         <!-- Segmento de muestreadas (verde) -->
                                         <div class="progress-bar bg-success" 
                                              role="progressbar" 
@@ -65,12 +125,21 @@
                                              style="width: {{ $coti->porcentaje_progreso['coordinadas'] }}%" 
                                              title="Coordinadas: {{ round($coti->porcentaje_progreso['coordinadas']) }}%">
                                         </div>
+                                        @endif
                                     </div>
                                     <small class="text-nowrap">
-                                        {{ $coti->instancias_completadas }}/{{ $coti->total_instancias }}
+                                        @if(($portalTipo ?? '') === 'mediciones')
+                                            {{ $coti->instancias_completadas }}/{{ $coti->total_instancias }} informes
+                                        @else
+                                            {{ $coti->instancias_completadas }}/{{ $coti->total_instancias }}
+                                        @endif
                                     </small>
                                 </div>
-                                @if($coti->porcentaje_progreso['total'] > 0 && $coti->porcentaje_progreso['total'] < 100)
+                                @if(($portalTipo ?? '') === 'mediciones')
+                                    <small class="d-block mt-1 text-muted">
+                                        {{ round($coti->porcentaje_progreso['con_informe'] ?? 0) }}% con informe
+                                    </small>
+                                @elseif($coti->porcentaje_progreso['total'] > 0 && $coti->porcentaje_progreso['total'] < 100)
                                     <small class="d-block mt-1 @if($coti->has_suspension) text-danger fw-bold @else text-muted @endif">
                                         @if($coti->has_priority)
                                             <x-heroicon-o-star style="width: 14px; height: 14px;" class="text-warning me-1" />
@@ -94,8 +163,13 @@
                         </td>
                         <td class="text-center">
                             <div class="btn-group" role="group">
-                                @if(userHasRole('coordinador_muestreo') || Auth::user()->usu_nivel >= 900)
-                                    <a href="{{ url('/show/'.$coti->coti_num) . (isset($portalCanal) ? '?canal='.$portalCanal : '') }}" 
+                                @if(userPuedeGestionarMuestrasCotizacion())
+                                    @php
+                                        $urlGestion = ($portalCanal ?? '') === 'mediciones'
+                                            ? route('mediciones.show', $coti->coti_num)
+                                            : url('/show/'.$coti->coti_num) . (isset($portalCanal) ? '?canal='.$portalCanal : '');
+                                    @endphp
+                                    <a href="{{ $urlGestion }}" 
                                         class="btn btn-sm btn-outline-primary" 
                                         data-bs-toggle="tooltip" 
                                         title="Gestionar muestras"
@@ -248,8 +322,13 @@
                                 @endif
                             </div>
                             <div class="btn-group btn-group-sm" style="width: 100%; max-width: 200px;">
-                                @if(userHasRole('coordinador_muestreo') || Auth::user()->usu_nivel >= 900)
-                                    <a href="{{ url('/show/'.$coti->coti_num) . (isset($portalCanal) ? '?canal='.$portalCanal : '') }}" class="btn btn-sm btn-outline-primary">
+                                @if(userPuedeGestionarMuestrasCotizacion())
+                                    @php
+                                        $urlGestionMobile = ($portalCanal ?? '') === 'mediciones'
+                                            ? route('mediciones.show', $coti->coti_num)
+                                            : url('/show/'.$coti->coti_num) . (isset($portalCanal) ? '?canal='.$portalCanal : '');
+                                    @endphp
+                                    <a href="{{ $urlGestionMobile }}" class="btn btn-sm btn-outline-primary">
                                         <x-heroicon-o-pencil style="width: 15px; height: 15px;" />
                                     </a>
                                 @endif

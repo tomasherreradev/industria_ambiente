@@ -41,35 +41,34 @@ final class CotizacionClienteEtiqueta
         }
     }
 
+    /**
+     * Etiqueta titular + sucursal para listados, p. ej. "INDUSTRIAS GUIDI SACIF - Burzaco".
+     */
+    public static function etiquetaSucursalConTitular(object $sucursal, ?string $titular = null): string
+    {
+        $nombre = self::nombreSucursal($sucursal);
+        $titular = trim((string) ($titular ?? ''));
+
+        if ($titular !== '') {
+            return $titular . ' - ' . $nombre;
+        }
+
+        return $nombre !== '' ? $nombre : 'Sucursal';
+    }
+
     public static function paraLista(object $coti): string
     {
         $cliente = $coti->relationLoaded('cliente') ? $coti->cliente : ($coti->cliente ?? null);
 
-        $base = trim((string) (optional($cliente)->cli_razonsocial ?? ''));
-        if ($base === '') {
-            $base = trim((string) (optional($cliente)->cli_fantasia ?? ''));
-        }
-        if ($base === '') {
-            $base = trim((string) ($coti->coti_empresa ?? ''));
-        }
+        $base = self::razonSocialTitular($coti);
 
         if ($coti->relationLoaded('sucursal') && $coti->sucursal) {
-            $s = $coti->sucursal;
-            $nb = trim((string) ($s->cli_razonsocial ?? $s->cli_fantasia ?? '')) ?: 'Sucursal';
-
-            return $nb . ' (sucursal)';
+            return self::etiquetaSucursalConTitular($coti->sucursal, $base);
         }
 
-        if (trim((string) ($coti->coti_codigosuc ?? '')) !== '') {
-            if (!$coti->relationLoaded('sucursal')) {
-                $coti->load('sucursal');
-            }
-            if ($coti->sucursal) {
-                $s = $coti->sucursal;
-                $nb = trim((string) ($s->cli_razonsocial ?? $s->cli_fantasia ?? '')) ?: 'Sucursal';
-
-                return $nb . ' (sucursal)';
-            }
+        $sucursal = self::resolverSucursal($coti);
+        if ($sucursal) {
+            return self::etiquetaSucursalConTitular($sucursal, $base);
         }
 
         $relNombre = self::relacionResueltaNombre($coti);
@@ -82,6 +81,21 @@ final class CotizacionClienteEtiqueta
         $snap = trim((string) ($coti->coti_empresa ?? ''));
 
         return $snap !== '' ? $snap : ($base !== '' ? $base : ($relNombre !== '' ? $relNombre : '—'));
+    }
+
+    /**
+     * Línea "Cliente" con establecimiento manual opcional (documentos, QR, PDFs compactos).
+     */
+    public static function lineaClienteConEstablecimiento(object $coti): string
+    {
+        $coti->loadMissing(['cliente', 'sucursal']);
+        $linea = self::paraLista($coti);
+        $estab = trim((string) ($coti->coti_establecimiento ?? ''));
+        if ($estab !== '' && stripos($linea, $estab) === false) {
+            return $linea . ' - ' . $estab;
+        }
+
+        return $linea !== '' ? $linea : '—';
     }
 
     private static function relacionResueltaNombre(object $coti): string
@@ -123,29 +137,13 @@ final class CotizacionClienteEtiqueta
             return $empty;
         }
 
-        if ($coti->relationLoaded('sucursal') && $coti->sucursal) {
-            $s = $coti->sucursal;
-
+        $sucursal = self::resolverSucursal($coti);
+        if ($sucursal) {
             return [
-                'direccion' => trim((string) ($s->cli_direccion ?? '')),
-                'localidad' => trim((string) ($s->cli_localidad ?? '')),
-                'partido' => trim((string) ($s->cli_partido ?? '')),
+                'direccion' => trim((string) ($sucursal->cli_direccion ?? '')),
+                'localidad' => trim((string) ($sucursal->cli_localidad ?? '')),
+                'partido' => trim((string) ($sucursal->cli_partido ?? '')),
             ];
-        }
-
-        if (trim((string) ($coti->coti_codigosuc ?? '')) !== '') {
-            if (!$coti->relationLoaded('sucursal')) {
-                $coti->load('sucursal');
-            }
-            if ($coti->sucursal) {
-                $s = $coti->sucursal;
-
-                return [
-                    'direccion' => trim((string) ($s->cli_direccion ?? '')),
-                    'localidad' => trim((string) ($s->cli_localidad ?? '')),
-                    'partido' => trim((string) ($s->cli_partido ?? '')),
-                ];
-            }
         }
 
         $emp = self::empresaRelacionadaResuelta($coti);
@@ -183,8 +181,27 @@ final class CotizacionClienteEtiqueta
     }
 
     /**
+     * Razón social del titular (cliente de la cotización), sin sucursal ni empresa relacionada.
+     */
+    public static function razonSocialTitular(object $coti): string
+    {
+        $coti->loadMissing('cliente');
+        $cliente = $coti->cliente ?? null;
+
+        $base = trim((string) (optional($cliente)->cli_razonsocial ?? ''));
+        if ($base === '') {
+            $base = trim((string) (optional($cliente)->cli_fantasia ?? ''));
+        }
+        if ($base === '') {
+            $base = trim((string) ($coti->coti_empresa ?? ''));
+        }
+
+        return $base;
+    }
+
+    /**
      * Bloque "Sr.(es)." del PDF de cotización: sucursal → empresa relacionada → campo "Para" (coti_para) → datos en coti/cliente.
-     * Misma prioridad y reglas compuestas consultor/empresa que {@see resources/views/ventas/pdf.blade.php}.
+     * Con sucursal: dRazon = titular; dirección/CUIT de la sucursal; nombre de sucursal en {@see etiquetaSucursalEstablecimiento()}.
      *
      * @return array{dRazon: string, dCuit: string, dDir: string, dLoc: string, dPart: string, dContactoBase: string}
      */
@@ -194,30 +211,20 @@ final class CotizacionClienteEtiqueta
 
         $cliente = $coti->cliente ?? null;
 
-        $cliNombrePdf = trim((string) (optional($cliente)->cli_razonsocial ?? ''));
-        if ($cliNombrePdf === '') {
-            $cliNombrePdf = trim((string) (optional($cliente)->cli_fantasia ?? ''));
-        }
-        if ($cliNombrePdf === '') {
-            $cliNombrePdf = trim((string) ($coti->coti_empresa ?? ''));
-        }
+        $cliNombrePdf = self::razonSocialTitular($coti);
 
         $tieneSucursal = false;
         $sucursalDestinatario = null;
-        if (trim((string) ($coti->coti_codigosuc ?? '')) !== '') {
-            $suc = $coti->sucursal;
-            if ($suc) {
-                $tieneSucursal = true;
-                $nombreBase = trim((string) ($suc->cli_razonsocial ?? $suc->cli_fantasia ?? 'Sucursal'));
-                $sucursalDestinatario = [
-                    'razon_social' => $nombreBase . ' (sucursal)',
-                    'cuit' => $suc->cli_cuit ? trim((string) $suc->cli_cuit) : '',
-                    'direcciones' => $suc->cli_direccion ? trim((string) $suc->cli_direccion) : '',
-                    'localidad' => $suc->cli_localidad ? trim((string) $suc->cli_localidad) : '',
-                    'partido' => $suc->cli_partido ? trim((string) $suc->cli_partido) : '',
-                    'contacto' => $suc->cli_contacto ? trim((string) $suc->cli_contacto) : '',
-                ];
-            }
+        $sucursal = self::resolverSucursal($coti);
+        if ($sucursal) {
+            $tieneSucursal = true;
+            $sucursalDestinatario = [
+                'cuit' => $sucursal->cli_cuit ? trim((string) $sucursal->cli_cuit) : '',
+                'direcciones' => $sucursal->cli_direccion ? trim((string) $sucursal->cli_direccion) : '',
+                'localidad' => $sucursal->cli_localidad ? trim((string) $sucursal->cli_localidad) : '',
+                'partido' => $sucursal->cli_partido ? trim((string) $sucursal->cli_partido) : '',
+                'contacto' => $sucursal->cli_contacto ? trim((string) $sucursal->cli_contacto) : '',
+            ];
         }
 
         $tieneEmpresaRelacionada = false;
@@ -246,7 +253,7 @@ final class CotizacionClienteEtiqueta
         $dContactoBase = '';
 
         if ($tieneSucursal && $sucursalDestinatario) {
-            $dRazon = trim((string) ($sucursalDestinatario['razon_social'] ?? ''));
+            $dRazon = $cliNombrePdf;
             $dCuit = trim((string) ($sucursalDestinatario['cuit'] ?? ''));
             $dDir = trim((string) ($sucursalDestinatario['direcciones'] ?? ''));
             $dLoc = trim((string) ($sucursalDestinatario['localidad'] ?? ''));
@@ -289,6 +296,13 @@ final class CotizacionClienteEtiqueta
             $dContactoBase = trim((string) ($coti->coti_contacto ?? ''));
         }
 
+        // Datos editados en la cotización (coti_*) tienen prioridad sobre sucursal/empresa/cliente.
+        $dCuit = self::preferCampoCoti((string) ($coti->coti_cuit ?? ''), $dCuit);
+        $dDir = self::preferCampoCoti((string) ($coti->coti_direccioncli ?? ''), $dDir);
+        $dLoc = self::preferCampoCoti((string) ($coti->coti_localidad ?? ''), $dLoc);
+        $dPart = self::preferCampoCoti((string) ($coti->coti_partido ?? ''), $dPart);
+        $dContactoBase = self::preferCampoCoti((string) ($coti->coti_contacto ?? ''), $dContactoBase);
+
         return [
             'dRazon' => $dRazon,
             'dCuit' => $dCuit,
@@ -297,6 +311,71 @@ final class CotizacionClienteEtiqueta
             'dPart' => $dPart,
             'dContactoBase' => $dContactoBase,
         ];
+    }
+
+    private static function preferCampoCoti(string $cotiVal, string $resolved): string
+    {
+        $cotiVal = trim($cotiVal);
+
+        return $cotiVal !== '' ? $cotiVal : trim($resolved);
+    }
+
+    /**
+     * Resuelve la sucursal destinataria (TRIM en código; la FK puede venir con padding).
+     */
+    public static function resolverSucursal(object $coti): ?\App\Models\Clientes
+    {
+        $cod = trim((string) ($coti->coti_codigosuc ?? ''));
+        if ($cod === '') {
+            return null;
+        }
+
+        if ($coti->relationLoaded('sucursal') && $coti->sucursal) {
+            $relCod = trim((string) ($coti->sucursal->cli_codigo ?? ''));
+            if ($relCod === $cod) {
+                return $coti->sucursal;
+            }
+        }
+
+        return \App\Models\Clientes::whereRaw('LTRIM(RTRIM(cli_codigo)) = ?', [$cod])->first();
+    }
+
+    /**
+     * Nombre legible de la sucursal (prioriza fantasía sobre razón social compartida del titular).
+     */
+    public static function nombreSucursal(object $sucursal): string
+    {
+        $fantasia = trim((string) ($sucursal->cli_fantasia ?? ''));
+        if ($fantasia !== '') {
+            return $fantasia;
+        }
+
+        $razon = trim((string) ($sucursal->cli_razonsocial ?? ''));
+
+        return $razon !== '' ? $razon : 'Sucursal';
+    }
+
+    /**
+     * Texto para la fila "Sucursal / Establecimiento" del presupuesto.
+     */
+    public static function etiquetaSucursalEstablecimiento(object $coti): string
+    {
+        $establecimiento = trim((string) ($coti->coti_establecimiento ?? ''));
+        if ($establecimiento !== '') {
+            return $establecimiento;
+        }
+
+        $sucursal = self::resolverSucursal($coti);
+        if ($sucursal) {
+            return self::nombreSucursal($sucursal);
+        }
+
+        $empresa = self::empresaRelacionadaResuelta($coti);
+        if ($empresa) {
+            return trim((string) ($empresa->razon_social ?? ''));
+        }
+
+        return '';
     }
 
     /**

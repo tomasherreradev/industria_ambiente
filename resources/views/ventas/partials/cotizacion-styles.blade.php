@@ -500,7 +500,102 @@
     #modalAgregarComponente .select2-selection::-webkit-scrollbar-thumb:hover {
         background: #0aa2c0;
     }
-    
+
+    /* Select2 solo para agregar: ocultar chips; la lista de abajo muestra lo seleccionado */
+    #modalAgregarComponente .select2-container.select2-solo-agregar .select2-selection__choice {
+        display: none !important;
+    }
+
+    #modalAgregarComponente .select2-container.select2-solo-agregar .select2-selection__rendered .select2-selection__placeholder {
+        display: inline !important;
+        color: #6c757d;
+    }
+
+    /* Panel de análisis seleccionados */
+    .componentes-seleccionados-panel {
+        background: #fff;
+        border: 1px solid #ced4da;
+        border-radius: 0.375rem;
+        padding: 0.65rem 0.75rem;
+    }
+
+    .componentes-seleccionados-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+    }
+
+    .componentes-seleccionados-titulo {
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: #212529;
+    }
+
+    .componentes-seleccionados-vaciar {
+        font-size: 0.8125rem;
+        text-decoration: none;
+        white-space: nowrap;
+    }
+
+    .componentes-seleccionados-vaciar:hover {
+        text-decoration: underline;
+    }
+
+    .componentes-seleccionados-buscar {
+        max-width: 100%;
+    }
+
+    .componentes-seleccionados-lista {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+        max-height: 240px;
+        overflow-y: auto;
+        padding-right: 0.25rem;
+    }
+
+    .componentes-seleccionados-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        background: #f8f9fa;
+        border: 1px solid #e9ecef;
+        border-radius: 0.25rem;
+        padding: 0.45rem 0.6rem;
+        font-size: 0.8125rem;
+    }
+
+    .componentes-seleccionados-item-info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .componentes-seleccionados-item-nombre {
+        font-weight: 500;
+        word-break: break-word;
+        line-height: 1.3;
+    }
+
+    .componentes-seleccionados-item-meta {
+        font-size: 0.75rem;
+        color: #6c757d;
+        margin-top: 0.15rem;
+    }
+
+    .componentes-seleccionados-item-quitar {
+        flex-shrink: 0;
+        white-space: nowrap;
+    }
+
+    .componentes-seleccionados-vacio-filtro {
+        font-size: 0.8125rem;
+        color: #6c757d;
+        text-align: center;
+        padding: 0.5rem;
+    }
+
     /* Estilos para los chips de componentes preseleccionados */
     .componente-chip-preseleccionado {
         font-size: 0.75rem;

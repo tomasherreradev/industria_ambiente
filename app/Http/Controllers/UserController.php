@@ -14,10 +14,30 @@ use Illuminate\Validation\Rule;
 
 class UserController extends Controller
 {
+    private function puedeEditarUsuarios(?User $editor): bool
+    {
+        return $editor && trim((string) $editor->usu_codigo) === 'amendoza';
+    }
+
+    private function puedeEliminarUsuarios(?User $editor): bool
+    {
+        if (! $editor) {
+            return false;
+        }
+
+        if ((int) ($editor->usu_nivel ?? 0) >= 900) {
+            return true;
+        }
+
+        return trim((string) $editor->usu_codigo) === 'amendoza';
+    }
+
     public function showUsers(Request $request)
     {
         // Empezar la consulta sin ejecutarla aún
-        $query = User::where('rol', '!=', 'sector');
+        $query = User::query()->where(function ($q) {
+            $q->whereNull('rol')->orWhere('rol', '!=', 'sector');
+        });
     
         // Buscar por nombre (usu_descripcion)
         if ($request->filled('search')) {
@@ -40,8 +60,11 @@ class UserController extends Controller
     
         // Paginar resultados
         $usuarios = $query->orderBy('usu_descripcion')->paginate(20)->withQueryString();
-    
-        return view('users.index', compact('usuarios'));
+
+        $puedeEditarUsuarios = $this->puedeEditarUsuarios(Auth::user());
+        $puedeEliminarUsuarios = $this->puedeEliminarUsuarios(Auth::user());
+
+        return view('users.index', compact('usuarios', 'puedeEditarUsuarios', 'puedeEliminarUsuarios'));
     }
     
 
@@ -50,6 +73,10 @@ class UserController extends Controller
     
     public function createUser()
     {
+        if (!$this->puedeEditarUsuarios(Auth::user())) {
+            abort(403);
+        }
+
         $sectores = User::where('rol', 'sector')->orderBy('usu_descripcion')->get();
 
         return view('users.create', compact('sectores'));
@@ -57,6 +84,10 @@ class UserController extends Controller
 
     public function storeUser(Request $request)
     {
+        if (!$this->puedeEditarUsuarios(Auth::user())) {
+            abort(403);
+        }
+
         Log::info('Starting user creation', ['request_data' => $request->except(['password', 'password_confirmation'])]);
 
         $editor = Auth::user();
@@ -69,6 +100,8 @@ class UserController extends Controller
                 'usu_codigo' => 'required|string|max:50|unique:usu,usu_codigo',
                 'rol' => ['required', 'string', 'max:50', Rule::in($roles)],
                 'sector_codigo' => 'nullable|string|max:50',
+                'sectores_codigos' => 'nullable|array',
+                'sectores_codigos.*' => 'string|max:50',
                 'dni' => 'nullable|string|max:20',
                 'email' => 'nullable|string|max:255',
                 'departamento' => 'nullable|string|max:255',
@@ -81,6 +114,9 @@ class UserController extends Controller
                 $rules['roles_adicionales'] = 'nullable|array';
                 $rules['roles_adicionales.*'] = ['string', 'max:50', Rule::in($roles)];
             }
+            $rules['admin_lab'] = 'nullable|boolean';
+            $rules['bandeja_solo_informes'] = 'nullable|boolean';
+            $rules['puede_cargar_items'] = 'nullable|boolean';
 
             $validated = $request->validate($rules);
             Log::debug('Validation passed for new user');
@@ -102,20 +138,38 @@ class UserController extends Controller
                 $usuario->usu_nivel = 500;
             }
 
-            if ($request->filled('sector_codigo')) {
-                $sectorUser = User::where('usu_codigo', $request->sector_codigo)->first();
-                if (! $sectorUser) {
-                    return redirect()
-                        ->back()
-                        ->withInput()
-                        ->withErrors(['sector_codigo' => 'El sector seleccionado no corresponde a un laboratorio válido.']);
-                }
-                $usuario->sector_codigo = $sectorUser->usu_codigo;
+            $rolFinal = (string) $usuario->rol;
+            $sectoresSeleccionados = [];
+            if ($rolFinal === 'laboratorio' || $rolFinal === 'coordinador_lab') {
+                $sectoresSeleccionados = (array) $request->input('sectores_codigos', []);
+                $usuario->sector_codigo = !empty($sectoresSeleccionados) ? $sectoresSeleccionados[0] : null;
             } else {
-                $usuario->sector_codigo = null;
+                if ($request->filled('sector_codigo')) {
+                    $sectorUser = User::where('usu_codigo', $request->sector_codigo)->first();
+                    if (! $sectorUser) {
+                        return redirect()
+                            ->back()
+                            ->withInput()
+                            ->withErrors(['sector_codigo' => 'El sector seleccionado no corresponde a un laboratorio válido.']);
+                    }
+                    $usuario->sector_codigo = $sectorUser->usu_codigo;
+                } else {
+                    $usuario->sector_codigo = null;
+                }
             }
 
             $usuario->save();
+
+            // Guardar sectores N:N
+            if ($rolFinal === 'laboratorio' || $rolFinal === 'coordinador_lab') {
+                $usuario->syncSectores($sectoresSeleccionados);
+            } else {
+                if ($usuario->sector_codigo) {
+                    $usuario->syncSectores([$usuario->sector_codigo]);
+                } else {
+                    $usuario->syncSectores([]);
+                }
+            }
 
             if ($esAdmin) {
                 $principal = (string) $usuario->rol;
@@ -125,6 +179,19 @@ class UserController extends Controller
                 ));
                 $usuario->syncRoles($adicionales);
             }
+
+            $rolesAdicionalesGuardados = $esAdmin
+                ? array_values(array_filter(
+                    array_map('strval', (array) $request->input('roles_adicionales', [])),
+                    fn ($r) => $r !== '' && $r !== (string) $usuario->rol
+                ))
+                : [];
+            $usuario->admin_lab = $this->usuarioTieneRolCoordinadorLab($rolFinal, $rolesAdicionalesGuardados)
+                && $request->boolean('admin_lab');
+            $usuario->bandeja_solo_informes = $this->usuarioTieneRolCoordinadorLabOMediciones($rolFinal, $rolesAdicionalesGuardados)
+                && $request->boolean('bandeja_solo_informes');
+            $usuario->puede_cargar_items = $request->boolean('puede_cargar_items');
+            $usuario->save();
 
             Log::info('User created successfully', ['user_id' => $usuario->usu_codigo]);
 
@@ -158,12 +225,23 @@ class UserController extends Controller
             ->where('usu_codigo', $usuario->usu_codigo)
             ->pluck('rol')
             ->all();
+        $sectoresAsignados = DB::table('user_sectors')
+            ->where('usu_codigo', $usuario->usu_codigo)
+            ->pluck('sector_codigo')
+            ->all();
 
-        return view('users.show', compact('usuario', 'sectores', 'rolesAdicionales'));
+        $puedeEditarUsuarios = $this->puedeEditarUsuarios(Auth::user());
+        $puedeEliminarUsuarios = $this->puedeEliminarUsuarios(Auth::user());
+
+        return view('users.show', compact('usuario', 'sectores', 'rolesAdicionales', 'sectoresAsignados', 'puedeEditarUsuarios', 'puedeEliminarUsuarios'));
     }
 
     public function update(Request $request, $usu_codigo)
     {
+        if (!$this->puedeEditarUsuarios(Auth::user())) {
+            abort(403);
+        }
+
         $editor = Auth::user();
         $esAdmin = $editor && (int) ($editor->usu_nivel ?? 0) >= 900;
 
@@ -174,6 +252,8 @@ class UserController extends Controller
             'usu_estado' => 'required|boolean',
             'rol' => ['nullable', 'string', 'max:50', Rule::in(array_merge([''], $rolesPrincipalesValidos))],
             'sector_codigo' => 'nullable|string|max:50',
+            'sectores_codigos' => 'nullable|array',
+            'sectores_codigos.*' => 'string|max:50',
             'dni' => 'nullable|string|max:20',
             'email' => 'nullable|string|max:255',
             'departamento' => 'nullable|string|max:255',
@@ -187,6 +267,9 @@ class UserController extends Controller
             $rules['roles_adicionales.*'] = ['string', 'max:50', Rule::in($rolesPrincipalesValidos)];
             $rules['limpiar_sesion'] = 'nullable|boolean';
         }
+        $rules['admin_lab'] = 'nullable|boolean';
+        $rules['bandeja_solo_informes'] = 'nullable|boolean';
+        $rules['puede_cargar_items'] = 'nullable|boolean';
 
         $validated = $request->validate($rules);
 
@@ -194,16 +277,25 @@ class UserController extends Controller
         $usuario->usu_descripcion = $validated['usu_descripcion'];
         $usuario->usu_estado = (bool) $validated['usu_estado'];
         $rolInput = $request->input('rol');
-        $usuario->rol = ($rolInput === '' || $rolInput === null) ? null : (string) $rolInput;
+        $rolFinal = ($rolInput === '' || $rolInput === null) ? null : (string) $rolInput;
+        $usuario->rol = $rolFinal;
 
-        if ($request->filled('sector_codigo')) {
-            $usuarioSector = User::where('usu_codigo', $request->sector_codigo)->first();
-            if (! $usuarioSector) {
-                return redirect()->back()->withErrors(['sector_codigo' => 'El sector seleccionado no corresponde a un usuario (laboratorio) válido.'])->withInput();
-            }
-            $usuario->sector_codigo = $usuarioSector->usu_codigo;
+        if ($rolFinal === 'laboratorio' || $rolFinal === 'coordinador_lab') {
+            $sectoresSeleccionados = (array) $request->input('sectores_codigos', []);
+            $usuario->syncSectores($sectoresSeleccionados);
+            $usuario->sector_codigo = !empty($sectoresSeleccionados) ? $sectoresSeleccionados[0] : null;
         } else {
-            $usuario->sector_codigo = null;
+            if ($request->filled('sector_codigo')) {
+                $usuarioSector = User::where('usu_codigo', $request->sector_codigo)->first();
+                if (! $usuarioSector) {
+                    return redirect()->back()->withErrors(['sector_codigo' => 'El sector seleccionado no corresponde a un usuario (laboratorio) válido.'])->withInput();
+                }
+                $usuario->sector_codigo = $usuarioSector->usu_codigo;
+                $usuario->syncSectores([$usuarioSector->usu_codigo]);
+            } else {
+                $usuario->sector_codigo = null;
+                $usuario->syncSectores([]);
+            }
         }
 
         $usuario->dni = $validated['dni'] ?? null;
@@ -229,6 +321,18 @@ class UserController extends Controller
             $usuario->syncRoles($adicionales);
         }
 
+        $rolesAdicionalesGuardados = $esAdmin
+            ? array_values(array_filter(
+                array_map('strval', (array) $request->input('roles_adicionales', [])),
+                fn ($r) => $r !== '' && $r !== (string) ($usuario->rol ?? '')
+            ))
+            : $usuario->rolesAdicionales()->all();
+        $usuario->admin_lab = $this->usuarioTieneRolCoordinadorLab($rolFinal, $rolesAdicionalesGuardados)
+            && $request->boolean('admin_lab');
+        $usuario->bandeja_solo_informes = $this->usuarioTieneRolCoordinadorLabOMediciones($rolFinal, $rolesAdicionalesGuardados)
+            && $request->boolean('bandeja_solo_informes');
+        $usuario->puede_cargar_items = $request->boolean('puede_cargar_items');
+
         $usuario->save();
 
         return redirect()
@@ -236,6 +340,48 @@ class UserController extends Controller
             ->with('success', 'Usuario actualizado correctamente.');
     }
 
+    public function destroy($usu_codigo)
+    {
+        if (! $this->puedeEliminarUsuarios(Auth::user())) {
+            abort(403);
+        }
+
+        $editor = Auth::user();
+        $usuario = User::findOrFail($usu_codigo);
+
+        if (trim((string) $usuario->usu_codigo) === trim((string) $editor->usu_codigo)) {
+            return redirect()
+                ->back()
+                ->with('error', 'No podés eliminar tu propio usuario.');
+        }
+
+        if ((string) $usuario->rol === 'sector') {
+            return redirect()
+                ->back()
+                ->with('error', 'Los laboratorios (sectores) se gestionan desde la sección de Laboratorios.');
+        }
+
+        try {
+            DB::transaction(function () use ($usuario) {
+                $usuario->syncRoles([]);
+                $usuario->syncSectores([]);
+                $usuario->delete();
+            });
+        } catch (\Throwable $e) {
+            Log::error('Error al eliminar usuario', [
+                'usu_codigo' => $usuario->usu_codigo,
+                'error' => $e->getMessage(),
+            ]);
+
+            return redirect()
+                ->back()
+                ->with('error', 'No se pudo eliminar el usuario porque tiene registros asociados en el sistema.');
+        }
+
+        return redirect()
+            ->route('users.showUsers')
+            ->with('success', 'Usuario eliminado correctamente.');
+    }
 
     public function showSectores(Request $request)
     {
@@ -340,7 +486,26 @@ class UserController extends Controller
     {
         return [
             'laboratorio', 'muestreador', 'coordinador_lab', 'coordinador_muestreo', 'facturador',
-            'ventas', 'firmador', 'coordinador_consul', 'asp', 'clarke_fire', 'cliente',
+            'ventas', 'firmador', 'coordinador_consul', 'coordinador_mediciones', 'asp', 'clarke_fire', 'cliente',
         ];
+    }
+
+    private function usuarioTieneRolCoordinadorLab(?string $rolPrincipal, array $rolesAdicionales = []): bool
+    {
+        if (trim((string) $rolPrincipal) === 'coordinador_lab') {
+            return true;
+        }
+
+        return in_array('coordinador_lab', $rolesAdicionales, true);
+    }
+
+    private function usuarioTieneRolCoordinadorLabOMediciones(?string $rolPrincipal, array $rolesAdicionales = []): bool
+    {
+        $rolPrincipal = trim((string) $rolPrincipal);
+        if (in_array($rolPrincipal, ['coordinador_lab', 'coordinador_mediciones'], true)) {
+            return true;
+        }
+
+        return ! empty(array_intersect(['coordinador_lab', 'coordinador_mediciones'], $rolesAdicionales));
     }
 }

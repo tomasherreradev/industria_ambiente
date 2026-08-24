@@ -126,7 +126,7 @@
                                             <h2 class="accordion-header" id="heading-{{ $numCoti }}">
                                                 <div class="d-flex w-100 align-items-center justify-content-between">
                                                     <button class="accordion-button collapsed flex-grow-1 text-start" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-{{ $numCoti }}" aria-expanded="false" aria-controls="collapse-{{ $numCoti }}">
-                                                        Cotización #{{ $numCoti }} - {{ $coti->coti_empresa ?? 'N/A' }} ({{ $informeData['muestras']->count() }} muestras)
+                                                        Cotización #{{ $numCoti }} - {{ \App\Support\CotizacionClienteEtiqueta::paraLista($coti) }} ({{ $informeData['muestras']->count() }} muestras)
                                                     </button>
                                                     <a href="{{ route('facturacion.facturar', ['cotizacion' => $numCoti]) }}" class="btn btn-sm btn-outline-primary" style="display: flex; align-items: center; gap: 5px; margin-left: 10px;">
                                                         <x-heroicon-o-currency-dollar style="width: 15px; height: 15px;" />

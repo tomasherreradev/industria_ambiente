@@ -1,3 +1,15 @@
+@php
+    $misOrdenesDetalleQuery = !empty($soloMisAsignaciones) ? ['solo_mis_asignaciones' => 1] : [];
+    $misOrdenesDetalleUrl = static function ($instanciaMuestra) use ($misOrdenesDetalleQuery) {
+        return route('ordenes.all.show', array_merge([
+            'cotio_numcoti' => $instanciaMuestra->cotio_numcoti ?? 'N/A',
+            'cotio_item' => $instanciaMuestra->cotio_item ?? 'N/A',
+            'cotio_subitem' => $instanciaMuestra->cotio_subitem ?? 'N/A',
+            'instance' => $instanciaMuestra->instance_number ?? 'N/A',
+        ], $misOrdenesDetalleQuery));
+    };
+@endphp
+
 <div class="card shadow-sm">
     <div class="card-body p-0">
         <div class="table-responsive">
@@ -43,11 +55,11 @@
                         <tr class="align-middle {{ $badgeClass }}">
                             <!-- Versión móvil -->
                             <td class="d-md-none py-2">
-                                <a class="text-decoration-none" href="{{ Auth::user()->rol == 'laboratorio' ? route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) : route('tareas.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}">
+                                <a class="text-decoration-none" href="{{ Auth::user()->rol == 'laboratorio' ? $misOrdenesDetalleUrl($instanciaMuestra) : route('tareas.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}">
                                     <div class="d-flex justify-content-between">
                                         <div>
                                             <strong class="d-block">#{{ $numCoti }}</strong>
-                                            <small class="text-muted">{{ Str::limit($cotizacion->coti_empresa ?? 'Sin cliente', 20) }}</small>
+                                            <small class="text-muted">{{ Str::limit(\App\Support\CotizacionClienteEtiqueta::paraLista($cotizacion), 20) }}</small>
                                         </div>
                                         <span class="badge bg-dark align-self-start">
                                             {{ ucfirst($estado) }}
@@ -56,7 +68,7 @@
                                     <div class="mt-2">
                                         <div class="small text-muted mb-1">
                                             <strong>Muestra: </strong> {{ $instanceNumber }}
-                                            · <strong>OT:</strong> {{ $instanciaMuestra->otn ?? '—' }}
+                                            · <strong>@include('partials.muestra-ot-precinto', ['instancia' => $instanciaMuestra, 'conDosPuntos' => true])</strong>
                                         </div>
                                         @if($muestra)
                                             <div class="small text-muted mb-1">
@@ -67,6 +79,7 @@
                                             @foreach($analisis as $analisisItem)
                                                 <div class="small mb-1">
                                                     <strong>Análisis:</strong> {{ Str::limit($analisisItem->cotio_descripcion, 30) }}
+                                                    @include('ordenes.partials.metodo-analisis-etiqueta', ['tarea' => $analisisItem])
                                                 </div>
                                             @endforeach
                                         @endif
@@ -84,7 +97,7 @@
                             <!-- Versión desktop -->
                             <td class="d-none d-md-table-cell">
                                 <strong>#{{ $numCoti }}</strong>
-                                <div class="small text-muted">{{ $cotizacion->coti_empresa ?? 'Sin cliente' }}</div>
+                                <div class="small text-muted">{{ \App\Support\CotizacionClienteEtiqueta::paraLista($cotizacion) }}</div>
                             </td>
                             <td class="d-none d-md-table-cell">
                                 {{ $cotizacion->coti_establecimiento ?? '' }}
@@ -100,13 +113,14 @@
                             </td>
                             <td class="d-none d-md-table-cell">
                                     {{ $instanciaMuestra->cotio_descripcion ?? 'N/A' }}
-                                    <div class="small text-muted">Muestra #{{ $instanciaMuestra->instance_number }} · OT {{ $instanciaMuestra->otn ?? '—' }}</div>
+                                    <div class="small text-muted">Muestra #{{ $instanciaMuestra->instance_number }} · @include('partials.muestra-ot-precinto', ['instancia' => $instanciaMuestra])</div>
                             </td>
                             <td class="d-none d-md-table-cell">
                                 @if($analisis->isNotEmpty())
                                     @foreach($analisis as $analisisItem)
                                         <div>
                                             {{ $analisisItem->cotio_descripcion }}
+                                            @include('ordenes.partials.metodo-analisis-etiqueta', ['tarea' => $analisisItem])
                                             @if($analisisItem->resultado)
                                                 <div class="small text-muted">RES: {{ $analisisItem->resultado }}</div>
                                             @endif
@@ -129,7 +143,7 @@
                                 </span>
                             </td>
                             <td class="d-none d-md-table-cell">
-                                <a href="{{ Auth::user()->rol == 'laboratorio' ? route('ordenes.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) : route('tareas.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}">
+                                <a href="{{ Auth::user()->rol == 'laboratorio' ? $misOrdenesDetalleUrl($instanciaMuestra) : route('tareas.all.show', [$instanciaMuestra->cotio_numcoti ?? 'N/A', $instanciaMuestra->cotio_item ?? 'N/A', $instanciaMuestra->cotio_subitem ?? 'N/A', $instanciaMuestra->instance_number ?? 'N/A']) }}">
                                     <x-heroicon-o-eye class="me-1" style="width: 16px; height: 16px;" />
                                 </a>
                             </td>

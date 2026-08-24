@@ -54,7 +54,18 @@
                                     No lleva muestreo
                                 </label>
                             </div>
-                            <small class="text-muted d-block">Si no lo tilda, se usa la regla automática (p. ej. consultoría / ASP / Clarke Fire → sin muestreo; Mediciones → con muestreo).</small>
+                            <small class="text-muted d-block">Consultoría, ASP y Clarke Fire siempre van sin muestreo (no se puede desmarcar). Mediciones siempre llevan muestreo. En otros ensayos puede tildar esta opción manualmente.</small>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-12">
+                            <div class="form-check border border-warning rounded p-2 bg-warning bg-opacity-10" id="ensayo_prioridad_wrap_agregar">
+                                <input class="form-check-input" type="checkbox" id="ensayo_es_priori" value="1">
+                                <label class="form-check-label fw-semibold" for="ensayo_es_priori">
+                                    ★ Ensayo con prioridad de muestreo
+                                </label>
+                            </div>
                         </div>
                     </div>
 
@@ -85,11 +96,17 @@
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label for="ensayo_ley_normativa" class="form-label">Ley/Normativa:</label>
-                            <select class="form-select" id="ensayo_ley_normativa" name="ensayo_ley_normativa">
+                            <select class="form-select ley-normativa-select" id="ensayo_ley_normativa" name="ensayo_ley_normativa">
                                 <option value="">Seleccionar normativa...</option>
                             </select>
+                            <small class="text-muted">Escriba para buscar por código o nombre</small>
                         </div>
                     </div>
+
+                    @include('ventas.partials.ensayo-adjuntos-campo', [
+                        'inputId' => 'ensayo_adjuntos_input',
+                        'listaId' => 'ensayoAdjuntosLista',
+                    ])
 
                     <!-- Sección de Notas Múltiples -->
                     <div class="row mb-3">
@@ -104,6 +121,7 @@
                             <div id="notasEnsayoContainer">
                                 <!-- Las notas se agregarán dinámicamente aquí -->
                             </div>
+                            <small class="text-muted">Cada nota admite un máximo de 150 caracteres.</small>
                         </div>
                     </div>
                 </form>
@@ -138,15 +156,33 @@
                             </small>
                         </div>
                         <div class="col-md-6">
-                            <label for="componente_analisis" class="form-label">Seleccionar Análisis <span class="text-danger">*</span></label>
-                            
+                            <label for="componente_analisis" class="form-label">Análisis del ensayo <span class="text-danger">*</span></label>
+                            <p id="componente_analisis_ayuda" class="text-muted small mb-2">
+                                <strong>1.</strong> Busque abajo para agregar análisis.
+                                <strong>2.</strong> Revise la lista y use «Quitar» en los que no correspondan.
+                            </p>
+                            <span class="d-block form-label form-label-sm text-muted mb-1">Agregar análisis</span>
                             <select class="form-select" id="componente_analisis" name="componente_analisis[]" multiple required>
-                                <option disabled value="">Seleccionar análisis...</option>
+                                <option disabled value="">Buscar análisis...</option>
                             </select>
-                            <small class="text-muted">
-                                <x-heroicon-o-beaker style="width: 14px; height: 14px;" class="me-1" />
-                                Seleccione uno o varios análisis a realizar en la muestra
-                            </small>
+                            <div id="componentes_seleccionados_panel" class="componentes-seleccionados-panel d-none mt-2">
+                                <div class="componentes-seleccionados-header">
+                                    <span class="componentes-seleccionados-titulo">
+                                        Análisis seleccionados (<span id="componentes_seleccionados_count">0</span>)
+                                    </span>
+                                    <button type="button"
+                                            id="btnComponentesQuitarTodos"
+                                            class="btn btn-link btn-sm text-danger p-0 componentes-seleccionados-vaciar">
+                                        Vaciar lista
+                                    </button>
+                                </div>
+                                <input type="search"
+                                       id="componentes_seleccionados_buscar"
+                                       class="form-control form-control-sm componentes-seleccionados-buscar d-none mt-2"
+                                       placeholder="Filtrar en la lista..."
+                                       autocomplete="off">
+                                <div id="componentes_seleccionados_lista" class="componentes-seleccionados-lista mt-2"></div>
+                            </div>
                             <div id="componente_metodo_info" class="form-text mt-1"></div>
                         </div>
                     </div>
@@ -207,50 +243,18 @@
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label for="comp_nota_imprimible_texto" class="form-label">Nota imprimible</label>
-                            <textarea class="form-control" id="comp_nota_imprimible_texto" name="comp_nota_imprimible_texto" rows="3" placeholder="Texto que verá el cliente (se sugiere desde el ítem de catálogo)"></textarea>
+                            <textarea class="form-control" id="comp_nota_imprimible_texto" name="comp_nota_imprimible_texto" rows="3" maxlength="150" placeholder="Texto que verá el cliente (se sugiere desde el ítem de catálogo)"></textarea>
+                            <small class="text-muted">Máximo 150 caracteres.</small>
                         </div>
                         <div class="col-md-6">
                             <label for="comp_nota_interna_texto" class="form-label">Nota interna</label>
-                            <textarea class="form-control" id="comp_nota_interna_texto" name="comp_nota_interna_texto" rows="3" placeholder="Uso interno (se sugiere desde el ítem de catálogo)"></textarea>
+                            <textarea class="form-control" id="comp_nota_interna_texto" name="comp_nota_interna_texto" rows="3" maxlength="150" placeholder="Uso interno (se sugiere desde el ítem de catálogo)"></textarea>
+                            <small class="text-muted">Máximo 150 caracteres.</small>
                         </div>
                         <div class="col-12">
                             <small class="text-muted">Con un solo análisis seleccionado puede editar aquí; con varios, cada ítem usa las notas por defecto de su determinación.</small>
                         </div>
                     </div>
-
-                    {{-- Notas para componentes - COMENTADO
-                    <div class="row">
-                        <div class="col-md-4">
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="comp_nota_tipo" id="comp_nota_imprimible" value="imprimible" checked>
-                                <label class="form-check-label" for="comp_nota_imprimible">Nota Imprimible</label>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="comp_nota_tipo" id="comp_nota_interna" value="interna">
-                                <label class="form-check-label" for="comp_nota_interna">Nota Interna</label>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="comp_nota_tipo" id="comp_nota_fact" value="fact">
-                                <label class="form-check-label" for="comp_nota_fact">Nota Fact.</label>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="row mt-3">
-                        <div class="col-md-12">
-                            <button type="button" class="btn btn-sm btn-outline-secondary mb-2">Insertar Nota Predefinida</button>
-                            <div class="form-check mb-2">
-                                <input class="form-check-input" type="checkbox" id="comp_predeterminar">
-                                <label class="form-check-label" for="comp_predeterminar">Predeterminar</label>
-                            </div>
-                            <textarea class="form-control" id="componente_nota_contenido" name="componente_nota_contenido" rows="4" placeholder="Descripción del componente..."></textarea>
-                        </div>
-                    </div>
-                    --}}
                 </form>
             </div>
             <div class="modal-footer">
@@ -322,11 +326,13 @@
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label for="edit_comp_nota_imprimible" class="form-label">Nota imprimible</label>
-                            <textarea class="form-control" id="edit_comp_nota_imprimible" name="edit_comp_nota_imprimible" rows="3" placeholder="Texto para el cliente en cotización / PDF"></textarea>
+                            <textarea class="form-control" id="edit_comp_nota_imprimible" name="edit_comp_nota_imprimible" rows="3" maxlength="150" placeholder="Texto para el cliente en cotización / PDF"></textarea>
+                            <small class="text-muted">Máximo 150 caracteres.</small>
                         </div>
                         <div class="col-md-6">
                             <label for="edit_comp_nota_interna" class="form-label">Nota interna</label>
-                            <textarea class="form-control" id="edit_comp_nota_interna" name="edit_comp_nota_interna" rows="3" placeholder="Uso interno"></textarea>
+                            <textarea class="form-control" id="edit_comp_nota_interna" name="edit_comp_nota_interna" rows="3" maxlength="150" placeholder="Uso interno"></textarea>
+                            <small class="text-muted">Máximo 150 caracteres.</small>
                         </div>
                     </div>
                 </form>
@@ -383,6 +389,18 @@
                                     No lleva muestreo
                                 </label>
                             </div>
+                            <small class="text-muted d-block">Consultoría, ASP y Clarke Fire siempre van sin muestreo (no se puede desmarcar). Mediciones siempre llevan muestreo.</small>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-12">
+                            <div class="form-check border border-warning rounded p-2 bg-warning bg-opacity-10" id="ensayo_prioridad_wrap_editar">
+                                <input class="form-check-input" type="checkbox" id="edit_ensayo_es_priori" value="1">
+                                <label class="form-check-label fw-semibold" for="edit_ensayo_es_priori">
+                                    ★ Ensayo con prioridad de muestreo
+                                </label>
+                            </div>
                         </div>
                     </div>
 
@@ -422,11 +440,17 @@
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label for="edit_ensayo_ley_normativa" class="form-label">Ley/Normativa:</label>
-                            <select class="form-select" id="edit_ensayo_ley_normativa" name="edit_ensayo_ley_normativa">
+                            <select class="form-select ley-normativa-select" id="edit_ensayo_ley_normativa" name="edit_ensayo_ley_normativa">
                                 <option value="">Seleccionar normativa...</option>
                             </select>
+                            <small class="text-muted">Escriba para buscar por código o nombre</small>
                         </div>
                     </div>
+
+                    @include('ventas.partials.ensayo-adjuntos-campo', [
+                        'inputId' => 'edit_ensayo_adjuntos_input',
+                        'listaId' => 'editEnsayoAdjuntosLista',
+                    ])
 
                     <!-- Sección de Notas Múltiples -->
                     <div class="row mb-3">
@@ -441,6 +465,7 @@
                             <div id="notasEditEnsayoContainer">
                                 <!-- Las notas se agregarán dinámicamente aquí -->
                             </div>
+                            <small class="text-muted">Cada nota admite un máximo de 150 caracteres.</small>
                         </div>
                     </div>
                 </form>

@@ -14,6 +14,8 @@
         </div>
     </div>
 
+    @include('dashboard.partials.modulos-acceso')
+
     {{-- Resumen General --}}
     <div class="row mb-4 g-4">
         <div class="col-xl-3 col-md-6">
@@ -244,7 +246,7 @@
                                     {{ $cotizacion->coti_estado }}
                                 </span>
                             </div>
-                            <p class="mb-1">{{ $cotizacion->coti_empresa }}</p>
+                            <p class="mb-1">{{ \App\Support\CotizacionClienteEtiqueta::paraLista($cotizacion) }}</p>
                             <div class="d-flex justify-content-between align-items-center">
                                 <small class="text-muted">{{ $cotizacion->coti_fechaalta }}</small>
                                 <span class="badge bg-light text-dark">

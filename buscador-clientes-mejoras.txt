@@ -1,0 +1,544 @@
+================================================================================
+RESUMEN DE CAMBIOS: BUSCADOR DE CLIENTES EN COTIZACIONES (CREATE / EDIT)
+Proyecto origen: indio (Laravel + Blade + JS vanilla)
+Fecha de referencia: junio 2026
+================================================================================
+
+OBJETIVO
+--------
+Mejorar el buscador de clientes en formularios de cotización/ventas para que:
+
+1. Al hacer foco o clic en el campo / botón lupa, muestre clientes SIN tener que tipear.
+2. Al escribir, filtre progresivamente (desde el primer carácter, debounce 300 ms).
+3. No muestre el código numérico del cliente en el dropdown (solo razón social / fantasía).
+4. Tenga un dropdown visualmente más limpio (sin scroll horizontal, mejor padding, sombra).
+
+================================================================================
+ARCHIVOS MODIFICADOS (5)
+================================================================================
+
+1. app/Http/Controllers/VentasController.php     -> método buscarClientes()
+2. resources/views/ventas/partials/cotizacion-scripts.blade.php
+3. resources/views/ventas/partials/cotizacion-styles.blade.php
+4. resources/views/ventas/create.blade.php
+5. resources/views/ventas/edit.blade.php
+
+Ruta API requerida (ya existente en indio):
+  GET /api/clientes/buscar?q={termino}&limit={opcional}
+
+================================================================================
+REQUISITOS PREVIOS EN EL OTRO PROYECTO
+================================================================================
+
+El HTML del buscador debe tener esta estructura (IDs obligatorios):
+
+  <div class="position-relative" id="clienteBuscadorWrapper">
+      <div class="input-group">
+          <input type="text" id="cliente_codigo" ... placeholder="Buscar cliente..." autocomplete="off">
+          <button type="button" id="btnBuscarCliente">...</button>
+      </div>
+      <div class="cliente-resultados-dropdown" id="clienteResultados"
+           role="listbox" aria-label="Resultados de clientes"></div>
+  </div>
+  <input type="text" id="cliente_nombre" readonly ...>
+
+En el objeto JS `elements` (o equivalente) deben existir referencias a:
+  - clienteResultados  -> document.getElementById('clienteResultados')
+  - clienteBuscadorWrapper -> document.getElementById('clienteBuscadorWrapper')
+
+Debe existir la función escapeHtml() usada al renderizar opciones.
+
+La API debe devolver JSON con objetos que incluyan al menos:
+  codigo, razon_social, fantasia (opcional), text (opcional, fallback)
+
+================================================================================
+CAMBIO 1: BACKEND - VentasController::buscarClientes()
+================================================================================
+
+UBICACIÓN: app/Http/Controllers/VentasController.php
+
+COMPORTAMIENTO ANTERIOR:
+  - Si strlen(q) < 2 -> devolvía [] vacío.
+  - Solo buscaba con 2+ caracteres.
+  - Límite fijo de 10 resultados.
+
+COMPORTAMIENTO NUEVO:
+  - q vacío -> devuelve listado inicial (25 clientes activos, ordenados por razón social).
+  - q con texto -> filtra por código, razón social o fantasía (ILIKE).
+  - Límite configurable: ?limit=25 (mín 5, máx 50).
+
+REEMPLAZAR el método completo por:
+
+--------------------------------------------------------------------------------
+    // API para buscar clientes
+    public function buscarClientes(Request $request)
+    {
+        $termino = trim((string) $request->get('q', ''));
+        $limite = max(5, min((int) $request->get('limit', 25), 50));
+
+        try {
+            // Solo buscar clientes principales (no sucursales)
+            $query = Clientes::soloPrincipales()
+                ->where('cli_estado', true);
+
+            if ($termino !== '') {
+                $query->where(function ($query) use ($termino) {
+                    $query->where('cli_codigo', 'ILIKE', "%{$termino}%")
+                          ->orWhere('cli_razonsocial', 'ILIKE', "%{$termino}%")
+                          ->orWhere('cli_fantasia', 'ILIKE', "%{$termino}%");
+                });
+            } else {
+                $query->orderBy('cli_razonsocial');
+            }
+
+            $clientes = $query
+                ->limit($limite)
+                ->get()
+                ->map(function($cliente) {
+                    return [
+                        'id' => trim($cliente->cli_codigo),
+                        'codigo' => trim($cliente->cli_codigo),
+                        'text' => trim($cliente->cli_codigo) . ' - ' . trim($cliente->cli_razonsocial),
+                        'razon_social' => trim($cliente->cli_razonsocial),
+                        'fantasia' => $cliente->cli_fantasia ? trim($cliente->cli_fantasia) : null,
+                        'direccion' => $cliente->cli_direccion ? trim($cliente->cli_direccion) : null,
+                        'localidad' => $cliente->cli_localidad ? trim($cliente->cli_localidad) : null,
+                        'cuit' => $cliente->cli_cuit,
+                        'codigo_postal' => $cliente->cli_codigopostal ? trim($cliente->cli_codigopostal) : null,
+                        'telefono' => $cliente->cli_telefono,
+                        'email' => $cliente->cli_email ? trim($cliente->cli_email) : null,
+                        'contacto' => $cliente->cli_contacto ? trim($cliente->cli_contacto) : null,
+                        'sector' => $cliente->cli_codigocrub ? trim($cliente->cli_codigocrub) : null,
+                    ];
+                });
+
+            return response()->json($clientes);
+
+        } catch (\Exception $e) {
+            Log::error('Error buscando clientes:', ['error' => $e->getMessage()]);
+            return response()->json([]);
+        }
+    }
+--------------------------------------------------------------------------------
+
+NOTAS DE ADAPTACIÓN:
+  - Ajustar nombres de modelo/columnas si difieren (Clientes, cli_codigo, etc.).
+  - Si no usás PostgreSQL, cambiar ILIKE por LIKE (MySQL) o whereRaw LOWER(...).
+  - Si no tenés scope soloPrincipales(), reemplazar por el filtro equivalente.
+
+================================================================================
+CAMBIO 2: HTML - create.blade.php y edit.blade.php
+================================================================================
+
+A) Placeholder del input #cliente_codigo:
+   ANTES: placeholder="Escribe nombre o código..."
+   DESPUÉS: placeholder="Buscar cliente..."
+
+B) Contenedor del dropdown #clienteResultados:
+   ANTES:
+     <div class="dropdown-menu w-100 shadow-sm p-0" id="clienteResultados"></div>
+
+   DESPUÉS:
+     <div class="cliente-resultados-dropdown" id="clienteResultados"
+          role="listbox" aria-label="Resultados de clientes"></div>
+
+================================================================================
+CAMBIO 3: CSS - cotizacion-styles.blade.php
+================================================================================
+
+AGREGAR antes del cierre </style> el bloque completo:
+
+--------------------------------------------------------------------------------
+    /* ========== Buscador de clientes ========== */
+    #clienteBuscadorWrapper {
+        position: relative;
+    }
+
+    #clienteBuscadorWrapper.is-open {
+        z-index: 1060;
+    }
+
+    #clienteResultados.cliente-resultados-dropdown {
+        position: absolute;
+        top: calc(100% + 0.35rem);
+        left: 0;
+        display: none;
+        min-width: 100%;
+        width: max(100%, 20rem);
+        max-width: 24rem;
+        margin: 0;
+        padding: 0.35rem 0;
+        border: 1px solid rgba(13, 110, 253, 0.15);
+        border-radius: 0.5rem;
+        background: #fff;
+        box-shadow: 0 0.5rem 1.25rem rgba(15, 23, 42, 0.12), 0 0.15rem 0.4rem rgba(15, 23, 42, 0.06);
+        overflow-x: hidden;
+        overflow-y: auto;
+        max-height: 16rem;
+        scrollbar-width: thin;
+        scrollbar-color: #cbd5e1 transparent;
+    }
+
+    #clienteResultados.cliente-resultados-dropdown.show {
+        display: block;
+    }
+
+    #clienteResultados.cliente-resultados-dropdown::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    #clienteResultados.cliente-resultados-dropdown::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 999px;
+    }
+
+    .cliente-resultados-header {
+        padding: 0.35rem 0.875rem 0.5rem;
+        font-size: 0.7rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #6c757d;
+        border-bottom: 1px solid #f1f3f5;
+        margin-bottom: 0.15rem;
+    }
+
+    .cliente-resultado-item {
+        display: block;
+        width: 100%;
+        padding: 0.55rem 0.875rem;
+        border: 0;
+        background: transparent;
+        text-align: left;
+        cursor: pointer;
+        transition: background-color 0.15s ease;
+    }
+
+    .cliente-resultado-item:hover,
+    .cliente-resultado-item:focus {
+        background: #f0f6ff;
+        outline: none;
+    }
+
+    .cliente-resultado-item + .cliente-resultado-item {
+        border-top: 1px solid #f8f9fa;
+    }
+
+    .cliente-resultado-nombre {
+        display: block;
+        font-size: 0.8125rem;
+        font-weight: 500;
+        line-height: 1.35;
+        color: #212529;
+        white-space: normal;
+        word-break: break-word;
+    }
+
+    .cliente-resultado-fantasia {
+        display: block;
+        margin-top: 0.15rem;
+        font-size: 0.72rem;
+        line-height: 1.3;
+        color: #6c757d;
+        white-space: normal;
+        word-break: break-word;
+    }
+
+    .cliente-resultados-vacio {
+        padding: 1rem 0.875rem;
+        font-size: 0.8125rem;
+        color: #6c757d;
+        text-align: center;
+    }
+--------------------------------------------------------------------------------
+
+================================================================================
+CAMBIO 4: JS - cotizacion-scripts.blade.php
+================================================================================
+
+Hay 3 funciones a reemplazar:
+  - inicializarBusquedaClientes()
+  - buscarClientes()
+  - mostrarResultadosClientes()
+  - ocultarResultadosClientes() (solo agregar línea is-open)
+
+----------------------------------------------------------------------------
+4.1) REEMPLAZAR función inicializarBusquedaClientes() COMPLETA
+----------------------------------------------------------------------------
+
+    function inicializarBusquedaClientes() {
+        const clienteInput = document.getElementById('cliente_codigo');
+        const clienteNombre = document.getElementById('cliente_nombre');
+        const btnBuscarCliente = document.getElementById('btnBuscarCliente');
+
+        if (!clienteInput || !clienteNombre || !btnBuscarCliente) {
+            return;
+        }
+
+        let searchTimeout = null;
+        let ultimoTermino = '';
+        const cacheResultadosClientes = {};
+        const cacheKeyClientes = (termino) => termino || '__inicial__';
+
+        clienteInput.addEventListener('input', function () {
+            clearTimeout(searchTimeout);
+            const termino = this.value.trim();
+
+            mostrarAyudaBusqueda(false);
+
+            searchTimeout = setTimeout(() => {
+                const clave = cacheKeyClientes(termino);
+                if (clave !== ultimoTermino) {
+                    ultimoTermino = clave;
+                    buscarClientes(termino, clienteNombre, {
+                        cache: cacheResultadosClientes,
+                        cacheKey: clave,
+                        listado: termino === '',
+                    });
+                } else if (clave in cacheResultadosClientes) {
+                    mostrarResultadosClientes(cacheResultadosClientes[clave]);
+                }
+            }, 300);
+        });
+
+        clienteInput.addEventListener('focus', function () {
+            const termino = this.value.trim();
+            buscarClientes(termino, clienteNombre, {
+                cache: cacheResultadosClientes,
+                cacheKey: cacheKeyClientes(termino),
+                forzar: true,
+                listado: true,
+            });
+        });
+
+        clienteInput.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                const termino = this.value.trim();
+                buscarClientes(termino, clienteNombre, {
+                    forzar: true,
+                    cache: cacheResultadosClientes,
+                    cacheKey: cacheKeyClientes(termino),
+                    listado: true,
+                });
+            } else if (event.key === 'Escape') {
+                ocultarResultadosClientes(true);
+            }
+        });
+
+        btnBuscarCliente.addEventListener('click', function () {
+            clienteInput.focus();
+            const termino = clienteInput.value.trim();
+            buscarClientes(termino, clienteNombre, {
+                forzar: true,
+                cache: cacheResultadosClientes,
+                cacheKey: cacheKeyClientes(termino),
+                listado: true,
+            });
+        });
+
+        document.addEventListener('click', function (event) {
+            if (!elements.clienteBuscadorWrapper) {
+                return;
+            }
+            if (!elements.clienteBuscadorWrapper.contains(event.target)) {
+                ocultarResultadosClientes(true);
+            }
+        });
+
+        mostrarAyudaBusqueda(false);
+    }
+
+CAMBIOS CLAVE vs versión anterior:
+  - Se eliminó el mínimo de 2 caracteres para buscar.
+  - focus / botón lupa / Enter cargan listado aunque el campo esté vacío.
+  - Cache usa clave '__inicial__' cuando termino está vacío.
+  - listado: true evita pisar el nombre del cliente ya seleccionado (modo edición).
+
+----------------------------------------------------------------------------
+4.2) REEMPLAZAR función buscarClientes() COMPLETA
+----------------------------------------------------------------------------
+
+    function buscarClientes(termino, clienteNombre, opciones = {}) {
+        const esListado = Boolean(opciones.listado || termino === '');
+        const claveCache = opciones.cacheKey ?? (termino || '__inicial__');
+        const nombreAnterior = clienteNombre ? clienteNombre.value : '';
+
+        if (clienteNombre && !esListado) {
+            clienteNombre.value = 'Buscando...';
+        }
+
+        fetch(`/api/clientes/buscar?q=${encodeURIComponent(termino)}`)
+            .then(response => response.json())
+            .then(data => {
+                if (opciones.cache) {
+                    opciones.cache[claveCache] = Array.isArray(data) ? data : [];
+                }
+
+                if (!Array.isArray(data) || data.length === 0) {
+                    if (clienteNombre) {
+                        clienteNombre.value = (!esListado && termino !== '')
+                            ? 'Cliente no encontrado'
+                            : nombreAnterior;
+                    }
+                    mostrarResultadosClientes([]);
+                    return;
+                }
+
+                if (clienteNombre) {
+                    clienteNombre.value = esListado ? nombreAnterior : '';
+                }
+
+                if (opciones.forzar || esListado) {
+                    mostrarResultadosClientes(data);
+                    return;
+                }
+
+                const coincidenciaExacta = data.find(
+                    cliente => cliente.codigo.trim().toLowerCase() === termino.toLowerCase()
+                );
+
+                if (coincidenciaExacta) {
+                    seleccionarCliente(coincidenciaExacta.codigo);
+                    ocultarResultadosClientes();
+                    return;
+                }
+
+                mostrarResultadosClientes(data);
+            })
+            .catch(error => {
+                if (clienteNombre) {
+                    clienteNombre.value = esListado ? nombreAnterior : 'Error en la búsqueda';
+                }
+
+                if (window.Swal) {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Error de Búsqueda',
+                        text: 'No se pudo realizar la búsqueda de clientes. Verifique su conexión e intente nuevamente.',
+                        confirmButtonText: 'Entendido',
+                    });
+                }
+                mostrarResultadosClientes([]);
+            });
+    }
+
+CAMBIOS CLAVE vs versión anterior:
+  - esListado preserva clienteNombre al abrir dropdown sin filtro.
+  - forzar / esListado siempre muestran dropdown (no auto-seleccionan).
+  - Auto-selección por código exacto solo al tipear (sin forzar/listado).
+
+----------------------------------------------------------------------------
+4.3) REEMPLAZAR función mostrarResultadosClientes() COMPLETA
+----------------------------------------------------------------------------
+
+    function mostrarResultadosClientes(clientes = null) {
+        if (!elements.clienteResultados) {
+            return;
+        }
+
+        const contenedor = elements.clienteResultados;
+        contenedor.innerHTML = '';
+
+        if (!Array.isArray(clientes)) {
+            contenedor.classList.remove('show');
+            contenedor.style.display = 'none';
+            elements.clienteBuscadorWrapper?.classList.remove('is-open');
+            return;
+        }
+
+        if (!clientes.length) {
+            const sinResultados = document.createElement('div');
+            sinResultados.className = 'cliente-resultados-vacio';
+            sinResultados.textContent = 'No se encontraron clientes.';
+            contenedor.appendChild(sinResultados);
+        } else {
+            const encabezado = document.createElement('div');
+            encabezado.className = 'cliente-resultados-header';
+            encabezado.textContent = 'Clientes';
+            contenedor.appendChild(encabezado);
+
+            clientes.forEach(cliente => {
+                const opcion = document.createElement('button');
+                opcion.type = 'button';
+                opcion.className = 'cliente-resultado-item';
+                opcion.dataset.codigo = cliente.codigo;
+                opcion.setAttribute('role', 'option');
+                const razonSocial = (cliente.razon_social || '').trim();
+                const fantasia = (cliente.fantasia || '').trim();
+                const titulo = razonSocial || fantasia || (cliente.text || '').replace(/^\s*\S+\s*-\s*/, '').trim();
+                const subtitulo = fantasia && fantasia !== titulo ? fantasia : '';
+                opcion.innerHTML = subtitulo
+                    ? `<span class="cliente-resultado-nombre">${escapeHtml(titulo)}</span>
+                       <span class="cliente-resultado-fantasia">${escapeHtml(subtitulo)}</span>`
+                    : `<span class="cliente-resultado-nombre">${escapeHtml(titulo)}</span>`;
+                opcion.addEventListener('click', () => {
+                    seleccionarCliente(cliente.codigo);
+                });
+                contenedor.appendChild(opcion);
+            });
+        }
+
+        contenedor.classList.add('show');
+        contenedor.style.display = 'block';
+        elements.clienteBuscadorWrapper?.classList.add('is-open');
+    }
+
+CAMBIOS CLAVE vs versión anterior:
+  - Ya NO muestra cliente.codigo ni "codigo - nombre" en el dropdown.
+  - Usa clases CSS propias en lugar de dropdown-item de Bootstrap.
+  - Agrega clase is-open al wrapper para z-index.
+
+----------------------------------------------------------------------------
+4.4) MODIFICAR ocultarResultadosClientes()
+----------------------------------------------------------------------------
+
+Agregar esta línea después de ocultar el contenedor:
+
+        elements.clienteBuscadorWrapper?.classList.remove('is-open');
+
+La función completa queda:
+
+    function ocultarResultadosClientes(mantenerAyuda = false) {
+        if (!elements.clienteResultados) {
+            return;
+        }
+        elements.clienteResultados.classList.remove('show');
+        elements.clienteResultados.style.display = 'none';
+        elements.clienteBuscadorWrapper?.classList.remove('is-open');
+        if (!mantenerAyuda) {
+            mostrarAyudaBusqueda(false);
+        }
+    }
+
+================================================================================
+COMPORTAMIENTO FINAL (CHECKLIST DE PRUEBA)
+================================================================================
+
+[ ] Clic o foco en #cliente_codigo muestra ~25 clientes sin escribir.
+[ ] Clic en #btnBuscarCliente hace foco y abre el mismo listado.
+[ ] Al escribir, la lista se filtra (debounce 300 ms).
+[ ] Al borrar todo el texto, vuelve el listado inicial.
+[ ] Enter abre/muestra resultados sin auto-seleccionar (modo forzar).
+[ ] Escape cierra el dropdown.
+[ ] Clic fuera del wrapper cierra el dropdown.
+[ ] En edición, abrir el buscador NO borra el nombre en #cliente_nombre.
+[ ] El dropdown NO muestra números/códigos, solo razón social (+ fantasía si difiere).
+[ ] No hay scroll horizontal; nombres largos hacen wrap.
+[ ] Al tipear un código exacto (sin forzar), sigue auto-seleccionando ese cliente.
+
+================================================================================
+PASOS PARA APLICAR EN OTRO PROYECTO (ORDEN SUGERIDO)
+================================================================================
+
+1. Verificar que exista endpoint GET /api/clientes/buscar (o adaptar URL en fetch).
+2. Reemplazar método buscarClientes() en el controlador correspondiente.
+3. Actualizar HTML del buscador (placeholder + div #clienteResultados).
+4. Agregar bloque CSS al archivo de estilos de cotizaciones.
+5. Reemplazar las 3 funciones JS + línea is-open en ocultarResultadosClientes().
+6. Confirmar que inicializarBusquedaClientes() se llama al cargar la página.
+7. Probar create y edit con cliente ya cargado y con campo vacío.
+
+================================================================================
+FIN DEL DOCUMENTO
+================================================================================

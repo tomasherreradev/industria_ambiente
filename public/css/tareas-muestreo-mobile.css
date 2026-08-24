@@ -1,0 +1,930 @@
+/**
+ * Estilos móviles — Mis muestras / Mis órdenes (tarjetas expandibles v2) y Detalle de muestra/orden.
+ * Desktop del listado usa markup legacy sin estos estilos de tarjeta.
+ */
+
+.muestras-show-panel-header__cancel-btn {
+    background-color: #b45050;
+    border-color: #b45050;
+    color: #fff;
+}
+
+.muestras-show-panel-header__cancel-btn:hover,
+.muestras-show-panel-header__cancel-btn:focus {
+    background-color: #963f3f;
+    border-color: #963f3f;
+    color: #fff;
+}
+
+@media (max-width: 767.98px) {
+    /* ── Página listado ── */
+    .tareas-muestreo-page {
+        margin-top: 0.75rem;
+        padding-top: 1.25rem !important;
+        padding-bottom: 1.5rem !important;
+    }
+
+    .tareas-muestreo-page .tareas-muestreo-header {
+        display: none !important;
+    }
+
+    .tareas-muestreo-page .tareas-mobile-header {
+        display: block;
+        margin-bottom: 1rem;
+    }
+
+    .tareas-mobile-header h1 {
+        font-size: 1.5rem;
+        font-weight: 700;
+        margin-bottom: 0.25rem;
+        color: #2e384d;
+    }
+
+    .tareas-mobile-toolbar {
+        display: flex;
+        gap: 0.5rem;
+        margin-top: 0.75rem;
+    }
+
+    .tareas-mobile-toolbar .btn {
+        min-width: 44px;
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.5rem 0.75rem;
+        border-radius: 0.5rem;
+    }
+
+    .tareas-mobile-toolbar .btn-view-active {
+        background-color: #4e73df;
+        border-color: #4e73df;
+        color: #fff;
+    }
+
+    .tareas-mobile-search-wrap {
+        margin-top: 0.75rem;
+    }
+
+    .tareas-mobile-search-wrap .input-group-text,
+    .tareas-mobile-search-wrap .form-control {
+        min-height: 44px;
+        border-color: #dee2e6;
+    }
+
+    .tareas-mobile-search-wrap .form-control {
+        font-size: 0.9375rem;
+    }
+
+    .tareas-mobile-search-advanced {
+        margin-top: 0.75rem;
+    }
+
+    .tareas-mobile-search-advanced .form-label {
+        font-size: 0.8125rem;
+        margin-bottom: 0.25rem;
+    }
+
+    /* ── Stats y filtros ── */
+    .muestras-mobile-stats {
+        font-size: 0.875rem;
+        color: #6c757d;
+        margin-bottom: 0.75rem;
+    }
+
+    .muestras-mobile-filtros {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+        padding: 0.625rem 0;
+    }
+
+    .muestras-mobile-switch {
+        display: flex;
+        align-items: center;
+        gap: 0.625rem;
+        min-height: 2rem;
+        padding-left: 0;
+    }
+
+    .muestras-mobile-switch .form-check-input {
+        width: 2.5em;
+        height: 1.25em;
+        margin: 0;
+        float: none;
+        flex-shrink: 0;
+    }
+
+    .muestras-mobile-switch .form-check-label {
+        font-size: 0.875rem;
+        color: #495057;
+        line-height: 1.25;
+        padding-top: 0;
+        cursor: pointer;
+    }
+
+    .muestras-mobile-cards {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+
+    /* ── Calendario móvil ── */
+    .tareas-calendario-wrap {
+        padding: 0;
+        max-width: none;
+    }
+
+    .tareas-calendario-widget {
+        border-radius: 0.75rem;
+        box-shadow: 0 1px 3px rgba(58, 59, 69, 0.08);
+        padding: 0.5rem 0.35rem 0.75rem;
+        overflow: hidden;
+    }
+
+    .tareas-calendario-widget .fc {
+        font-size: 0.8125rem;
+    }
+
+    .tareas-calendario-widget .fc-toolbar {
+        flex-direction: column;
+        gap: 0.5rem;
+        margin-bottom: 0.75rem !important;
+    }
+
+    .tareas-calendario-widget .fc-toolbar.fc-header-toolbar {
+        margin-bottom: 0.5rem !important;
+    }
+
+    .tareas-calendario-widget .fc-toolbar.fc-footer-toolbar {
+        margin-top: 0.5rem !important;
+        margin-bottom: 0 !important;
+    }
+
+    .tareas-calendario-widget .fc-toolbar-chunk {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+        width: 100%;
+    }
+
+    .tareas-calendario-widget .fc-toolbar-title {
+        font-size: 1rem !important;
+        font-weight: 700;
+        line-height: 1.3;
+        text-align: center;
+        white-space: normal;
+    }
+
+    .tareas-calendario-widget .fc-button {
+        min-height: 40px;
+        padding: 0.35rem 0.65rem;
+        font-size: 0.8125rem;
+        border-radius: 0.375rem;
+    }
+
+    .tareas-calendario-widget .fc-button-group .fc-button {
+        min-width: 44px;
+    }
+
+    .tareas-calendario-widget .fc-footer-toolbar .fc-button-group {
+        display: flex;
+        width: 100%;
+    }
+
+    .tareas-calendario-widget .fc-footer-toolbar .fc-button-group .fc-button {
+        flex: 1;
+    }
+
+    .tareas-calendario-widget .fc-col-header-cell-cushion,
+    .tareas-calendario-widget .fc-timegrid-axis-cushion {
+        font-size: 0.75rem;
+        padding: 0.35rem 0.25rem;
+    }
+
+    .tareas-calendario-widget .fc-timegrid-slot-label-cushion {
+        font-size: 0.7rem;
+    }
+
+    .tareas-calendario-widget .fc-event {
+        font-size: 0.75rem;
+        padding: 0.15rem 0.35rem;
+        border-radius: 0.25rem;
+    }
+
+    .tareas-calendario-widget .fc-event-title {
+        white-space: normal;
+        line-height: 1.25;
+    }
+
+    .tareas-calendario-widget .fc-daygrid-day-number {
+        font-size: 0.8125rem;
+        padding: 0.35rem;
+    }
+
+    .tareas-calendario-widget .fc-scroller {
+        overflow-x: hidden !important;
+    }
+
+    /* ── Tarjeta expandible ── */
+    .muestra-card {
+        position: relative;
+        background: #fff;
+        border: 1px solid #e3e6f0;
+        border-radius: 0.75rem;
+        overflow: hidden;
+        box-shadow: 0 1px 3px rgba(58, 59, 69, 0.08);
+    }
+
+    .muestra-card::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 4px;
+        background: #4e73df;
+    }
+
+    .muestra-card--vencida::before { background: #e74a3b; }
+    .muestra-card--prioridad::before { background: #f6c23e; }
+    .muestra-card--revision::before { background: #36b9cc; }
+    .muestra-card--finalizada::before { background: #1cc88a; }
+    .muestra-card--activa::before { background: #4e73df; }
+
+    .muestra-card__toggle {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 0.75rem;
+        width: 100%;
+        padding: 1rem 1rem 1rem 1.125rem;
+        border: none;
+        background: transparent;
+        text-align: left;
+        cursor: pointer;
+        min-height: 44px;
+    }
+
+    .muestra-card__toggle:focus-visible {
+        outline: 2px solid #4e73df;
+        outline-offset: -2px;
+    }
+
+    .muestra-card__summary {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .muestra-card__pill {
+        display: inline-block;
+        font-size: 0.6875rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        padding: 0.2rem 0.5rem;
+        border-radius: 999px;
+        margin-bottom: 0.375rem;
+    }
+
+    .muestra-card__pill--danger {
+        background: rgba(231, 74, 59, 0.12);
+        color: #e74a3b;
+    }
+
+    .muestra-card__pill--warning {
+        background: rgba(246, 194, 62, 0.2);
+        color: #856404;
+    }
+
+    .muestra-card__pill--info {
+        background: rgba(54, 185, 204, 0.15);
+        color: #0c5460;
+    }
+
+    .muestra-card__pill--success {
+        background: rgba(28, 200, 138, 0.15);
+        color: #155724;
+    }
+
+    .muestra-card__pill--primary {
+        background: rgba(78, 115, 223, 0.12);
+        color: #4e73df;
+    }
+
+    .muestra-card__title {
+        font-size: 1rem;
+        font-weight: 700;
+        line-height: 1.35;
+        color: #2e384d;
+        margin: 0 0 0.2rem;
+        word-break: break-word;
+    }
+
+    .muestra-card__company {
+        font-size: 0.8125rem;
+        color: #858796;
+        margin: 0 0 0.5rem;
+        word-break: break-word;
+    }
+
+    .muestra-card__quick-meta {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .muestra-card__quick-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        font-size: 0.8125rem;
+        color: #6c757d;
+    }
+
+    .muestra-card__chevron {
+        flex-shrink: 0;
+        color: #858796;
+        transition: transform 0.2s ease;
+        margin-top: 0.25rem;
+    }
+
+    .muestra-card__toggle.is-open .muestra-card__chevron {
+        transform: rotate(180deg);
+    }
+
+    .muestra-card__body {
+        padding: 0 1rem 1rem 1.125rem;
+        border-top: 1px solid #f0f2f5;
+    }
+
+    .muestra-card__details {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.625rem;
+        margin: 0.875rem 0 1rem;
+    }
+
+    .muestra-card__detail {
+        margin: 0;
+        padding: 0.5rem 0.625rem;
+        background: #f8f9fc;
+        border-radius: 0.375rem;
+        min-width: 0;
+    }
+
+    .muestra-card__detail dt {
+        font-size: 0.625rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #858796;
+        margin-bottom: 0.15rem;
+    }
+
+    .muestra-card__detail dd {
+        font-size: 0.8125rem;
+        color: #2e384d;
+        margin: 0;
+        line-height: 1.35;
+        word-break: break-word;
+    }
+
+    .muestra-card__section-label {
+        font-size: 0.6875rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #858796;
+        margin: 0 0 0.5rem;
+    }
+
+    .muestra-card__samples {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .muestra-card__sample {
+        display: flex;
+        align-items: center;
+        gap: 0.625rem;
+        padding: 0.625rem 0.75rem;
+        background: #fffbf0;
+        border: 1px solid #f6e8b8;
+        border-left-width: 4px;
+        border-left-color: #f6c23e;
+        border-radius: 0.5rem;
+    }
+
+    .muestra-card__sample-icon {
+        flex-shrink: 0;
+        color: #f6c23e;
+    }
+
+    .muestra-card__sample--coordinado {
+        background: #fffbf0;
+        border-color: #f6e8b8;
+        border-left-color: #f6c23e;
+    }
+
+    .muestra-card__sample--coordinado .muestra-card__sample-icon {
+        color: #f6c23e;
+    }
+
+    .muestra-card__sample--revision {
+        background: #eef9fb;
+        border-color: #b8e0e8;
+        border-left-color: #36b9cc;
+    }
+
+    .muestra-card__sample--revision .muestra-card__sample-icon {
+        color: #36b9cc;
+    }
+
+    .muestra-card__sample--finalizada {
+        background: #eefbf5;
+        border-color: #b8e8d4;
+        border-left-color: #1cc88a;
+    }
+
+    .muestra-card__sample--finalizada .muestra-card__sample-icon {
+        color: #1cc88a;
+    }
+
+    .muestra-card__sample--suspension {
+        background: #fdf0ef;
+        border-color: #f0c8c4;
+        border-left-color: #e74a3b;
+    }
+
+    .muestra-card__sample--suspension .muestra-card__sample-icon {
+        color: #e74a3b;
+    }
+
+    .muestra-card__sample--pendiente {
+        background: #f8f9fc;
+        border-color: #e3e6f0;
+        border-left-color: #858796;
+    }
+
+    .muestra-card__sample--pendiente .muestra-card__sample-icon {
+        color: #858796;
+    }
+
+    .muestra-card__sample-info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .muestra-card__sample-info strong {
+        display: block;
+        font-size: 0.875rem;
+        color: #2e384d;
+        line-height: 1.3;
+    }
+
+    .muestra-card__sample-info span {
+        display: block;
+        font-size: 0.75rem;
+        color: #858796;
+        margin-top: 0.1rem;
+    }
+
+    .muestra-card__sample-btn {
+        flex-shrink: 0;
+        min-height: 36px;
+        min-width: 52px;
+        padding: 0.25rem 0.625rem;
+    }
+
+    .muestra-card__vehicle {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        font-size: 0.75rem;
+        color: #6c757d;
+        padding: 0 0.75rem 0.25rem 2.5rem;
+    }
+
+    .muestra-card__actions {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .muestra-card__actions .btn {
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        border-radius: 0.5rem;
+    }
+
+    .muestra-card__btn-main {
+        background-color: #4e73df;
+        border-color: #4e73df;
+    }
+
+    /* ── Detalle de muestra ── */
+    .tarea-detalle-page {
+        margin-top: 0.75rem;
+        padding-top: 1.25rem !important;
+        padding-bottom: 5rem !important;
+    }
+
+    .tarea-detalle-header {
+        flex-direction: column;
+        align-items: stretch !important;
+        gap: 0.75rem;
+        margin-bottom: 1rem !important;
+    }
+
+    .tarea-detalle-header h1 {
+        font-size: 1.25rem;
+    }
+
+    .tarea-detalle-header .btn-volver {
+        width: 100%;
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .tarea-detalle-hero {
+        flex-direction: column !important;
+        align-items: stretch !important;
+        gap: 0.75rem;
+        padding: 1rem !important;
+    }
+
+    .tarea-detalle-hero-title {
+        font-size: 1.05rem !important;
+        line-height: 1.35;
+        word-break: break-word;
+    }
+
+    .tarea-detalle-hero .badge {
+        align-self: flex-start;
+        margin-left: 0 !important;
+        margin-top: 0.5rem;
+        font-size: 0.78rem;
+    }
+
+    .tarea-detalle-acciones {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        width: 100%;
+    }
+
+    .tarea-detalle-acciones .btn {
+        width: 100%;
+        min-height: 44px;
+        white-space: normal;
+        line-height: 1.3;
+        padding: 0.5rem 0.75rem;
+    }
+
+    .tarea-detalle-datos {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 0.5rem;
+    }
+
+    .tarea-detalle-dato {
+        display: flex;
+        flex-direction: column;
+        gap: 0.15rem;
+        padding: 0.625rem 0.75rem;
+        background: #f8f9fc;
+        border-radius: 0.375rem;
+        border: 1px solid #e9ecef;
+    }
+
+    .tarea-detalle-dato-label {
+        font-size: 0.7rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        color: #6c757d;
+    }
+
+    .tarea-detalle-dato-value {
+        font-size: 0.9375rem;
+        line-height: 1.4;
+        word-break: break-word;
+    }
+
+    .tarea-detalle-herramientas-header {
+        flex-direction: column;
+        align-items: stretch !important;
+        gap: 0.5rem;
+    }
+
+    .tarea-detalle-herramientas-header .btn {
+        width: 100%;
+        min-height: 44px;
+    }
+
+    .tarea-detalle-herramientas-grid .col-md-4 {
+        width: 100%;
+    }
+
+    .tarea-detalle-sticky-actions {
+        display: flex;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 1030;
+        background: #fff;
+        border-top: 1px solid #dee2e6;
+        padding: 0.75rem 1rem;
+        box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.08);
+        gap: 0.5rem;
+    }
+
+    .tarea-detalle-sticky-actions .btn {
+        flex: 1;
+        min-height: 48px;
+        font-weight: 600;
+    }
+
+    .tarea-detalle-page .d-flex.justify-content-end.mb-4:not(.tarea-detalle-sticky-actions) {
+        display: none !important;
+    }
+
+    .tarea-detalle-page #medicionesForm .d-flex.justify-content-end .btn {
+        width: 100%;
+        min-height: 44px;
+    }
+
+    /* ── Coordinación muestras (/show/{coti}) ── */
+    .muestras-show-page {
+        overflow-x: hidden;
+        padding-bottom: 6.5rem !important;
+    }
+
+    .muestras-show-back {
+        width: 100%;
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .muestras-show-title {
+        font-size: 1.35rem;
+        line-height: 1.3;
+        word-break: break-word;
+    }
+
+    .cotizacion-info-header {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch !important;
+        gap: 0.625rem;
+    }
+
+    .cotizacion-info-header__title-row {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 0.75rem;
+    }
+
+    .cotizacion-info-header__tools {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-shrink: 0;
+    }
+
+    .cotizacion-info-header__fecha {
+        display: block;
+        line-height: 1.4;
+        word-break: break-word;
+        opacity: 0.95;
+    }
+
+    .muestras-show-panel-header {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch !important;
+        gap: 0.75rem;
+        padding: 0.875rem 1rem !important;
+    }
+
+    .muestras-show-panel-header__title-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+    }
+
+    .muestras-show-panel-header__title-row h5 {
+        font-size: 1rem;
+        line-height: 1.3;
+    }
+
+    .muestras-show-panel-header__actions {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.5rem;
+        width: 100%;
+    }
+
+    .muestras-show-panel-header__dropdown,
+    .muestras-show-panel-header__select-btn,
+    .muestras-show-panel-header__cancel-btn {
+        width: 100%;
+    }
+
+    .muestras-show-panel-header__select-btn,
+    .muestras-show-panel-header__cancel-btn {
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        white-space: normal;
+        line-height: 1.25;
+    }
+
+    .muestras-show-panel-header__cancel-btn {
+        background-color: #b45050 !important;
+        border-color: #b45050 !important;
+        color: #fff !important;
+    }
+
+    .muestras-show-panel-header__actions .dropdown-menu {
+        width: 100%;
+    }
+
+    .muestras-show-sample-header {
+        flex-direction: column !important;
+        align-items: stretch !important;
+        gap: 0.75rem;
+        padding: 0.875rem 1rem !important;
+    }
+
+    .muestras-show-sample-header > .d-flex.align-items-center.gap-2.flex-wrap:first-child {
+        width: 100%;
+    }
+
+    .muestras-show-sample-header > .d-flex.justify-content-end {
+        width: 100%;
+        justify-content: flex-start !important;
+        flex-wrap: wrap;
+        gap: 0.5rem !important;
+    }
+
+    .muestras-show-page .mi-tarjeta .card-body .list-group-item > .d-flex {
+        flex-direction: column;
+        align-items: stretch !important;
+        gap: 0.5rem;
+    }
+
+    .muestras-show-page .mi-tarjeta .card-body .list-group-item .d-flex.align-items-center {
+        align-items: flex-start !important;
+    }
+
+    .muestras-show-sticky-actions {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 1030;
+        padding: 0.75rem 1rem;
+        background: rgba(255, 255, 255, 0.97);
+        border-top: 1px solid #dee2e6;
+        box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
+    }
+
+    .muestras-show-sticky-actions__inner {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        width: 100%;
+    }
+
+    .muestras-show-sticky-actions .btn {
+        width: 100%;
+        min-height: 48px;
+        font-weight: 600;
+        white-space: normal;
+        line-height: 1.25;
+    }
+}
+
+@media (min-width: 768px) {
+    .tareas-mobile-header {
+        display: none !important;
+    }
+
+    .tarea-detalle-sticky-actions {
+        display: none !important;
+    }
+
+    .tarea-detalle-dato {
+        background: transparent;
+        border: none;
+        padding: 0;
+    }
+
+    .tarea-detalle-dato-label {
+        font-size: inherit;
+        text-transform: none;
+        letter-spacing: normal;
+        color: inherit;
+        font-weight: 700;
+    }
+
+    .tarea-detalle-dato-label::after {
+        content: ':';
+    }
+
+    .tarea-detalle-dato-value {
+        display: inline;
+    }
+
+    .tarea-detalle-dato + .tarea-detalle-dato {
+        margin-top: 0.5rem !important;
+    }
+
+    .cotizacion-info-header {
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center !important;
+        justify-content: space-between;
+        gap: 0.5rem 1rem;
+    }
+
+    .cotizacion-info-header__title-row {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+
+    .cotizacion-info-header__fecha {
+        flex: 0 0 auto;
+        white-space: nowrap;
+    }
+
+    .muestras-show-panel-header {
+        flex-direction: row;
+        align-items: center !important;
+        justify-content: space-between;
+        gap: 0.75rem;
+    }
+
+    .muestras-show-panel-header__actions {
+        flex-direction: row;
+        align-items: center;
+        width: auto;
+        flex-shrink: 0;
+    }
+
+    .muestras-show-panel-header__dropdown,
+    .muestras-show-panel-header__select-btn,
+    .muestras-show-panel-header__cancel-btn {
+        width: auto;
+    }
+
+    .muestras-show-sticky-actions {
+        left: auto;
+        right: 0;
+        bottom: 0;
+        width: auto;
+        padding: 1rem;
+        background: transparent;
+        border-top: 0;
+        box-shadow: none;
+    }
+
+    .muestras-show-sticky-actions__inner {
+        flex-direction: row;
+        width: auto;
+    }
+
+    .muestras-show-sticky-actions .btn {
+        width: auto;
+        min-height: auto;
+    }
+
+    .muestras-show-page {
+        padding-bottom: 1.5rem !important;
+    }
+}
+
+@media (max-width: 767.98px) {
+    .tarea-detalle-dato-label::after {
+        content: none;
+    }
+}

@@ -19,7 +19,7 @@
                     @endphp
                         <tr>
                             <td class="fw-bold">#{{ $numCoti }}</td>
-                            <td>{{ $coti->coti_empresa }}</td>
+                            <td>{{ \App\Support\CotizacionClienteEtiqueta::paraLista($coti) }}</td>
                             <td class="text-center">
                                 @if($informeData['muestras']->first()->fecha_muestreo)
                                     {{ \Carbon\Carbon::parse($informeData['muestras']->first()->fecha_muestreo)->format('d/m/Y') }}

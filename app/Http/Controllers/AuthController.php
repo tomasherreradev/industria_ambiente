@@ -68,6 +68,8 @@ class AuthController extends Controller
                 return redirect()->intended('/mis-tareas');
             } elseif($user->hasRole('laboratorio')) {
                 return redirect()->intended('/mis-ordenes');
+            } elseif(($user->bandeja_solo_informes ?? false) && $user->hasAnyRole(['coordinador_lab', 'coordinador_mediciones'])) {
+                return redirect()->intended('/informes');
             } elseif($user->hasRole('coordinador_lab')) {
                 return redirect()->intended('/dashboard/analisis');
             } elseif($user->hasRole('coordinador_muestreo')) {
@@ -84,6 +86,8 @@ class AuthController extends Controller
                 return redirect()->intended('/muestras');
             } elseif($user->hasRole('coordinador_consul')) {
                 return redirect()->intended(route('consultoria.index'));
+            } elseif($user->hasRole('coordinador_mediciones')) {
+                return redirect()->intended(route('mediciones.index'));
             } elseif($user->hasRole('asp')) {
                 return redirect()->intended(route('asp.index'));
             } elseif($user->hasRole('clarke_fire')) {

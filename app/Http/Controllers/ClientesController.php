@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\Auth;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\ClientesTemplateExport;
 use App\Imports\ClientesImport;
+use App\Support\CliCampoLegacy;
 
 class ClientesController extends Controller {
 
@@ -136,11 +137,17 @@ class ClientesController extends Controller {
             Log::info('Iniciando validación de datos básicos');
             $request->validate([
                 'razon_social' => 'required|string|max:255',
-                'activo' => 'required|boolean'
+                'activo' => 'required|boolean',
+                'contactos' => 'nullable|array',
+                'contactos.*.nombre' => 'nullable|string|max:120',
+                'contactos.*.telefono' => 'nullable|string|max:50',
+                'contactos.*.email' => 'nullable|email|max:120',
             ], [
                 'razon_social.required' => 'La Razón Social es obligatoria',
                 'razon_social.max' => 'La Razón Social no puede superar los 255 caracteres',
-                'activo.required' => 'El estado es obligatorio'
+                'activo.required' => 'El estado es obligatorio',
+                'contactos.*.email.email' => 'El email del contacto no es válido',
+                'contactos.*.email.max' => 'El email del contacto no puede superar los 120 caracteres',
             ]);
             Log::info('Validación de datos básicos completada');
 
@@ -170,9 +177,13 @@ class ClientesController extends Controller {
             // Campos principales
             Log::info('Asignando campos principales');
             $cliente->cli_codigo = $codigo;
-            $cliente->cli_razonsocial = str_pad($request->razon_social ?? '', 60, ' ', STR_PAD_RIGHT);
-            $cliente->cli_fantasia = $request->fantasia ? str_pad($request->fantasia, 60, ' ', STR_PAD_RIGHT) : null;
-            $cliente->cli_direccion = $request->direccion ? str_pad($request->direccion, 60, ' ', STR_PAD_RIGHT) : null;
+            $cliente->cli_razonsocial = CliCampoLegacy::truncarTexto(
+                $request->razon_social,
+                CliCampoLegacy::RAZON_SOCIAL,
+                true
+            );
+            $cliente->cli_fantasia = CliCampoLegacy::truncarTexto($request->fantasia, CliCampoLegacy::FANTASIA);
+            $cliente->cli_direccion = CliCampoLegacy::truncarTexto($request->direccion, CliCampoLegacy::DIRECCION);
             $cliente->cli_partido = $request->partido ? str_pad($request->partido, 50, ' ', STR_PAD_RIGHT) : null;
             $cliente->cli_localidad = $request->localidad ? str_pad($request->localidad, 50, ' ', STR_PAD_RIGHT) : null;
             $cliente->cli_codigopostal = $request->codigo_postal ? str_pad($request->codigo_postal, 10, ' ', STR_PAD_RIGHT) : null;
@@ -458,13 +469,7 @@ class ClientesController extends Controller {
 
                 // Usar el primer contacto como contacto principal en la tabla cli
                 if ($primerContacto !== null) {
-                    $cliente->cli_contacto = str_pad($primerContacto['nombre'] ?? '', 30, ' ', STR_PAD_RIGHT);
-                    $cliente->cli_telefono = !empty($primerContacto['telefono'])
-                        ? str_pad($primerContacto['telefono'], 30, ' ', STR_PAD_RIGHT)
-                        : null;
-                    $cliente->cli_email = !empty($primerContacto['email'])
-                        ? str_pad($primerContacto['email'], 30, ' ', STR_PAD_RIGHT)
-                        : null;
+                    CliCampoLegacy::aplicarContactoPrincipalEnCli($cliente, $primerContacto);
                     $cliente->save();
                 }
             }
@@ -670,11 +675,17 @@ class ClientesController extends Controller {
             // Validar datos básicos
             $request->validate([
                 'razon_social' => 'required|string|max:255',
-                'activo' => 'required|boolean'
+                'activo' => 'required|boolean',
+                'contactos' => 'nullable|array',
+                'contactos.*.nombre' => 'nullable|string|max:120',
+                'contactos.*.telefono' => 'nullable|string|max:50',
+                'contactos.*.email' => 'nullable|email|max:120',
             ], [
                 'razon_social.required' => 'La Razón Social es obligatoria',
                 'razon_social.max' => 'La Razón Social no puede superar los 255 caracteres',
-                'activo.required' => 'El estado es obligatorio'
+                'activo.required' => 'El estado es obligatorio',
+                'contactos.*.email.email' => 'El email del contacto no es válido',
+                'contactos.*.email.max' => 'El email del contacto no puede superar los 120 caracteres',
             ]);
 
             $cliente = Clientes::find($id);
@@ -685,9 +696,13 @@ class ClientesController extends Controller {
             }
 
             // Campos principales
-            $cliente->cli_razonsocial = str_pad($request->razon_social ?? '', 60, ' ', STR_PAD_RIGHT);
-            $cliente->cli_fantasia = $request->fantasia ? str_pad($request->fantasia, 60, ' ', STR_PAD_RIGHT) : null;
-            $cliente->cli_direccion = $request->direccion ? str_pad($request->direccion, 60, ' ', STR_PAD_RIGHT) : null;
+            $cliente->cli_razonsocial = CliCampoLegacy::truncarTexto(
+                $request->razon_social,
+                CliCampoLegacy::RAZON_SOCIAL,
+                true
+            );
+            $cliente->cli_fantasia = CliCampoLegacy::truncarTexto($request->fantasia, CliCampoLegacy::FANTASIA);
+            $cliente->cli_direccion = CliCampoLegacy::truncarTexto($request->direccion, CliCampoLegacy::DIRECCION);
             $cliente->cli_partido = $request->partido ? str_pad($request->partido, 50, ' ', STR_PAD_RIGHT) : null;
             $cliente->cli_localidad = $request->localidad ? str_pad($request->localidad, 50, ' ', STR_PAD_RIGHT) : null;
             $cliente->cli_codigopostal = $request->codigo_postal ? str_pad($request->codigo_postal, 10, ' ', STR_PAD_RIGHT) : null;
@@ -907,13 +922,7 @@ class ClientesController extends Controller {
 
             // Usar el primer contacto como contacto principal en la tabla cli
             if ($primerContacto !== null) {
-                $cliente->cli_contacto = str_pad($primerContacto['nombre'] ?? '', 30, ' ', STR_PAD_RIGHT);
-                $cliente->cli_telefono = !empty($primerContacto['telefono'])
-                    ? str_pad($primerContacto['telefono'], 30, ' ', STR_PAD_RIGHT)
-                    : null;
-                $cliente->cli_email = !empty($primerContacto['email'])
-                    ? str_pad($primerContacto['email'], 30, ' ', STR_PAD_RIGHT)
-                    : null;
+                CliCampoLegacy::aplicarContactoPrincipalEnCli($cliente, $primerContacto);
                 $cliente->save();
             }
 
@@ -961,12 +970,8 @@ class ClientesController extends Controller {
 
                     // Compartir razón social con el cliente principal
                     $sucursal->cli_razonsocial = $cliente->cli_razonsocial;
-                    $sucursal->cli_fantasia = !empty($sucursalData['fantasia'])
-                        ? str_pad($sucursalData['fantasia'], 60, ' ', STR_PAD_RIGHT)
-                        : null;
-                    $sucursal->cli_direccion = !empty($sucursalData['direccion'])
-                        ? str_pad($sucursalData['direccion'], 60, ' ', STR_PAD_RIGHT)
-                        : null;
+                    $sucursal->cli_fantasia = CliCampoLegacy::truncarTexto($sucursalData['fantasia'] ?? null, CliCampoLegacy::FANTASIA);
+                    $sucursal->cli_direccion = CliCampoLegacy::truncarTexto($sucursalData['direccion'] ?? null, CliCampoLegacy::DIRECCION);
                     $sucursal->cli_partido = !empty($sucursalData['partido'])
                         ? str_pad($sucursalData['partido'], 50, ' ', STR_PAD_RIGHT)
                         : null;
@@ -976,15 +981,9 @@ class ClientesController extends Controller {
                     $sucursal->cli_codigopostal = !empty($sucursalData['codigo_postal'])
                         ? str_pad($sucursalData['codigo_postal'], 10, ' ', STR_PAD_RIGHT)
                         : null;
-                    $sucursal->cli_contacto = !empty($sucursalData['contacto'])
-                        ? str_pad($sucursalData['contacto'], 30, ' ', STR_PAD_RIGHT)
-                        : null;
-                    $sucursal->cli_telefono = !empty($sucursalData['telefono'])
-                        ? str_pad($sucursalData['telefono'], 30, ' ', STR_PAD_RIGHT)
-                        : null;
-                    $sucursal->cli_email = !empty($sucursalData['email'])
-                        ? str_pad($sucursalData['email'], 30, ' ', STR_PAD_RIGHT)
-                        : null;
+                    $sucursal->cli_contacto = CliCampoLegacy::padNullable($sucursalData['contacto'] ?? null, CliCampoLegacy::CONTACTO);
+                    $sucursal->cli_telefono = CliCampoLegacy::padNullable($sucursalData['telefono'] ?? null, CliCampoLegacy::TELEFONO);
+                    $sucursal->cli_email = CliCampoLegacy::padNullable($sucursalData['email'] ?? null, CliCampoLegacy::EMAIL);
 
                     // Las sucursales no deben tener CUIT real
                     $sucursal->cli_cuit = null;
@@ -1083,6 +1082,28 @@ class ClientesController extends Controller {
     public function downloadTemplate()
     {
         return \Maatwebsite\Excel\Facades\Excel::download(new \App\Exports\ClientesTemplateExport, 'plantilla_clientes.xlsx');
+    }
+
+    public function downloadPendientesTemplate()
+    {
+        $this->bloquearEscrituraParaFacturador();
+
+        $origen = storage_path('app/plantillas/clientes_faltantes_source.csv');
+        if (! is_file($origen)) {
+            return redirect()->route('clientes.index')
+                ->with('error', 'No se encontró el listado de clientes pendientes para generar la plantilla.');
+        }
+
+        $datos = \App\Support\ClientesPlantillaPendientesBuilder::desdeCsv($origen);
+
+        return \Maatwebsite\Excel\Facades\Excel::download(
+            new \App\Exports\ClientesTemplateExport(
+                clientesRows: $datos['clientes'],
+                contactosRows: $datos['contactos'],
+                incluirEjemplosSecundarios: false,
+            ),
+            'plantilla_clientes_pendientes.xlsx'
+        );
     }
 
     public function import(\Illuminate\Http\Request $request)

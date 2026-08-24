@@ -4,7 +4,7 @@
 
     Layout: dos columnas independientes separadas por línea vertical.
       Izquierda (60%): identificación del cliente / OT
-      Derecha   (40%): datos de la muestra (NEGRITA en primer renglón) + sitio + precinto + custodia + legislación
+      Derecha   (40%): datos de la muestra (NEGRITA en primer renglón) + sitio + precinto + custodia + protocolo de informe N + legislación
 --}}
 <div class="box">
     <table style="width:100%; border-collapse:collapse; table-layout:fixed;">
@@ -20,10 +20,6 @@
                     <tr>
                         <td class="k" style="white-space:normal;">O.T. N°:</td>
                         <td>{{ $cab['otn'] }}</td>
-                    </tr>
-                    <tr>
-                        <td class="k" style="white-space:normal;">Protocolo OPDS:</td>
-                        <td>{{ $cab['protocolo_opds'] }}</td>
                     </tr>
                     <tr>
                         <td class="k" style="white-space:normal;">Razón social:</td>
@@ -71,6 +67,10 @@
                     <tr>
                         <td class="k" style="white-space:normal;">Cadena de Custodia N°:</td>
                         <td>{{ $cab['cadena_custodia'] }}</td>
+                    </tr>
+                    <tr>
+                        <td class="k" style="white-space:normal;">Protocolo de informe N:</td>
+                        <td>{{ $cab['protocolo_opds'] }}</td>
                     </tr>
                     <tr>
                         <td class="k" style="white-space:normal;">Legislación / normativa:</td>

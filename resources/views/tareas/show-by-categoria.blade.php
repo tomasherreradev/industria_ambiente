@@ -4,16 +4,18 @@
 @php
     $reqCadenaCustodiaMuestra = (bool) (optional($instancia->muestra)->req_cadena_custodia ?? false);
     $esMuestreadoEstado = strtolower(trim((string) ($instancia->cotio_estado ?? ''))) === 'muestreado';
+    $fechaFinDetalle = $instancia->fecha_identificacion
+        ? \Carbon\Carbon::parse($instancia->fecha_identificacion)->format('d/m/Y H:i')
+        : ($instancia->fecha_fin_muestreo
+            ? \Carbon\Carbon::parse($instancia->fecha_fin_muestreo)->format('d/m/Y H:i')
+            : 'N/A');
 @endphp
-<div class="container py-4">
+<link rel="stylesheet" href="{{ asset('css/tareas-muestreo-mobile.css') }}?v={{ filemtime(public_path('css/tareas-muestreo-mobile.css')) }}">
+<div class="container py-4 tarea-detalle-page">
     <!-- Encabezado -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="mb-0">
-            Detalle de Muestra
-    
-        </h1>
-        {{-- Tras guardar + reload, url()->previous() suele ser la misma página; el listado estable es mis-tareas --}}
-        <a href="{{ $canalParaFiltrar ? route('muestras.show', ['coti_num' => $instancia->cotio_numcoti, 'canal' => $canalParaFiltrar]) : route('mis-tareas') }}" class="btn btn-outline-secondary">
+    <div class="d-flex justify-content-between align-items-center mb-4 tarea-detalle-header">
+        <h1 class="mb-0">Detalle de Muestra</h1>
+        <a href="{{ $canalParaFiltrar ? route('muestras.show', ['coti_num' => $instancia->cotio_numcoti, 'canal' => $canalParaFiltrar]) : route('mis-tareas') }}" class="btn btn-outline-secondary btn-volver">
             <i class="fas fa-arrow-left me-1"></i> Volver
         </a>
     </div>
@@ -28,9 +30,11 @@
 
     <!-- Detalles de la muestra -->
     <div class="card shadow-sm mb-4">
-        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-            <h5 class="mb-0">
-                {{ $instancia->cotio_descripcion }}
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center tarea-detalle-hero">
+            <div class="tarea-detalle-hero-main">
+                <h5 class="mb-0 tarea-detalle-hero-title">
+                    {{ $instancia->cotio_descripcion }}
+                </h5>
                 @php
                     $estado = strtolower($instancia->cotio_estado);
                     $badgeClass = match ($estado) {
@@ -41,12 +45,12 @@
                         default => 'secondary',
                     };
                 @endphp
-            <span class="badge bg-{{ $badgeClass }} ms-2">
-                {{ ucfirst($instancia->cotio_estado) }}
-            </span>
-            </h5>
+                <span class="badge bg-{{ $badgeClass }} mt-2 d-inline-block">
+                    {{ ucfirst($instancia->cotio_estado) }}
+                </span>
+            </div>
             @if(Auth::user()->rol != 'laboratorio')
-                <div class="btn-group botones-muestra" role="group">
+                <div class="btn-group botones-muestra tarea-detalle-acciones" role="group">
                     @if(!$esMuestreadoEstado)
                         @if($instancia->cotio_estado != 'suspension')
                             <button type="button" class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#suspenderModal">
@@ -72,43 +76,68 @@
         </div>
 
         <div class="card-body">
-            <div class="row gy-3">
+            <div class="row gy-3 tarea-detalle-datos">
                 <div class="col-md-4">
-                    <p><strong>Cotización:</strong> {{ $instancia->cotio_numcoti }}</p>
-                    <p><strong>Identificación:</strong> {{ $instancia->cotio_identificacion ?? 'N/A' }}</p>
-                    <p><strong>N° Precinto:</strong> {{ $instancia->nro_precinto ?? 'N/A' }}</p>
+                    <div class="tarea-detalle-dato">
+                        <span class="tarea-detalle-dato-label">Cotización</span>
+                        <span class="tarea-detalle-dato-value">{{ $instancia->cotio_numcoti }}</span>
+                    </div>
+                    <div class="tarea-detalle-dato mt-2">
+                        <span class="tarea-detalle-dato-label">Identificación</span>
+                        <span class="tarea-detalle-dato-value">{{ $instancia->cotio_identificacion ?? 'N/A' }}</span>
+                    </div>
+                    <div class="tarea-detalle-dato mt-2">
+                        <span class="tarea-detalle-dato-label">N° Precinto</span>
+                        <span class="tarea-detalle-dato-value">{{ $instancia->nro_precinto ?? 'N/A' }}</span>
+                    </div>
                     @if($reqCadenaCustodiaMuestra)
-                        <p><strong>N° Cadena:</strong> {{ $instancia->nro_cadena ?? 'N/A' }}</p>
+                        <div class="tarea-detalle-dato mt-2">
+                            <span class="tarea-detalle-dato-label">N° Cadena</span>
+                            <span class="tarea-detalle-dato-value">{{ $instancia->nro_cadena ?? 'N/A' }}</span>
+                        </div>
                     @elseif(filled($instancia->nro_cadena))
-                        <p><strong>N° Cadena:</strong> {{ $instancia->nro_cadena }} <span class="text-muted small">(no exigido por el ítem)</span></p>
+                        <div class="tarea-detalle-dato mt-2">
+                            <span class="tarea-detalle-dato-label">N° Cadena</span>
+                            <span class="tarea-detalle-dato-value">{{ $instancia->nro_cadena }} <span class="text-muted small">(no exigido)</span></span>
+                        </div>
                     @else
-                        <p><strong>N° Cadena:</strong> <span class="text-muted">No requerido para este ítem</span></p>
+                        <div class="tarea-detalle-dato mt-2">
+                            <span class="tarea-detalle-dato-label">N° Cadena</span>
+                            <span class="tarea-detalle-dato-value text-muted">No requerido</span>
+                        </div>
                     @endif
                 </div>
                 <div class="col-md-4">
-                    <p><strong>Fecha Inicio:</strong> 
-                        {{ $instancia->fecha_inicio_muestreo ? \Carbon\Carbon::parse($instancia->fecha_inicio_muestreo)->format('d/m/Y') : 'N/A' }}
-                    </p>
-                    <p><strong>Fecha Fin:</strong> 
-                        {{$instancia->fecha_identificacion ? $instancia->fecha_identificacion : $instancia->fecha_fin_muestreo ?? 'N/A'}}
-                    </p>
+                    <div class="tarea-detalle-dato">
+                        <span class="tarea-detalle-dato-label">Fecha inicio</span>
+                        <span class="tarea-detalle-dato-value">
+                            {{ $instancia->fecha_inicio_muestreo ? \Carbon\Carbon::parse($instancia->fecha_inicio_muestreo)->format('d/m/Y H:i') : 'N/A' }}
+                        </span>
+                    </div>
+                    <div class="tarea-detalle-dato mt-2">
+                        <span class="tarea-detalle-dato-label">Fecha fin</span>
+                        <span class="tarea-detalle-dato-value">{{ $fechaFinDetalle }}</span>
+                    </div>
                 </div>
                 @if(Auth::user()->rol != 'laboratorio')
                     <div class="col-md-4">
-                        <p><strong>Vehículo:</strong> 
-                            @if($instancia->vehiculo)
-                                {{ $instancia->vehiculo->marca }} {{ $instancia->vehiculo->modelo }} ({{ $instancia->vehiculo->patente }})
-                            @else
-                                N/A
-                            @endif
-                        </p>
+                        <div class="tarea-detalle-dato">
+                            <span class="tarea-detalle-dato-label">Vehículo</span>
+                            <span class="tarea-detalle-dato-value">
+                                @if($instancia->vehiculo)
+                                    {{ $instancia->vehiculo->marca }} {{ $instancia->vehiculo->modelo }} ({{ $instancia->vehiculo->patente }})
+                                @else
+                                    N/A
+                                @endif
+                            </span>
+                        </div>
                     </div>
                 @endif
                 <div class="col-md-4">
                     @if($instancia->image)
                         <img src="{{ Storage::url('images/' . $instancia->image) }}" alt="Imagen de la muestra" class="img-fluid w-50 rounded">
                     @else
-                        <p class="text-muted">No hay imagen disponible</p>
+                        <p class="text-muted mb-0">No hay imagen disponible</p>
                     @endif
                 </div>
             </div>
@@ -165,11 +194,19 @@
                 </div>
             @endif
 
-            {{-- @dd($instancia->herramientas) --}}
+
+            @if(filled($instancia->observaciones_muestreo_coord))
+                <div class="mt-3 pt-3 border-top">
+                    <div class="tarea-detalle-dato">
+                        <span class="tarea-detalle-dato-label">Observaciones del coordinador</span>
+                        <p class="mb-0 mt-1" style="white-space: pre-wrap;">{{ trim($instancia->observaciones_muestreo_coord) }}</p>
+                    </div>
+                </div>
+            @endif
 
             <!-- Herramientas asignadas -->
             <div class="mt-4 pt-3 border-top">
-                <div class="d-flex justify-content-between align-items-center mb-3">
+                <div class="d-flex justify-content-between align-items-center mb-3 tarea-detalle-herramientas-header">
                     <h6 class="mb-0">Herramientas Asignadas</h6>
                     @if($instancia->cotio_estado != 'muestreado')
                         <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editHerramientasModal">
@@ -179,7 +216,7 @@
                 </div>
                 
                 @if(isset($herramientasMuestra) && $herramientasMuestra->count() > 0)
-                    <div class="row gy-2" id="herramientasContainer">
+                    <div class="row gy-2 tarea-detalle-herramientas-grid" id="herramientasContainer">
                         @foreach($herramientasMuestra as $herramienta)
                             <div class="col-md-4">
                                 <div class="card border h-100">
@@ -291,9 +328,20 @@
     </div>
 
     @if($instancia->cotio_estado != 'muestreado')
-        <div class="d-flex justify-content-end mb-4">
+        <div class="d-flex justify-content-end mb-4 d-none d-md-flex">
             <button type="button" class="btn btn-success" id="guardarIdentificacionYMediciones">
                 Guardar identificación y mediciones
+            </button>
+        </div>
+
+        <div class="tarea-detalle-sticky-actions d-md-none">
+            @if($instancia->cotio_estado == 'coordinado muestreo' || $instancia->cotio_estado == 'en revision muestreo')
+                <button class="btn btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#editMuestraModal">
+                    {{ $instancia->cotio_identificacion ? 'Editar ID' : 'Identificación' }}
+                </button>
+            @endif
+            <button type="button" class="btn btn-success" id="guardarIdentificacionYMedicionesMobile">
+                Guardar todo
             </button>
         </div>
     @endif
@@ -415,6 +463,12 @@
                             </div>
                         @endif
 
+                        <div class="mb-3">
+                            <label for="observaciones_muestreo_muestreador" class="form-label">Observaciones del muestreador</label>
+                            <textarea class="form-control" id="observaciones_muestreo_muestreador" name="observaciones_muestreo_muestreador" rows="3"
+                                      placeholder="Observaciones al identificar la muestra (visibles para el coordinador)">{{ trim($instancia->observaciones_muestreo_muestreador ?? '') }}</textarea>
+                        </div>
+
                         <div class="d-flex justify-content-end">
                             <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">Cancelar</button>
                             <button type="submit" class="btn btn-outline-secondary me-2" name="accion" value="borrador" formnovalidate>
@@ -532,19 +586,29 @@
         opacity: 0.6;
     }
 
-    @media (max-width: 480px) {
-        .botones-muestra {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;	
+    @media (min-width: 768px) {
+        .tarea-detalle-dato {
+            background: transparent;
+            border: none;
+            padding: 0;
         }
-
-        .botones-muestra button {
-            width: 100%;
+        .tarea-detalle-dato-label {
+            font-size: inherit;
+            text-transform: none;
+            letter-spacing: normal;
+            color: inherit;
+            font-weight: 700;
         }
-    }   
+        .tarea-detalle-dato-label::after {
+            content: ':';
+        }
+        .tarea-detalle-dato-value {
+            display: inline;
+        }
+        .tarea-detalle-dato + .tarea-detalle-dato {
+            margin-top: 0.5rem !important;
+        }
+    }
 </style>
 
 <script>
@@ -1251,17 +1315,13 @@ function deseleccionarTodas() {
 </script>
 
 <script>
-    const medicionesForm = document.getElementById('medicionesForm');
-    if (medicionesForm) {
-        medicionesForm.addEventListener('submit', function(event) {
-            event.preventDefault(); // Evita el envío inmediato del formulario
-        
-            // Obtener todos los campos de entrada de tipo texto para las variables
+    function confirmarMedicionesCampoSiCorresponde() {
+        return new Promise((resolve) => {
             const inputs = document.querySelectorAll('input[name^="valores["][type="text"]');
             const totalInputs = inputs.length;
             let filledCount = 0;
             let emptyInputs = 0;
-        
+
             inputs.forEach(input => {
                 if (input.value.trim() === '') {
                     emptyInputs++;
@@ -1270,18 +1330,17 @@ function deseleccionarTodas() {
                 }
             });
 
-            // Mediciones de campo es obligatorio: al menos una variable debe tener valor
             if (totalInputs > 0 && filledCount === 0) {
                 Swal.fire({
                     title: 'Mediciones de campo obligatorias',
                     text: 'Debe ingresar al menos un valor en las variables de medición de campo.',
                     icon: 'warning',
-                    confirmButtonColor: '#3085d6'
-                });
+                    confirmButtonColor: '#3085d6',
+                    confirmButtonText: 'Entendido'
+                }).then(() => resolve(false));
                 return;
             }
-        
-            // Si hay variables vacías pero al menos una con valor, preguntar si desea continuar
+
             if (emptyInputs > 0) {
                 Swal.fire({
                     title: 'Advertencia',
@@ -1293,12 +1352,32 @@ function deseleccionarTodas() {
                     buttonsStyling: true,
                     confirmButtonColor: '#3085d6',
                     cancelButtonColor: '#d33'
-                }).then((result) => {
-                    if (result.isConfirmed) {
-                        medicionesForm.submit();
-                    }
-                });
-            } else {
+                }).then((result) => resolve(result.isConfirmed));
+                return;
+            }
+
+            resolve(true);
+        });
+    }
+
+    function sincronizarCoordenadasMuestraForm() {
+        const latDisplay = document.getElementById('latitude-display');
+        const lngDisplay = document.getElementById('longitude-display');
+        const latHidden = document.getElementById('latitud');
+        const lngHidden = document.getElementById('longitud');
+        if (latDisplay && lngDisplay && latHidden && lngHidden) {
+            latHidden.value = latDisplay.value.trim();
+            lngHidden.value = lngDisplay.value.trim();
+        }
+    }
+
+    const medicionesForm = document.getElementById('medicionesForm');
+    if (medicionesForm) {
+        medicionesForm.addEventListener('submit', async function(event) {
+            event.preventDefault();
+
+            const continuar = await confirmarMedicionesCampoSiCorresponde();
+            if (continuar) {
                 medicionesForm.submit();
             }
         });
@@ -1308,54 +1387,100 @@ function deseleccionarTodas() {
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const botonGlobal = document.getElementById('guardarIdentificacionYMediciones');
-    if (!botonGlobal) return;
+    const botonGlobalMobile = document.getElementById('guardarIdentificacionYMedicionesMobile');
 
-    botonGlobal.addEventListener('click', async function () {
+    async function guardarIdentificacionYMedicionesHandler() {
         const muestraForm = document.getElementById('muestraForm');
-        const medicionesForm = document.getElementById('medicionesForm');
+        const medicionesFormEl = document.getElementById('medicionesForm');
 
-        if (!muestraForm || !medicionesForm) {
-            alert('No se encontraron los formularios de identificación o mediciones.');
+        if (!muestraForm || !medicionesFormEl) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: 'No se encontraron los formularios de identificación o mediciones.',
+                confirmButtonText: 'Entendido',
+                confirmButtonColor: '#3085d6'
+            });
             return;
         }
 
         const identInput = document.getElementById('cotio_identificacion');
         if (identInput && !identInput.value.trim()) {
-            alert('Debe completar la identificación de la muestra antes de guardar.');
-            identInput.focus();
+            Swal.fire({
+                icon: 'warning',
+                title: 'Campo obligatorio',
+                text: 'Debe completar la identificación de la muestra antes de guardar.',
+                confirmButtonText: 'Entendido',
+                confirmButtonColor: '#3085d6'
+            }).then(() => identInput.focus());
             return;
         }
 
         const reqCadenaCustodia = muestraForm.getAttribute('data-req-cadena-custodia') === '1';
         const cadenaInput = document.getElementById('nro_cadena');
         if (reqCadenaCustodia && cadenaInput && !cadenaInput.value.trim()) {
-            alert('Debe completar el N° Cadena de custodia antes de guardar.');
-            cadenaInput.focus();
+            Swal.fire({
+                icon: 'warning',
+                title: 'Campo obligatorio',
+                text: 'Debe completar el N° Cadena de custodia antes de guardar.',
+                confirmButtonText: 'Entendido',
+                confirmButtonColor: '#3085d6'
+            }).then(() => cadenaInput.focus());
             return;
         }
 
+        const medicionesOk = await confirmarMedicionesCampoSiCorresponde();
+        if (!medicionesOk) {
+            return;
+        }
+
+        Swal.fire({
+            title: 'Procesando...',
+            html: 'Guardando identificación y mediciones',
+            allowOutsideClick: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
+
         try {
+            sincronizarCoordenadasMuestraForm();
+
             const csrf = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
 
-            // 1) Guardar identificación (incluye imagen / georreferencia / precinto / cadena)
             const fdIdent = new FormData(muestraForm);
+            fdIdent.append('accion', 'guardar');
+
             const respIdent = await fetch(muestraForm.action, {
                 method: 'POST',
                 headers: {
                     'X-CSRF-TOKEN': csrf,
-                    'Accept': 'text/html,application/json'
+                    'Accept': 'application/json'
                 },
                 body: fdIdent
             });
 
-            if (!respIdent.ok) {
-                alert('Error al guardar la identificación de la muestra.');
+            let dataIdent;
+            try {
+                dataIdent = await respIdent.json();
+            } catch (parseError) {
+                dataIdent = { success: respIdent.ok };
+            }
+
+            if (!respIdent.ok || dataIdent.success === false) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error',
+                    text: dataIdent.message || 'Error al guardar la identificación de la muestra.',
+                    confirmButtonText: 'Entendido',
+                    confirmButtonColor: '#3085d6'
+                });
                 return;
             }
 
-            // 2) Guardar mediciones de campo (reutiliza validaciones existentes del servidor)
-            const fdMed = new FormData(medicionesForm);
-            const respMed = await fetch(medicionesForm.action, {
+            const fdMed = new FormData(medicionesFormEl);
+            fdMed.append('avanzar_estado', '1');
+            const respMed = await fetch(medicionesFormEl.action, {
                 method: 'POST',
                 headers: {
                     'X-CSRF-TOKEN': csrf,
@@ -1365,17 +1490,52 @@ document.addEventListener('DOMContentLoaded', function() {
             });
 
             if (!respMed.ok) {
-                alert('Error al guardar las mediciones de campo.');
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error',
+                    text: 'Error al guardar las mediciones de campo.',
+                    confirmButtonText: 'Entendido',
+                    confirmButtonColor: '#3085d6'
+                });
                 return;
             }
 
-            // Recargar para reflejar cambios
-            window.location.reload();
+            Swal.fire({
+                icon: 'success',
+                title: '¡Éxito!',
+                text: 'Identificación y mediciones guardadas correctamente',
+                confirmButtonText: 'Aceptar',
+                confirmButtonColor: '#3085d6',
+                didClose: function () {
+                    if (window.limpiarResiduosSweetAlert2) {
+                        window.limpiarResiduosSweetAlert2();
+                    }
+                },
+            }).then(() => {
+                if (window.limpiarResiduosSweetAlert2) {
+                    window.limpiarResiduosSweetAlert2();
+                }
+                window.location.reload();
+            });
         } catch (e) {
             console.error(e);
-            alert('Ocurrió un error al guardar identificación y mediciones.');
+            Swal.close();
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: 'Ocurrió un error al guardar identificación y mediciones.',
+                confirmButtonText: 'Entendido',
+                confirmButtonColor: '#3085d6'
+            });
         }
-    });
+    }
+
+    if (botonGlobal) {
+        botonGlobal.addEventListener('click', guardarIdentificacionYMedicionesHandler);
+    }
+    if (botonGlobalMobile) {
+        botonGlobalMobile.addEventListener('click', guardarIdentificacionYMedicionesHandler);
+    }
 });
 </script>
 

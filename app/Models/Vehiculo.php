@@ -34,7 +34,7 @@ class Vehiculo extends Model
 
     public function tareas()
     {
-        return $this->hasMany(Cotio::class, 'vehiculo_asignado');
+        return $this->hasMany(CotioInstancia::class, 'vehiculo_asignado');
     }
 
     public function cotioInstancias()

@@ -290,6 +290,14 @@
             @endif
 
             @if($instanciaActual->enable_inform == true)
+                @php
+                    $informeAprobado = $instanciaActual->aprobado_informe || $instanciaActual->fecha_aprobacion_informe;
+                    $nombreAprobadorInforme = $instanciaActual->aprobadorInforme
+                        ? trim($instanciaActual->aprobadorInforme->usu_descripcion)
+                        : (trim((string) ($instanciaActual->aprobado_informe_usuario ?? '')) ?: null);
+                    $puedeVerAprobacionInforme = Auth::user()?->isAdminLab() ?? false;
+                @endphp
+
                 <div class="mt-3 d-flex flex-wrap gap-2">
                     <!-- Botón para ver informe preliminar -->
                     <button type="button" 
@@ -300,7 +308,7 @@
                         Ver Informe Preliminar
                     </button>
 
-                    @if(!$instanciaActual->aprobado_informe)
+                    @if(!$informeAprobado)
                         <!-- Botón para aprobar informe -->
                         <button type="button" 
                                 class="btn btn-success" 
@@ -310,8 +318,7 @@
                             Aprobar Informe
                         </button>
                     @else
-                        <!-- Indicador de informe aprobado -->
-                        <span class="badge bg-success fs-6 d-flex align-items-center">
+                        <span class="badge bg-success fs-6 d-flex align-items-center align-self-center">
                             <x-heroicon-o-check-circle class="me-1" style="width: 18px; height: 18px;" />
                             Informe Aprobado
                         </span>
@@ -335,6 +342,21 @@
                         </button>
                     </form>
                 </div>
+
+                @if($puedeVerAprobacionInforme && $informeAprobado)
+                    <div class="mt-2 d-flex flex-column gap-1">
+                        @if($instanciaActual->fecha_aprobacion_informe)
+                            <small class="text-muted">
+                                @if($nombreAprobadorInforme)
+                                    Aprobado por <strong>{{ $nombreAprobadorInforme }}</strong>
+                                @else
+                                    Aprobado por <em>usuario no registrado</em>
+                                @endif
+                                el {{ $instanciaActual->fecha_aprobacion_informe->format('d/m/Y H:i') }}
+                            </small>
+                        @endif
+                    </div>
+                @endif
             @endif
 
             @if($instanciaActual && $instanciaActual->herramientasLab && $instanciaActual->herramientasLab->count())
@@ -506,7 +528,7 @@
                                         href="#" 
                                         onclick="gestionarResponsablesAnalisisSeleccionados({{ $instanciaActual->id }}, {{ $categoria->cotio_item }}, {{ $instanciaActual->instance_number }}, {{ $instanciaActual->cotio_numcoti }}); return false;"
                                     >
-                                        <i class="fas fa-users me-2"></i> Gestionar responsables
+                                        <i class="fas fa-users me-2"></i> Asignar por sector
                                     </a>
                                 </li>
                             </ul>
@@ -633,10 +655,10 @@
                                             </div>
                                         </div>
                     
-                                        <!-- Asignado a Section -->
+                                        <!-- Asignado a Section (agrupado por sector/laboratorio) -->
                                         <div class="mb-3">
                                             <div class="d-flex align-items-center mb-2">
-                                                <x-heroicon-o-user-circle class="me-2" style="width: 1rem; height: 1rem;" />
+                                                <x-heroicon-o-building-office-2 class="me-2" style="width: 1rem; height: 1rem;" />
                                                 <span class="me-2"><strong>Asignada a:</strong></span>
                                                 @if($instanciaActual->cotio_estado_analisis != 'analizado' && $instanciaActual->active_ot == true && $instanciaActual->enable_inform == false)
                                                     <button type="button" 
@@ -648,29 +670,22 @@
                                                             data-cotio-subitem="{{ $tarea->cotio_subitem }}"
                                                             data-instance-number="{{ $tarea->instancia->instance_number }}"
                                                             data-instancia-id="{{ $tarea->instancia->id }}"
-                                                            title="Gestionar responsables">
+                                                            title="Asignar por sector/laboratorio">
                                                         <x-heroicon-o-user-plus style="width: 0.875rem; height: 0.875rem;" />
                                                     </button>
                                                 @endif
                                             </div>
                                             <div class="d-flex flex-wrap">
-                                                @if ($tarea->instancia->responsablesAnalisis->count() > 0)
-                                                    @foreach ($tarea->instancia->responsablesAnalisis as $responsable)
-                                                        <div class="badge bg-primary rounded-pill d-flex align-items-center me-2 mb-1">
-                                                            {{ $responsable->usu_descripcion }}
-                                                            @if($instanciaActual->cotio_estado_analisis != 'analizado' && $instanciaActual->active_ot == true && $instanciaActual->enable_inform == false)
-                                                                <button type="button" 
-                                                                        class="btn-close btn-close-white ms-2"
-                                                                        style="font-size: 0.6em;"
-                                                                        onclick="quitarResponsable('{{ $responsable->usu_codigo }}', '{{ $tarea->cotio_numcoti }}', '{{ $tarea->cotio_item }}', '{{ $tarea->cotio_subitem }}', '{{ $tarea->instancia->instance_number }}', '{{ $responsable->usu_descripcion }}')"
-                                                                        title="Quitar responsable"
-                                                                        aria-label="Quitar {{ $responsable->usu_descripcion }}"></button>
-                                                            @endif
-                                                        </div>
-                                                    @endforeach
-                                                @else
-                                                    <span class="badge bg-secondary rounded-pill">Sin asignar</span>
-                                                @endif
+                                                @include('ordenes.partials.asignacion-sectores-badges', [
+                                                    'responsables' => $tarea->instancia->responsablesAnalisis,
+                                                    'puedeEditar' => $instanciaActual->cotio_estado_analisis != 'analizado'
+                                                        && $instanciaActual->active_ot == true
+                                                        && $instanciaActual->enable_inform == false,
+                                                    'cotioNumcoti' => $tarea->cotio_numcoti,
+                                                    'cotioItem' => $tarea->cotio_item,
+                                                    'cotioSubitem' => $tarea->cotio_subitem,
+                                                    'instanceNumber' => $tarea->instancia->instance_number,
+                                                ])
                                             </div>
                                         </div>
                     
@@ -1412,7 +1427,7 @@
             <div class="modal-header bg-primary text-white">
                 <h5 class="modal-title" id="gestionarResponsablesModalLabel">
                     <x-heroicon-o-users class="me-2" style="width: 1.25rem; height: 1.25rem;" />
-                    Gestionar Responsables de Análisis
+                    Asignar sectores al análisis
                 </h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
@@ -1421,8 +1436,8 @@
                     <!-- Responsables Actuales -->
                     <div class="col-md-6">
                         <h6 class="fw-bold mb-3">
-                            <x-heroicon-o-user-group class="me-2" style="width: 1rem; height: 1rem;" />
-                            Responsables Actuales
+                            <x-heroicon-o-building-office-2 class="me-2" style="width: 1rem; height: 1rem;" />
+                            Sectores asignados
                         </h6>
                         <div id="responsablesActualesList" class="border rounded p-3" style="min-height: 200px;">
                             <!-- Se llenará dinámicamente -->
@@ -1433,7 +1448,7 @@
                     <div class="col-md-6">
                         <h6 class="fw-bold mb-3">
                             <x-heroicon-o-user-plus class="me-2" style="width: 1rem; height: 1rem;" />
-                            Agregar Responsables
+                            Agregar sectores
                         </h6>
                         <form id="agregarResponsablesForm">
                             @csrf
@@ -1444,21 +1459,21 @@
                             <input type="hidden" id="gestionar_instance_number" name="instance_number">
                             
                             <div class="mb-3">
-                                <label for="nuevos_responsables" class="form-label">Seleccionar responsables:</label>
-                                <select class="form-select" id="nuevos_responsables" name="responsables_analisis[]" multiple>
-                                    @foreach($usuariosAnalistas as $analista)
-                                        <option value="{{ $analista->usu_codigo }}">{{ $analista->usu_descripcion }}</option>
+                                <label for="nuevos_responsables" class="form-label">Laboratorios / sectores:</label>
+                                <select class="form-select select2-sectores-analisis" id="nuevos_responsables" name="responsables_analisis[]" multiple>
+                                    @foreach(($usuariosSectores ?? collect()) as $sector)
+                                        <option value="{{ $sector->usu_codigo }}">{{ $sector->usu_descripcion }}</option>
                                     @endforeach
                                 </select>
                                 <div class="form-text">
                                     <x-heroicon-o-information-circle class="me-1" style="width: 0.875rem; height: 0.875rem;" />
-                                    Seleccione uno o más responsables para agregar
+                                    Seleccione uno o más laboratorios/sectores. Se asignarán automáticamente todos los usuarios vinculados a cada sector.
                                 </div>
                             </div>
 
                             <button type="submit" class="btn btn-success w-100">
                                 <x-heroicon-o-plus class="me-2" style="width: 1rem; height: 1rem;" />
-                                Agregar Responsables
+                                Agregar sectores
                             </button>
                         </form>
                     </div>
@@ -1481,7 +1496,7 @@
             <div class="modal-header bg-primary text-white">
                 <h5 class="modal-title" id="gestionarResponsablesSeleccionadosModalLabel">
                     <x-heroicon-o-users class="me-2" style="width: 1.25rem; height: 1.25rem;" />
-                    Gestionar Responsables de Análisis Seleccionados
+                    Asignar sectores a análisis seleccionados
                 </h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
@@ -1497,16 +1512,16 @@
                     
                     <div class="mb-3">
                         <label for="responsables_seleccionados_multiple" class="form-label">
-                            <strong>Seleccionar responsables:</strong>
+                            <strong>Laboratorios / sectores:</strong>
                         </label>
-                        <select class="form-select" id="responsables_seleccionados_multiple" name="responsables_analisis[]" multiple style="min-height: 200px;">
-                            @foreach($usuariosAnalistas as $analista)
-                                <option value="{{ $analista->usu_codigo }}">{{ $analista->usu_descripcion }} ({{ $analista->usu_codigo }})</option>
+                        <select class="form-select select2-sectores-analisis" id="responsables_seleccionados_multiple" name="responsables_analisis[]" multiple style="min-height: 200px;">
+                            @foreach(($usuariosSectores ?? collect()) as $sector)
+                                <option value="{{ $sector->usu_codigo }}">{{ $sector->usu_descripcion }}</option>
                             @endforeach
                         </select>
                         <div class="form-text">
                             <x-heroicon-o-information-circle class="me-1" style="width: 0.875rem; height: 0.875rem;" />
-                            Seleccione uno o más responsables para asignar a todos los análisis seleccionados. Use Ctrl+Click para seleccionar múltiples.
+                            Seleccione uno o más laboratorios/sectores para asignar a todos los análisis seleccionados.
                         </div>
                     </div>
 
@@ -3118,7 +3133,119 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 
-// Función para quitar responsable
+// Función para quitar un sector/laboratorio completo del análisis
+window.quitarSectorResponsable = function quitarSectorResponsable(sectorCodigo, cotioNumcoti, cotioItem, cotioSubitem, instanceNumber, nombreSector) {
+    if (!sectorCodigo) {
+        return;
+    }
+
+    const confirmar = () => {
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ||
+            document.querySelector('input[name="_token"]')?.value ||
+            '{{ csrf_token() }}';
+
+        return fetch(`/ordenes/${cotioNumcoti}/quitar-responsable`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': csrfToken,
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                cotio_item: String(cotioItem),
+                cotio_subitem: String(cotioSubitem),
+                instance_number: String(instanceNumber),
+                sector_codigo: String(sectorCodigo).trim()
+            })
+        })
+        .then(async (response) => {
+            let data = null;
+            try {
+                data = await response.json();
+            } catch (e) {
+                data = null;
+            }
+            if (!response.ok || !data?.success) {
+                throw new Error(data?.message || `Error ${response.status}`);
+            }
+            return data;
+        });
+    };
+
+    const onSuccess = (data) => {
+        const modalAbierto = document.getElementById('gestionarResponsablesModal')?.classList.contains('show');
+        if (typeof cargarResponsablesActuales === 'function' && modalAbierto) {
+            const item = document.getElementById('gestionar_cotio_item')?.value;
+            const subitem = document.getElementById('gestionar_cotio_subitem')?.value;
+            const instance = document.getElementById('gestionar_instance_number')?.value;
+            cargarResponsablesActuales(cotioNumcoti, item, subitem, instance);
+        } else {
+            window.location.reload();
+        }
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({
+                icon: 'success',
+                title: 'Sector quitado',
+                text: data.message,
+                timer: 1200,
+                showConfirmButton: false
+            });
+        }
+    };
+
+    const onError = (error) => {
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({ icon: 'error', title: 'Error', text: error.message || 'Error al quitar el sector' });
+        } else {
+            alert(error.message || 'Error al quitar el sector');
+        }
+    };
+
+    if (typeof Swal !== 'undefined') {
+        Swal.fire({
+            title: '¿Estás seguro?',
+            text: `¿Deseas quitar el sector "${nombreSector}" de este análisis?`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            cancelButtonColor: '#3085d6',
+            confirmButtonText: 'Sí, quitar',
+            cancelButtonText: 'Cancelar'
+        }).then((result) => {
+            if (!result.isConfirmed) {
+                return;
+            }
+            confirmar().then(onSuccess).catch(onError);
+        });
+        return;
+    }
+
+    if (confirm(`¿Deseas quitar el sector "${nombreSector}" de este análisis?`)) {
+        confirmar().then(onSuccess).catch(onError);
+    }
+};
+
+document.addEventListener('click', function (event) {
+    const btn = event.target.closest('.js-quitar-sector-analisis');
+    if (!btn) {
+        return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+
+    window.quitarSectorResponsable(
+        btn.dataset.sectorCodigo,
+        btn.dataset.cotioNumcoti,
+        btn.dataset.cotioItem,
+        btn.dataset.cotioSubitem,
+        btn.dataset.instanceNumber,
+        btn.dataset.sectorNombre || 'sector'
+    );
+}, true);
+
+// Función para quitar responsable individual
 function quitarResponsable(responsableCodigo, cotioNumcoti, cotioItem, cotioSubitem, instanceNumber, nombreResponsable) {
     Swal.fire({
         title: '¿Estás seguro?',
@@ -3197,8 +3324,22 @@ function quitarResponsable(responsableCodigo, cotioNumcoti, cotioItem, cotioSubi
 document.addEventListener('DOMContentLoaded', function() {
     const gestionarResponsablesModal = document.getElementById('gestionarResponsablesModal');
     const agregarResponsablesForm = document.getElementById('agregarResponsablesForm');
+
+    if (typeof $ !== 'undefined' && $.fn.select2) {
+        $('#nuevos_responsables').select2({
+            placeholder: 'Seleccione laboratorios/sectores',
+            width: '100%',
+            dropdownParent: $('#gestionarResponsablesModal')
+        });
+        $('#responsables_seleccionados_multiple').select2({
+            placeholder: 'Seleccione laboratorios/sectores',
+            width: '100%',
+            dropdownParent: $('#gestionarResponsablesSeleccionadosModal')
+        });
+    }
     
     // Configurar modal cuando se abre
+    if (gestionarResponsablesModal) {
     gestionarResponsablesModal.addEventListener('show.bs.modal', function(event) {
         const button = event.relatedTarget;
         const cotioNumcoti = button.getAttribute('data-cotio-numcoti');
@@ -3218,15 +3359,20 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Cargar responsables actuales
         cargarResponsablesActuales(cotioNumcoti, cotioItem, cotioSubitem, instanceNumber);
+
+        if (typeof $ !== 'undefined' && $.fn.select2) {
+            $('#nuevos_responsables').val(null).trigger('change');
+        }
     });
-    
+    }
+
+    if (agregarResponsablesForm) {
     // Manejar envío del formulario para agregar responsables
     agregarResponsablesForm.addEventListener('submit', function(e) {
         e.preventDefault();
         
         const formData = new FormData(agregarResponsablesForm);
-        const responsablesSeleccionados = Array.from(document.getElementById('nuevos_responsables').selectedOptions)
-            .map(option => option.value);
+        const responsablesSeleccionados = $('#nuevos_responsables').val() || [];
         
         if (responsablesSeleccionados.length === 0) {
             Swal.fire({
@@ -3297,6 +3443,7 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         });
     });
+    }
 });
 
 // Función para cargar responsables actuales en el modal
@@ -3337,58 +3484,49 @@ function cargarResponsablesActuales(cotioNumcoti, cotioItem, cotioSubitem, insta
         }
     })
     .then(data => {
-        if (data.success && data.responsables) {
-            if (data.responsables.length > 0) {
-                // Obtener información completa de los responsables
-                Promise.all(data.responsables.map(codigo => 
-                    fetch(`/api/usuario/${codigo}`, {
-                        method: 'GET',
-                        headers: {
-                            'X-CSRF-TOKEN': csrfToken,
-                            'Accept': 'application/json',
-                            'X-Requested-With': 'XMLHttpRequest'
-                        },
-                        credentials: 'same-origin'
-                    })
-                        .then(response => {
-                            if (response.ok) {
-                                const contentType = response.headers.get('content-type');
-                                if (contentType && contentType.includes('application/json')) {
-                                    return response.json();
-                                }
-                            }
-                            return null;
-                        })
-                        .catch(() => null)
-                ))
-                .then(responsablesInfo => {
-                    const responsablesHTML = data.responsables.map((codigo, index) => {
-                        const info = responsablesInfo[index];
-                        const nombre = info?.usu_descripcion || codigo;
-                        
-                                                                return `
-                            <div class="d-flex justify-content-between align-items-center p-2 border rounded mb-2">
+        if (data.success && (data.sectores?.length || data.responsables?.length)) {
+            if (data.sectores && data.sectores.length > 0) {
+                const sectoresHTML = data.sectores.map(grupo => {
+                    const usuariosHtml = (grupo.usuarios || [])
+                        .map(u => `<li>${u.usu_descripcion}</li>`)
+                        .join('');
+                    const quitarBtn = grupo.sector_codigo
+                        ? `<button type="button"
+                                class="btn btn-sm btn-outline-danger js-quitar-sector-analisis px-2"
+                                style="min-width: 2rem; line-height: 1;"
+                                data-sector-codigo="${String(grupo.sector_codigo).replace(/"/g, '&quot;')}"
+                                data-cotio-numcoti="${cotioNumcoti}"
+                                data-cotio-item="${cotioItem}"
+                                data-cotio-subitem="${cotioSubitem}"
+                                data-instance-number="${instanceNumber}"
+                                data-sector-nombre="${String(grupo.sector_nombre || '').replace(/"/g, '&quot;')}"
+                                title="Quitar sector"
+                                aria-label="Quitar sector">
+                                <span aria-hidden="true" style="font-size: 1.1rem; font-weight: 700;">&times;</span>
+                           </button>`
+                        : '';
+
+                    return `
+                        <div class="p-2 border rounded mb-2">
+                            <div class="d-flex justify-content-between align-items-start">
                                 <div>
-                                    <strong>${nombre}</strong>
-                                    <small class="text-muted d-block">${codigo}</small>
+                                    <strong>${grupo.sector_nombre}</strong>
+                                    <ul class="small text-muted mb-0 ps-3 mt-1">${usuariosHtml}</ul>
                                 </div>
-                                <button type="button" 
-                                        class="btn btn-sm btn-outline-danger"
-                                        onclick="quitarResponsable('${codigo}', '${cotioNumcoti}', '${cotioItem}', '${cotioSubitem}', '${instanceNumber}', '${nombre}')"
-                                        title="Quitar responsable">
-                                    <i class="fas fa-trash"></i>
-                                </button>
+                                ${quitarBtn}
                             </div>
-                        `;
-                    }).join('');
-                    
-                    responsablesActualesList.innerHTML = responsablesHTML;
-                });
+                        </div>
+                    `;
+                }).join('');
+
+                responsablesActualesList.innerHTML = sectoresHTML;
+            } else if (data.responsables.length > 0) {
+                responsablesActualesList.innerHTML = '<div class="text-muted text-center">Hay responsables asignados sin sector definido.</div>';
             } else {
                 responsablesActualesList.innerHTML = '<div class="text-muted text-center">No hay responsables asignados</div>';
             }
         } else {
-            responsablesActualesList.innerHTML = '<div class="text-danger text-center">Error al cargar responsables</div>';
+            responsablesActualesList.innerHTML = '<div class="text-muted text-center">No hay responsables asignados</div>';
         }
     })
     .catch(error => {
@@ -3573,7 +3711,11 @@ function gestionarResponsablesAnalisisSeleccionados(muestraId, item, instance, n
     document.getElementById('instancias_ids_seleccionadas').value = JSON.stringify(instanciaIds);
     
     // Limpiar selección previa del select
-    document.getElementById('responsables_seleccionados_multiple').selectedIndex = -1;
+    if (typeof $ !== 'undefined' && $.fn.select2) {
+        $('#responsables_seleccionados_multiple').val(null).trigger('change');
+    } else {
+        document.getElementById('responsables_seleccionados_multiple').selectedIndex = -1;
+    }
     
     // Mostrar el modal
     const modal = new bootstrap.Modal(document.getElementById('gestionarResponsablesSeleccionadosModal'));
@@ -3591,8 +3733,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const instanciaIdsJson = document.getElementById('instancias_ids_seleccionadas').value;
             const instanciaIds = JSON.parse(instanciaIdsJson);
             
-            const responsablesSeleccionados = Array.from(document.getElementById('responsables_seleccionados_multiple').selectedOptions)
-                .map(option => option.value);
+            const responsablesSeleccionados = $('#responsables_seleccionados_multiple').val() || [];
             
             if (responsablesSeleccionados.length === 0) {
                 Swal.fire({

@@ -13,7 +13,11 @@ class EnsureHasRole
     {
         $user = Auth::user();
 
-        if (!$user || !$user->hasRole($role)) {
+        if (! $user) {
+            abort(403);
+        }
+
+        if ((int) ($user->usu_nivel ?? 0) < 900 && ! $user->hasRole($role)) {
             abort(403);
         }
 

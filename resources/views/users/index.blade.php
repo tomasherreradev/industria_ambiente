@@ -1,172 +1,285 @@
 @extends('layouts.app')
-<head>
-    <title>Usuarios</title>
-</head>
+
+@section('title', 'Usuarios')
 
 @section('content')
-<div class="container py-4">
+<link rel="stylesheet" href="{{ asset('css/usuarios-crud.css') }}?v={{ filemtime(public_path('css/usuarios-crud.css')) }}">
 
-    <!-- Encabezado Desktop -->
-    <div class="d-none d-lg-flex justify-content-between align-items-center mb-4">
-        <div class="d-flex gap-2 align-items-center">
-            <h1 class="fs-4">Usuarios</h1>
-            <a href="{{ url('/sectores') }}" class="btn btn-sm btn-outline-primary">Laboratorios</a>
+@php
+    $puedeEditarUsuarios = $puedeEditarUsuarios ?? false;
+    $puedeEliminarUsuarios = $puedeEliminarUsuarios ?? false;
+    $miCodigo = trim((string) (Auth::user()->usu_codigo ?? ''));
+
+    // Etiqueta legible + tono del chip para cada rol.
+    $rolesMeta = [
+        'laboratorio'            => ['Analista', 'blue'],
+        'muestreador'            => ['Muestreador', 'green'],
+        'coordinador_lab'        => ['Coord. Laboratorio', 'violet'],
+        'coordinador_muestreo'   => ['Coord. Muestreo', 'violet'],
+        'coordinador_consul'     => ['Coord. Consultoría', 'violet'],
+        'coordinador_mediciones' => ['Coord. Mediciones', 'violet'],
+        'ventas'                 => ['Vendedor', 'amber'],
+        'firmador'               => ['Firmador', 'cyan'],
+        'facturador'             => ['Facturador', 'rose'],
+        'asp'                    => ['ASP', 'slate'],
+        'clarke_fire'            => ['Clarke Fire', 'slate'],
+        'cliente'                => ['Usuario Cliente', 'slate'],
+    ];
+
+    // Opciones del filtro (mismas que antes).
+    $rolesFiltro = [
+        'laboratorio', 'muestreador', 'coordinador_lab', 'coordinador_muestreo', 'ventas',
+        'firmador', 'facturador', 'coordinador_consul', 'coordinador_mediciones', 'asp', 'clarke_fire',
+    ];
+
+    $hayFiltros = request('search') || request('rol');
+@endphp
+
+<div class="container py-4 ucrud" data-ucrud-root>
+
+    <header class="ucrud-header">
+        <div class="ucrud-header__titles">
+            <h1 class="ucrud-title">
+                Usuarios
+                <span class="ucrud-count">{{ $usuarios->total() }}</span>
+            </h1>
+            <p class="ucrud-subtitle">Gestioná las cuentas del sistema, sus roles y laboratorios asignados.</p>
         </div>
 
-        <div class="d-flex gap-2 align-items-center">
-            <a href="{{ route('users.createUser') }}" class="btn btn-primary">Nuevo Usuario</a>
+        <div class="ucrud-header__actions">
+            @include('partials.ucrud-nav', ['activo' => 'usuarios'])
 
-            <form action="{{ url('/users') }}" method="GET" class="d-flex gap-2 align-items-center" style="margin-bottom: 0;">
-                <input type="text" name="search" class="form-control" placeholder="Buscar..." value="{{ request('search') }}" style="width: 180px;">
-                <select name="rol" class="form-control" style="width: 160px;">
-                    <option value="">Todos los roles</option>
-                    <option value="laboratorio" {{ request('rol') == 'laboratorio' ? 'selected' : '' }}>Analista</option>
-                    <option value="muestreador" {{ request('rol') == 'muestreador' ? 'selected' : '' }}>Muestreador</option>
-                    <option value="coordinador_lab" {{ request('rol') == 'coordinador_lab' ? 'selected' : '' }}>Coordinador Lab</option>
-                    <option value="coordinador_muestreo" {{ request('rol') == 'coordinador_muestreo' ? 'selected' : '' }}>Coord. Muestreo</option>
-                    <option value="ventas" {{ request('rol') == 'ventas' ? 'selected' : '' }}>Ventas</option>
-                    <option value="firmador" {{ request('rol') == 'firmador' ? 'selected' : '' }}>Firmador</option>
-                    <option value="facturador" {{ request('rol') == 'facturador' ? 'selected' : '' }}>Facturador</option>
-                    <option value="coordinador_consul" {{ request('rol') == 'coordinador_consul' ? 'selected' : '' }}>Coord. Consultoría</option>
-                    <option value="asp" {{ request('rol') == 'asp' ? 'selected' : '' }}>ASP</option>
-                    <option value="clarke_fire" {{ request('rol') == 'clarke_fire' ? 'selected' : '' }}>Clarke Fire</option>
-                </select>
-                <button type="submit" class="btn btn-primary">Buscar</button>
-                @if(request('search') || request('rol'))
-                    <a href="{{ url('/users') }}" class="btn btn-outline-secondary">Limpiar</a>
-                @endif
-            </form>
+            @if($puedeEditarUsuarios)
+                <a href="{{ route('users.createUser') }}" class="ucrud-btn ucrud-btn--primary">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                        <path d="M12 5v14M5 12h14"/>
+                    </svg>
+                    Nuevo usuario
+                </a>
+            @endif
         </div>
-    </div>
+    </header>
 
-    <!-- Encabezado Mobile -->
-    <div class="d-lg-none mb-3">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h1 class="fs-5 mb-0">Usuarios</h1>
-            <div class="d-flex gap-2">
-                <a href="{{ url('/sectores') }}" class="btn btn-sm btn-outline-primary">Laboratorios</a>
-                <a href="{{ route('users.createUser') }}" class="btn btn-sm btn-primary">+ Nuevo</a>
-            </div>
-        </div>
+    <form action="{{ url('/users') }}" method="GET" class="ucrud-toolbar">
+        <label class="ucrud-search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                <circle cx="11" cy="11" r="7"/>
+                <path d="m20 20-3.1-3.1"/>
+            </svg>
+            <input type="text" name="search" class="ucrud-input" placeholder="Buscar por nombre o código…" value="{{ request('search') }}" aria-label="Buscar usuarios">
+        </label>
 
-        <form action="{{ url('/users') }}" method="GET" class="mb-0">
-            <div class="input-group mb-2">
-                <input type="text" name="search" class="form-control" placeholder="Buscar por nombre o código..." value="{{ request('search') }}">
-                <button type="submit" class="btn btn-primary">
-                    <i class="bi bi-search"></i>
-                </button>
-            </div>
-            <div class="d-flex gap-2">
-                <select name="rol" class="form-select form-select-sm flex-grow-1">
-                    <option value="">Todos los roles</option>
-                    <option value="laboratorio" {{ request('rol') == 'laboratorio' ? 'selected' : '' }}>Analista</option>
-                    <option value="muestreador" {{ request('rol') == 'muestreador' ? 'selected' : '' }}>Muestreador</option>
-                    <option value="coordinador_lab" {{ request('rol') == 'coordinador_lab' ? 'selected' : '' }}>Coord. Lab</option>
-                    <option value="coordinador_muestreo" {{ request('rol') == 'coordinador_muestreo' ? 'selected' : '' }}>Coord. Muestreo</option>
-                    <option value="ventas" {{ request('rol') == 'ventas' ? 'selected' : '' }}>Ventas</option>
-                    <option value="firmador" {{ request('rol') == 'firmador' ? 'selected' : '' }}>Firmador</option>
-                    <option value="facturador" {{ request('rol') == 'facturador' ? 'selected' : '' }}>Facturador</option>
-                    <option value="coordinador_consul" {{ request('rol') == 'coordinador_consul' ? 'selected' : '' }}>Coord. Consultoría</option>
-                    <option value="asp" {{ request('rol') == 'asp' ? 'selected' : '' }}>ASP</option>
-                    <option value="clarke_fire" {{ request('rol') == 'clarke_fire' ? 'selected' : '' }}>Clarke Fire</option>
-                </select>
-                @if(request('search') || request('rol'))
-                    <a href="{{ url('/users') }}" class="btn btn-sm btn-outline-secondary">Limpiar</a>
-                @endif
-            </div>
-        </form>
-    </div>
-    
-    @if($usuarios->isEmpty())
-        <div class="alert alert-warning">
-            No hay Usuarios disponibles.
-        </div>
-    @else
+        <select name="rol" class="ucrud-select" aria-label="Filtrar por rol" onchange="this.form.submit()">
+            <option value="">Todos los roles</option>
+            @foreach($rolesFiltro as $valor)
+                <option value="{{ $valor }}" @selected(request('rol') === $valor)>{{ $rolesMeta[$valor][0] }}</option>
+            @endforeach
+        </select>
+
+        <button type="submit" class="ucrud-btn ucrud-btn--primary">Buscar</button>
+
+        @if($hayFiltros)
+            <a href="{{ url('/users') }}" class="ucrud-btn ucrud-btn--ghost">Limpiar</a>
+        @endif
+    </form>
 
     @if(session('success'))
-        <div class="alert alert-success">
-            {{ session('success') }}
+        <div class="ucrud-alert ucrud-alert--success" role="status">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="9"/>
+                <path d="m8.5 12.5 2.5 2.5 4.5-5"/>
+            </svg>
+            <span>{{ session('success') }}</span>
         </div>
     @endif
 
-    <!-- Vista en pantallas grandes (tables-like) -->
-    <div class="d-none d-lg-block">
-        <table class="table table-bordered table-hover">
-            <thead class="table-dark">
-                <tr>
-                    <th>Nombre</th>
-                    <th>Código</th>
-                    {{-- <th>Estado</th> --}}
-                    <th>Rol</th>
-                    <th>Laboratorio</th>
-                    <th>Sector</th> 
-                    <th>Acciones</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach($usuarios as $usu)
-                    <tr>
-                        <td>{{ $usu->usu_descripcion }}</td>
-                        <td>{{ $usu->usu_codigo }}</td>
-                        {{-- <td
-                        <?php 
-                            $estado = trim($usu->usu_estado);
-                        
-                            if ($estado) {
-                                echo 'class="bg-success text-white"';
-                            } else {
-                                echo 'class="bg-warning text-white"';
-                            }
-                        ?>
-                        >{{ $usu->usu_estado ? 'Activo' : 'Inactivo' }}</td> --}}
-                        <td>{{ $usu->rol ?? 'Sin rol' }}</td>
-                        <td>{{ $usu->sector_codigo ?? 'N/A' }}</td>
-                        <td>{{ $usu->sector_trabajo ?? 'N/A' }}</td>
-                        <td>
-                            <a class="btn btn-sm btn-primary" href="{{ url('/users/' . $usu->usu_codigo) }}">
-                                Editar
-                            </a>
-                        </td>
-                    </tr>
-                @endforeach
-            </tbody>
-        </table>
-        {{ $usuarios->links() }}
-    </div>
+    @if(session('error'))
+        <div class="ucrud-alert ucrud-alert--danger" role="alert">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M10.3 3.9 1.9 18a2 2 0 0 0 1.7 3h16.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/>
+                <path d="M12 9v4M12 17h.01"/>
+            </svg>
+            <span>{{ session('error') }}</span>
+        </div>
+    @endif
 
-    <!-- Vista en pantallas pequeñas (lista compacta) -->
-    <div class="d-block d-lg-none">
-        <div class="list-group">
-            @foreach($usuarios as $usu)
-                <a href="{{ url('/users/' . $usu->usu_codigo) }}" class="list-group-item list-group-item-action py-3">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div class="flex-grow-1">
-                            <h6 class="mb-1 fw-semibold">{{ $usu->usu_descripcion }}</h6>
-                            <div class="d-flex flex-wrap gap-2 align-items-center">
-                                <small class="text-muted">
-                                    <i class="bi bi-person-badge"></i> {{ trim($usu->usu_codigo) }}
-                                </small>
-                                @if($usu->sector_codigo)
-                                    <small class="text-muted">
-                                        <i class="bi bi-diagram-3"></i> {{ $usu->sector_codigo }}
-                                    </small>
+    <div class="ucrud-panel">
+        @if($usuarios->isEmpty())
+            <div class="ucrud-empty">
+                <div class="ucrud-empty__icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                        <circle cx="9" cy="7" r="4"/>
+                        <path d="M17 8h6"/>
+                    </svg>
+                </div>
+                <p class="ucrud-empty__title">No hay usuarios para mostrar</p>
+                <p class="ucrud-empty__text">
+                    {{ $hayFiltros ? 'Probá ajustar la búsqueda o quitar los filtros aplicados.' : 'Todavía no hay usuarios cargados en el sistema.' }}
+                </p>
+            </div>
+        @else
+            {{-- Escritorio --}}
+            <div class="d-none d-lg-block ucrud-tablewrap">
+                <table class="ucrud-table">
+                    <thead>
+                        <tr>
+                            <th>Usuario</th>
+                            <th>Código</th>
+                            <th>Rol</th>
+                            <th>Laboratorio</th>
+                            <th>Sector</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach($usuarios as $i => $usu)
+                            @php
+                                $nombre = trim((string) $usu->usu_descripcion);
+                                $codigo = trim((string) $usu->usu_codigo);
+                                $partes = array_values(array_filter(preg_split('/\s+/', $nombre)));
+                                $iniciales = mb_strtoupper(
+                                    mb_substr($partes[0] ?? $codigo, 0, 1)
+                                    . (count($partes) > 1 ? mb_substr($partes[count($partes) - 1], 0, 1) : '')
+                                );
+                                $tono = crc32($codigo) % 360;
+                                $rolMeta = $rolesMeta[(string) $usu->rol] ?? null;
+                                $esYo = $codigo === $miCodigo;
+                            @endphp
+                            <tr class="ucrud-animate-in" style="--i: {{ $i }}">
+                                <td>
+                                    <div class="ucrud-user">
+                                        <span class="ucrud-avatar" style="background: linear-gradient(135deg, hsl({{ $tono }} 62% 60%), hsl({{ ($tono + 28) % 360 }} 66% 47%));" aria-hidden="true">{{ $iniciales }}</span>
+                                        <span class="text-truncate">
+                                            <span class="ucrud-user__name d-block">{{ $nombre }}</span>
+                                            @if($esYo)
+                                                <span class="ucrud-user__meta">Tu cuenta</span>
+                                            @endif
+                                        </span>
+                                    </div>
+                                </td>
+                                <td><span class="ucrud-code">{{ $codigo }}</span></td>
+                                <td>
+                                    @if($rolMeta)
+                                        <span class="ucrud-chip ucrud-chip--{{ $rolMeta[1] }}">{{ $rolMeta[0] }}</span>
+                                    @elseif($usu->rol)
+                                        <span class="ucrud-chip ucrud-chip--slate">{{ $usu->rol }}</span>
+                                    @else
+                                        <span class="ucrud-chip ucrud-chip--muted">Sin rol</span>
+                                    @endif
+                                </td>
+                                <td>
+                                    @if($usu->sector_codigo)
+                                        {{ $usu->sector_codigo }}
+                                    @else
+                                        <span class="ucrud-dim">—</span>
+                                    @endif
+                                </td>
+                                <td>
+                                    @if($usu->sector_trabajo)
+                                        {{ $usu->sector_trabajo }}
+                                    @else
+                                        <span class="ucrud-dim">—</span>
+                                    @endif
+                                </td>
+                                <td>
+                                    <div class="ucrud-actions">
+                                        <a class="ucrud-iconbtn"
+                                           href="{{ url('/users/' . $usu->usu_codigo) }}"
+                                           title="{{ $puedeEditarUsuarios ? 'Editar usuario' : 'Ver usuario' }}"
+                                           aria-label="{{ $puedeEditarUsuarios ? 'Editar' : 'Ver' }} {{ $nombre }}">
+                                            @if($puedeEditarUsuarios)
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                    <path d="M12 20h9"/>
+                                                    <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+                                                </svg>
+                                            @else
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                    <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/>
+                                                    <circle cx="12" cy="12" r="3"/>
+                                                </svg>
+                                            @endif
+                                        </a>
+
+                                        @if($puedeEliminarUsuarios && ! $esYo)
+                                            <form action="{{ route('users.destroy', ['usu_codigo' => $usu->usu_codigo]) }}"
+                                                  method="POST"
+                                                  class="d-inline"
+                                                  onsubmit="return confirm('¿Eliminar definitivamente a {{ $nombre }}?');">
+                                                @csrf
+                                                @method('DELETE')
+                                                <button type="submit"
+                                                        class="ucrud-iconbtn ucrud-iconbtn--danger"
+                                                        title="Eliminar usuario"
+                                                        aria-label="Eliminar {{ $nombre }}">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                        <path d="M3 6h18"/>
+                                                        <path d="M8 6V4h8v2"/>
+                                                        <path d="M18.5 6 17.6 20H6.4L5.5 6"/>
+                                                        <path d="M10 11v5M14 11v5"/>
+                                                    </svg>
+                                                </button>
+                                            </form>
+                                        @endif
+                                    </div>
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+
+            {{-- Mobile --}}
+            <div class="d-block d-lg-none">
+                @foreach($usuarios as $i => $usu)
+                    @php
+                        $nombre = trim((string) $usu->usu_descripcion);
+                        $codigo = trim((string) $usu->usu_codigo);
+                        $partes = array_values(array_filter(preg_split('/\s+/', $nombre)));
+                        $iniciales = mb_strtoupper(
+                            mb_substr($partes[0] ?? $codigo, 0, 1)
+                            . (count($partes) > 1 ? mb_substr($partes[count($partes) - 1], 0, 1) : '')
+                        );
+                        $tono = crc32($codigo) % 360;
+                        $rolMeta = $rolesMeta[(string) $usu->rol] ?? null;
+                    @endphp
+                    <a href="{{ url('/users/' . $usu->usu_codigo) }}" class="ucrud-card ucrud-animate-in" style="--i: {{ $i }}">
+                        <span class="ucrud-avatar" style="background: linear-gradient(135deg, hsl({{ $tono }} 62% 60%), hsl({{ ($tono + 28) % 360 }} 66% 47%));" aria-hidden="true">{{ $iniciales }}</span>
+                        <span class="ucrud-card__body">
+                            <span class="ucrud-user__name d-block">{{ $nombre }}</span>
+                            <span class="ucrud-card__meta">
+                                <span class="ucrud-code">{{ $codigo }}</span>
+                                @if($rolMeta)
+                                    <span class="ucrud-chip ucrud-chip--{{ $rolMeta[1] }}">{{ $rolMeta[0] }}</span>
+                                @elseif($usu->rol)
+                                    <span class="ucrud-chip ucrud-chip--slate">{{ $usu->rol }}</span>
+                                @else
+                                    <span class="ucrud-chip ucrud-chip--muted">Sin rol</span>
                                 @endif
-                            </div>
-                        </div>
-                        <div class="text-end">
-                            <span class="badge {{ $usu->rol ? 'bg-primary' : 'bg-secondary' }} rounded-pill">
-                                {{ $usu->rol ?? 'Sin rol' }}
+                                @if($usu->sector_codigo)
+                                    <span class="ucrud-user__meta">{{ $usu->sector_codigo }}</span>
+                                @endif
                             </span>
-                        </div>
-                    </div>
-                </a>
-            @endforeach
-        </div>
-        <div class="mt-3">
-            {{ $usuarios->links() }}
-        </div>
-    </div>
-    @endif
+                        </span>
+                        <span class="ucrud-card__chevron" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="m9 6 6 6-6 6"/>
+                            </svg>
+                        </span>
+                    </a>
+                @endforeach
+            </div>
 
+            @if($usuarios->hasPages())
+                <div class="ucrud-pagination">
+                    {{ $usuarios->links() }}
+                </div>
+            @endif
+        @endif
+    </div>
 </div>
 @endsection
+
+@push('scripts')
+<script src="{{ asset('js/usuarios-crud.js') }}?v={{ filemtime(public_path('js/usuarios-crud.js')) }}"></script>
+@endpush

@@ -21,6 +21,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use App\Support\CotizacionClienteEtiqueta;
 use App\Support\CotizacionCanalEnsayo;
+use App\Support\CotizacionResumenEconomico;
 
 class CotiController extends Controller
 {
@@ -59,7 +60,7 @@ class CotiController extends Controller
                 return $this->showUserTasksCalendar($request, $userToView);
             }
             
-            $query = Coti::with('matriz');
+            $query = Coti::with(['matriz', 'cliente', 'sucursal']);
             
             if ($request->has('search') && !empty($request->search)) {
                 $searchTerm = '%'.$request->search.'%';
@@ -104,6 +105,7 @@ class CotiController extends Controller
             
             
             $cotizaciones = $query->orderBy('coti_fechafin', 'asc')->get();
+            CotizacionClienteEtiqueta::precargarEmpresasRelacionadas($cotizaciones);
         
             $grouped = $cotizaciones->filter(fn($item) => !empty($item->coti_fechafin))
                 ->groupBy(function($item) {
@@ -124,7 +126,7 @@ class CotiController extends Controller
             ]);
         }
         
-        $query = Coti::with(['matriz', 'responsable']);
+        $query = Coti::with(['matriz', 'responsable', 'cliente', 'sucursal']);
         
         if ($request->has('search') && !empty($request->search)) {
             $searchTerm = '%'.$request->search.'%';
@@ -178,6 +180,7 @@ class CotiController extends Controller
         }
 
         $cotizaciones = $query->paginate(20)->withQueryString();
+        CotizacionClienteEtiqueta::precargarEmpresasRelacionadas($cotizaciones->getCollection());
         
         return view('cotizaciones.index', [
             'cotizaciones' => $cotizaciones,
@@ -218,7 +221,7 @@ class CotiController extends Controller
     {
         $currentMonth = $request->get('month') ? Carbon::parse($request->get('month')) : now();
         
-        $query = Cotio::with(['cotizacion', 'vehiculo'])
+        $query = Cotio::with(['cotizacion'])
             ->where('cotio_subitem', '>', 0)
             // ->where('activo', true)
             ->where('cotio_responsable_codigo', trim($userCode)); 
@@ -297,7 +300,6 @@ public function showTareas(Request $request)
     $queryMuestras = CotioInstancia::with([
         'muestra.cotizado.cliente',
         'muestra.cotizado.sucursal',
-        'muestra.vehiculo',
         'vehiculo',
         'herramientas',
         'responsablesMuestreo',
@@ -307,7 +309,6 @@ public function showTareas(Request $request)
     $queryAnalisis = CotioInstancia::with([
         'tarea.cotizado.cliente',
         'tarea.cotizado.sucursal',
-        'tarea.vehiculo',
         'vehiculo',
         'herramientas',
         'responsablesAnalisis'
@@ -555,7 +556,7 @@ public function showTareas(Request $request)
                 ]),
                 'extendedProps' => [
                     'descripcion' => $descripcion,
-                    'empresa' => $empresa !== '' ? $empresa : (string) (optional($cotC)->coti_empresa ?? ''),
+                    'empresa' => $empresa !== '' ? $empresa : 'Sin empresa',
                     'estado' => $estado,
                     'responsables' => $muestra->responsablesMuestreo->pluck('usu_nombre')->implode(', '),
                     'analisis_count' => $muestra->tareas->count()
@@ -594,7 +595,8 @@ public function showTareas(Request $request)
         $cotizacion = Coti::with(['tareas' => function($query) {
             $query->orderBy('cotio_item')
                   ->orderBy('cotio_subitem');
-        }])->findOrFail($cotizacion);
+        }, 'cliente', 'sucursal'])->findOrFail($cotizacion);
+        CotizacionClienteEtiqueta::precargarEmpresasRelacionadas([$cotizacion]);
     
         $agrupadas = [];
         $categoriaActual = null;
@@ -633,7 +635,8 @@ public function showTareas(Request $request)
 
     public function printAllQr($coti_num)
     {
-        $cotizacion = Coti::findOrFail($coti_num);
+        $cotizacion = Coti::with(['cliente', 'sucursal'])->findOrFail($coti_num);
+        CotizacionClienteEtiqueta::precargarEmpresasRelacionadas([$cotizacion]);
         
         $instancias = CotioInstancia::with(['muestra'])  
                       ->where('cotio_numcoti', $coti_num)
@@ -720,10 +723,15 @@ public function showTareas(Request $request)
                 
                 // Cargar la relación cliente si existe
                 if (isset($cotiData['coti_codigocli']) && $cotiData['coti_codigocli']) {
-                    $cliente = \App\Models\Clientes::where('cli_codigo', trim($cotiData['coti_codigocli']))->first();
+                    $cliente = \App\Models\Clientes::whereRaw('TRIM(cli_codigo) = ?', [trim($cotiData['coti_codigocli'])])->first();
                     if ($cliente) {
                         $cotizacion->setRelation('cliente', $cliente);
                     }
+                }
+
+                $sucursalHist = \App\Support\CotizacionClienteEtiqueta::resolverSucursal($cotizacion);
+                if ($sucursalHist) {
+                    $cotizacion->setRelation('sucursal', $sucursalHist);
                 }
                 
                 // Log para debugging
@@ -761,7 +769,8 @@ public function showTareas(Request $request)
         $cotizacion = Coti::with([
             'tareas' => function($query) {
                 $query->orderBy('cotio_item')
-                      ->orderBy('cotio_subitem');
+                      ->orderBy('cotio_subitem')
+                      ->with(['metodoAnalisis', 'metodoLegacy']);
             },
             'cliente'
         ])->findOrFail($cotizacion);
@@ -871,37 +880,26 @@ public function showTareas(Request $request)
 
         $codigoCondicion = $cotizacion->coti_cond_pago ? trim($cotizacion->coti_cond_pago) : null;
 
-        // Caso especial: condición "CUOTAS" usa los campos de cuotas de la cotización
+        // Caso especial: condición "CUOTAS" — montos desde el total del presupuesto (no campos DB desactualizados)
         if ($codigoCondicion === 'CUOTAS') {
-            $partes = [];
-            $descCuota = trim((string) ($cotizacion->coti_cuota_desc ?? ''));
-            $cantCuotas = $cotizacion->coti_cuota_cant;
-            $montoIndiv = $cotizacion->coti_cuota_monto_indiv;
-            $montoTotal = $cotizacion->coti_cuota_monto_total;
-
-            if ($descCuota !== '') {
-                $partes[] = $descCuota;
-            }
-
-            if (!is_null($cantCuotas)) {
-                $textoCuotas = $cantCuotas . ' cuotas';
-                if (!is_null($montoIndiv)) {
-                    $textoCuotas .= ' de $' . number_format((float) $montoIndiv, 2, ',', '.');
-                }
-                $partes[] = $textoCuotas;
-            } elseif (!is_null($montoIndiv)) {
-                $partes[] = '$' . number_format((float) $montoIndiv, 2, ',', '.');
-            }
-
-            if (!is_null($montoTotal)) {
-                $partes[] = 'Total $' . number_format((float) $montoTotal, 2, ',', '.');
-            }
-
-            if (!empty($partes)) {
-                $condicionPagoDescripcion = 'Cuotas: ' . implode(' | ', $partes);
-            } else {
-                $condicionPagoDescripcion = 'Cuotas';
-            }
+            $resumenEconomico = CotizacionResumenEconomico::calcular(
+                $tareas,
+                (float) ($cotizacion->coti_aumentoglobal ?? 0),
+                $descuentoGlobalCliente,
+                $descuentoSectorCliente
+            );
+            $cantCuotas = max(1, (int) ($cotizacion->coti_cuota_cant ?? 1));
+            $montosCuotas = CotizacionResumenEconomico::calcularCuotas(
+                $resumenEconomico['total_final'],
+                $cantCuotas,
+                (float) ($cotizacion->coti_cuota_interes ?? 0)
+            );
+            $condicionPagoDescripcion = CotizacionResumenEconomico::textoCondicionPagoCuotas(
+                $cotizacion->coti_cuota_desc,
+                $cantCuotas,
+                $montosCuotas['monto_individual'],
+                $montosCuotas['monto_total']
+            );
         } elseif ($codigoCondicion) {
             // pag_codigo suele venir con padding (CHAR). Comparar por trim para evitar que falle el match.
             $registroCondicion = CondicionPago::whereRaw('LTRIM(RTRIM(pag_codigo)) = ?', [$codigoCondicion])->first();

@@ -48,7 +48,7 @@
 
             <div class="card shadow-sm">
                 <div class="card-body p-0">
-                    <form method="POST" action="{{ route('ventas.store') }}" id="cotizacionForm">
+                    <form method="POST" action="{{ route('ventas.store') }}" id="cotizacionForm" enctype="multipart/form-data">
                         @csrf
                         
                         <!-- Header con información básica -->
@@ -111,7 +111,7 @@
                                     <div id="coti_para_wrapper">
                                         <input type="text" class="form-control form-control-sm" id="coti_para" name="coti_para" 
                                                value="{{ old('coti_para') }}" placeholder="Empresa relacionada...">
-                                        <select class="form-control form-control-sm d-none" id="coti_para_select" name="coti_para">
+                                        <select class="form-control form-control-sm d-none" id="coti_para_select">
                                             <option value="">Seleccionar empresa relacionada...</option>
                                         </select>
                                         <input type="hidden" id="coti_empresa_rel" name="coti_empresa_rel" value="{{ old('coti_empresa_rel', old('coti_cli_empresa')) }}">
@@ -213,15 +213,24 @@
                                         <!-- Muestreo ahora se configura por ensayo, no a nivel general -->
                                     </div>
 
+                                    <div class="row mb-4">
+                                        <div class="col-md-12">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="coti_prioridad_global_chk" value="1">
+                                                <label class="form-check-label fw-semibold" for="coti_prioridad_global_chk">
+                                                    ★ Marcar todos los ensayos con prioridad de muestreo
+                                                </label>
+                                            </div>
+                                            <small class="text-muted">Activa o desactiva la prioridad en todos los ensayos ya cargados. Para uno solo, usá el checkbox dentro del modal al agregar o editar un ensayo.</small>
+                                        </div>
+                                    </div>
+
                                     <!-- Contactos del cliente -->
                                     @include('ventas.partials.cotizacion-contactos')
 
-                                    <div class="row mb-4">
-                                        <div class="col-md-12">
-                                            <label for="comentario" class="form-label">Comentario:</label>
-                                            <textarea class="form-control" id="comentario" name="coti_notas" rows="3"></textarea>
-                                        </div>
-                                    </div>
+                                    @include('ventas.partials.cotizacion-notas-generales', [
+                                        'notasGeneralesRaw' => old('coti_notas'),
+                                    ])
 
                                     <!-- Sección de Descuentos / Aumentos -->
                                     <div class="row mb-4">
@@ -570,7 +579,18 @@
                                     No lleva muestreo
                                 </label>
                             </div>
-                            <small class="text-muted d-block">Si no lo tilda, se usa la regla automática (p. ej. consultoría / ASP / Clarke Fire → sin muestreo; Mediciones → con muestreo).</small>
+                            <small class="text-muted d-block">Consultoría, ASP y Clarke Fire siempre van sin muestreo (no se puede desmarcar). Mediciones siempre llevan muestreo. En otros ensayos puede tildar esta opción manualmente.</small>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-12">
+                            <div class="form-check border border-warning rounded p-2 bg-warning bg-opacity-10" id="ensayo_prioridad_wrap_agregar">
+                                <input class="form-check-input" type="checkbox" id="ensayo_es_priori" value="1">
+                                <label class="form-check-label fw-semibold" for="ensayo_es_priori">
+                                    ★ Ensayo con prioridad de muestreo
+                                </label>
+                            </div>
                         </div>
                     </div>
 
@@ -607,6 +627,10 @@
                         </div>
                     </div>
 
+                    @include('ventas.partials.ensayo-adjuntos-campo', [
+                        'inputId' => 'ensayo_adjuntos_input',
+                        'listaId' => 'ensayoAdjuntosLista',
+                    ])
 
                     <!-- Sección de Notas Múltiples -->
                     <div class="row mb-3">
@@ -621,6 +645,7 @@
                             <div id="notasEnsayoContainer">
                                 <!-- Las notas se agregarán dinámicamente aquí -->
                             </div>
+                            <small class="text-muted">Cada nota admite un máximo de 150 caracteres.</small>
                         </div>
                     </div>
                 </form>
@@ -655,14 +680,33 @@
                             </small>
                         </div>
                         <div class="col-md-6">
-                            <label for="componente_analisis" class="form-label">Seleccionar Análisis <span class="text-danger">*</span></label>
+                            <label for="componente_analisis" class="form-label">Análisis del ensayo <span class="text-danger">*</span></label>
+                            <p id="componente_analisis_ayuda" class="text-muted small mb-2">
+                                <strong>1.</strong> Busque abajo para agregar análisis.
+                                <strong>2.</strong> Revise la lista y use «Quitar» en los que no correspondan.
+                            </p>
+                            <span class="d-block form-label form-label-sm text-muted mb-1">Agregar análisis</span>
                             <select class="form-select" id="componente_analisis" name="componente_analisis[]" multiple required>
-                                <option disabled value="">Seleccionar análisis...</option>
+                                <option disabled value="">Buscar análisis...</option>
                             </select>
-                            <small class="text-muted">
-                                <x-heroicon-o-beaker style="width: 14px; height: 14px;" class="me-1" />
-                                Seleccione uno o varios análisis a realizar en la muestra
-                            </small>
+                            <div id="componentes_seleccionados_panel" class="componentes-seleccionados-panel d-none mt-2">
+                                <div class="componentes-seleccionados-header">
+                                    <span class="componentes-seleccionados-titulo">
+                                        Análisis seleccionados (<span id="componentes_seleccionados_count">0</span>)
+                                    </span>
+                                    <button type="button"
+                                            id="btnComponentesQuitarTodos"
+                                            class="btn btn-link btn-sm text-danger p-0 componentes-seleccionados-vaciar">
+                                        Vaciar lista
+                                    </button>
+                                </div>
+                                <input type="search"
+                                       id="componentes_seleccionados_buscar"
+                                       class="form-control form-control-sm componentes-seleccionados-buscar d-none mt-2"
+                                       placeholder="Filtrar en la lista..."
+                                       autocomplete="off">
+                                <div id="componentes_seleccionados_lista" class="componentes-seleccionados-lista mt-2"></div>
+                            </div>
                             <div id="componente_metodo_info" class="form-text mt-1"></div>
                         </div>
                     </div>
@@ -725,11 +769,13 @@
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label for="comp_nota_imprimible_texto" class="form-label">Nota imprimible</label>
-                            <textarea class="form-control" id="comp_nota_imprimible_texto" name="comp_nota_imprimible_texto" rows="3" placeholder="Texto que verá el cliente (se sugiere desde el ítem de catálogo)"></textarea>
+                            <textarea class="form-control" id="comp_nota_imprimible_texto" name="comp_nota_imprimible_texto" rows="3" maxlength="150" placeholder="Texto que verá el cliente (se sugiere desde el ítem de catálogo)"></textarea>
+                            <small class="text-muted">Máximo 150 caracteres.</small>
                         </div>
                         <div class="col-md-6">
                             <label for="comp_nota_interna_texto" class="form-label">Nota interna</label>
-                            <textarea class="form-control" id="comp_nota_interna_texto" name="comp_nota_interna_texto" rows="3" placeholder="Uso interno (se sugiere desde el ítem de catálogo)"></textarea>
+                            <textarea class="form-control" id="comp_nota_interna_texto" name="comp_nota_interna_texto" rows="3" maxlength="150" placeholder="Uso interno (se sugiere desde el ítem de catálogo)"></textarea>
+                            <small class="text-muted">Máximo 150 caracteres.</small>
                         </div>
                         <div class="col-12">
                             <small class="text-muted">Con un solo análisis seleccionado puede editar aquí; con varios, cada ítem usa las notas por defecto de su determinación.</small>
@@ -840,11 +886,13 @@
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label for="edit_comp_nota_imprimible" class="form-label">Nota imprimible</label>
-                            <textarea class="form-control" id="edit_comp_nota_imprimible" name="edit_comp_nota_imprimible" rows="3" placeholder="Texto para el cliente en cotización / PDF"></textarea>
+                            <textarea class="form-control" id="edit_comp_nota_imprimible" name="edit_comp_nota_imprimible" rows="3" maxlength="150" placeholder="Texto para el cliente en cotización / PDF"></textarea>
+                            <small class="text-muted">Máximo 150 caracteres.</small>
                         </div>
                         <div class="col-md-6">
                             <label for="edit_comp_nota_interna" class="form-label">Nota interna</label>
-                            <textarea class="form-control" id="edit_comp_nota_interna" name="edit_comp_nota_interna" rows="3" placeholder="Uso interno"></textarea>
+                            <textarea class="form-control" id="edit_comp_nota_interna" name="edit_comp_nota_interna" rows="3" maxlength="150" placeholder="Uso interno"></textarea>
+                            <small class="text-muted">Máximo 150 caracteres.</small>
                         </div>
                     </div>
                 </form>
@@ -901,6 +949,18 @@
                                     No lleva muestreo
                                 </label>
                             </div>
+                            <small class="text-muted d-block">Consultoría, ASP y Clarke Fire siempre van sin muestreo (no se puede desmarcar). Mediciones siempre llevan muestreo.</small>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-12">
+                            <div class="form-check border border-warning rounded p-2 bg-warning bg-opacity-10" id="ensayo_prioridad_wrap_editar">
+                                <input class="form-check-input" type="checkbox" id="edit_ensayo_es_priori" value="1">
+                                <label class="form-check-label fw-semibold" for="edit_ensayo_es_priori">
+                                    ★ Ensayo con prioridad de muestreo
+                                </label>
+                            </div>
                         </div>
                     </div>
 
@@ -938,6 +998,11 @@
                         </div>
                     </div>
 
+                    @include('ventas.partials.ensayo-adjuntos-campo', [
+                        'inputId' => 'edit_ensayo_adjuntos_input',
+                        'listaId' => 'editEnsayoAdjuntosLista',
+                    ])
+
                     <!-- Sección de Notas Múltiples -->
                     <div class="row mb-3">
                         <div class="col-md-12">
@@ -951,6 +1016,7 @@
                             <div id="notasEditEnsayoContainer">
                                 <!-- Las notas se agregarán dinámicamente aquí -->
                             </div>
+                            <small class="text-muted">Cada nota admite un máximo de 150 caracteres.</small>
                         </div>
                     </div>
                 </form>
@@ -1313,6 +1379,7 @@
 
     function rellenarFormulario(data) {
         const { cotizacion, ensayos, componentes } = data;
+        const fechaHoy = new Date().toISOString().slice(0, 10);
 
         // Algunos datos (sucursal/contactos) pueden ser sobreescritos por la carga asíncrona
         // del cliente luego de setear el código. Guardamos una copia para re-aplicarlos.
@@ -1409,9 +1476,7 @@
             document.getElementById('descripcion').value = cotizacion.coti_descripcion;
         }
 
-        if (cotizacion.coti_fechaalta) {
-            document.getElementById('fecha_alta').value = cotizacion.coti_fechaalta;
-        }
+        document.getElementById('fecha_alta').value = fechaHoy;
 
         if (cotizacion.coti_fechafin) {
             document.getElementById('fecha_venc').value = cotizacion.coti_fechafin;
@@ -1529,8 +1594,8 @@
             }
         }
 
-        if (cotizacion.coti_notas) {
-            document.getElementById('comentario').value = cotizacion.coti_notas;
+        if (typeof window.cotizacionNotasGeneralesCargarDesdeAlmacenamiento === 'function') {
+            window.cotizacionNotasGeneralesCargarDesdeAlmacenamiento(cotizacion.coti_notas || '');
         }
 
         if (cotizacion.descuento) {
@@ -1586,8 +1651,10 @@
             document.getElementById('responsable').value = cotizacion.coti_responsable;
         }
 
-        if (cotizacion.coti_fechaaprobado) {
-            document.getElementById('fecha_aprobado').value = cotizacion.coti_fechaaprobado;
+        const fechaAprobadoEl = document.getElementById('fecha_aprobado');
+        if (fechaAprobadoEl) {
+            const esAprobada = String(cotizacion.coti_estado || '').toLowerCase().includes('aprobad');
+            fechaAprobadoEl.value = esAprobada ? fechaHoy : '';
         }
 
         if (cotizacion.coti_aprobo) {
@@ -1646,11 +1713,10 @@
         if (componentes && componentes.length > 0) {
             sessionStorage.setItem('componentesParaClonar', JSON.stringify(componentes));
         }
+        sessionStorage.setItem('clonPrioridadGlobal', cotizacion.coti_prioridad_global ? '1' : '0');
 
-        // Esperar un momento para que el script de cotización esté listo
-        setTimeout(() => {
-            cargarEnsayosYComponentesDesdeClonacion();
-        }, 500);
+        // Esperar a que el script de cotización esté listo y renderice la tabla
+        cargarEnsayosYComponentesDesdeClonacion();
     }
 
     function cargarEnsayosYComponentesDesdeClonacion() {
@@ -1659,104 +1725,57 @@
 
         if (!ensayosData && !componentesData) return;
 
-        // Limpiar sessionStorage
-        if (ensayosData) sessionStorage.removeItem('ensayosParaClonar');
-        if (componentesData) sessionStorage.removeItem('componentesParaClonar');
-
+        let ensayos = [];
+        let componentes = [];
         try {
-            const ensayos = ensayosData ? JSON.parse(ensayosData) : [];
-            const componentes = componentesData ? JSON.parse(componentesData) : [];
-
-            // Intentar acceder al state del script de cotización
-            if (window.cotizacionScripts && window.cotizacionScripts.state) {
-                const state = window.cotizacionScripts.state;
-                
-                // Calcular el contador inicial basado en los ensayos existentes
-                const maxItemEnsayo = Math.max(
-                    ...state.ensayos.map(e => e.item || 0),
-                    ...ensayos.map(e => e.item || 0),
-                    0
-                );
-                
-                // Agregar ensayos al state
-                ensayos.forEach(ensayo => {
-                    const ensayoNormalizado = {
-                        item: ensayo.item,
-                        muestra_id: ensayo.muestra_id || null,
-                        descripcion: ensayo.descripcion,
-                        codigo: ensayo.codigo || '',
-                        cantidad: ensayo.cantidad || 1,
-                        precio: null,
-                        total: null,
-                        tipo: 'ensayo',
-                        componentes_sugeridos: [],
-                        nota_tipo: ensayo.notas && ensayo.notas.length > 0 ? ensayo.notas[0].tipo : null,
-                        nota_contenido: ensayo.notas && ensayo.notas.length > 0 ? ensayo.notas[0].contenido : null,
-                        req_cadena_custodia: !!ensayo.req_cadena_custodia,
-                        req_prot_mapba: !!ensayo.req_prot_mapba,
-                        lleva_muestreo: typeof ensayo.lleva_muestreo !== 'undefined' ? !!ensayo.lleva_muestreo : true,
-                        precio_extra_ensayo: Math.max(0, parseFloat(ensayo.precio_extra_ensayo) || 0),
-                        ley_normativa_id: ensayo.ley_normativa_id || ensayo.ley_normativa || null,
-                    };
-                    state.ensayos.push(ensayoNormalizado);
-                });
-
-                // Actualizar el contador para que los componentes tengan items únicos
-                // Los componentes deben tener items mayores que el máximo item de ensayo
-                let contadorComponente = maxItemEnsayo;
-
-                // Agregar componentes al state con items únicos
-                componentes.forEach(componente => {
-                    contadorComponente++;
-                    const componenteNormalizado = {
-                        item: contadorComponente, // Item único para el componente
-                        subitem: componente.subitem,
-                        ensayo_asociado: componente.ensayo_asociado, // El item del ensayo al que pertenece
-                        descripcion: componente.analisis && componente.analisis.length > 0 ? componente.analisis[0] : '',
-                        codigo: componente.codigo || '',
-                        precio: componente.precio || 0.00,
-                        cantidad: 1,
-                        total: componente.precio || 0.00,
-                        tipo: 'componente',
-                    };
-                    state.componentes.push(componenteNormalizado);
-                });
-                
-                // Actualizar el contador global para futuros items
-                state.contador = Math.max(state.contador || 0, contadorComponente);
-
-                // Renderizar tabla y actualizar totales
-                if (window.cotizacionScripts.renderTabla) {
-                    window.cotizacionScripts.renderTabla();
-                }
-                if (window.cotizacionScripts.actualizarTotalGeneral) {
-                    window.cotizacionScripts.actualizarTotalGeneral();
-                }
-            } else {
-                // Si no está disponible, recargar la página con los datos en los campos hidden
-                const ensayosHidden = document.getElementById('ensayos_data');
-                const componentesHidden = document.getElementById('componentes_data');
-                
-                if (ensayosHidden && ensayos.length > 0) {
-                    ensayosHidden.value = JSON.stringify(ensayos);
-                }
-                if (componentesHidden && componentes.length > 0) {
-                    componentesHidden.value = JSON.stringify(componentes);
-                }
-
-                Swal.fire({
-                    icon: 'info',
-                    title: 'Recargando...',
-                    text: 'La página se recargará para cargar los ensayos y componentes',
-                    timer: 1500,
-                    showConfirmButton: false
-                }).then(() => {
-                    window.location.reload();
-                });
-            }
+            ensayos = ensayosData ? JSON.parse(ensayosData) : [];
+            componentes = componentesData ? JSON.parse(componentesData) : [];
         } catch (error) {
-            console.error('Error cargando ensayos y componentes:', error);
+            console.error('Error parseando datos de clonación:', error);
+            sessionStorage.removeItem('ensayosParaClonar');
+            sessionStorage.removeItem('componentesParaClonar');
+            return;
         }
+
+        sessionStorage.removeItem('ensayosParaClonar');
+        sessionStorage.removeItem('componentesParaClonar');
+        const clonPrioridadGlobal = sessionStorage.getItem('clonPrioridadGlobal') === '1';
+        sessionStorage.removeItem('clonPrioridadGlobal');
+
+        const aplicarClonacion = () => {
+            if (!window.cotizacionScripts || typeof window.cotizacionScripts.cargarItemsDesdeVersion !== 'function') {
+                return false;
+            }
+
+            window.cotizacionScripts.cargarItemsDesdeVersion(ensayos, componentes);
+
+            if (clonPrioridadGlobal && window.cotizacionScripts.aplicarPrioridadATodosLosEnsayos) {
+                window.cotizacionScripts.aplicarPrioridadATodosLosEnsayos(true);
+            }
+            if (window.cotizacionScripts.sincronizarCheckboxGlobalPrioridad) {
+                window.cotizacionScripts.sincronizarCheckboxGlobalPrioridad();
+            }
+
+            return true;
+        };
+
+        let intentos = 0;
+        const maxIntentos = 30;
+        const intervaloMs = 200;
+
+        const intentarCargar = () => {
+            intentos += 1;
+            if (aplicarClonacion()) {
+                return;
+            }
+            if (intentos >= maxIntentos) {
+                console.warn('No se pudo cargar la clonación: cotizacionScripts no disponible a tiempo.');
+                return;
+            }
+            setTimeout(intentarCargar, intervaloMs);
+        };
+
+        intentarCargar();
     }
     
     } // Cierre de initClonacion

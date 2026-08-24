@@ -5,7 +5,7 @@
     <title>Cotización #{{ $cotizacion->coti_num }}</title>
     <style>
         @page {
-            margin: 0cm;
+            margin: 48mm 10mm 36mm 10mm;
         }
         body {
             font-family: 'Calibri', Arial, sans-serif;
@@ -24,11 +24,11 @@
             overflow: visible;
         }
         .pdf-header {
-            top: 0;
+            top: -48mm;
             height: 38mm;
         }
         .pdf-footer {
-            bottom: 0;
+            bottom: -36mm;
             height: 22mm;
             padding: 0 4rem 1rem 4rem;
         }
@@ -47,8 +47,7 @@
             page-break-before: always;
         }
         .wrapper {
-            /* deja espacio para header/footer (+ separación respecto al encabezado gráfico) */
-            padding: 48mm 10mm 36mm 10mm;
+            padding: 0;
         }
         .quote-meta-bar {
             width: 100%;
@@ -183,9 +182,31 @@
             font-weight: bold;
             margin-bottom: 2px;
             font-size: 8.5pt;
+            line-height: 1.35;
             word-wrap: break-word;
             overflow-wrap: break-word;
             word-break: break-word;
+        }
+        .item-cadena-tag {
+            display: inline-block;
+            font-size: 7pt;
+            font-weight: normal;
+            line-height: 1.2;
+            vertical-align: middle;
+            position: relative;
+            top: 1px;
+            border: 1px solid #0dcaf0;
+            color: #000;
+            background: #cff4fc;
+            padding: 1px 6px;
+            border-radius: 10px;
+            margin-left: 6px;
+        }
+        .item-cadena-tag-rel {
+            border-color: #0d6efd;
+            color: #0d6efd;
+            background: #e7f1ff;
+            margin-left: 4px;
         }
         .component-inline {
             font-size: 7.5pt;
@@ -240,6 +261,27 @@
             word-wrap: break-word;
             overflow-wrap: break-word;
             word-break: break-word;
+        }
+        .item-notas-imprimibles {
+            margin-top: 4px;
+            font-size: 7pt;
+            line-height: 1.3;
+            color: #444;
+        }
+        .item-notas-imprimibles-inline {
+            margin-top: 2px;
+        }
+        .item-nota-imprimible-line {
+            margin: 2px 0 0 0;
+            font-size: 7pt;
+            line-height: 1.3;
+            font-style: italic;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            word-break: break-word;
+        }
+        .component-inline .item-notas-imprimibles-inline {
+            padding-left: 10px;
         }
         .billing-table {
             width: 100%;
@@ -345,6 +387,15 @@
             font-weight: bold;
             vertical-align: bottom;
         }
+        .legal-nota-general-line {
+            margin: 6pt 0 0 0;
+            font-size: 8pt;
+            line-height: 1.35;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            word-break: break-word;
+            white-space: pre-wrap;
+        }
         .legal-item-notes-title {
             font-weight: bold;
             margin: 10px 0 4px 0;
@@ -374,6 +425,7 @@
 
     $destPdf = \App\Support\CotizacionClienteEtiqueta::destinatarioPdfCamposPrincipales($cotizacion);
     $dRazon = $destPdf['dRazon'];
+    $etiquetaSucursalEstablecimiento = \App\Support\CotizacionClienteEtiqueta::etiquetaSucursalEstablecimiento($cotizacion);
     $dCuit = $destPdf['dCuit'];
     $dDir = $destPdf['dDir'];
     $dLoc = $destPdf['dLoc'];
@@ -432,7 +484,7 @@
             </tr>
             <tr>
                 <td class="label">Sucursal / Establecimiento</td>
-                <td class="value">{{ trim((string) ($cotizacion->coti_establecimiento ?? '')) !== '' ? trim($cotizacion->coti_establecimiento) : $dash }}</td>
+                <td class="value">{{ trim($etiquetaSucursalEstablecimiento) !== '' ? $etiquetaSucursalEstablecimiento : $dash }}</td>
                 <td class="label">Correo</td>
                 <td class="value">{{ $correoDest !== '' ? $correoDest : $dash }}</td>
             </tr>
@@ -468,22 +520,28 @@
                             <div class="descripcion-item">
                                 {{ $item['descripcion'] }}
                                 @if(!empty($item['req_cadena_custodia']))
-                                    <span style="display:inline-block;font-size:10px;border:1px solid #0dcaf0;color:#000;background:#cff4fc;padding:1px 6px;border-radius:10px;margin-left:6px;">Cadena</span>
+                                    <span class="item-cadena-tag">Cadena</span>
                                     @if($pdfCadenaRel)
-                                        <span style="display:inline-block;font-size:10px;border:1px solid #0d6efd;color:#0d6efd;background:#e7f1ff;padding:1px 6px;border-radius:10px;margin-left:4px;">Cadena rel.</span>
+                                        <span class="item-cadena-tag item-cadena-tag-rel">Cadena rel.</span>
                                     @endif
                                 @endif
                             </div>
+                            @include('partials.cotizacion-item-notas-imprimibles', [
+                                'notas' => $item['notas'] ?? [],
+                                'wrapperClass' => 'item-notas-imprimibles-inline',
+                            ])
                             @if($item['componentes']->isNotEmpty())
                                 @foreach($item['componentes'] as $componente)
                                     <div class="component-inline">
                                         <span>• {{ $componente['descripcion'] }}</span>
-                                        @if($componente['de_agrupador'])
-                                            <span style="font-size: 7pt; color: #0d6efd; font-weight: bold;">(incluido)</span>
-                                        @endif
+
                                         @if(!empty($componente['metodo']))
                                             <span class="comp-metodo">[{{ $componente['metodo'] }}]</span>
                                         @endif
+                                        @include('partials.cotizacion-item-notas-imprimibles', [
+                                            'notas' => $componente['notas'] ?? [],
+                                            'wrapperClass' => 'item-notas-imprimibles-inline',
+                                        ])
                                     </div>
                                 @endforeach
                             @endif
@@ -516,7 +574,12 @@
                 <tbody>
                     @foreach($componentesSueltos as $componente)
                         <tr>
-                            <td>{{ $componente['descripcion'] }}</td>
+                            <td>
+                                {{ $componente['descripcion'] }}
+                                @if(!empty($componente['metodo']))
+                                    <span class="comp-metodo">[{{ $componente['metodo'] }}]</span>
+                                @endif
+                            </td>
                             <td style="text-align: right;" class="compact-text">{{ $componente['unidad'] ?: '—' }}</td>
                             <td style="text-align: right;">{{ number_format($componente['cantidad'], 2, ',', '.') }}</td>
                             <td style="text-align: right;"><strong>{{ $formatCurrency($componente['total']) }}</strong></td>
@@ -618,14 +681,13 @@
                 <li>Para la extracción de las muestras ver procedimientos y normas de TOMA DE MUESTRA de nuestra página web: www.industriayambiente.com.ar</li>
                 <li>En caso de aceptación del presente presupuesto, favor de enviar una Orden de Compra mencionando el Nro. de Cotización del presente presupuesto.</li>
             </ol>
-            @if(!empty($todasNotasImprimiblesItems))
-                @foreach($todasNotasImprimiblesItems as $idx => $nin)
-                    <p class="note-item-imprimible"><strong>Nota{{ $idx + 1 }}</strong> - {{ trim((string) ($nin['descripcion'] ?? '')) !== '' ? $nin['descripcion'] : ('Ítem #' . ($nin['item_ordinal'] ?? $nin['item'])) }}: {{ $nin['contenido'] ?? '' }}</p>
+            @php
+                $notasGeneralesPresupuesto = \App\Support\CotizacionNotasGenerales::listadoParaVista($cotizacion->coti_notas ?? null);
+            @endphp
+            @if(count($notasGeneralesPresupuesto) > 0)
+                @foreach($notasGeneralesPresupuesto as $notaGeneral)
+                    <p class="legal-nota-general-line">{{ $notaGeneral }}</p>
                 @endforeach
-            @endif
-            @if(!empty(trim((string) ($cotizacion->coti_notas ?? ''))))
-            <p class="legal-item-notes-title">Observaciones de la cotización:</p>
-            <p style="margin: 4px 0 0 0;">{{ $cotizacion->coti_notas }}</p>
             @endif
         </div>
 

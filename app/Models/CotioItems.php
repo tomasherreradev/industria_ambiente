@@ -70,13 +70,12 @@ class CotioItems extends Model
     }
 
     /**
-     * Relación con el método analítico asociado
+     * Método de análisis (cotio_items.metodo → metodo.metodo_codigo).
      */
     public function metodoAnalitico()
     {
         return $this->belongsTo(Metodo::class, 'metodo', 'metodo_codigo');
     }
-    
 
     public function componentesAsociados()
     {
@@ -115,6 +114,65 @@ class CotioItems extends Model
     }
 
     /**
+     * Etiqueta legible de matrices (pivote cotio_items_matriz, con fallback a matriz_codigo directo).
+     */
+    public function etiquetaMatrices(): string
+    {
+        $partes = $this->relationLoaded('matrices')
+            ? $this->matrices
+            : $this->matrices()->get();
+
+        $etiquetas = collect($partes)->map(function ($matriz) {
+            $codigo = trim((string) ($matriz->matriz_codigo ?? ''));
+            $descripcion = trim((string) ($matriz->matriz_descripcion ?? ''));
+
+            if ($codigo !== '' && $descripcion !== '') {
+                return $codigo . ' - ' . $descripcion;
+            }
+
+            return $descripcion !== '' ? $descripcion : $codigo;
+        })->filter()->unique()->values();
+
+        if ($etiquetas->isNotEmpty()) {
+            return $etiquetas->implode(', ');
+        }
+
+        $matrizDirecta = $this->relationLoaded('matriz') ? $this->matriz : $this->matriz()->first();
+        if ($matrizDirecta) {
+            $codigo = trim((string) ($matrizDirecta->matriz_codigo ?? ''));
+            $descripcion = trim((string) ($matrizDirecta->matriz_descripcion ?? ''));
+
+            if ($codigo !== '' && $descripcion !== '') {
+                return $codigo . ' - ' . $descripcion;
+            }
+
+            return $descripcion !== '' ? $descripcion : $codigo;
+        }
+
+        return 'Sin matriz';
+    }
+
+    /**
+     * Códigos de matriz normalizados (pivote + columna legacy matriz_codigo).
+     *
+     * @return list<string>
+     */
+    public function codigosMatrices(): array
+    {
+        $matrices = $this->relationLoaded('matrices')
+            ? $this->matrices
+            : $this->matrices()->get();
+
+        return collect($matrices->pluck('matriz_codigo')->all())
+            ->merge([(string) ($this->matriz_codigo ?? '')])
+            ->map(fn ($codigo) => trim((string) $codigo))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
      * Relación con el historial de precios
      */
     public function historialPrecios()
@@ -123,7 +181,7 @@ class CotioItems extends Model
     }
 
     /**
-     * Relación con el método de muestreo asociado (usa la misma tabla metodo)
+     * Método de muestreo (cotio_items.metodo_muestreo → metodo.metodo_codigo).
      */
     public function metodoMuestreo()
     {

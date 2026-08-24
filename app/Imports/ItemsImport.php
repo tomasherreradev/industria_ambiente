@@ -528,38 +528,53 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
                     }
 
                     // Buscar si ya existe un item con esta descripción
-                    $itemQuery = CotioItems::where('cotio_descripcion', $descripcion);
-
                     if ($esMuestra) {
-                        // Para agrupadores, solo diferenciamos por es_muestra
-                        $itemQuery->where('es_muestra', true);
+                        // Para agrupadores, solo diferenciamos por es_muestra y la descripción
+                        $item = CotioItems::where('cotio_descripcion', $descripcion)
+                            ->where('es_muestra', true)
+                            ->first();
                     } else {
-                        // Para componentes, diferenciamos también por métodos
-                        $itemQuery->where('es_muestra', false);
+                        // Para componentes, cargamos todos con la misma descripción (y no es agrupador)
+                        $candidates = CotioItems::where('cotio_descripcion', $descripcion)
+                            ->where(function($q) {
+                                $q->where('es_muestra', false)
+                                  ->orWhereNull('es_muestra');
+                            })
+                            ->get();
 
-                        if ($metodoCodigo) {
-                            $itemQuery->where('metodo', $metodoCodigo);
-                        } else {
-                            $itemQuery->whereNull('metodo');
-                        }
+                        $item = null;
+                        $wantM = trim((string)$metodoCodigo);
+                        $wantMs = trim((string)$metodoMuestreoCodigo);
 
-                        if ($metodoMuestreoCodigo) {
-                            $itemQuery->where('metodo_muestreo', $metodoMuestreoCodigo);
-                        } else {
-                            $itemQuery->whereNull('metodo_muestreo');
+                        foreach ($candidates as $cand) {
+                            $candM = trim((string)$cand->metodo);
+                            $candMs = trim((string)$cand->metodo_muestreo);
+
+                            // Solo se consideran distintos si tienen métodos literales diferentes
+                            if ($wantM !== '' && $candM !== '' && $wantM !== $candM) {
+                                continue;
+                            }
+                            if ($wantMs !== '' && $candMs !== '' && $wantMs !== $candMs) {
+                                continue;
+                            }
+
+                            $item = $cand;
+                            break;
                         }
                     }
-
-                    $item = $itemQuery->first();
                     
                     if ($item) {
+                        // Tomamos el método que no sea nulo/vacío (el que tenga los métodos)
+                        $finalMetodo = !empty($metodoCodigo) ? $metodoCodigo : $item->metodo;
+                        $finalMetodoMuestreo = !empty($metodoMuestreoCodigo) ? $metodoMuestreoCodigo : $item->metodo_muestreo;
+
                         // Actualizar el item existente (sin matriz_codigo)
                         $item->update([
                             'es_muestra' => $esMuestra,
                             'limites_establecidos' => $limitesEstablecidos,
                             'limite_cuantificacion' => $limiteCuantificacion,
-                            'metodo' => $metodoCodigo,
-                            'metodo_muestreo' => $metodoMuestreoCodigo,
+                            'metodo' => $finalMetodo,
+                            'metodo_muestreo' => $finalMetodoMuestreo,
                             'matriz_codigo' => null, // Ya no se guarda aquí
                             'unidad_medida' => $unidadMedida,
                             'precio' => !empty($row['precio']) ? (float) $row['precio'] : null,
@@ -991,8 +1006,8 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
             return;
         }
 
-        $codigoCanon = $matriz->matriz_codigo;
-        $trimCanon = trim((string) $codigoCanon);
+        $codigoCanon = trim((string) $matriz->matriz_codigo);
+        $trimCanon = $codigoCanon;
 
         if (! isset($this->matricesPorItem[$itemId])) {
             $this->matricesPorItem[$itemId] = [];
@@ -1090,7 +1105,7 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
 
         // Estrategia de búsqueda robusta:
         // En lugar de confiar en que la normalización de SQL coincida con la de PHP,
-        // buscamos por los criterios técnicos más específicos (Método) y luego
+        // buscamos por los criterios técnicos más específicos y luego
         // filtramos por nombre normalizado en PHP.
         
         $query = CotioItems::query()
@@ -1099,10 +1114,11 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
                   ->orWhereNull('es_muestra');
             });
 
-        // Filtrar por método en SQL si se proporciona (es muy específico y eficiente)
-        if ($wantM !== '') {
-            // Usamos LIKE para manejar posibles espacios en blanco en la columna CHAR/VARCHAR
-            $query->where('metodo', 'LIKE', trim($wantM) . '%');
+        // Filtrar por la primera palabra de la descripción para optimizar la consulta
+        $words = array_filter(explode(' ', $nombreN));
+        $firstWord = reset($words);
+        if ($firstWord !== false && strlen($firstWord) >= 2) {
+            $query->whereRaw('LOWER(cotio_descripcion) LIKE ?', ['%' . $firstWord . '%']);
         }
 
         $candidates = $query->get();
@@ -1114,11 +1130,16 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
                 continue;
             }
 
-            // 2. Verificar Métodos (ya filtrado en parte por SQL, pero aseguramos)
-            if ($wantM !== trim((string)$cand->metodo)) {
+            // 2. Verificar Métodos: Solo se tratan como distintos si literalmente
+            // tienen métodos distintos. Si uno de los dos no tiene método, se considera que coinciden
+            // y luego se tomará el que tenga los métodos.
+            $candM = trim((string)$cand->metodo);
+            if ($wantM !== '' && $candM !== '' && $wantM !== $candM) {
                 continue;
             }
-            if ($wantMs !== trim((string)$cand->metodo_muestreo)) {
+
+            $candMs = trim((string)$cand->metodo_muestreo);
+            if ($wantMs !== '' && $candMs !== '' && $wantMs !== $candMs) {
                 continue;
             }
 
@@ -1242,10 +1263,14 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
         );
 
         if ($componente) {
+            // Tomamos el método que no sea nulo/vacío (el que tenga los métodos)
+            $finalMetodo = !empty($metodoCodigo) ? $metodoCodigo : $componente->metodo;
+            $finalMetodoMuestreo = !empty($metodoMuestreoCodigo) ? $metodoMuestreoCodigo : $componente->metodo_muestreo;
+
             // Actualizar componente existente (sin matriz_codigo)
             $componente->update([
-                'metodo' => $metodoCodigo,
-                'metodo_muestreo' => $metodoMuestreoCodigo,
+                'metodo' => $finalMetodo,
+                'metodo_muestreo' => $finalMetodoMuestreo,
                 'matriz_codigo' => null, // Ya no se guarda aquí
                 'unidad_medida' => $unidadMedida,
                 'limites_establecidos' => $limitesEstablecidos,

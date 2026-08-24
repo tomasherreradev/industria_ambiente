@@ -39,7 +39,10 @@
 
                     <div class="mb-4">
                         <h6 class="text-muted mb-2">Vehiculo</h6>
-                        <p class="fs-5">{{ $tarea->vehiculo->marca ?? 'N/A' }} {{ $tarea->vehiculo->modelo ?? 'N/A' }} ({{ $tarea->vehiculo->patente ?? 'N/A' }})</p>
+                        @php
+                            $vehiculo = $tarea->instancias->first() ? $tarea->instancias->first()->vehiculo : null;
+                        @endphp
+                        <p class="fs-5">{{ $vehiculo->marca ?? 'N/A' }} {{ $vehiculo->modelo ?? 'N/A' }} ({{ $vehiculo->patente ?? 'N/A' }})</p>
                     </div>
 
                     <div class="mb-4">

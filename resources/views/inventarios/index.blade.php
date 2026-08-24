@@ -6,20 +6,19 @@
 @section('content')
 <div class="container py-4">
 
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="fs-4">Inventario de Laboratorio</h1>
-        <div class="btn-group">
-            <a href="{{ route('inventarios.create') }}" class="btn btn-primary btn-sm d-lg-btn-md">
+    <div class="d-flex flex-column flex-sm-row justify-content-between align-items-stretch align-items-sm-center gap-3 mb-4">
+        <h1 class="fs-4 mb-0">Inventario de Laboratorio</h1>
+        <div class="d-grid d-sm-flex gap-2 inventarios-header-actions">
+            <a href="{{ route('inventarios.create') }}" class="btn btn-primary btn-sm">
                 <x-heroicon-o-plus class="me-1" style="width: 16px; height: 16px;" />
                 Crear Inventario
             </a>
-            <button class="btn btn-outline-primary btn-sm d-lg-btn-md" type="button" data-bs-toggle="collapse" data-bs-target="#collapseSearch" 
+            <button class="btn btn-outline-primary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#collapseSearch"
                 aria-expanded="false" aria-controls="collapseSearch" id="searchToggleBtn">
                 <x-heroicon-o-magnifying-glass class="me-1" style="width: 16px; height: 16px;" />
                 Buscar
             </button>
         </div>
-
     </div>
 
     <div class="collapse mb-4" id="collapseSearch">
@@ -66,57 +65,39 @@
 
 
     <style>
-        #searchToggleBtn.active {
+        #searchToggleBtn.active,
+        #searchToggleBtn.btn-primary {
             background-color: var(--bs-primary);
             color: white;
+            border-color: var(--bs-primary);
         }
-        #searchToggleBtn.active:hover {
-            background-color: var(--bs-primary-dark);
+
+        #searchToggleBtn.active:hover,
+        #searchToggleBtn.btn-primary:hover {
+            background-color: var(--bs-primary);
+            border-color: var(--bs-primary);
+            filter: brightness(0.95);
         }
-        
+
+        @media (max-width: 575.98px) {
+            .inventarios-header-actions {
+                width: 100%;
+            }
+        }
+
         @media (max-width: 768px) {
-            .btn-group {
-                margin-top: 0.5rem;
-                width: 100%;
-            }
-            .btn-group .btn {
-                flex: 1;
-            }
-            #searchToggleBtn {
-                margin-right: 0 !important;
-                width: 100%;
-            }
             .card-body .row {
                 gap: 12px 0;
             }
             .card-body .col-md-6,
-            .card-body .col-md-3 {
+            .card-body .col-md-3,
+            .card-body .col-md-4,
+            .card-body .col-md-2 {
                 width: 100%;
                 flex: 0 0 100%;
                 max-width: 100%;
             }
         }
-
-        #searchToggleBtn .heroicon {
-            transition: transform 0.3s ease;
-        }
-        
-        #searchToggleBtn[aria-expanded="true"] .heroicon {
-            transform: rotate(90deg);
-        }
-        
-        @media (max-width: 768px) {
-            .d-flex.justify-content-between {
-                flex-direction: column;
-                align-items: flex-start !important;
-            }
-            
-            #searchToggleBtn {
-                margin-top: 1rem;
-                width: 100%;
-            }
-        }
-
     </style>
 
     
@@ -227,27 +208,26 @@
     @endif
 
 </div>
+@endsection
 
-
-
+@push('scripts')
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         const searchToggleBtn = document.getElementById('searchToggleBtn');
         const collapseSearch = document.getElementById('collapseSearch');
-        
-        collapseSearch.addEventListener('show.bs.collapse', function() {
-            searchToggleBtn.classList.remove('btn-outline-primary');
-            searchToggleBtn.classList.add('btn-primary');
-        });
-        
-        collapseSearch.addEventListener('hide.bs.collapse', function() {
-            searchToggleBtn.classList.remove('btn-primary');
-            searchToggleBtn.classList.add('btn-outline-primary');
-        });
-    });
 
+        if (searchToggleBtn && collapseSearch) {
+            collapseSearch.addEventListener('show.bs.collapse', function() {
+                searchToggleBtn.classList.remove('btn-outline-primary');
+                searchToggleBtn.classList.add('btn-primary', 'active');
+            });
 
-    document.addEventListener('DOMContentLoaded', function() {
+            collapseSearch.addEventListener('hide.bs.collapse', function() {
+                searchToggleBtn.classList.remove('btn-primary', 'active');
+                searchToggleBtn.classList.add('btn-outline-primary');
+            });
+        }
+
         document.querySelectorAll('.delete-form').forEach(form => {
             form.addEventListener('submit', function(e) {
                 e.preventDefault();
@@ -276,5 +256,4 @@
         });
     });
 </script>
-
-@endsection
+@endpush

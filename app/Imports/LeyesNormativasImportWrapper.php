@@ -4,6 +4,8 @@ namespace App\Imports;
 
 use Maatwebsite\Excel\Concerns\WithMultipleSheets;
 use Maatwebsite\Excel\Concerns\SkipsUnknownSheets;
+use Maatwebsite\Excel\Concerns\WithEvents;
+use Maatwebsite\Excel\Events\BeforeReading;
 
 /**
  * Wrapper que fuerza la lectura de la hoja "Datos" de la plantilla.
@@ -11,7 +13,7 @@ use Maatwebsite\Excel\Concerns\SkipsUnknownSheets;
  * Sin este wrapper, Excel lee la primera hoja; si el usuario reordenó hojas,
  * se podía leer "Leyes Existentes" o "Métodos" y todas las filas se saltaban.
  */
-class LeyesNormativasImportWrapper implements WithMultipleSheets, SkipsUnknownSheets
+class LeyesNormativasImportWrapper implements WithMultipleSheets, SkipsUnknownSheets, WithEvents
 {
     protected LeyesNormativasImport $dataImport;
 
@@ -26,6 +28,20 @@ class LeyesNormativasImportWrapper implements WithMultipleSheets, SkipsUnknownSh
         // por error "Leyes Existentes", "Métodos" o "Matrices" si están primero.
         return [
             'Datos' => $this->dataImport,
+        ];
+    }
+
+    /**
+     * Configurar el lector de PhpSpreadsheet para que únicamente cargue en memoria la hoja "Datos",
+     * evitando procesar el resto de hojas de referencia ("Leyes Existentes", "Métodos", "Matrices")
+     * lo cual consume gran cantidad de memoria RAM.
+     */
+    public function registerEvents(): array
+    {
+        return [
+            BeforeReading::class => function(BeforeReading $event) {
+                $event->getReader()->getDelegate()->setLoadSheetsOnly(['Datos']);
+            }
         ];
     }
 

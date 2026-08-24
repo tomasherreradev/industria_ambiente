@@ -42,7 +42,7 @@
                 <div><strong>Fecha Alta:</strong> {{ $coti->coti_fechaalta }}</div>
                 <div><strong>Fecha Aprobación:</strong> {{ $coti->coti_fechaaprobado ?: 'Pendiente' }}</div>
                 <div><strong>Dirección:</strong> {{ $coti->coti_direccioncli }}, {{ $coti->coti_localidad }}</div>
-                <div><strong>Cliente:</strong> {{ $coti->coti_empresa }} - {{ $coti->coti_establecimiento }}</div>
+                <div><strong>Cliente:</strong> {{ \App\Support\CotizacionClienteEtiqueta::lineaClienteConEstablecimiento($coti) }}</div>
                 <div><strong>Responsable:</strong> {{ $coti->responsable->usu_descripcion ?? 'Sin asignar' }}</div>
             </div>
         </div>

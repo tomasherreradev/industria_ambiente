@@ -15,6 +15,8 @@ class Ventas extends Model
     protected $fillable = [
         'coti_num',
         'coti_version',
+        'coti_edit_lock_usu',
+        'coti_edit_lock_at',
         'coti_para',
         'coti_cli_empresa',
         'coti_para_empresa_rel',
@@ -85,6 +87,7 @@ class Ventas extends Model
         'coti_cadena_custodia',
         'coti_muestreo',
         'coti_req_cadena_custodia_relacionada',
+        'coti_prioridad_global',
         'divisa_codigo',
         'coti_cond_pago',
         'coti_cuotas',
@@ -100,6 +103,7 @@ class Ventas extends Model
     ];
 
     protected $casts = [
+        'coti_edit_lock_at' => 'datetime',
         'coti_fechaalta' => 'date',
         'coti_fechaaprobado' => 'date',
         'coti_fechafin' => 'date',
@@ -115,6 +119,7 @@ class Ventas extends Model
         'coti_cadena_custodia' => 'boolean',
         'coti_muestreo' => 'boolean',
         'coti_req_cadena_custodia_relacionada' => 'boolean',
+        'coti_prioridad_global' => 'boolean',
         'coti_cuotas' => 'boolean',
         'coti_cuota_fact_fin_mes' => 'boolean',
         'coti_cuota_fact_inicio_mes' => 'boolean',

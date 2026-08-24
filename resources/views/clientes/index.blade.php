@@ -98,7 +98,10 @@ $readOnly = function_exists('userHasRole') ? userHasRole('facturador') : (strtol
                         <x-heroicon-o-arrow-up-tray class="me-2" style="width: 16px; height: 16px;" />Importar
                     </button>
                     <a href="{{ route('clientes.plantilla') }}" class="btn btn-outline-light" style="font-size: 14px;">
-                        <x-heroicon-o-arrow-down-tray class="me-2" style="width: 16px; height: 16px;" />Plantilla
+                        <x-heroicon-o-arrow-down-tray class="me-2" style="width: 16px; height: 16px;" />Plantilla vacía
+                    </a>
+                    <a href="{{ route('clientes.plantilla-pendientes') }}" class="btn btn-outline-light" style="font-size: 14px;">
+                        <x-heroicon-o-arrow-down-tray class="me-2" style="width: 16px; height: 16px;" />Plantilla pendientes
                     </a>
                     <a href="{{ route('clientes.create') }}" class="btn btn-light" style="font-size: 14px;">
                         <x-heroicon-o-plus class="me-2" style="width: 16px; height: 16px;" />Nuevo Cliente
@@ -126,7 +129,7 @@ $readOnly = function_exists('userHasRole') ? userHasRole('facturador') : (strtol
                         </div>
                         <div class="alert alert-info py-2 small">
                             <x-heroicon-o-information-circle style="width: 16px; height: 16px;" class="me-1" />
-                            Use la plantilla descargable para asegurar el formato correcto.
+                            Use la plantilla vacía o la de pendientes (con clientes del listado precargados) para asegurar el formato correcto.
                         </div>
                     </div>
                     <div class="modal-footer">

@@ -15,6 +15,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Maatwebsite\Excel\Facades\Excel;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 
 class ItemController extends Controller
 {  
@@ -70,13 +71,14 @@ class ItemController extends Controller
      */
     public function create()
     {
-        $metodos = Metodo::orderBy('metodo_codigo')->get();
         $matrices = Matriz::orderBy('matriz_descripcion')->get();
+        $metodos = Metodo::orderBy('metodo_codigo')->get();
         $componentes = CotioItems::componentes()
             ->with(['matrices', 'metodoAnalitico', 'metodoMuestreo'])
             ->orderBy('cotio_descripcion')
             ->get();
-        return view('items.create', compact('metodos', 'matrices', 'componentes'));
+
+        return view('items.create', compact('matrices', 'componentes', 'metodos'));
     }
 
     /**
@@ -84,11 +86,10 @@ class ItemController extends Controller
      */
     public function store(Request $request)
     {
-        $validated = $request->validate([
+        $validated = $request->validate(array_merge([
             'cotio_descripcion' => ['required', 'string', 'max:255'],
             'es_muestra' => ['nullable', 'boolean'],
             'limites_establecidos' => ['nullable', 'string', 'max:255'],
-            'metodo' => ['nullable', 'string', 'exists:metodo,metodo_codigo'],
             'unidad_medida' => ['nullable', 'string', 'max:255'],
             'precio' => ['nullable', 'numeric', 'min:0'],
             'componentes' => ['array'],
@@ -102,7 +103,9 @@ class ItemController extends Controller
             'notas_predeterminadas' => ['array'],
             'notas_predeterminadas.*.titulo' => ['nullable', 'string', 'max:255'],
             'notas_predeterminadas.*.contenido' => ['required', 'string'],
-        ]);
+        ], $this->reglasMetodosItem()));
+
+        [$metodoAnalisis, $metodoMuestreo] = $this->resolverMetodosItemValidados($validated);
 
         $componentesSeleccionados = collect($validated['componentes'] ?? [])->filter();
         $componentesSeleccionados = $componentesSeleccionados->map(fn ($id) => (int) $id)->filter()->unique();
@@ -124,13 +127,12 @@ class ItemController extends Controller
             }
 
             // Si el agrupador tiene matrices asignadas, los componentes deben compartir al menos una de esas matrices
-            $matricesSeleccionadas = collect($validated['matrices'] ?? [])->map(fn ($c) => trim((string) $c))->filter()->unique()->values()->all();
+            $matricesSeleccionadas = $this->normalizarCodigosMatrices($validated['matrices'] ?? []);
             if (!empty($matricesSeleccionadas) && $componentesSeleccionados->isNotEmpty()) {
-                $componentesFueraDeMatriz = CotioItems::whereIn('id', $componentesSeleccionados)
-                    ->whereDoesntHave('matrices', function ($q) use ($matricesSeleccionadas) {
-                        $q->whereIn('cotio_items_matriz.matriz_codigo', $matricesSeleccionadas);
-                    })
-                    ->pluck('id');
+                $componentesFueraDeMatriz = $this->componentesFueraDeMatricesCompartidas(
+                    $componentesSeleccionados,
+                    $matricesSeleccionadas
+                );
 
                 if ($componentesFueraDeMatriz->isNotEmpty()) {
                     return back()
@@ -144,7 +146,7 @@ class ItemController extends Controller
         // La tabla legacy `cotio_items` no tiene autoincrement en la columna `id`,
         // por lo que debemos asignar el ID manualmente y asegurarnos de que
         // se persista antes de crear registros en la tabla pivote.
-        return DB::transaction(function () use ($validated, $componentesSeleccionados, $componentesOrden) {
+        return DB::transaction(function () use ($validated, $componentesSeleccionados, $componentesOrden, $metodoAnalisis, $metodoMuestreo) {
             $nextId = DB::table('cotio_items')->max('id');
             $nextId = $nextId ? $nextId + 1 : 1;
 
@@ -154,7 +156,8 @@ class ItemController extends Controller
             $item->es_muestra            = (bool)($validated['es_muestra'] ?? false);
             $item->agregable_a_comps     = (bool)($validated['agregable_a_comps'] ?? false);
             $item->limites_establecidos  = $validated['limites_establecidos'] ?? null;
-            $item->metodo                = $validated['metodo'] ?? null;
+            $item->metodo                = $metodoAnalisis;
+            $item->metodo_muestreo       = $metodoMuestreo;
             $item->unidad_medida         = $validated['unidad_medida'] ?? null;
             // Asegurar que el precio tenga 2 decimales
             $item->precio                = $validated['precio'] !== null ? round((float)$validated['precio'], 2) : null;
@@ -222,15 +225,16 @@ class ItemController extends Controller
      */
     public function edit(CotioItems $cotio_items)
     {
-        $item = $cotio_items->load(['componentesAsociados', 'matrices', 'notasPredeterminadas']);
-        $metodos = Metodo::orderBy('metodo_codigo')->get();
+        $item = $cotio_items->load(['componentesAsociados.matrices', 'matrices', 'notasPredeterminadas']);
         $matrices = Matriz::orderBy('matriz_descripcion')->get();
+        $metodos = Metodo::orderBy('metodo_codigo')->get();
         $componentes = CotioItems::componentes()
             ->where('id', '!=', $item->id)
             ->with(['matrices', 'metodoAnalitico', 'metodoMuestreo'])
             ->orderBy('cotio_descripcion')
             ->get();
-        return view('items.edit', compact('item', 'metodos', 'matrices', 'componentes'));
+
+        return view('items.edit', compact('item', 'matrices', 'componentes', 'metodos'));
     }
 
     /**
@@ -240,12 +244,11 @@ class ItemController extends Controller
     {
         $item = $cotio_items;
 
-        $validated = $request->validate([
+        $validated = $request->validate(array_merge([
             'cotio_descripcion' => ['required', 'string', 'max:255'],
             'es_muestra' => ['nullable', 'boolean'],
             'agregable_a_comps' => ['nullable', 'boolean'],
             'limites_establecidos' => ['nullable', 'string', 'max:255'],
-            'metodo' => ['nullable', 'string', 'exists:metodo,metodo_codigo'],
             'unidad_medida' => ['nullable', 'string', 'max:255'],
             'precio' => ['nullable', 'numeric', 'min:0'],
             'componentes' => ['array'],
@@ -259,7 +262,9 @@ class ItemController extends Controller
             'notas_predeterminadas' => ['array'],
             'notas_predeterminadas.*.titulo' => ['nullable', 'string', 'max:255'],
             'notas_predeterminadas.*.contenido' => ['required', 'string'],
-        ]);
+        ], $this->reglasMetodosItem()));
+
+        [$metodoAnalisis, $metodoMuestreo] = $this->resolverMetodosItemValidados($validated);
 
         $componentesSeleccionados = collect($validated['componentes'] ?? [])->map(fn ($id) => (int) $id)->filter()->reject(fn ($id) => $id === $item->id)->unique();
         $componentesOrden = collect($validated['componentes_orden'] ?? [])
@@ -281,13 +286,12 @@ class ItemController extends Controller
             }
 
             // Si el agrupador tiene matrices asignadas, los componentes deben compartir al menos una de esas matrices
-            $matricesSeleccionadas = collect($validated['matrices'] ?? [])->map(fn ($c) => trim((string) $c))->filter()->unique()->values()->all();
+            $matricesSeleccionadas = $this->normalizarCodigosMatrices($validated['matrices'] ?? []);
             if (!empty($matricesSeleccionadas) && $componentesSeleccionados->isNotEmpty()) {
-                $componentesFueraDeMatriz = CotioItems::whereIn('id', $componentesSeleccionados)
-                    ->whereDoesntHave('matrices', function ($q) use ($matricesSeleccionadas) {
-                        $q->whereIn('cotio_items_matriz.matriz_codigo', $matricesSeleccionadas);
-                    })
-                    ->pluck('id');
+                $componentesFueraDeMatriz = $this->componentesFueraDeMatricesCompartidas(
+                    $componentesSeleccionados,
+                    $matricesSeleccionadas
+                );
 
                 if ($componentesFueraDeMatriz->isNotEmpty()) {
                     return back()
@@ -307,13 +311,14 @@ class ItemController extends Controller
         };
         $esAgrupador = (bool) ($validated['es_muestra'] ?? false);
 
-        DB::transaction(function() use ($item, $validated, $esAgrupador, $trimNota, $componentesSeleccionados, $componentesOrden) {
+        DB::transaction(function () use ($item, $validated, $esAgrupador, $trimNota, $componentesSeleccionados, $componentesOrden, $metodoAnalisis, $metodoMuestreo) {
             $item->update([
                 'cotio_descripcion' => $validated['cotio_descripcion'],
                 'es_muestra' => $esAgrupador,
                 'agregable_a_comps' => (bool)($validated['agregable_a_comps'] ?? false),
                 'limites_establecidos' => $validated['limites_establecidos'] ?? null,
-                'metodo' => $validated['metodo'] ?? null,
+                'metodo' => $metodoAnalisis,
+                'metodo_muestreo' => $metodoMuestreo,
                 'unidad_medida' => $validated['unidad_medida'] ?? null,
                 // Asegurar que el precio tenga 2 decimales
                 'precio' => $validated['precio'] !== null ? round((float)$validated['precio'], 2) : null,
@@ -702,25 +707,15 @@ class ItemController extends Controller
                 }
             }
             
-            // Obtener métodos
-            $metodoAnalitico = null;
-            if ($item->relationLoaded('metodoAnalitico') && $item->metodoAnalitico) {
-                $metodoAnalitico = $item->metodoAnalitico->metodo_descripcion;
-            } elseif ($item->metodo) {
-                $metodo = \App\Models\Metodo::where('metodo_codigo', $item->metodo)->first();
-                if ($metodo) {
-                    $metodoAnalitico = $metodo->metodo_descripcion;
-                }
+            // Obtener métodos (tabla metodo)
+            $metodoAnalitico = $item->metodoAnalitico?->metodo_descripcion;
+            if (!$metodoAnalitico && $item->metodo) {
+                $metodoAnalitico = trim((string) $item->metodo);
             }
-            
-            $metodoMuestreo = null;
-            if ($item->relationLoaded('metodoMuestreo') && $item->metodoMuestreo) {
-                $metodoMuestreo = $item->metodoMuestreo->metodo_descripcion;
-            } elseif ($item->metodo_muestreo) {
-                $metodo = \App\Models\Metodo::where('metodo_codigo', $item->metodo_muestreo)->first();
-                if ($metodo) {
-                    $metodoMuestreo = $metodo->metodo_descripcion;
-                }
+
+            $metodoMuestreo = $item->metodoMuestreo?->metodo_descripcion;
+            if (!$metodoMuestreo && $item->metodo_muestreo) {
+                $metodoMuestreo = trim((string) $item->metodo_muestreo);
             }
             
             $metodos = array_filter([$metodoAnalitico, $metodoMuestreo]);
@@ -742,5 +737,92 @@ class ItemController extends Controller
         });
         
         return response()->json($result);
+    }
+
+    /**
+     * @return array<string, array<int, string>>
+     */
+    private function reglasMetodosItem(): array
+    {
+        return [
+            'metodo' => ['nullable', 'string', 'max:50'],
+            'metodo_muestreo' => ['nullable', 'string', 'max:50'],
+        ];
+    }
+
+    /**
+     * @return array{0: ?string, 1: ?string}
+     */
+    private function resolverMetodosItemValidados(array $validated): array
+    {
+        return [
+            $this->resolverCodigoMetodoItem($validated['metodo'] ?? null, 'metodo'),
+            $this->resolverCodigoMetodoItem($validated['metodo_muestreo'] ?? null, 'metodo_muestreo'),
+        ];
+    }
+
+    private function resolverCodigoMetodoItem(?string $raw, string $fieldName): ?string
+    {
+        if ($raw === null || trim($raw) === '') {
+            return null;
+        }
+
+        $codigo = trim($raw);
+        $metodo = Metodo::query()
+            ->whereRaw('trim(metodo_codigo) = ?', [$codigo])
+            ->first();
+
+        if (!$metodo) {
+            throw ValidationException::withMessages([
+                $fieldName => "El código «{$codigo}» no existe en la tabla metodo.",
+            ]);
+        }
+
+        return $metodo->metodo_codigo;
+    }
+
+    /**
+     * @param  array<int, mixed>  $matrices
+     * @return list<string>
+     */
+    private function normalizarCodigosMatrices(array $matrices): array
+    {
+        return collect($matrices)
+            ->map(fn ($codigo) => trim((string) $codigo))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Componentes que no comparten ninguna matriz con el agrupador (pivote + columna legacy).
+     *
+     * @param  \Illuminate\Support\Collection<int, int>  $componenteIds
+     * @param  list<string>  $matricesSeleccionadas
+     * @return \Illuminate\Support\Collection<int, int>
+     */
+    private function componentesFueraDeMatricesCompartidas($componenteIds, array $matricesSeleccionadas)
+    {
+        if ($componenteIds->isEmpty() || empty($matricesSeleccionadas)) {
+            return collect();
+        }
+
+        $placeholders = implode(',', array_fill(0, count($matricesSeleccionadas), '?'));
+
+        return CotioItems::query()
+            ->whereIn('id', $componenteIds)
+            ->where(function ($q) use ($matricesSeleccionadas, $placeholders) {
+                $q->whereDoesntHave('matrices', function ($sub) use ($matricesSeleccionadas, $placeholders) {
+                    $sub->whereIn(DB::raw('TRIM(cotio_items_matriz.matriz_codigo)'), $matricesSeleccionadas);
+                })->where(function ($legacy) use ($matricesSeleccionadas, $placeholders) {
+                    $legacy->whereNull('matriz_codigo')
+                        ->orWhereRaw(
+                            'TRIM(cotio_items.matriz_codigo) NOT IN (' . $placeholders . ')',
+                            $matricesSeleccionadas
+                        );
+                });
+            })
+            ->pluck('id');
     }
 }

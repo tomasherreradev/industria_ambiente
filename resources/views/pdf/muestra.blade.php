@@ -96,7 +96,7 @@
 
     <!-- Información del cliente -->
     <div class="client-info">
-        <p><strong>{{ $cotizacion->coti_empresa ?? 'N/A' }} - {{ $cotizacion->coti_establecimiento ?? 'N/A' }}</strong></p>
+        <p><strong>{{ \App\Support\CotizacionClienteEtiqueta::lineaClienteConEstablecimiento($cotizacion) }}</strong></p>
         <p>{{ $cotizacion->coti_direccioncli ?? 'N/A' }}, {{ $cotizacion->coti_localidad ?? 'N/A' }}, {{ $cotizacion->coti_partido ?? 'N/A' }}</p>
         
         <p>Atn. {{ $cotizacion->coti_contacto ?? 'Nombre de contacto' }}<br>

@@ -30,12 +30,35 @@ class User extends Authenticatable
         'email',
         'departamento',
         'current_session_id',
+        'admin_lab',
+        'bandeja_solo_informes',
+        'puede_cargar_items',
+    ];
+
+    protected $casts = [
+        'admin_lab' => 'boolean',
+        'bandeja_solo_informes' => 'boolean',
+        'puede_cargar_items' => 'boolean',
     ];
 
     // public function getAuthPassword()
     // {
     //     return $this->usu_clave;
     // }
+
+    public function isAdminLab(): bool
+    {
+        return (bool) ($this->admin_lab ?? false);
+    }
+
+    public function puedeCargarItems(): bool
+    {
+        if ((int) ($this->usu_nivel ?? 0) >= 900) {
+            return true;
+        }
+
+        return (bool) ($this->puede_cargar_items ?? false);
+    }
 
     public function tareas()
     {
@@ -50,6 +73,21 @@ class User extends Authenticatable
     public function sector()
     {
         return $this->belongsTo(User::class, 'sector_codigo', 'usu_codigo');
+    }
+
+    /**
+     * Relación con múltiples sectores (laboratorios)
+     */
+    public function sectores()
+    {
+        return $this->belongsToMany(
+            User::class,
+            'user_sectors',
+            'usu_codigo',
+            'sector_codigo',
+            'usu_codigo',
+            'usu_codigo'
+        );
     }
 
     public function miembros()
@@ -133,16 +171,17 @@ class User extends Authenticatable
         if (is_array($role)) {
             return $this->hasAnyRole($role);
         }
-        
-        // Verificar rol principal
-        if ($this->rol === $role) {
+
+        $role = $this->normalizarNombreRol($role);
+        $rolPrincipal = $this->normalizarNombreRol($this->rol);
+
+        if ($rolPrincipal !== '' && $rolPrincipal === $role) {
             return true;
         }
-        
-        // Verificar roles adicionales
+
         return DB::table('user_roles')
             ->where('usu_codigo', $this->usu_codigo)
-            ->where('rol', $role)
+            ->whereRaw('LTRIM(RTRIM(rol)) = ?', [$role])
             ->exists();
     }
 
@@ -154,16 +193,36 @@ class User extends Authenticatable
      */
     public function hasAnyRole(array $roles)
     {
-        // Verificar rol principal
-        if (in_array($this->rol, $roles)) {
+        $roles = array_values(array_unique(array_filter(array_map(
+            fn ($r) => $this->normalizarNombreRol($r),
+            $roles
+        ))));
+
+        if ($roles === []) {
+            return false;
+        }
+
+        $rolPrincipal = $this->normalizarNombreRol($this->rol);
+        if ($rolPrincipal !== '' && in_array($rolPrincipal, $roles, true)) {
             return true;
         }
-        
-        // Verificar roles adicionales
+
         return DB::table('user_roles')
             ->where('usu_codigo', $this->usu_codigo)
-            ->whereIn('rol', $roles)
+            ->where(function ($query) use ($roles) {
+                foreach ($roles as $rol) {
+                    $query->orWhereRaw('LTRIM(RTRIM(rol)) = ?', [$rol]);
+                }
+            })
             ->exists();
+    }
+
+    /**
+     * Normaliza nombres de rol (columnas CHAR suelen traer espacios de relleno).
+     */
+    private function normalizarNombreRol(?string $rol): string
+    {
+        return trim((string) $rol);
     }
 
     /**
@@ -212,6 +271,50 @@ class User extends Authenticatable
             DB::table('user_roles')->insert([
                 'usu_codigo' => $this->usu_codigo,
                 'rol' => $rol,
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+        }
+    }
+
+    /**
+     * Sincronizar sectores (elimina los que no están y agrega los nuevos)
+     * 
+     * @param array $sectores Array de códigos de sector a sincronizar
+     */
+    public function syncSectores(array $sectores)
+    {
+        // Filtrar sectores vacíos y normalizar
+        $sectores = array_filter(array_map('trim', $sectores));
+        $sectores = array_filter($sectores, function($sec) {
+            return !empty($sec);
+        });
+        
+        // Obtener sectores actuales
+        $currentSectores = DB::table('user_sectors')
+            ->where('usu_codigo', $this->usu_codigo)
+            ->pluck('sector_codigo')
+            ->toArray();
+        
+        // Sectores a eliminar (están en current pero no en sectores)
+        $toDelete = array_diff($currentSectores, $sectores);
+        
+        // Sectores a agregar (están en sectores pero no en current)
+        $toAdd = array_diff($sectores, $currentSectores);
+        
+        // Eliminar sectores
+        if (!empty($toDelete)) {
+            DB::table('user_sectors')
+                ->where('usu_codigo', $this->usu_codigo)
+                ->whereIn('sector_codigo', $toDelete)
+                ->delete();
+        }
+        
+        // Agregar nuevos sectores
+        foreach ($toAdd as $sector) {
+            DB::table('user_sectors')->insert([
+                'usu_codigo' => $this->usu_codigo,
+                'sector_codigo' => $sector,
                 'created_at' => now(),
                 'updated_at' => now()
             ]);

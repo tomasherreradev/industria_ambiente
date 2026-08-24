@@ -23,7 +23,9 @@ class UsersExport implements FromCollection, WithHeadings, WithMapping, WithStyl
 
     public function collection()
     {
-        $query = User::where('rol', '!=', 'sector');
+        $query = User::query()->where(function ($q) {
+            $q->whereNull('rol')->orWhere('rol', '!=', 'sector');
+        });
         
         if ($this->rol) {
             $query->where('rol', $this->rol);

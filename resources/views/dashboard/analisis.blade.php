@@ -1,6 +1,57 @@
 @extends('layouts.app')
 
 @section('content')
+@php
+    $estadoFiltroActual = $estadoFiltro ?? request('estado', 'all');
+    if ($estadoFiltroActual === null || $estadoFiltroActual === '') {
+        $estadoFiltroActual = 'all';
+    }
+    $metodoFiltroActual = $metodoFiltro ?? request('metodo', '');
+    $urlFiltroQuery = function (?string $estado = null, ?string $metodo = null) use ($estadoFiltroActual, $metodoFiltroActual): string {
+        $query = collect(request()->query())->all();
+
+        if ($estado !== null) {
+            if ($estado === 'all') {
+                unset($query['estado']);
+            } else {
+                $query['estado'] = $estado;
+            }
+        } elseif ($estadoFiltroActual === 'all') {
+            unset($query['estado']);
+        } elseif ($estadoFiltroActual !== '') {
+            $query['estado'] = $estadoFiltroActual;
+        }
+
+        if ($metodo !== null) {
+            if ($metodo === '') {
+                unset($query['metodo']);
+            } else {
+                $query['metodo'] = $metodo;
+            }
+        } elseif ($metodoFiltroActual === '') {
+            unset($query['metodo']);
+        } else {
+            $query['metodo'] = $metodoFiltroActual;
+        }
+
+        $qs = http_build_query($query);
+
+        return request()->url().($qs !== '' ? '?'.$qs : '');
+    };
+    $urlFiltroEstado = fn (string $estado): string => $urlFiltroQuery($estado, null);
+    $urlFiltroMetodo = fn (?string $metodo): string => $urlFiltroQuery(null, $metodo);
+    $cardEstadoActivo = fn (string $estado) => $estadoFiltroActual === $estado ? ' dashboard-estado-card--active' : '';
+    $estadosFiltroOpciones = [
+        ['key' => 'all', 'label' => 'Todos', 'dot' => 'bg-secondary'],
+        ['key' => 'pendientes_coordinar', 'label' => 'Pendientes por coordinar', 'dot' => 'bg-primary'],
+        ['key' => 'coordinado analisis', 'label' => 'Pendientes de análisis', 'dot' => 'bg-warning'],
+        ['key' => 'en revision analisis', 'label' => 'Pendientes de revisión', 'dot' => 'bg-info'],
+        ['key' => 'analizado', 'label' => 'Finalizados', 'dot' => 'bg-success'],
+    ];
+    $estadoFiltroProximos = ['key' => 'proximos', 'label' => 'Próximos 3 días', 'dot' => 'bg-dark'];
+    $estadoFiltroActivoMeta = collect($estadosFiltroOpciones)->firstWhere('key', $estadoFiltroActual)
+        ?? ($estadoFiltroActual === 'proximos' ? $estadoFiltroProximos : ['key' => 'all', 'label' => 'Todos', 'dot' => 'bg-secondary']);
+@endphp
 <div class="container-fluid px-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1 class="mb-0">Panel de Análisis</h1>
@@ -10,8 +61,8 @@
     {{-- Resumen General --}}
     <div class="row mb-4 g-4">
         <div class="col-xl-3 col-md-6">
-            <a href="{{ request()->fullUrlWithQuery(['estado' => 'all']) }}" class="text-decoration-none">
-                <div class="card bg-primary bg-gradient text-white h-100">
+            <a href="{{ $urlFiltroEstado('pendientes_coordinar') }}" class="text-decoration-none">
+                <div class="card bg-primary bg-gradient text-white h-100{{ $cardEstadoActivo('pendientes_coordinar') }}">
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-center">
                             <div>
@@ -30,8 +81,8 @@
             </a>
         </div>
         <div class="col-xl-3 col-md-6">
-            <a href="{{ request()->fullUrlWithQuery(['estado' => 'coordinado analisis']) }}" class="text-decoration-none">
-                <div class="card bg-warning bg-gradient text-dark h-100">
+            <a href="{{ $urlFiltroEstado('coordinado analisis') }}" class="text-decoration-none">
+                <div class="card bg-warning bg-gradient text-dark h-100{{ $cardEstadoActivo('coordinado analisis') }}">
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-center">
                             <div>
@@ -50,8 +101,8 @@
             </a>
         </div>
         <div class="col-xl-3 col-md-6">
-            <a href="{{ request()->fullUrlWithQuery(['estado' => 'en revision analisis']) }}" class="text-decoration-none">
-                <div class="card bg-info bg-gradient text-white h-100">
+            <a href="{{ $urlFiltroEstado('en revision analisis') }}" class="text-decoration-none">
+                <div class="card bg-info bg-gradient text-white h-100{{ $cardEstadoActivo('en revision analisis') }}">
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-center">
                             <div>
@@ -70,8 +121,8 @@
             </a>
         </div>
         <div class="col-xl-3 col-md-6">
-            <a href="{{ request()->fullUrlWithQuery(['estado' => 'analizado']) }}" class="text-decoration-none">
-                <div class="card bg-success bg-gradient text-white h-100">
+            <a href="{{ $urlFiltroEstado('analizado') }}" class="text-decoration-none">
+                <div class="card bg-success bg-gradient text-white h-100{{ $cardEstadoActivo('analizado') }}">
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-center">
                             <div>
@@ -103,19 +154,37 @@
                         <div class="d-flex gap-2 flex-wrap">
                             <!-- Filtro de Estado -->
                             <div class="dropdown">
-                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="filterDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-                                    <i class="fas fa-filter me-1"></i> Filtrar
+                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle d-inline-flex align-items-center gap-2" type="button" id="filterDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <span class="rounded-circle flex-shrink-0 {{ $estadoFiltroActivoMeta['dot'] }}" style="width:10px;height:10px;"></span>
+                                    <span id="filterDropdownLabel">{{ $estadoFiltroActivoMeta['label'] }}</span>
                                 </button>
                                 <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="filterDropdown">
-                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'all', 'metodo' => request()->get('metodo', '')]) }}">Todos</a></li>
-                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'coordinado analisis', 'metodo' => request()->get('metodo', '')]) }}">Pendientes de análisis</a></li>
-                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'en revision analisis', 'metodo' => request()->get('metodo', '')]) }}">Pendientes de revisión</a></li>
-                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'analizado', 'metodo' => request()->get('metodo', '')]) }}">Finalizados</a></li>
+                                    @foreach($estadosFiltroOpciones as $opcion)
+                                        <li>
+                                            <a class="dropdown-item filter-option d-flex align-items-center gap-2 {{ $estadoFiltroActual === $opcion['key'] ? 'active' : '' }}"
+                                               href="{{ $urlFiltroEstado($opcion['key']) }}"
+                                               data-estado="{{ $opcion['key'] }}"
+                                               data-label="{{ $opcion['label'] }}"
+                                               data-dot="{{ $opcion['dot'] }}">
+                                                <span class="rounded-circle flex-shrink-0 {{ $opcion['dot'] }}" style="width:10px;height:10px;"></span>
+                                                <span>{{ $opcion['label'] }}</span>
+                                            </a>
+                                        </li>
+                                    @endforeach
                                     <li><hr class="dropdown-divider"></li>
-                                    <li><a class="dropdown-item filter-option" href="{{ request()->fullUrlWithQuery(['estado' => 'proximos', 'metodo' => request()->get('metodo', '')]) }}">Próximos 3 días</a></li>
+                                    <li>
+                                        <a class="dropdown-item filter-option d-flex align-items-center gap-2 {{ $estadoFiltroActual === $estadoFiltroProximos['key'] ? 'active' : '' }}"
+                                           href="{{ $urlFiltroEstado($estadoFiltroProximos['key']) }}"
+                                           data-estado="{{ $estadoFiltroProximos['key'] }}"
+                                           data-label="{{ $estadoFiltroProximos['label'] }}"
+                                           data-dot="{{ $estadoFiltroProximos['dot'] }}">
+                                            <span class="rounded-circle flex-shrink-0 {{ $estadoFiltroProximos['dot'] }}" style="width:10px;height:10px;"></span>
+                                            <span>{{ $estadoFiltroProximos['label'] }}</span>
+                                        </a>
+                                    </li>
                                 </ul>
                             </div>
-                            
+
                             <!-- Filtro de Método de Análisis -->
                             <div class="dropdown">
                                 <button class="btn btn-sm btn-outline-primary dropdown-toggle" type="button" id="metodoFilterDropdown" data-bs-toggle="dropdown" aria-expanded="false">
@@ -127,14 +196,14 @@
                                     @endif
                                 </button>
                                 <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="metodoFilterDropdown">
-                                    <li><a class="dropdown-item metodo-filter-option" href="{{ request()->fullUrlWithQuery(['metodo' => '', 'estado' => request()->get('estado', 'all')]) }}">
+                                    <li><a class="dropdown-item metodo-filter-option" href="{{ $urlFiltroMetodo('') }}">
                                         <i class="fas fa-times me-2 text-muted"></i> Todos los métodos
                                     </a></li>
                                     <li><hr class="dropdown-divider"></li>
                                     @foreach($metodosDisponibles as $metodo)
                                         <li>
-                                            <a class="dropdown-item metodo-filter-option {{ request()->get('metodo') == $metodo->metodo_codigo ? 'active' : '' }}" 
-                                               href="{{ request()->fullUrlWithQuery(['metodo' => $metodo->metodo_codigo, 'estado' => request()->get('estado', 'all')]) }}">
+                                            <a class="dropdown-item metodo-filter-option {{ request()->get('metodo') == $metodo->metodo_codigo ? 'active' : '' }}"
+                                               href="{{ $urlFiltroMetodo($metodo->metodo_codigo) }}">
                                                 {{ $metodo->metodo_descripcion ?? $metodo->metodo_codigo }}
                                             </a>
                                         </li>
@@ -164,7 +233,9 @@
                                 $muestra = $primerAnalisis->muestra;
                                 $accordionId = 'muestra-' . str_replace(['-', '.'], '', $grupo);
 
-                                $estado = $muestra->cotio_estado_analisis ?? 'pendiente_coordinar';
+                                $estado = $primerAnalisis->id
+                                    ? ($primerAnalisis->cotio_estado_analisis ?? 'pendiente_coordinar')
+                                    : 'pendiente_coordinar';
                                 $badgeColor = match($estado) {
                                     'coordinado analisis' => 'bg-warning',
                                     'en revision analisis' => 'bg-info',
@@ -224,7 +295,7 @@
                                                         <th>Tipo Análisis</th>
                                                         <th>Fecha Límite</th>
                                                         <th>Responsables</th>
-                                                        {{-- <th class="pe-4">Estado</th> --}}
+                                                        <th class="pe-4">Estado</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
@@ -254,7 +325,7 @@
                                                                     N/A
                                                                 @endif
                                                             </td>   
-                                                            <td colspan="3" class="text-center text-muted">
+                                                            <td colspan="2" class="text-center text-muted">
                                                                 <em>Pendiente por coordinar - Sin análisis activos</em>
                                                             </td>
                                                         </tr>
@@ -302,21 +373,26 @@
                                                                     <span class="text-muted">Sin asignar</span>
                                                                 @endif
                                                             </td>
-                                                            {{-- <td class="pe-4">
+                                                            <td class="pe-4">
                                                                 @php
                                                                     $estadoClase = '';
-                                                                    if(str_contains($item->cotio_estado_analisis, 'coordinado analisis')) {
+                                                                    $estadoAnalisis = $item->cotio_estado_analisis ?? 'pendiente_coordinar';
+                                                                    if (str_contains($estadoAnalisis, 'coordinado analisis')) {
                                                                         $estadoClase = 'warning text-dark';
-                                                                    } elseif(str_contains($item->cotio_estado_analisis, 'en revision analisis')) {
+                                                                    } elseif (str_contains($estadoAnalisis, 'en revision analisis')) {
                                                                         $estadoClase = 'info text-dark';
-                                                                    } elseif(str_contains($item->cotio_estado_analisis, 'analizado')) {
+                                                                    } elseif (str_contains($estadoAnalisis, 'analizado')) {
                                                                         $estadoClase = 'success';
+                                                                    } elseif (str_contains($estadoAnalisis, 'suspension')) {
+                                                                        $estadoClase = 'danger';
+                                                                    } else {
+                                                                        $estadoClase = 'primary';
                                                                     }
                                                                 @endphp
                                                                 <span class="badge rounded-pill bg-{{ $estadoClase }}">
-                                                                    {{ Str::title(str_replace(['_', 'analisis'], [' ', ''], $item->cotio_estado_analisis)) }}
+                                                                    {{ Str::title(str_replace(['_', 'analisis'], [' ', ''], $estadoAnalisis)) }}
                                                                 </span>
-                                                            </td> --}}
+                                                            </td>
                                                         </tr>
                                                         @endforeach
                                                     @endif
@@ -358,7 +434,8 @@
                             @php
                                 $primerAnalisis = $analisisGrupo->first();
                                 $muestra = $primerAnalisis->muestra;
-                                $fechaMasProxima = $muestra ? $muestra->fecha_fin_ot : ($primerAnalisis->fecha_fin ?? null);
+                                $fechaMasProxima = $primerAnalisis->fecha_fin_ot
+                                    ?? ($muestra ? $muestra->fecha_fin_ot : null);
                             @endphp
                             <div class="list-group-item border-0 px-0 py-2">
                                 <div class="d-flex justify-content-between align-items-start mb-1">
@@ -474,6 +551,22 @@
     </div>
 </div>
 
+<style>
+    .dashboard-estado-card--active {
+        box-shadow: 0 0 0 3px #fff, 0 0 0 6px rgba(13, 110, 253, 0.55);
+        transform: translateY(-2px);
+    }
+    .card.bg-warning.dashboard-estado-card--active {
+        box-shadow: 0 0 0 3px #fff, 0 0 0 6px rgba(255, 193, 7, 0.75);
+    }
+    .card.bg-info.dashboard-estado-card--active {
+        box-shadow: 0 0 0 3px #fff, 0 0 0 6px rgba(13, 202, 240, 0.65);
+    }
+    .card.bg-success.dashboard-estado-card--active {
+        box-shadow: 0 0 0 3px #fff, 0 0 0 6px rgba(25, 135, 84, 0.65);
+    }
+</style>
+
 {{-- Modal para Exportar --}}
 <div class="modal fade" id="modalExportar" tabindex="-1" aria-labelledby="modalExportarLabel" aria-hidden="true">
     <div class="modal-dialog">
@@ -559,19 +652,21 @@
             }
         });
 
-        // Actualizar el texto del botón dropdown según el estado actual
-        const currentEstado = '{{ $estadoFiltro }}';
+        const currentEstado = @json($estadoFiltroActual);
         const filterDropdown = document.getElementById('filterDropdown');
-        const filterOptions = document.querySelectorAll('.filter-option');
-        
-        filterOptions.forEach(option => {
-            if (option.getAttribute('href').includes(`estado=${currentEstado}`)) {
-                filterDropdown.innerHTML = `<i class="fas fa-filter me-1"></i> ${option.textContent}`;
-            }
-        });
+        const filterDropdownLabel = document.getElementById('filterDropdownLabel');
+        const filterDot = filterDropdown?.querySelector('.rounded-circle');
+        const opcionActiva = document.querySelector(`.filter-option[data-estado="${currentEstado}"]`);
+
+        if (filterDropdown && opcionActiva && filterDropdownLabel && filterDot) {
+            filterDropdownLabel.textContent = opcionActiva.dataset.label || 'Todos';
+            filterDot.className = `rounded-circle flex-shrink-0 ${opcionActiva.dataset.dot || 'bg-secondary'}`;
+            filterDot.style.width = '10px';
+            filterDot.style.height = '10px';
+        }
 
         // Actualizar el texto del botón dropdown de método según el método actual
-        const currentMetodo = '{{ $metodoFiltro }}';
+        const currentMetodo = @json($metodoFiltroActual);
         const metodoFilterDropdown = document.getElementById('metodoFilterDropdown');
         if (metodoFilterDropdown && currentMetodo) {
             const metodoSeleccionado = document.querySelector(`.metodo-filter-option[href*="metodo=${currentMetodo}"]`);

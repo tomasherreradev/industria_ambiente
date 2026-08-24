@@ -14,7 +14,7 @@
             @foreach($cotizaciones as $coti)
                 <tr>
                     <td>{{ $coti->coti_num }}</td>
-                    <td>{{ $coti->coti_empresa }}</td>
+                    <td>{{ \App\Support\CotizacionClienteEtiqueta::paraLista($coti) }}</td>
                     <td
                     <?php 
                         $estado = trim($coti->coti_estado);
@@ -55,7 +55,7 @@
 
                         <div class="mb-2">
                             <strong>Cliente:</strong><br>
-                            <span class="text-muted">{{ $coti->coti_empresa }}</span>
+                            <span class="text-muted">{{ \App\Support\CotizacionClienteEtiqueta::paraLista($coti) }}</span>
                         </div>
 
                         <div class="mb-2">

@@ -22,6 +22,11 @@
                 return (bool)($t->de_agrupador ?? false);
             });
 
+            $agrupadoresPackPorDescripcion = \App\Models\CotioItems::muestras()
+                ->with('componentesAsociados:id')
+                ->get()
+                ->keyBy(fn ($item) => \Illuminate\Support\Str::lower(trim($item->cotio_descripcion ?? '')));
+
             // Agrupar ítems con sus componentes y métodos
             $itemsAgrupados = [];
             foreach ($ensayos as $ensayo) {
@@ -32,48 +37,28 @@
                     $cantidadMuestras = 1;
                 }
 
-                $sumaComponentesUnitaria = $componentesDelEnsayo->sum(function ($componente) {
-                    if ($componente->de_agrupador) {
-                        return 0;
-                    }
-                    $precio = (float) ($componente->cotio_precio ?? 0);
-                    $cantidad = (float) ($componente->cotio_cantidad ?? 1);
-                    if ($cantidad <= 0) {
-                        $cantidad = 1;
-                    }
-                    return $precio * $cantidad;
-                });
+                $agrupadorPack = $agrupadoresPackPorDescripcion->get(\Illuminate\Support\Str::lower(trim($ensayo->cotio_descripcion ?? '')));
+                $idsParametrosPack = $agrupadorPack
+                    ? $agrupadorPack->componentesAsociados->pluck('id')->map(fn ($id) => (string) $id)->values()->all()
+                    : [];
+                $precioPackEnsayo = max(0.0, (float) ($ensayo->cotio_precio ?? 0));
+                $esPackAgrupador = $esNuevaLogicaPrecio || ($precioPackEnsayo > 0 && !empty($idsParametrosPack));
+
+                $sumaComponentesUnitaria = \App\Support\CotizacionPrecioEnsayo::sumaComponentesUnitariaParaEnsayo(
+                    $componentesDelEnsayo,
+                    $precioPackEnsayo,
+                    $idsParametrosPack
+                );
 
                 // Columna ensayo: solo precio adicional u.m. (como en ventas/edit); importe = adicional × cant. muestras.
                 $cotioPrecioRaw = $ensayo->cotio_precio ?? null;
-                $precioUnitarioTotal = \App\Support\CotizacionPrecioEnsayo::precioUnitarioLineaEnsayo((float) $sumaComponentesUnitaria, $cotioPrecioRaw, $esNuevaLogicaPrecio);
+                $precioUnitarioTotal = \App\Support\CotizacionPrecioEnsayo::precioUnitarioLineaEnsayo((float) $sumaComponentesUnitaria, $cotioPrecioRaw, $esPackAgrupador);
                 $importeEnsayoFila = $cantidadMuestras * $precioUnitarioTotal;
 
                 $componentesConMetodos = [];
+                \App\Support\MetodoAnalisisItemCatalogo::preload();
                 foreach ($componentesDelEnsayo as $componente) {
-                    $metodoTexto = '';
-
-                    // Cargar solo el método de ANÁLISIS
-                    if (!$componente->relationLoaded('metodoAnalisis') && $componente->cotio_codigometodo_analisis) {
-                        $componente->load('metodoAnalisis');
-                    }
-
-                    // Resolver nombre del método de análisis únicamente
-                    if ($componente->cotio_codigometodo_analisis) {
-                        $_codigoMetodo = trim($componente->cotio_codigometodo_analisis);
-                        if ($componente->metodoAnalisis) {
-                            $metodoTexto = trim($componente->metodoAnalisis->nombre ?? '');
-                        }
-                        if (empty($metodoTexto)) {
-                            $ma = \App\Models\MetodoAnalisis::where('codigo', $_codigoMetodo)->first();
-                            $metodoTexto = $ma ? trim($ma->nombre ?? '') : '';
-                        }
-                        // Fallback: buscar en la tabla legado metodo (donde viven los códigos de CotioItems.metodo)
-                        if (empty($metodoTexto)) {
-                            $ml = \App\Models\Metodo::where('metodo_codigo', $componente->cotio_codigometodo_analisis)->first();
-                            $metodoTexto = $ml ? trim($ml->metodo_descripcion ?? '') : $_codigoMetodo;
-                        }
-                    }
+                    $metodoTexto = \App\Support\MetodoAnalisisItemCatalogo::etiquetaParaLineaCotio($componente);
 
                     $componentesConMetodos[] = [
                         'descripcion' => $componente->cotio_descripcion ?? '',
@@ -81,26 +66,8 @@
                         'de_agrupador' => (bool) ($componente->de_agrupador ?? false),
                         'req_cadena_custodia' => (bool) ($componente->req_cadena_custodia ?? false),
                         'req_prot_mapba' => (bool) ($componente->req_prot_mapba ?? false),
+                        'notas' => $componente->notasImprimiblesList(),
                     ];
-                }
-
-                $notasImprimibles = $ensayo->notasImprimiblesList();
-                $ensDesc = trim($ensayo->cotio_descripcion ?? '');
-                foreach ($componentesDelEnsayo as $componente) {
-                    $compDesc = trim($componente->cotio_descripcion ?? '');
-                    foreach ($componente->notasImprimiblesList() as $cn) {
-                        $txtComp = trim((string) ($cn['contenido'] ?? ''));
-                        if ($txtComp === '') {
-                            continue;
-                        }
-                        $notasImprimibles[] = [
-                            'tipo' => $cn['tipo'] ?? 'imprimible',
-                            'contenido' => $txtComp,
-                            'descripcion_contexto' => ($compDesc !== '')
-                                ? ($ensDesc !== '' ? $ensDesc . ' — ' . $compDesc : $compDesc)
-                                : $ensDesc,
-                        ];
-                    }
                 }
 
                 $itemsAgrupados[] = [
@@ -110,7 +77,7 @@
                     'precio_unitario' => $precioUnitarioTotal,
                     'importe' => $importeEnsayoFila,
                     'componentes' => $componentesConMetodos,
-                    'notas' => $notasImprimibles,
+                    'notas' => $ensayo->notasImprimiblesList(),
                     'req_cadena_custodia' => (bool) ($ensayo->req_cadena_custodia ?? false),
                     'req_cadena_custodia_rel' => $cotiReqCadenaRel,
                     'req_prot_mapba' => (bool) ($ensayo->req_prot_mapba ?? false),
@@ -141,16 +108,21 @@
             });
             
             // Ajuste del resumen económico para que sea consistente
-            $totalImporteComponentesEnGrupos = collect($itemsAgrupados)->sum(function($ia) use ($componentes) {
+            $totalImporteComponentesEnGrupos = collect($itemsAgrupados)->sum(function($ia) use ($componentes, $agrupadoresPackPorDescripcion, $ensayos) {
                 $componentesDelEnsayo = $componentes->where('cotio_item', $ia['item']);
-                $sumaComponentesUnitaria = $componentesDelEnsayo->sum(function ($componente) {
-                    if ($componente->de_agrupador) {
-                        return 0;
-                    }
-                    $precio = (float) ($componente->cotio_precio ?? 0);
-                    $cantidad = (float) ($componente->cotio_cantidad ?? 1);
-                    return $precio * ($cantidad <= 0 ? 1 : $cantidad);
-                });
+                $ensayoRef = $ensayos->firstWhere('cotio_item', $ia['item']);
+                $agrupadorPack = $ensayoRef
+                    ? $agrupadoresPackPorDescripcion->get(\Illuminate\Support\Str::lower(trim($ensayoRef->cotio_descripcion ?? '')))
+                    : null;
+                $idsParametrosPack = $agrupadorPack
+                    ? $agrupadorPack->componentesAsociados->pluck('id')->map(fn ($id) => (string) $id)->values()->all()
+                    : [];
+                $precioPackEnsayo = $ensayoRef ? max(0.0, (float) ($ensayoRef->cotio_precio ?? 0)) : 0.0;
+                $sumaComponentesUnitaria = \App\Support\CotizacionPrecioEnsayo::sumaComponentesUnitariaParaEnsayo(
+                    $componentesDelEnsayo,
+                    $precioPackEnsayo,
+                    $idsParametrosPack
+                );
                 return $ia['cantidad'] * $sumaComponentesUnitaria;
             });
 
@@ -167,13 +139,6 @@
             };
 
             $cliente = $cotizacion->cliente ?? null;
-            $cliNombreDetalle = trim((string) (optional($cliente)->cli_razonsocial ?? ''));
-            if ($cliNombreDetalle === '') {
-                $cliNombreDetalle = trim((string) (optional($cliente)->cli_fantasia ?? ''));
-            }
-            if ($cliNombreDetalle === '') {
-                $cliNombreDetalle = trim((string) ($cotizacion->coti_empresa ?? ''));
-            }
             $divisaCodigo = $cotizacion->divisa_codigo ?? 'PES';
             $descuentoGlobal = max((float) ($descuentoGlobalCliente ?? 0), 0);
             $descuentoSector = max((float) ($descuentoSectorCliente ?? 0), 0);
@@ -188,61 +153,15 @@
             // Total final = Subtotal + Aumento - Descuentos
             $importeConAjustes = $totalCalculado + $aumentoGlobalMonto - ($descuentoGlobalMonto + $descuentoSectorMonto);
 
-            // Obtener empresa relacionada
-            $empresaRelacionadaDetalle = null;
-            $idEmpresaRelDet = $cotizacion->coti_empresa_rel ?? $cotizacion->coti_cli_empresa;
-            if ($idEmpresaRelDet) {
-                $empresaRelacionadaDetalle = \App\Models\ClienteEmpresaRelacionada::find($idEmpresaRelDet);
-            }
-
-            // Obtener sucursal si está seleccionada (mismo tratamiento que empresa relacionada, pero se aclara "sucursal")
-            $sucursalDetalle = null;
-            if (trim((string) ($cotizacion->coti_codigosuc ?? '')) !== '') {
-                $sucursalDetalle = \App\Models\Clientes::where('cli_codigo', trim($cotizacion->coti_codigosuc))->first();
-            }
-
-            // Datos para el bloque Destinatario (a quien va dirigido el presupuesto).
-            // Prioridad: 1) Sucursal (coti_codigosuc), 2) Empresa relacionada (coti_cli_empresa), 3) coti_para / cliente.
-            if ($sucursalDetalle) {
-                $nombreBaseSucursal = trim($sucursalDetalle->cli_razonsocial ?? $sucursalDetalle->cli_fantasia ?? 'Sucursal');
-                $nombreCliente = $nombreBaseSucursal . ' (sucursal)';
-                $direccionCliente = trim($sucursalDetalle->cli_direccion ?? '');
-                $localidadCliente = trim($sucursalDetalle->cli_localidad ?? '');
-                $partidoCliente = trim($sucursalDetalle->cli_partido ?? '');
-                $cuitCliente = trim($sucursalDetalle->cli_cuit ?? '');
-                $contactoCliente = trim($sucursalDetalle->cli_contacto ?? $cotizacion->coti_contacto ?? '');
-            } elseif ($empresaRelacionadaDetalle) {
-                $relNombreDetalle = trim((string) ($empresaRelacionadaDetalle->razon_social ?? ''));
-                $nombreCliente = ($cliNombreDetalle !== '' && $relNombreDetalle !== '')
-                    ? $cliNombreDetalle . ' - ' . $relNombreDetalle
-                    : ($relNombreDetalle !== '' ? $relNombreDetalle : $cliNombreDetalle);
-                $direccionCliente = trim($empresaRelacionadaDetalle->direcciones ?? '');
-                $localidadCliente = trim($empresaRelacionadaDetalle->localidad ?? '');
-                $partidoCliente = trim($empresaRelacionadaDetalle->partido ?? '');
-                $cuitCliente = trim($empresaRelacionadaDetalle->cuit ?? '');
-                $contactoCliente = trim($empresaRelacionadaDetalle->contacto ?? $cotizacion->coti_contacto ?? '');
-            } else {
-                $paraTxtDet = trim((string) ($cotizacion->coti_para ?? ''));
-                if ($paraTxtDet !== '') {
-                    $esConsultorDet = (bool) (optional($cliente)->es_consultor ?? false);
-                    $empRelMarcadaDet = (bool) ($cotizacion->coti_para_empresa_rel ?? false);
-                    $tieneIdEmpRelDet = !empty($cotizacion->coti_empresa_rel) || !empty($cotizacion->coti_cli_empresa);
-                    $paraDistintoDet = $cliNombreDetalle !== '' && strcasecmp($paraTxtDet, $cliNombreDetalle) !== 0;
-                    $usarCompositeDet = $esConsultorDet && $cliNombreDetalle !== '' && $paraTxtDet !== ''
-                        && ($empRelMarcadaDet || $tieneIdEmpRelDet || $paraDistintoDet);
-                    $nombreCliente = $usarCompositeDet ? $cliNombreDetalle . ' - ' . $paraTxtDet : $paraTxtDet;
-                } else {
-                    $nombreCliente = trim((string) ($cotizacion->coti_empresa ?? ''));
-                    if ($nombreCliente === '') {
-                        $nombreCliente = $cliNombreDetalle;
-                    }
-                }
-                $direccionCliente = $cotizacion->coti_direccioncli ?? optional($cliente)->cli_direccion ?? '';
-                $localidadCliente = $cotizacion->coti_localidad ?? optional($cliente)->cli_localidad ?? '';
-                $partidoCliente = $cotizacion->coti_partido ?? optional($cliente)->cli_partido ?? '';
-                $cuitCliente = $cotizacion->coti_cuit ?? optional($cliente)->cli_cuit ?? '';
-                $contactoCliente = $cotizacion->coti_contacto ?? '';
-            }
+            // Destinatario: razón social según sucursal/empresa/para; CUIT, dirección y contacto priorizan coti_* guardados.
+            $destPdf = \App\Support\CotizacionClienteEtiqueta::destinatarioPdfCamposPrincipales($cotizacion);
+            $nombreCliente = $destPdf['dRazon'];
+            $etiquetaSucursalEstablecimiento = \App\Support\CotizacionClienteEtiqueta::etiquetaSucursalEstablecimiento($cotizacion);
+            $cuitCliente = $destPdf['dCuit'];
+            $direccionCliente = $destPdf['dDir'];
+            $localidadCliente = $destPdf['dLoc'];
+            $partidoCliente = $destPdf['dPart'];
+            $contactoCliente = $destPdf['dContactoBase'];
             $mailCliente = $cotizacion->coti_mail1 ?? optional($cliente)->cli_email ?? '';
             $telefonoCliente = $cotizacion->coti_telefono ?? optional($cliente)->cli_telefono ?? '';
             $codigoCliente = $cotizacion->coti_codigocli ?? optional($cliente)->cli_codigo ?? '';
@@ -285,36 +204,13 @@
             });
             $contactosOrdenados = array_values($contactosCoti);
 
-            // Notas imprimibles de ítems (bloque final “Notas y condiciones”)
-            $todasNotasImprimiblesItems = [];
-            $ordinalEnsayoNotas = 0;
-            foreach ($itemsAgrupados as $ia) {
-                $ordinalEnsayoNotas++;
-                if (!empty($ia['notas'])) {
-                    foreach ($ia['notas'] as $n) {
-                        if (!is_array($n)) {
-                            continue;
-                        }
-                        $textoNota = trim((string) ($n['contenido'] ?? ''));
-                        if ($textoNota === '') {
-                            continue;
-                        }
-                        $descEtiqueta = trim((string) ($n['descripcion_contexto'] ?? ($ia['descripcion'] ?? '')));
-                        $todasNotasImprimiblesItems[] = [
-                            'item' => $ia['item'],
-                            'item_ordinal' => $ordinalEnsayoNotas,
-                            'descripcion' => $descEtiqueta,
-                            'contenido' => $textoNota,
-                        ];
-                    }
-                }
-            }
-
             $creadorCodigo = trim((string) ($cotizacion->coti_creador ?? ''));
             $nombreCreadorCoti = '';
             if ($creadorCodigo !== '') {
                 $nombreCreadorCoti = trim((string) (\App\Models\User::where('usu_codigo', $creadorCodigo)->value('usu_descripcion') ?? ''));
             }
+
+            $notasGeneralesPresupuesto = \App\Support\CotizacionNotasGenerales::listadoParaVista($cotizacion->coti_notas ?? null);
 
             //$fechaCotizacion = $cotizacion->coti_fechaalta ?? $cotizacion->coti_fechaaltatecnica ?? null;
             $fechaPresupuesto = '22/12/2023';
@@ -385,15 +281,6 @@
                     <div class="quote-meta-left">
                         <div class="quote-meta-line"><strong>Cotización:</strong> #{{ $cotizacion->coti_num }}</div>
                         <div class="quote-meta-line"><strong>Fecha:</strong> {{ $fechaEmision }}</div>
-                        @php
-                            $codCliPreview = trim((string) ($codigoCliente ?? ''));
-                            $nomCliPreview = trim((string) ($nombreCliente ?? ''));
-                        @endphp
-                        @if($codCliPreview !== '' || $nomCliPreview !== '')
-                            <div class="quote-meta-line compact-client-ref">
-                                {{ $codCliPreview }}{{ $codCliPreview !== '' && $nomCliPreview !== '' ? ' - ' : '' }}{{ $nomCliPreview }}
-                            </div>
-                        @endif
                     </div>
                     <div class="quote-meta-right">
                         <table class="doc-control-table" role="presentation">
@@ -430,7 +317,7 @@
                     <tr>
                         <td class="dg-label">Sucursal / Establecimiento</td>
                         <td class="dg-value">
-                            {{ trim((string) ($cotizacion->coti_establecimiento ?? '')) !== '' ? trim($cotizacion->coti_establecimiento) : '—' }}
+                            {{ trim($etiquetaSucursalEstablecimiento) !== '' ? $etiquetaSucursalEstablecimiento : '—' }}
                         </td>
                         <td class="dg-label">Correo</td>
                         <td class="dg-value">{{ trim($correoDestinatarioTabla) !== '' ? $correoDestinatarioTabla : '—' }}
@@ -517,16 +404,22 @@
                                                     @endif
                                                 @endif
                                             </div>
+                                            @include('partials.cotizacion-item-notas-imprimibles', [
+                                                'notas' => $item['notas'] ?? [],
+                                                'wrapperClass' => 'item-notas-imprimibles-inline',
+                                            ])
                                             @if(!empty($item['componentes']))
                                                 @foreach($item['componentes'] as $componente)
                                                     <div class="component-item component-bullet">
                                                         <span>• {{ $componente['descripcion'] }}</span>
-                                                        @if(!empty($componente['de_agrupador']))
-                                                            <span style="font-size: 0.85em; color: #0d6efd; font-weight: bold; margin-left: 4px;">(incluido)</span>
-                                                        @endif
+
                                                         @if(!empty($componente['metodo']))
                                                             <span class="component-method-bracket">[{{ $componente['metodo'] }}]</span>
                                                         @endif
+                                                        @include('partials.cotizacion-item-notas-imprimibles', [
+                                                            'notas' => $componente['notas'] ?? [],
+                                                            'wrapperClass' => 'item-notas-imprimibles-inline',
+                                                        ])
                                                     </div>
                                                 @endforeach
                                             @endif
@@ -578,6 +471,10 @@
                                         @endif
                                     @endif
                                 </div>
+                                @include('partials.cotizacion-item-notas-imprimibles', [
+                                    'notas' => $item['notas'] ?? [],
+                                    'wrapperClass' => 'item-notas-imprimibles-inline',
+                                ])
                                 @if(!empty($item['componentes']))
                                     <div class="card-components">
                                         @foreach($item['componentes'] as $componente)
@@ -586,6 +483,10 @@
                                                 @if(!empty($componente['metodo']))
                                                     <div class="card-component-method">{{ $componente['metodo'] }}</div>
                                                 @endif
+                                                @include('partials.cotizacion-item-notas-imprimibles', [
+                                                    'notas' => $componente['notas'] ?? [],
+                                                    'wrapperClass' => 'item-notas-imprimibles-inline',
+                                                ])
                                             </div>
                                         @endforeach
                                     </div>
@@ -737,19 +638,11 @@
                         <li>En caso de aceptación del presente presupuesto, favor de enviar una Orden de Compra mencionando
                             el Nro. de Cotización del presente presupuesto.</li>
                     </ol>
-                    @if(count($todasNotasImprimiblesItems) > 0)
-                        <div class="legal-item-notes-wrap">
-                            @foreach($todasNotasImprimiblesItems as $idx => $nin)
-                                <p class="legal-nota-imprimible-line"><strong>Nota{{ $idx + 1 }}</strong> -
-                                    {{ trim((string) ($nin['descripcion'] ?? '')) !== '' ? $nin['descripcion'] : ('Ítem #' . ($nin['item_ordinal'] ?? $nin['item'])) }}:
-                                    {{ $nin['contenido'] ?? '' }}</p>
+                    @if(count($notasGeneralesPresupuesto) > 0)
+                        <div class="legal-notas-generales-wrap">
+                            @foreach($notasGeneralesPresupuesto as $notaGeneral)
+                                <p class="legal-nota-general-line">{{ $notaGeneral }}</p>
                             @endforeach
-                        </div>
-                    @endif
-                    @if(!empty(trim((string) ($cotizacion->coti_notas ?? ''))))
-                        <div class="legal-coti-notas-wrap">
-                            <p class="legal-item-notes-title"><strong>Observaciones de la cotización:</strong></p>
-                            <p class="legal-coti-notas-text">{{ $cotizacion->coti_notas }}</p>
                         </div>
                     @endif
                 </div>
@@ -1097,6 +990,19 @@
             margin-top: 4px;
             white-space: pre-wrap;
             word-break: break-word;
+        }
+
+        .legal-nota-general-line {
+            margin: 0 0 8px 0;
+            font-size: 9px;
+            line-height: 1.45;
+            color: #333;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .legal-nota-general-line:last-child {
+            margin-bottom: 0;
         }
 
         .legal-nota-imprimible-line {
@@ -1462,6 +1368,16 @@
             font-weight: bold;
             margin-bottom: 5px;
             font-size: 10px;
+            line-height: 1.35;
+        }
+
+        .item-description .badge {
+            vertical-align: middle;
+            font-size: 8px;
+            line-height: 1.2;
+            padding: 3px 8px;
+            position: relative;
+            top: 1px;
         }
 
         .component-item {
@@ -1562,6 +1478,16 @@
             font-size: 12px;
             margin-bottom: 10px;
             color: #000;
+            line-height: 1.35;
+        }
+
+        .card-description .badge {
+            vertical-align: middle;
+            font-size: 9px;
+            line-height: 1.2;
+            padding: 3px 8px;
+            position: relative;
+            top: 1px;
         }
 
         .card-components {
@@ -2257,6 +2183,39 @@
             .comment-section {
                 display: none;
             }
+        }
+
+        /* Estilos para notas imprimibles bajo cada ítem */
+        .item-notas-imprimibles {
+            margin-top: 6px;
+        }
+
+        .item-notas-imprimibles-inline {
+            margin-top: 4px;
+            padding-left: 0;
+        }
+
+        .item-nota-imprimible-line {
+            margin: 0 0 4px 0;
+            font-size: 7.5px;
+            line-height: 1.4;
+            color: #555;
+            font-style: italic;
+            word-wrap: break-word;
+            word-break: break-word;
+            overflow-wrap: break-word;
+        }
+
+        .item-nota-imprimible-line:last-child {
+            margin-bottom: 0;
+        }
+
+        .component-item .item-notas-imprimibles-inline {
+            padding-left: 12px;
+        }
+
+        .card-component-item .item-notas-imprimibles-inline {
+            padding-left: 12px;
         }
 
         /* Estilos para notas de ensayos */

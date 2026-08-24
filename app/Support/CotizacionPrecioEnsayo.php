@@ -41,6 +41,37 @@ final class CotizacionPrecioEnsayo
     }
 
     /**
+     * Suma unitaria de analitos que impactan el precio del ensayo.
+     * Excluye parámetros del pack cuando el agrupador tiene precio definido.
+     *
+     * @param  iterable  $componentesDelEnsayo
+     */
+    public static function sumaComponentesUnitariaParaEnsayo(
+        iterable $componentesDelEnsayo,
+        ?float $precioPackEnsayo = null,
+        array $idsParametrosPack = []
+    ): float {
+        $pack = max(0.0, (float) ($precioPackEnsayo ?? 0));
+        $idsPack = array_map('strval', $idsParametrosPack);
+
+        return collect($componentesDelEnsayo)->sum(function ($componente) use ($pack, $idsPack) {
+            if ($componente->de_agrupador ?? false) {
+                return 0.0;
+            }
+            if ($pack > 0 && !empty($idsPack)) {
+                $analisisId = trim((string) ($componente->cotio_codigoprod ?? ''));
+                if ($analisisId !== '' && in_array($analisisId, $idsPack, true)) {
+                    return 0.0;
+                }
+            }
+            $precio = (float) ($componente->cotio_precio ?? 0);
+            $cantidad = (float) ($componente->cotio_cantidad ?? 1);
+
+            return $precio * ($cantidad <= 0 ? 1 : $cantidad);
+        });
+    }
+
+    /**
      * Precio unitario de la línea ensayo (por u.m.) = suma(analitos × cant.) + extra interpretado desde cotio_precio del ensayo.
      *
      * @param  float  $sumaComponentesUnitaria  Σ (precio × cantidad) de filas con cotio_subitem &gt; 0

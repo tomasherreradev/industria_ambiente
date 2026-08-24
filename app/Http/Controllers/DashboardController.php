@@ -18,6 +18,10 @@ use Illuminate\Http\Request;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\MuestrasMuestreoExport;
 use App\Exports\AnalisisExport;
+use App\Models\Matriz;
+use App\Support\OrdenesLaboratorioListado;
+use App\Support\PrioridadListado;
+use App\Support\CotizacionClienteEtiqueta;
 
 class DashboardController extends Controller
 {
@@ -28,7 +32,9 @@ public function index()
 {
     // Resumen general
     $totalCotizaciones = Coti::count();
-    $cotizacionesRecientes = Coti::orderBy('coti_fechaalta', 'desc')->take(5)->get();
+    $cotizacionesRecientes = Coti::with(['cliente', 'sucursal'])
+        ->orderBy('coti_fechaalta', 'desc')->take(5)->get();
+    CotizacionClienteEtiqueta::precargarEmpresasRelacionadas($cotizacionesRecientes);
     
     // Estadísticas de muestreo
     $muestrasTotales = CotioInstancia::where('cotio_subitem', 0)->count();
@@ -62,6 +68,8 @@ public function index()
     // Informes
     $informesTotales = CotioInstancia::where('cotio_subitem', 0)->where('enable_inform', true)->count();
     
+    $modulosAcceso = config('admin_modulos_acceso', []);
+
     return view('dashboard.admin', compact(
         'totalCotizaciones',
         'cotizacionesRecientes',
@@ -75,7 +83,8 @@ public function index()
         'analisisFinalizados',
         'muestrasProximas',
         'vehiculosOcupados',
-        'informesTotales'
+        'informesTotales',
+        'modulosAcceso'
     ));
 }
 
@@ -115,20 +124,13 @@ public function dashboardMuestreo(Request $request)
         'fecha_fin_mes' => $fechaFinMes->format('Y-m-d')
     ]);
 
-    // Base query para muestras
-    // Si el usuario es coordinador_muestreo, puede ver todas las muestras (sin restricción de coordinador_codigo)
+    // Base query para muestras (incluye las ya pasadas a laboratorio/documentación)
     if ($esCoordinadorMuestreo) {
-        $query = CotioInstancia::where('cotio_instancias.cotio_subitem', 0)
-            ->where(function($q) {
-                $q->where('enable_ot', false)->orWhereNull('enable_ot');
-            });
+        $query = CotioInstancia::where('cotio_instancias.cotio_subitem', 0);
         Log::info('[Dashboard Muestreo] Usuario es coordinador_muestreo - sin restricción de coordinador_codigo');
     } else {
         // Para otros usuarios, aplicar restricción de permisos
         $query = CotioInstancia::where('cotio_instancias.cotio_subitem', 0)
-            ->where(function($q) {
-                $q->where('enable_ot', false)->orWhereNull('enable_ot');
-            })
             ->where(function($query) use ($userCodigo) {
                 // Mostrar muestras donde el usuario es coordinador O tiene muestras asignadas
                 $query->where('cotio_instancias.coordinador_codigo', $userCodigo)
@@ -152,9 +154,6 @@ public function dashboardMuestreo(Request $request)
         
         // Verificar cuántas muestras tiene este muestreador asignadas (sin filtro de usuario)
         $totalMuestrasMuestreador = CotioInstancia::where('cotio_instancias.cotio_subitem', 0)
-            ->where(function($q) {
-                $q->where('enable_ot', false)->orWhereNull('enable_ot');
-            })
             ->whereHas('responsablesMuestreo', function($q) use ($muestreadorFiltro) {
                 $q->where('instancia_responsable_muestreo.usu_codigo', $muestreadorFiltro);
             })
@@ -223,10 +222,14 @@ public function dashboardMuestreo(Request $request)
     }
 
     // Obtener muestras con paginación
-    $muestras = $query->with(['cotizacion.cliente.zona', 'vehiculo', 'responsablesMuestreo'])
+    $muestras = $query->with(['cotizacion.cliente', 'cotizacion.sucursal', 'cotizacion.cliente.zona', 'cotizacion.matriz', 'vehiculo', 'responsablesMuestreo'])
         ->orderBy('cotio_instancias.fecha_fin_muestreo')
         ->paginate(10)
         ->appends($request->query());
+
+    CotizacionClienteEtiqueta::precargarEmpresasRelacionadas(
+        $muestras->getCollection()->map->cotizacion->unique(fn ($c) => $c->coti_num)->filter()->values()
+    );
     
     Log::info('[Dashboard Muestreo] Resultado final de la consulta', [
         'total_muestras' => $muestras->total(),
@@ -242,17 +245,20 @@ public function dashboardMuestreo(Request $request)
     ]);
     
     // Función helper para aplicar filtros base a estadísticas
-    $aplicarFiltrosBase = function($query) use ($esDiaUno, $fechaInicioMes, $fechaFinMes) {
-        $query->where('cotio_subitem', 0)
-            ->where(function($q) {
+    $aplicarFiltrosBase = function ($query, bool $incluirPasadasLaboratorio = false) use ($esDiaUno, $fechaInicioMes, $fechaFinMes) {
+        $query->where('cotio_subitem', 0);
+
+        if (! $incluirPasadasLaboratorio) {
+            $query->where(function ($q) {
                 $q->where('enable_ot', false)->orWhereNull('enable_ot');
             });
-        
+        }
+
         // Si es día 1, filtrar por mes
         if ($esDiaUno) {
             $query->whereBetween('fecha_fin_muestreo', [$fechaInicioMes, $fechaFinMes]);
         }
-        
+
         return $query;
     };
     
@@ -270,8 +276,10 @@ public function dashboardMuestreo(Request $request)
         ->where('cotio_estado', 'en revision muestreo')
         ->count();
     
-    $finalizadas = $aplicarFiltrosBase(CotioInstancia::query())
+    // Finalizadas = asignadas en muestreo completado; siguen contando aunque ya pasaron a laboratorio (enable_ot).
+    $finalizadas = $aplicarFiltrosBase(CotioInstancia::query(), true)
         ->where('cotio_estado', 'muestreado')
+        ->whereHas('responsablesMuestreo')
         ->count();
     
     $suspendidas = $aplicarFiltrosBase(CotioInstancia::query())
@@ -414,20 +422,49 @@ public function exportarMuestrasMuestreo(Request $request)
 
 public function dashboardAnalisis(Request $request)
 {
-    $userCodigo = Auth::user()->usu_codigo;
-    $estadoFiltro = $request->get('estado', 'all');
-    $metodoFiltro = $request->get('metodo', '');
+    $metodoFiltro = trim((string) $request->get('metodo', ''));
+    $estadoUi = $request->get('estado', 'all');
+    if ($estadoUi === null || $estadoUi === '') {
+        $estadoUi = 'all';
+    }
 
-    // Obtener métodos disponibles para el filtro (métodos que están siendo usados en análisis activos)
+    $queryParams = collect($request->query())->except('estado')->all();
+    $queryRequest = Request::create($request->url(), 'GET', $queryParams);
+
+    $cotizaciones = OrdenesLaboratorioListado::baseCotiQuery($queryRequest)
+        ->orderBy('coti_num', 'desc')
+        ->get();
+
+    $ordenes = OrdenesLaboratorioListado::construirOrdenesDesdeCotizaciones($cotizaciones);
+    $muestras = OrdenesLaboratorioListado::muestrasDesdeOrdenes($ordenes);
+
+    $analisisAgrupados = $this->agruparAnalisisDashboard($muestras, $metodoFiltro, $estadoUi);
+
+    $requestStats = Request::create(
+        $request->url(),
+        'GET',
+        collect($request->query())->except('estado')->all()
+    );
+    $cotizacionesStats = OrdenesLaboratorioListado::baseCotiQuery($requestStats)->get();
+    $muestrasStats = OrdenesLaboratorioListado::muestrasDesdeOrdenes(
+        OrdenesLaboratorioListado::construirOrdenesDesdeCotizaciones($cotizacionesStats)
+    );
+    $conteos = OrdenesLaboratorioListado::contarAnalisisPorEstado($muestrasStats);
+
+    $pendientesPorCoordinar = $conteos['pendientes_coordinar'];
+    $pendientesDeAnalisis = $conteos['coordinado analisis'];
+    $pendientesDeRevision = $conteos['en revision analisis'];
+    $finalizados = $conteos['analizado'];
+    $anulados = $conteos['anulados'];
+
     $codigosMetodos = CotioInstancia::where('cotio_subitem', '>', 0)
         ->where('active_ot', true)
         ->whereNotNull('cotio_codigometodo_analisis')
+        ->whereIn('cotio_numcoti', $muestras->pluck('cotio_numcoti')->unique()->filter())
         ->distinct()
         ->pluck('cotio_codigometodo_analisis')
+        ->map(fn ($codigo) => trim((string) $codigo))
         ->filter()
-        ->map(function($codigo) {
-            return trim($codigo);
-        })
         ->unique()
         ->values()
         ->toArray();
@@ -436,307 +473,20 @@ public function dashboardAnalisis(Request $request)
         ->orderBy('metodo_descripcion')
         ->get();
 
-    // Verificar si es día 1 del mes para filtrar por mes actual
-    $esDiaUno = now()->day === 1;
-    $fechaInicioMes = now()->startOfMonth();
-    $fechaFinMes = now()->endOfMonth();
+    $analisisProximosAgrupados = $this->agruparAnalisisDashboard($muestrasStats, $metodoFiltro, 'proximos');
 
-    // Primero, obtener las muestras según el filtro
-    $queryMuestras = CotioInstancia::where('cotio_subitem', 0)
-        ->where('enable_ot', true);
-
-    // Aplicar filtro según el estado seleccionado
-    if ($estadoFiltro !== 'all') {
-        if ($estadoFiltro === 'pendientes_coordinar') {
-            // Muestras pendientes por coordinar (sin análisis activos)
-            $queryMuestras->where('active_ot', false);
-        } elseif ($estadoFiltro === 'proximos') {
-            // Próximos 3 días (no aplicar filtro de mes cuando se usa este filtro)
-            $queryMuestras->where('fecha_fin_ot', '>=', now())
-                  ->where('fecha_fin_ot', '<=', now()->addDays(3));
-        } else {
-            // Filtrar por estado de análisis de la muestra
-            $queryMuestras->where('cotio_estado_analisis', $estadoFiltro);
-        }
-    }
-
-    // Siempre filtrar por muestras que finalizan en el mes actual (excepto cuando se usa filtro "proximos")
-    if ($estadoFiltro !== 'proximos') {
-        $queryMuestras->whereBetween('fecha_fin_ot', [$fechaInicioMes, $fechaFinMes]);
-    }
-
-    $muestras = $queryMuestras->with(['cotizacion'])
-        ->get()
-        ->groupBy(fn($m) => $m->cotio_numcoti . '-' . $m->cotio_item . '-' . $m->instance_number);
-
-    // También buscar análisis que tengan fecha_fin_ot en el mes actual
-    // y obtener las muestras relacionadas SOLO si los análisis están en el mes actual
-    if ($estadoFiltro !== 'proximos') {
-        $analisisEnMes = CotioInstancia::where('cotio_subitem', '>', 0)
-            ->where('active_ot', true)
-            ->whereBetween('fecha_fin_ot', [$fechaInicioMes, $fechaFinMes])
-            ->get();
-
-        // Obtener las muestras relacionadas con estos análisis
-        if ($analisisEnMes->isNotEmpty()) {
-            $muestrasDeAnalisisQuery = CotioInstancia::where('cotio_subitem', 0)
-                ->where('enable_ot', true)
-                ->where(function($query) use ($analisisEnMes) {
-                    foreach ($analisisEnMes as $analisis) {
-                        $query->orWhere(function($subQ) use ($analisis) {
-                            $subQ->where('cotio_numcoti', $analisis->cotio_numcoti)
-                                 ->where('cotio_item', $analisis->cotio_item)
-                                 ->where('instance_number', $analisis->instance_number);
-                        });
-                    }
-                })
-                ->with(['cotizacion']);
-
-            // Respetar el filtro de estado aplicado a muestras: si el usuario filtra por un estado
-            // (p.ej. "en revision analisis"), no debemos reinyectar muestras de otros estados.
-            if ($estadoFiltro !== 'all') {
-                if ($estadoFiltro === 'pendientes_coordinar') {
-                    $muestrasDeAnalisisQuery->where('active_ot', false);
-                } else {
-                    $muestrasDeAnalisisQuery->where('cotio_estado_analisis', $estadoFiltro);
-                }
-            }
-
-            $muestrasDeAnalisisEnMes = $muestrasDeAnalisisQuery
-                ->get()
-                ->groupBy(fn($m) => $m->cotio_numcoti . '-' . $m->cotio_item . '-' . $m->instance_number);
-
-            // Combinar muestras encontradas directamente + muestras relacionadas con análisis
-            // Combinar las Collections agrupadas manteniendo la estructura
-            foreach ($muestrasDeAnalisisEnMes as $key => $muestraGroup) {
-                if (!$muestras->has($key)) {
-                    $muestras->put($key, $muestraGroup);
-                }
-            }
-        }
-    }
-
-    // Ahora obtener los análisis relacionados con estas muestras
-    $muestrasIds = collect($muestras->keys())->map(function($key) {
-        $parts = explode('-', $key);
-        return [
-            'cotio_numcoti' => $parts[0],
-            'cotio_item' => $parts[1],
-            'instance_number' => $parts[2]
-        ];
-    });
-
-    $analisis = collect();
-    if ($muestrasIds->isNotEmpty()) {
-        $queryAnalisis = CotioInstancia::where('cotio_subitem', '>', 0)
-            ->where('active_ot', true)
-            ->where(function($q) use ($muestrasIds) {
-                foreach ($muestrasIds as $muestra) {
-                    $q->orWhere(function($subQ) use ($muestra) {
-                        $subQ->where('cotio_numcoti', $muestra['cotio_numcoti'])
-                             ->where('cotio_item', $muestra['cotio_item'])
-                             ->where('instance_number', $muestra['instance_number']);
-                    });
-                }
-            });
-
-        // Siempre filtrar análisis por fecha_fin_ot del mes actual (excepto cuando se usa filtro "proximos")
-        if ($estadoFiltro !== 'proximos') {
-            $queryAnalisis->whereBetween('fecha_fin_ot', [$fechaInicioMes, $fechaFinMes]);
-        }
-
-        // Filtrar por método de análisis si se especifica
-        if (!empty($metodoFiltro)) {
-            $queryAnalisis->where('cotio_codigometodo_analisis', $metodoFiltro);
-        }
-
-        $analisis = $queryAnalisis->with(['cotizacion', 'responsablesAnalisis', 'herramientasLab'])
-            ->get();
-    }
-
-    // Asignar muestras a cada análisis
-    $analisis->each(function($item) use ($muestras) {
-        $muestraKey = $item->cotio_numcoti . '-' . $item->cotio_item . '-' . $item->instance_number;
-        $muestra = $muestras->get($muestraKey)?->first();
-        
-        $item->setRelation('muestra', $muestra);
-        $item->muestra_instance_number = $muestra?->instance_number;
-    });
-    
-    // Agrupar análisis por muestra
-    $analisisAgrupados = $analisis->groupBy(function($item) {
-        return $item->cotio_numcoti . '-' . $item->cotio_item . '-' . $item->muestra_instance_number;
-    });
-
-    // Agregar muestras que no tienen análisis activos
-    // Solo si NO estamos filtrando por fecha del mes (es decir, cuando se usa filtro 'proximos')
-    // y NO estamos filtrando por método (porque si filtramos por método, solo queremos muestras con análisis de ese método)
-    // porque si estamos filtrando por mes, solo queremos mostrar muestras con análisis en ese mes
-    if ($estadoFiltro === 'proximos' && empty($metodoFiltro)) {
-        foreach ($muestras as $key => $muestraGroup) {
-            if (!$analisisAgrupados->has($key)) {
-                $muestra = $muestraGroup->first();
-                // Crear un análisis ficticio para mantener la estructura
-                $analisisFicticio = new CotioInstancia();
-                $analisisFicticio->setRelation('muestra', $muestra);
-                $analisisFicticio->cotio_numcoti = $muestra->cotio_numcoti;
-                $analisisFicticio->cotio_item = $muestra->cotio_item;
-                $analisisFicticio->instance_number = $muestra->instance_number;
-                $analisisFicticio->muestra_instance_number = $muestra->instance_number;
-                $analisisAgrupados->put($key, collect([$analisisFicticio]));
-            }
-        }
-    }
-
-    // Ordenar grupos según prioridad y estado
-    $analisisAgrupados = $analisisAgrupados->sortBy(function($grupo, $key) {
-        $primerAnalisis = $grupo->first();
-        $muestra = $primerAnalisis->muestra;
-        
-        if (!$muestra) {
-            return 9999; // Sin muestra va al final
-        }
-        
-        $estado = $muestra->cotio_estado_analisis ?? 'pendiente_coordinar';
-        $esPriori = $muestra->es_priori ?? false;
-        
-        // Si está analizado, siempre va al final (independientemente de prioridad)
-        if ($estado === 'analizado') {
-            return 500; // Todas las analizadas al final
-        }
-        
-        // Orden de prioridad (solo para no analizadas)
-        if ($esPriori) {
-            return 100; // Prioridad va primero
-        }
-        
-        // Orden por estado (solo para no analizadas y no prioritarias)
-        switch ($estado) {
-            case 'pendiente_coordinar':
-            case null:
-                return 200; // Pendientes por coordinar - segundo lugar (después de prioritarias)
-            case 'en revision analisis':
-                return 300; // En revisión (turquesas) - tercer lugar
-            case 'coordinado analisis':
-                return 400; // Coordinadas (amarillas) - cuarto lugar
-            default:
-                return 600;
-        }
-    });
-    
-    
-    // Función helper para aplicar filtros base a estadísticas
-    $aplicarFiltrosBase = function($query) use ($esDiaUno, $fechaInicioMes, $fechaFinMes) {
-        $query->where('cotio_subitem', 0)
-            ->where('enable_ot', true);
-        
-        if ($esDiaUno) {
-            $query->whereBetween('fecha_fin_ot', [$fechaInicioMes, $fechaFinMes]);
-        }
-    };
-
-    // Estadísticas basadas en las muestras (cotio_subitem = 0)
-    $queryPendientesPorCoordinar = CotioInstancia::query();
-    $aplicarFiltrosBase($queryPendientesPorCoordinar);
-    $pendientesPorCoordinar = $queryPendientesPorCoordinar->where('active_ot', false)->count();
-    
-    $queryPendientesDeAnalisis = CotioInstancia::query();
-    $aplicarFiltrosBase($queryPendientesDeAnalisis);
-    $pendientesDeAnalisis = $queryPendientesDeAnalisis->where('cotio_estado_analisis', 'coordinado analisis')->count();
-    
-    $queryPendientesDeRevision = CotioInstancia::query();
-    $aplicarFiltrosBase($queryPendientesDeRevision);
-    $pendientesDeRevision = $queryPendientesDeRevision->where('cotio_estado_analisis', 'en revision analisis')->count();
-    
-    $queryFinalizados = CotioInstancia::query();
-    $aplicarFiltrosBase($queryFinalizados);
-    $finalizados = $queryFinalizados->where('cotio_estado_analisis', 'analizado')->count();
-
-    $queryAnulados = CotioInstancia::query();
-    $aplicarFiltrosBase($queryAnulados);
-    $anulados = $queryAnulados->where('time_annulled', '>', 0)->count();
-
-    // Análisis próximos a vencer (basado en muestras)
-    $muestrasProximas = CotioInstancia::where('cotio_subitem', 0)
-        ->where('enable_ot', true)
-        ->where('fecha_fin_ot', '>=', now())
-        ->where('fecha_fin_ot', '<=', now()->addDays(3))
-        ->where(function($query) use ($userCodigo) {
-            $query->where('coordinador_codigo', $userCodigo)
-                ->orWhereHas('responsablesAnalisis', function($q) use ($userCodigo) {
-                    $q->where('instancia_responsable_analisis.usu_codigo', $userCodigo);
-                });
-        })
-        ->with(['cotizacion'])
-        ->orderBy('fecha_fin_ot')
-        ->get();
-
-    // Obtener análisis relacionados con estas muestras próximas
-    $analisisProximos = collect();
-    if ($muestrasProximas->isNotEmpty()) {
-        $queryAnalisisProximos = CotioInstancia::where('cotio_subitem', '>', 0)
-            ->where('active_ot', true)
-            ->where(function($q) use ($muestrasProximas) {
-                foreach ($muestrasProximas as $muestra) {
-                    $q->orWhere(function($subQ) use ($muestra) {
-                        $subQ->where('cotio_numcoti', $muestra->cotio_numcoti)
-                             ->where('cotio_item', $muestra->cotio_item)
-                             ->where('instance_number', $muestra->instance_number);
-                    });
-                }
-            });
-
-        // Filtrar por método de análisis si se especifica
-        if (!empty($metodoFiltro)) {
-            $queryAnalisisProximos->where('cotio_codigometodo_analisis', $metodoFiltro);
-        }
-
-        $analisisProximos = $queryAnalisisProximos->with(['cotizacion', 'responsablesAnalisis'])
-            ->get();
-    }
-
-    // Asignar muestras a cada análisis próximo
-    $analisisProximos->each(function($item) use ($muestrasProximas) {
-        $muestra = $muestrasProximas->where('cotio_numcoti', $item->cotio_numcoti)
-                                   ->where('cotio_item', $item->cotio_item)
-                                   ->where('instance_number', $item->instance_number)
-                                   ->first();
-        $item->setRelation('muestra', $muestra);
-    });
-
-    // Agrupar análisis próximos por muestra
-    $analisisProximosAgrupados = $analisisProximos->groupBy(function($item) {
-        return $item->cotio_numcoti . '-' . $item->cotio_item . '-' . $item->instance_number;
-    });
-
-    // Agregar muestras sin análisis activos a los próximos
-    // Solo si NO estamos filtrando por método (porque si filtramos por método, solo queremos muestras con análisis de ese método)
-    if (empty($metodoFiltro)) {
-        foreach ($muestrasProximas as $muestra) {
-            $key = $muestra->cotio_numcoti . '-' . $muestra->cotio_item . '-' . $muestra->instance_number;
-            if (!$analisisProximosAgrupados->has($key)) {
-                $analisisFicticio = new CotioInstancia();
-                $analisisFicticio->setRelation('muestra', $muestra);
-                $analisisFicticio->cotio_numcoti = $muestra->cotio_numcoti;
-                $analisisFicticio->cotio_item = $muestra->cotio_item;
-                $analisisFicticio->instance_number = $muestra->instance_number;
-                $analisisFicticio->fecha_fin = $muestra->fecha_fin_ot;
-                $analisisProximosAgrupados->put($key, collect([$analisisFicticio]));
-            }
-        }
-    }
-    
-    // Herramientas de laboratorio en uso
-    $herramientasEnUso = InventarioLab::whereHas('cotioInstancias', function($q) {
+    $herramientasEnUso = InventarioLab::whereHas('cotioInstancias', function ($q) {
         $q->where('cotio_instancias.cotio_subitem', '>', 0)
-          ->where('cotio_instancias.enable_ot', true)
-          ->where('cotio_instancias.cotio_estado', '!=', 'finalizado');
-    })->withCount(['cotioInstancias' => function($q) {
+            ->where('cotio_instancias.active_ot', true)
+            ->where('cotio_instancias.cotio_estado', '!=', 'finalizado');
+    })->withCount(['cotioInstancias' => function ($q) {
         $q->where('cotio_instancias.cotio_subitem', '>', 0)
-          ->where('cotio_instancias.enable_ot', true)
-          ->where('cotio_instancias.cotio_estado', '!=', 'finalizado');
+            ->where('cotio_instancias.active_ot', true)
+            ->where('cotio_instancias.cotio_estado', '!=', 'finalizado');
     }])->get();
-    
+
+    $estadoFiltro = $estadoUi;
+
     return view('dashboard.analisis', compact(
         'analisisAgrupados',
         'pendientesPorCoordinar',
@@ -749,8 +499,152 @@ public function dashboardAnalisis(Request $request)
         'estadoFiltro',
         'metodoFiltro',
         'metodosDisponibles',
-        'esDiaUno'
+        'request'
     ));
+}
+
+/**
+ * @param  \Illuminate\Support\Collection<int, CotioInstancia>  $muestras
+ */
+private function agruparAnalisisDashboard($muestras, ?string $metodoFiltro = '', ?string $estadoUi = 'all'): \Illuminate\Support\Collection
+{
+    if ($muestras->isEmpty()) {
+        return collect();
+    }
+
+    $estadoUi = $estadoUi ?? 'all';
+
+    if ($estadoUi === 'pendientes_coordinar') {
+        return $this->agruparMuestrasPendientesCoordinarDashboard($muestras, $metodoFiltro);
+    }
+
+    $queryAnalisis = CotioInstancia::where('cotio_subitem', '>', 0)
+        ->where('active_ot', true)
+        ->where(function ($q) use ($muestras) {
+            foreach ($muestras as $muestra) {
+                $q->orWhere(function ($subQ) use ($muestra) {
+                    $subQ->where('cotio_numcoti', $muestra->cotio_numcoti)
+                        ->where('cotio_item', $muestra->cotio_item)
+                        ->where('instance_number', $muestra->instance_number);
+                });
+            }
+        });
+
+    if ($metodoFiltro !== '') {
+        $queryAnalisis->where('cotio_codigometodo_analisis', $metodoFiltro);
+    }
+
+    if (! in_array($estadoUi, ['all', '', null], true)) {
+        if ($estadoUi === 'proximos') {
+            $queryAnalisis->where('fecha_fin_ot', '>=', now())
+                ->where('fecha_fin_ot', '<=', now()->addDays(3));
+        } else {
+            $queryAnalisis->where('cotio_estado_analisis', $estadoUi);
+        }
+    }
+
+    $analisis = $queryAnalisis
+        ->with(['cotizacion', 'responsablesAnalisis', 'herramientasLab'])
+        ->get();
+
+    $muestrasPorClave = $muestras->keyBy(function ($m) {
+        return $m->cotio_numcoti.'-'.$m->cotio_item.'-'.$m->instance_number;
+    });
+
+    $analisis->each(function ($item) use ($muestrasPorClave) {
+        $muestraKey = $item->cotio_numcoti.'-'.$item->cotio_item.'-'.$item->instance_number;
+        $muestra = $muestrasPorClave->get($muestraKey);
+        $item->setRelation('muestra', $muestra);
+        $item->muestra_instance_number = $muestra?->instance_number;
+    });
+
+    $analisisAgrupados = $analisis->groupBy(function ($item) {
+        return $item->cotio_numcoti.'-'.$item->cotio_item.'-'.$item->muestra_instance_number;
+    });
+
+    if (in_array($estadoUi, ['all', '', null], true) && $metodoFiltro === '') {
+        $pendientesCoordinar = $this->agruparMuestrasPendientesCoordinarDashboard($muestras, '');
+
+        foreach ($pendientesCoordinar as $key => $grupo) {
+            if (! $analisisAgrupados->has($key)) {
+                $analisisAgrupados->put($key, $grupo);
+            }
+        }
+    }
+
+    return $this->ordenarGruposAnalisisDashboard($analisisAgrupados);
+}
+
+/**
+ * @param  \Illuminate\Support\Collection<int, CotioInstancia>  $muestras
+ */
+private function agruparMuestrasPendientesCoordinarDashboard($muestras, ?string $metodoFiltro = ''): \Illuminate\Support\Collection
+{
+    if ($metodoFiltro !== '') {
+        return collect();
+    }
+
+    $muestrasConAnalisisActivos = CotioInstancia::query()
+        ->where('cotio_subitem', '>', 0)
+        ->where('active_ot', true)
+        ->where(function ($q) use ($muestras) {
+            foreach ($muestras as $muestra) {
+                $q->orWhere(function ($subQ) use ($muestra) {
+                    $subQ->where('cotio_numcoti', $muestra->cotio_numcoti)
+                        ->where('cotio_item', $muestra->cotio_item)
+                        ->where('instance_number', $muestra->instance_number);
+                });
+            }
+        })
+        ->get(['cotio_numcoti', 'cotio_item', 'instance_number'])
+        ->groupBy(fn ($a) => $a->cotio_numcoti.'-'.$a->cotio_item.'-'.$a->instance_number);
+
+    $analisisAgrupados = collect();
+
+    foreach ($muestras as $muestra) {
+        if (! ($muestra->enable_ot ?? false)) {
+            continue;
+        }
+
+        $key = $muestra->cotio_numcoti.'-'.$muestra->cotio_item.'-'.$muestra->instance_number;
+
+        if (($muestra->active_ot ?? false) && $muestrasConAnalisisActivos->has($key)) {
+            continue;
+        }
+
+        $analisisFicticio = new CotioInstancia();
+        $analisisFicticio->setRelation('muestra', $muestra);
+        $analisisFicticio->cotio_numcoti = $muestra->cotio_numcoti;
+        $analisisFicticio->cotio_item = $muestra->cotio_item;
+        $analisisFicticio->instance_number = $muestra->instance_number;
+        $analisisFicticio->muestra_instance_number = $muestra->instance_number;
+        $analisisAgrupados->put($key, collect([$analisisFicticio]));
+    }
+
+    return $this->ordenarGruposAnalisisDashboard($analisisAgrupados);
+}
+
+private function ordenarGruposAnalisisDashboard(\Illuminate\Support\Collection $analisisAgrupados): \Illuminate\Support\Collection
+{
+    return $analisisAgrupados->sortBy(function ($grupo) {
+        $primerAnalisis = $grupo->first();
+        $muestra = $primerAnalisis?->muestra;
+
+        if (! $primerAnalisis?->id) {
+            return PrioridadListado::valorOrdenGrupo((bool) ($muestra->es_priori ?? false), 10);
+        }
+
+        $estado = $primerAnalisis->cotio_estado_analisis ?? 'pendiente_coordinar';
+
+        if ($estado === 'analizado') {
+            return PrioridadListado::valorOrdenGrupo((bool) ($muestra->es_priori ?? false), 500);
+        }
+
+        return PrioridadListado::valorOrdenGrupo(
+            (bool) ($muestra->es_priori ?? false),
+            OrdenesLaboratorioListado::pesoEstadoOrden($estado)
+        );
+    });
 }
 
 public function exportarAnalisis(Request $request)
@@ -800,7 +694,7 @@ public function debugAnalisis(Request $request)
 
     if ($estadoFiltro !== 'all') {
         if ($estadoFiltro === 'pendientes_coordinar') {
-            $queryMuestras->where('active_ot', false);
+            $queryMuestras->whereNull('cotio_estado_analisis');
         } else {
             $queryMuestras->where('cotio_estado_analisis', $estadoFiltro);
         }
