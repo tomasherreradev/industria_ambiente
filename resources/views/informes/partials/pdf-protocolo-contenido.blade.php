@@ -62,7 +62,7 @@
             @foreach($analisis as $item)
                 @php
                     $met = trim((string) ($item->cotio_codigometodo_analisis ?? $item->cotio_codigometodo ?? ''));
-                    $fechaAnalisis = $item->analista_fecha_fin ?? $item->fecha_fin_ot ?? $item->analista_fecha_inicio ?? $item->fecha_inicio_ot ?? $item->fecha_carga_ot ?? $item->fecha_carga_resultado_3 ?? $item->fecha_carga_resultado_2 ?? $item->fecha_carga_resultado_1 ?? null;
+                    $fechaAnalisisTexto = \App\Support\FechaAnalisisInformePdf::textoColumnaPdf($item);
                     $unidad = trim((string) ($item->cotio_codigoum ?? ''));
 
                     $descNorm = $normalizeStr($item->cotio_descripcion);
@@ -75,11 +75,6 @@
                     }
 
                     $metDesc = $met !== '' ? (trim((string) optional($metodosByCodigo->get($met))->metodo_descripcion) ?: $met) : '—';
-                    $mFi = $item->analista_fecha_inicio ?? null;
-                    $manualRangoAnalisis = null;
-                    if ($mFi) {
-                        $manualRangoAnalisis = \Carbon\Carbon::parse($mFi)->format('d/m/Y');
-                    }
 
                     $variableLimite = \App\Support\ValorLimiteLeyNormativa::variableParaAnalisis(
                         $item,
@@ -91,13 +86,7 @@
                 <tr>
                     <td>{{ $item->cotio_descripcion ?? '—' }}</td>
                     <td class="center">{{ $metDesc }}</td>
-                    <td class="center">
-                        @if($manualRangoAnalisis)
-                            {{ $manualRangoAnalisis }}
-                        @else
-                            —
-                        @endif
-                    </td>
+                    <td class="center">{{ $fechaAnalisisTexto }}</td>
                     <td class="right"><strong>{{ $res !== '' ? $res : '—' }}</strong></td>
                     <td class="center">{{ $unidad !== '' ? $unidad : '—' }}</td>
                     <td class="center">{{ $limiteTexto }}</td>

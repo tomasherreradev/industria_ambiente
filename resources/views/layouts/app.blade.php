@@ -453,11 +453,7 @@
                             <li>
 
 
-                                @if($notificacion->url)
-                                    <a href="{{ $notificacion->url }}" class="dropdown-item py-2 {{ $notificacion->leida ? '' : 'bg-light' }}">
-                                @else
-                                    <span class="dropdown-item py-2 {{ $notificacion->leida ? '' : 'bg-light' }}">
-                                @endif
+                                <a href="{{ route('notificaciones.show', $notificacion->id) }}" class="dropdown-item py-2 {{ $notificacion->leida ? '' : 'bg-light' }}">
                                         <div class="d-flex gap-2">
                                             <div class="flex-shrink-0 text-primary">
                                                 <x-heroicon-o-bell style="width: 16px; height: 16px;" />
@@ -467,16 +463,12 @@
                                                     data-bs-toggle="tooltip"
                                                     data-bs-placement="bottom"
                                                     title="{{ $notificacion->mensaje }}">
-                                                    {{ $notificacion->mensaje }}
+                                                    {{ $notificacion->resumenCorto() }}
                                                 </p>
                                                 <small class="text-muted">{{ $notificacion->created_at->diffForHumans() }}</small>
                                             </div>
                                         </div>
-                                @if($notificacion->url)
-                                    </a>
-                                @else
-                                    </span>
-                                @endif
+                                </a>
                             </li>
                             @empty
                             <li class="text-center py-2 text-muted">
@@ -985,11 +977,7 @@
                     <li>
 
 
-                        @if($notificacion->url)
-                            <a href="{{ $notificacion->url }}" class="dropdown-item py-2 {{ $notificacion->leida ? '' : 'bg-light' }}">
-                        @else
-                            <span class="dropdown-item py-2 {{ $notificacion->leida ? '' : 'bg-light' }}">
-                        @endif
+                        <a href="{{ route('notificaciones.show', $notificacion->id) }}" class="dropdown-item py-2 {{ $notificacion->leida ? '' : 'bg-light' }}">
 
                             <div class="d-flex gap-2">
                                 <div class="flex-shrink-0 text-primary">
@@ -1001,17 +989,13 @@
                                     data-bs-toggle="tooltip" 
                                     data-bs-placement="bottom" 
                                     title="{{ $notificacion->mensaje }}">
-                                        {{ $notificacion->mensaje }}
+                                        {{ $notificacion->resumenCorto() }}
                                     </p>
                                     <small class="text-muted">{{ $notificacion->created_at->diffForHumans() }}</small>
                                 </div>
                             </div>
 
-                        @if($notificacion->url)
-                            </a>
-                        @else
-                            </span>
-                        @endif
+                        </a>
                     </li>
 
                     @empty

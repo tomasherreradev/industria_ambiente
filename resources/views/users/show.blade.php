@@ -18,50 +18,50 @@
         'asp' => 'ASP',
         'clarke_fire' => 'Clarke Fire',
         'cliente' => 'Usuario Cliente',
+        'cadena_custodia' => 'Cadena de custodia',
     ];
 @endphp
 
 @section('content')
-<div class="container py-4">
+@include('partials.ucrud-styles')
+
+<div class="container py-4 ucrud ucrud-perfil" data-ucrud-root>
     @php
         $puedeEditarUsuarios = $puedeEditarUsuarios ?? false;
         $puedeEliminarUsuarios = $puedeEliminarUsuarios ?? false;
     @endphp
-    <h1 class="mb-4">Editando: {{ $usuario->usu_descripcion }}</h1>
 
-    <div class="row">
-        <div class="col-lg-8">
-            @if(session('success'))
-                <div class="alert alert-success alert-dismissible fade show" role="alert">
-                    {{ session('success') }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
-                </div>
-            @endif
-            @if(session('error'))
-                <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                    {{ session('error') }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
-                </div>
-            @endif
+    @include('partials.ucrud-form-header', [
+        'title' => 'Editar usuario',
+        'subtitle' => $usuario->usu_descripcion . ' · ' . $usuario->usu_codigo,
+        'backUrl' => route('users.showUsers'),
+        'backLabel' => 'Volver al listado',
+    ])
 
-            @if($errors->any())
-                <div class="alert alert-danger">
-                    <ul class="mb-0">
-                        @foreach($errors->all() as $e)
-                            <li>{{ $e }}</li>
-                        @endforeach
-                    </ul>
-                </div>
-            @endif
+    @if(session('success'))
+        <div class="ucrud-alert ucrud-alert--success mb-3" role="status">
+            <x-heroicon-o-check-circle style="width: 18px; height: 18px;" />
+            <span>{{ session('success') }}</span>
+        </div>
+    @endif
+    @if(session('error'))
+        <div class="ucrud-alert ucrud-alert--danger mb-3" role="alert">
+            <span>{{ session('error') }}</span>
+        </div>
+    @endif
 
-            <div class="card shadow-sm border-0">
-                <div class="card-header bg-dark text-white">
-                    <strong>Formulario de edición</strong>
-                    {{-- @if($esAdmin)
-                        <span class="badge bg-warning text-dark ms-2">Administración</span>
-                    @endif --}}
-                </div>
-                <div class="card-body">
+    @if($errors->any())
+        <div class="ucrud-alert ucrud-alert--danger mb-3" role="alert">
+            <ul class="mb-0 ps-3">
+                @foreach($errors->all() as $e)
+                    <li>{{ $e }}</li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+
+    <div class="ucrud-panel">
+        <div class="ucrud-form">
                     <form id="form-editar-usuario" action="{{ url('/users/' . $usuario->usu_codigo) }}" method="POST" novalidate>
                         @csrf
                         @method('PUT')
@@ -192,6 +192,17 @@
                                 <label for="admin_lab" class="form-check-label">Administrador de laboratorio</label>
                                 <div class="form-text">Puede ver quién aprobó los informes en órdenes de trabajo.</div>
                             </div>
+                            <div class="form-check mt-2">
+                                <input type="checkbox"
+                                       name="puede_gestionar_ordenes"
+                                       id="puede_gestionar_ordenes"
+                                       class="form-check-input"
+                                       value="1"
+                                       @checked((bool) old('puede_gestionar_ordenes', $usuario->puede_gestionar_ordenes ?? false))
+                                       @disabled(!$puedeEditarUsuarios)>
+                                <label for="puede_gestionar_ordenes" class="form-check-label">Puede gestionar órdenes</label>
+                                <div class="form-text">Permite asignar y modificar órdenes de trabajo (analistas, sectores, fechas).</div>
+                            </div>
                         </div>
 
                         <div class="mb-3"
@@ -267,14 +278,14 @@
                             <div class="form-text">Mantené presionado Ctrl (o Cmd en Mac) para seleccionar más de un sector.</div>
                         </div>
 
-                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                            <a href="{{ url('/users') }}" class="btn btn-secondary">← Volver al listado</a>
-                            <div class="d-flex gap-2">
-                                @if($puedeEliminarUsuarios && trim((string) Auth::user()->usu_codigo) !== trim((string) $usuario->usu_codigo))
-                                    <button type="submit" form="form-eliminar-usuario" class="btn btn-outline-danger">Eliminar usuario</button>
-                                @endif
+                        <div class="ucrud-form__actions">
+                            @if($puedeEliminarUsuarios && trim((string) Auth::user()->usu_codigo) !== trim((string) $usuario->usu_codigo))
+                                <button type="submit" form="form-eliminar-usuario" class="ucrud-btn ucrud-btn--ghost text-danger">Eliminar usuario</button>
+                            @endif
+                            <div class="ms-auto d-flex flex-wrap gap-2">
+                                <a href="{{ route('users.showUsers') }}" class="ucrud-btn ucrud-btn--ghost">Cancelar</a>
                                 @if($puedeEditarUsuarios)
-                                    <button type="submit" class="btn btn-primary">Guardar cambios</button>
+                                    <button type="submit" class="ucrud-btn ucrud-btn--primary">Guardar cambios</button>
                                 @endif
                             </div>
                         </div>
@@ -291,8 +302,6 @@
                             @method('DELETE')
                         </form>
                     @endif
-                </div>
-            </div>
         </div>
     </div>
 </div>
@@ -308,6 +317,7 @@
         const wrapperSectoresMultiples = document.getElementById('wrapper_sectores_multiples');
         const wrapperAdminLab = document.getElementById('wrapper_admin_lab');
         const adminLabCheckbox = document.getElementById('admin_lab');
+        const puedeGestionarOrdenesCheckbox = document.getElementById('puede_gestionar_ordenes');
         const wrapperBandejaSoloInformes = document.getElementById('wrapper_bandeja_solo_informes');
         const bandejaSoloInformesCheckbox = document.getElementById('bandeja_solo_informes');
 
@@ -352,6 +362,7 @@
             } else {
                 wrapperAdminLab.style.display = 'none';
                 if (adminLabCheckbox) adminLabCheckbox.checked = false;
+                if (puedeGestionarOrdenesCheckbox) puedeGestionarOrdenesCheckbox.checked = false;
             }
         }
 

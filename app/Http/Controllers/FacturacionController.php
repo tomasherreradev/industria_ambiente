@@ -68,34 +68,27 @@ public function index(Request $request)
 
     $facturas = $query->paginate(20);
 
-    // Obtener estadísticas base
+    // Estadísticas (siempre independientes — no se mezclan al cambiar de vista)
     $totalFacturas = Factura::count();
     $montoTotalFacturas = Factura::sum('monto_total');
     $facturasPendientes = CotioInstancia::where('facturado', false)->where('enable_inform', true)->where('cotio_subitem', 0)->count();
     $facturasFacturadas = CotioInstancia::where('facturado', true)->where('enable_inform', true)->where('cotio_subitem', 0)->count();
-    
-    // Calcular monto de pendientes usando el mismo método que en facturar
     $montoPendientes = $this->calcularMontoPendientes();
-    
-    // Determinar monto a mostrar según el filtro tipo
-    $tipoFiltro = $request->get('tipo_filtro', 'total'); // 'total', 'pendientes'
-    $montoMostrar = $montoTotalFacturas; // Por defecto mostrar total de facturas
-    
-    if ($tipoFiltro == 'pendientes') {
-        $montoMostrar = $montoPendientes;
-    }
 
-    // Obtener estadísticas
+    // Vista activa: pendientes | facturas (compatibilidad con tipo_filtro legacy)
+    $vista = $request->get('vista');
+    if (!$vista && $request->get('tipo_filtro') === 'pendientes') {
+        $vista = 'pendientes';
+    }
+    $vista = in_array($vista, ['pendientes', 'facturas'], true) ? $vista : 'pendientes';
+
     $estadisticas = [
         'total_facturas' => $totalFacturas,
-        'monto_total' => $montoMostrar,
-        'monto_total_facturas' => $montoTotalFacturas,
-        'monto_pendientes' => $montoPendientes,
         'facturas_pendientes' => $facturasPendientes,
         'facturas_facturadas' => $facturasFacturadas,
+        'monto_facturado' => $montoTotalFacturas,
+        'monto_por_facturar' => $montoPendientes,
     ];
-
-
     $baseQuery = CotioInstancia::with([
         'cotizacion.matriz',
         'cotizacion.cliente',
@@ -110,19 +103,23 @@ public function index(Request $request)
     ->where('facturado', false)
     ->where('cotio_subitem', 0);
 
+    if ($request->filled('cotizacion')) {
+        $baseQuery->where('cotio_numcoti', $request->cotizacion);
+    }
+
     // Vista de lista o documento
-    $pagination = $baseQuery
+    $muestrasPagination = $baseQuery
         ->orderBy('cotio_numcoti', $request->get('orden_cotizacion', 'desc'))
         ->orderBy('cotio_item', 'asc')
         ->orderBy('instance_number', 'asc')
         ->paginate(20);
 
     CotizacionClienteEtiqueta::precargarEmpresasRelacionadas(
-        $pagination->getCollection()->map->cotizacion->unique(fn ($c) => $c->coti_num)->filter()->values()
+        $muestrasPagination->getCollection()->map->cotizacion->unique(fn ($c) => $c->coti_num)->filter()->values()
     );
 
     // Agrupar por cotización
-    $informesPorCotizacion = $pagination->groupBy('cotio_numcoti')->map(function ($group) {
+    $informesPorCotizacion = $muestrasPagination->getCollection()->groupBy('cotio_numcoti')->map(function ($group) {
         $cotizacion = $group->first()->cotizacion;
         
         return [
@@ -135,7 +132,14 @@ public function index(Request $request)
 
 
 
-    return view('facturacion.index', compact('facturas', 'estadisticas', 'request', 'informesPorCotizacion'));
+    return view('facturacion.index', compact(
+        'facturas',
+        'estadisticas',
+        'request',
+        'informesPorCotizacion',
+        'muestrasPagination',
+        'vista'
+    ));
 }
 
 
@@ -2449,6 +2453,7 @@ protected function resolverRutaPdfFactura(Factura $factura): string
         $empresaLogoHtml = $this->buildFacturaLogoImgHtml();
         $qrCodeHtml = $this->buildFacturaQrImgHtml($factura->qr_code ?? null);
         $afipLogoHtml = $this->buildFacturaAfipLogoImgHtml();
+        $destinatarioBlock = $this->buildDestinatarioFacturaBlockHtml($cot);
 
         // Reemplazar placeholders
         $replacements = [
@@ -2502,6 +2507,7 @@ protected function resolverRutaPdfFactura(Factura $factura): string
             '{{empresa_logo_html}}' => $empresaLogoHtml,
             '{{qr_code_html}}' => $qrCodeHtml,
             '{{afip_logo_html}}' => $afipLogoHtml,
+            '{{destinatario_block}}' => $destinatarioBlock,
             '{{observaciones_block}}' => !empty($factura->observaciones) 
                 ? '<div style="margin-top: 15px; padding: 10px; border: 1px solid #000; font-size: 9.5px;"><strong>Notas:</strong><br>' . nl2br(htmlspecialchars($factura->observaciones)) . '</div>'
                 : '',
@@ -2590,6 +2596,39 @@ protected function resolverRutaPdfFactura(Factura $factura): string
         return $filePath;
 }
 
+/**
+ * Bloque HTML del destinatario operativo (sucursal / empresa relacionada) en el PDF de factura.
+ */
+private function buildDestinatarioFacturaBlockHtml(?\App\Models\Coti $cot): string
+{
+    if (!$cot) {
+        return '';
+    }
+
+    $dest = CotizacionClienteEtiqueta::destinatarioResumen($cot);
+    $nombre = trim((string) ($dest['nombre'] ?? ''));
+    if ($nombre === '' || $nombre === '—') {
+        $nombre = 'N/A';
+    }
+    $nombre = htmlspecialchars($nombre, ENT_QUOTES, 'UTF-8');
+
+    $estabHtml = '';
+    $estab = trim((string) ($dest['establecimiento'] ?? ''));
+    if ($estab !== '') {
+        $estabHtml = '<tr><td colspan="2"><span class="lbl">Establecimiento:</span> '
+            . htmlspecialchars($estab, ENT_QUOTES, 'UTF-8') . '</td></tr>';
+    }
+
+    $dir = trim((string) ($dest['direccion'] ?? ''));
+    $dirHtml = htmlspecialchars($dir !== '' ? $dir : 'N/A', ENT_QUOTES, 'UTF-8');
+
+    return '<div class="cliente-wrap destinatario-wrap">'
+        . '<table>'
+        . '<tr><td colspan="2"><span class="lbl">Destinatario del trabajo:</span> ' . $nombre . '</td></tr>'
+        . $estabHtml
+        . '<tr><td colspan="2">' . $dirHtml . '</td></tr>'
+        . '</table></div>';
+}
 
 /**
  * Logo en base64 para el PDF (DomPDF / CreatePDF no resuelven bien rutas locales).

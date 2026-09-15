@@ -63,6 +63,10 @@
         }
         .cliente-wrap table { width: 100%; border-collapse: collapse; }
         .cliente-wrap td { padding: 0.02in 0.03in 0.03in 0; vertical-align: top; }
+        .destinatario-wrap {
+            border-top: none;
+            background: #f9f9f9;
+        }
         .cli-cod { float: right; font-weight: normal; }
         .lbl { font-weight: bold; }
         .bar-venta {
@@ -190,6 +194,8 @@
                 </tr>
             </table>
         </div>
+
+        {{destinatario_block}}
 
         <table class="layout bar-venta">
             <tr>

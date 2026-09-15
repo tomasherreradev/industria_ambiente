@@ -1,3 +1,4 @@
+<div class="op-documento">
 @once
     @if($muestras->contains(fn($c) => !empty($c->coti_cuotas)))
         <p class="small text-muted mb-2 d-flex align-items-center flex-wrap gap-2">
@@ -33,7 +34,7 @@
         })->count();
 @endphp
 
-<div class="card mb-2 shadow-sm documento-card
+<div class="card mb-2 op-documento-card documento-card
     @if($coti->has_suspension) border-start border-danger border-3
     @elseif($coti->has_priority) border-start border-warning border-3
     @elseif(! empty($coti->coti_cuotas)) border-start border-info border-3
@@ -90,7 +91,7 @@
                 <a href="{{ url('/cotizaciones/'.$coti->coti_num) }}" class="btn btn-outline-secondary btn-xs" title="Detalles">
                     <x-heroicon-o-document-magnifying-glass style="width: 14px; height: 14px;" />
                 </a>
-                <a href="https://www.google.com/maps/search/?api=1&query={{ urlencode($coti->coti_direccioncli.', '.$coti->coti_localidad) }}" 
+                <a href="https://www.google.com/maps/search/?api=1&query={{ urlencode(\App\Support\CotizacionClienteEtiqueta::direccionDestinatarioMapsQuery($coti)) }}" 
                    target="_blank" class="btn btn-outline-info btn-xs" title="Mapa">
                     <x-heroicon-o-map style="width: 14px; height: 14px;" />
                 </a>
@@ -127,7 +128,7 @@
                 
                 <div class="col-12 col-md-6">
                     <strong class="text-muted">Dirección:</strong> 
-                    {{ $coti->coti_direccioncli }}, {{ $coti->coti_localidad }}
+                    {{ \App\Support\CotizacionClienteEtiqueta::direccionDestinatarioTexto($coti) ?: '—' }}
                 </div>
                 @if($coti->coti_observaciones)
                     <div class="col-12 col-md-6">
@@ -172,49 +173,11 @@
     </div>
 </div>
 @endforeach
-
-<div class="d-flex justify-content-center mt-3">
-    {{ $muestras->links() }}
 </div>
 
-@push('styles')
-<style>
-    .documento-card {
-        transition: transform 0.15s, box-shadow 0.15s;
-    }
-    .documento-card:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 2px 8px rgba(0,0,0,0.12) !important;
-    }
-    .chevron-icon {
-        transition: transform 0.2s ease;
-    }
-    .chevron-icon.rotated {
-        transform: rotate(180deg);
-    }
-    .badge-sm {
-        font-size: 0.7rem;
-        padding: 0.2em 0.5em;
-    }
-    .btn-xs {
-        padding: 0.2rem 0.4rem;
-        font-size: 0.75rem;
-    }
-    .progress {
-        background-color: #e9ecef;
-        border-radius: 4px;
-    }
-    .progress-bar + .progress-bar {
-        border-left: 1px solid rgba(255,255,255,0.3);
-    }
-    .border-danger.border-3 {
-        background-color: rgba(220, 53, 69, 0.02);
-    }
-    .border-warning.border-3 {
-        background-color: rgba(255, 193, 7, 0.02);
-    }
-</style>
-@endpush
+<div class="ucrud-panel ucrud-pagination mt-3">
+    {{ $muestras->links() }}
+</div>
 
 @push('scripts')
 <script>

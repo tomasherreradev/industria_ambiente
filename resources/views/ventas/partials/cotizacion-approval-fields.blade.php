@@ -9,7 +9,8 @@
     }
 
     $estadoNormalizado = strtoupper(substr(trim((string) $estadoFuente), 0, 1));
-    $mostrarDatosAprobacion = $estadoNormalizado === 'A';
+    $forzarVisible = (bool) ($forzarVisible ?? false);
+    $mostrarDatosAprobacion = $forzarVisible || $estadoNormalizado === 'A';
 
     $refsRows = [];
     $refsOld = old('coti_refs_facturacion_json');
@@ -68,7 +69,7 @@
             <button type="button" class="btn btn-sm btn-outline-success" id="refsFacturacionAdd" title="Agregar referencia">
                 <x-heroicon-o-plus style="width: 16px; height: 16px;" />
             </button>
-            <small class="text-muted">REMITO, HES, HAS, GR u OTRO. Puede marcar cada una como obligatoria para facturar.</small>
+            <small class="text-muted">Use <strong>REMITO</strong> para el número de recepción. También HES, HAS, GR u OTRO. Puede marcar cada una como obligatoria para facturar.</small>
         </div>
 
         <div id="refsFacturacionRoot" data-max="4" data-inicial='@json($refsRows)'></div>

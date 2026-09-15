@@ -226,6 +226,7 @@
             config.componentesIniciales || []
         ),
         puedeEditar: config.puedeEditar !== false,
+        soloReferenciasFacturacion: config.soloReferenciasFacturacion === true,
         modo: config.modo || 'create',
         clienteSeleccionado: null,
         ensayosColapsados: new Set(), // Guardar estado de colapso de ensayos
@@ -657,6 +658,10 @@
         document.querySelectorAll('.btn-guardar-contacto').forEach((btn) => {
             if (btn.dataset.contactosGuardarInit) return;
             btn.addEventListener('click', async function () {
+                if (this.dataset.guardandoContacto === '1') {
+                    return;
+                }
+
                 const idx = this.dataset.contactoIndex || '1';
                 const codigo = (document.getElementById('cliente_codigo') || {}).value || '';
                 if (!codigo.trim()) {
@@ -698,6 +703,12 @@
                     tipo: v.tipo.trim() || null,
                 };
                 const csrfToken = document.querySelector('meta[name="csrf-token"]') && document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+                const btnGuardar = this;
+                const textoOriginal = btnGuardar.innerHTML;
+                btnGuardar.dataset.guardandoContacto = '1';
+                btnGuardar.disabled = true;
+                btnGuardar.innerHTML = 'Guardando...';
+
                 try {
                     const res = await fetch(url, {
                         method: 'POST',
@@ -726,6 +737,10 @@
                     } else {
                         alert(e.message || 'Error al guardar el contacto');
                     }
+                } finally {
+                    btnGuardar.dataset.guardandoContacto = '0';
+                    btnGuardar.disabled = false;
+                    btnGuardar.innerHTML = textoOriginal;
                 }
             });
             btn.dataset.contactosGuardarInit = '1';
@@ -1096,11 +1111,7 @@
                             sucursalInput.value = suc;
                         }
                         if (sucursalSelect && suc) {
-                            const opt = Array.from(sucursalSelect.options || []).find(o => (o.value || '').trim() === suc);
-                            if (opt) {
-                                sucursalSelect.value = opt.value;
-                                sucursalSelect.dispatchEvent(new Event('change', { bubbles: true }));
-                            }
+                            fijarValorSucursalSelect(sucursalSelect, suc);
                         }
 
                         const conts = clonOverride.contactos || {};
@@ -1144,6 +1155,156 @@
         actualizarTotalGeneral();
     }
 
+    function etiquetaPrincipalSucursal(sucursal) {
+        const fantasia = (sucursal.fantasia || '').trim();
+        const localidad = (sucursal.localidad || '').trim();
+        const direccion = (sucursal.direccion || '').trim();
+        const codigo = (sucursal.codigo || '').trim();
+
+        if (fantasia) {
+            return fantasia;
+        }
+        if (localidad) {
+            return localidad;
+        }
+        if (direccion) {
+            return direccion;
+        }
+        if (codigo) {
+            return `Sucursal ${codigo}`;
+        }
+
+        return 'Sucursal';
+    }
+
+    function detallesSucursal(sucursal) {
+        const partes = [];
+        const codigo = (sucursal.codigo || '').trim();
+        const localidad = (sucursal.localidad || '').trim();
+        const partido = (sucursal.partido || '').trim();
+        const direccion = (sucursal.direccion || '').trim();
+        const fantasia = (sucursal.fantasia || '').trim();
+
+        if (codigo) {
+            partes.push(`Cód. ${codigo}`);
+        }
+        if (localidad && localidad !== fantasia) {
+            partes.push(localidad);
+        }
+        if (partido && partido !== localidad) {
+            partes.push(partido);
+        }
+        if (direccion && direccion !== fantasia) {
+            partes.push(direccion);
+        }
+
+        return partes;
+    }
+
+    function etiquetaSeleccionSucursal(sucursal) {
+        const principal = etiquetaPrincipalSucursal(sucursal);
+        const detalles = detallesSucursal(sucursal);
+        const extra = detalles.find(function (detalle) {
+            return !detalle.startsWith('Cód.') && detalle !== principal;
+        });
+
+        if (extra) {
+            return `${principal} · ${extra}`;
+        }
+
+        const codigo = (sucursal.codigo || '').trim();
+        if (codigo && !principal.includes(codigo)) {
+            return `${principal} (${codigo})`;
+        }
+
+        return principal;
+    }
+
+    function destruirSelect2Sucursal(sucursalSelect) {
+        if (!sucursalSelect || !$.fn.select2) {
+            return;
+        }
+
+        if ($(sucursalSelect).hasClass('select2-hidden-accessible')) {
+            $(sucursalSelect).select2('destroy');
+        }
+    }
+
+    function inicializarSelect2Sucursal(sucursalSelect) {
+        if (!sucursalSelect || !$.fn.select2) {
+            return;
+        }
+
+        destruirSelect2Sucursal(sucursalSelect);
+
+        $(sucursalSelect).select2({
+            width: '100%',
+            placeholder: 'Seleccionar sucursal...',
+            allowClear: true,
+            dropdownAutoWidth: true,
+            templateResult: function (sucursal) {
+                if (!sucursal.id) {
+                    return sucursal.text;
+                }
+
+                const $option = $(sucursal.element);
+                const titulo = $option.data('titulo') || sucursal.text;
+                const detalles = ($option.data('detalles') || '').toString();
+                const detallesHtml = detalles
+                    ? `<div class="small text-muted mt-1">${detalles}</div>`
+                    : '';
+
+                return $(
+                    '<div class="sucursal-option-item">' +
+                        `<div class="fw-semibold">${titulo}</div>` +
+                        detallesHtml +
+                    '</div>'
+                );
+            },
+            templateSelection: function (sucursal) {
+                if (!sucursal.id) {
+                    return sucursal.text;
+                }
+
+                const $option = $(sucursal.element);
+                return $option.data('etiquetaCorta') || sucursal.text;
+            },
+            escapeMarkup: function (markup) {
+                return markup;
+            },
+        });
+    }
+
+    function fijarValorSucursalSelect(sucursalSelect, codigo) {
+        if (!sucursalSelect) {
+            return;
+        }
+
+        const codigoNormalizado = (codigo || '').trim();
+        if (!codigoNormalizado) {
+            sucursalSelect.value = '';
+            if ($.fn.select2 && $(sucursalSelect).hasClass('select2-hidden-accessible')) {
+                $(sucursalSelect).val('').trigger('change');
+            }
+            return;
+        }
+
+        const opcion = Array.from(sucursalSelect.options || []).find(function (o) {
+            return (o.value || '').trim() === codigoNormalizado;
+        });
+
+        if (!opcion) {
+            return;
+        }
+
+        sucursalSelect.value = opcion.value;
+        if ($.fn.select2 && $(sucursalSelect).hasClass('select2-hidden-accessible')) {
+            $(sucursalSelect).val(opcion.value).trigger('change');
+        } else {
+            sucursalSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+    }
+
     function configurarSucursalesCliente(sucursales) {
         const sucursalInput = document.getElementById('sucursal');
         const sucursalSelect = document.getElementById('sucursal_select');
@@ -1154,7 +1315,7 @@
 
         state.sucursalesCliente = Array.isArray(sucursales) ? sucursales : [];
 
-        // Limpiar opciones actuales
+        destruirSelect2Sucursal(sucursalSelect);
         sucursalSelect.innerHTML = '';
         const opcionDefault = document.createElement('option');
         opcionDefault.value = '';
@@ -1164,22 +1325,21 @@
         state.sucursalesCliente.forEach((sucursal) => {
             const option = document.createElement('option');
             option.value = sucursal.codigo || '';
-            const razonSocial = (sucursal.razon_social || '').trim();
-            const localidad = (sucursal.localidad || '').trim();
-            const etiqueta = razonSocial && localidad
-                ? `${razonSocial} - ${localidad}`
-                : razonSocial ||
-                  localidad ||
-                  (sucursal.fantasia && sucursal.fantasia.trim()) ||
-                  (sucursal.direccion && sucursal.direccion.trim()) ||
-                  'Sucursal';
-            option.textContent = etiqueta;
+            const titulo = etiquetaPrincipalSucursal(sucursal);
+            const detalles = detallesSucursal(sucursal).join(' · ');
+            option.textContent = titulo;
+            option.dataset.titulo = titulo;
+            option.dataset.detalles = detalles;
+            option.dataset.etiquetaCorta = etiquetaSeleccionSucursal(sucursal);
+            option.dataset.fantasia = sucursal.fantasia || '';
+            option.dataset.localidad = sucursal.localidad || '';
+            option.dataset.codigo = sucursal.codigo || '';
             sucursalSelect.appendChild(option);
         });
 
-        // Mostrar select y ocultar input libre (pero seguir usando el input como valor real)
         sucursalInput.classList.add('d-none');
         sucursalSelect.classList.remove('d-none');
+        inicializarSelect2Sucursal(sucursalSelect);
 
         if (!sucursalSelect.dataset.listenerSucursal) {
             sucursalSelect.addEventListener('change', manejarCambioSucursal);
@@ -1195,6 +1355,7 @@
         }
 
         state.sucursalesCliente = [];
+        destruirSelect2Sucursal(sucursalSelect);
         sucursalSelect.classList.add('d-none');
         sucursalInput.classList.remove('d-none');
         sucursalSelect.innerHTML = '<option value=\"\">Seleccionar sucursal...</option>';
@@ -1323,7 +1484,18 @@
                                     return empresa.text;
                                 }
                                 const $option = $(empresa.element);
-                                return $option.data('razonSocial') || empresa.text;
+                                const razonSocial = ($option.data('razonSocial') || empresa.text || '').trim();
+                                const localidad = ($option.data('localidad') || '').trim();
+                                const cuit = ($option.data('cuit') || '').trim();
+
+                                if (localidad && razonSocial.length > 26) {
+                                    return `${localidad} — ${razonSocial}`;
+                                }
+                                if (cuit && razonSocial.length > 30) {
+                                    return `${cuit} — ${razonSocial}`;
+                                }
+
+                                return razonSocial;
                             },
                             escapeMarkup: function(markup) {
                                 return markup;
@@ -1894,12 +2066,7 @@
                     const sucursalSelect = document.getElementById('sucursal_select');
                     const codigoSucursalGuardado = (sucursalInput && sucursalInput.value) ? sucursalInput.value.trim() : '';
                     if (codigoSucursalGuardado && sucursalSelect) {
-                        const opcion = Array.from(sucursalSelect.options).find(function (o) {
-                            return (o.value || '').trim() === codigoSucursalGuardado;
-                        });
-                        if (opcion) {
-                            sucursalSelect.value = opcion.value;
-                        }
+                        fijarValorSucursalSelect(sucursalSelect, codigoSucursalGuardado);
                     }
                 } else {
                     resetearSucursalesCliente();
@@ -2088,11 +2255,28 @@
 
         const modalEditarEnsayo = document.getElementById('modalEditarEnsayo');
         if (modalEditarEnsayo) {
+            modalEditarEnsayo.addEventListener('shown.bs.modal', function () {
+                if (state.soloReferenciasFacturacion) {
+                    aplicarModoEdicionLimitadaModalEnsayo(modalEditarEnsayo);
+                }
+            });
             modalEditarEnsayo.addEventListener('hidden.bs.modal', function () {
                 destruirSelectLeyNormativa(document.getElementById('edit_ensayo_ley_normativa'));
                 if (window.$ && window.$('#edit_ensayo_muestra').length && window.$('#edit_ensayo_muestra').data('select2')) {
                     window.$('#edit_ensayo_muestra').select2('destroy');
                 }
+            });
+        }
+
+        const modalEditarComponente = document.getElementById('modalEditarComponente');
+        if (modalEditarComponente) {
+            modalEditarComponente.addEventListener('shown.bs.modal', function () {
+                if (state.soloReferenciasFacturacion) {
+                    aplicarModoEdicionLimitadaModalComponente(modalEditarComponente);
+                }
+            });
+            modalEditarComponente.addEventListener('hidden.bs.modal', function () {
+                destruirSelectLeyNormativa(document.getElementById('edit_componente_ley_normativa'));
             });
         }
 
@@ -2261,7 +2445,7 @@
     }
 
     function guardarComponenteEditadoHandler() {
-        if (!state.puedeEditar) {
+        if (!state.puedeEditar && !state.soloReferenciasFacturacion) {
             return;
         }
 
@@ -2278,6 +2462,24 @@
                     title: 'Error',
                     text: 'No se encontró el componente a editar.',
                 });
+            }
+            return;
+        }
+
+        if (state.soloReferenciasFacturacion) {
+            const selectLeyComp = document.getElementById('edit_componente_ley_normativa');
+            if (selectLeyComp) {
+                const lc = selectLeyComp.value ? String(selectLeyComp.value).trim() : '';
+                componente.ley_normativa_id = lc || null;
+            }
+            renderTabla();
+
+            const modalLimitado = document.getElementById('modalEditarComponente');
+            if (modalLimitado && window.bootstrap && window.bootstrap.Modal) {
+                const modalInstance = window.bootstrap.Modal.getInstance(modalLimitado);
+                if (modalInstance) {
+                    modalInstance.hide();
+                }
             }
             return;
         }
@@ -2339,6 +2541,12 @@
         componente.nota_tipo = npComp.nota_tipo;
         componente.nota_contenido = npComp.nota_contenido;
         componente.notas = notasArr.length ? notasArr : null;
+
+        const selectLeyComp = document.getElementById('edit_componente_ley_normativa');
+        if (selectLeyComp) {
+            const lc = selectLeyComp.value ? String(selectLeyComp.value).trim() : '';
+            componente.ley_normativa_id = lc || null;
+        }
         
         // Actualizar método descripción
         if (metodoId) {
@@ -2410,6 +2618,11 @@
             }
             contenedor.dataset.visible = '0';
         };
+
+        if (state.soloReferenciasFacturacion) {
+            mostrarCard();
+            return;
+        }
 
         const actualizarVisibilidad = (fuente = 'init') => {
             const selectActivo = obtenerSelectEstadoActivo();
@@ -4267,6 +4480,10 @@
          actualizarTotalGeneral();
          actualizarEnsayosDisponiblesParaComponentes();
          sincronizarCheckboxGlobalPrioridad();
+
+         if (state.soloReferenciasFacturacion) {
+             refrescarEdicionLimitadaEnTabla();
+         }
      }
 
     function inicializarTogglesComponentes() {
@@ -4567,8 +4784,8 @@
                </button>`
             : '';
 
-        const botonEditar = state.puedeEditar
-            ? `<button type="button" class="btn btn-sm btn-outline-info" onclick="editarEnsayo(${ensayo.item})" title="Editar ensayo">
+        const botonEditar = (state.puedeEditar || state.soloReferenciasFacturacion)
+            ? `<button type="button" class="btn btn-sm btn-outline-info btn-editar-norma-item" onclick="editarEnsayo(${ensayo.item})" title="${state.soloReferenciasFacturacion ? 'Editar norma de comparación' : 'Editar ensayo'}">
                 <x-heroicon-o-eye style="width: 16px; height: 16px;" />
             </button>`
             : '';
@@ -4625,9 +4842,11 @@
                </button>`
             : '';
 
-        const botonVer = `<button type="button" class="btn btn-sm btn-outline-info" onclick="verDetalle(${componente.item})">
-            <x-heroicon-o-eye style="width: 16px; height: 16px;" />
-        </button>`;
+        const botonVer = (state.puedeEditar || state.soloReferenciasFacturacion)
+            ? `<button type="button" class="btn btn-sm btn-outline-info btn-editar-norma-item" onclick="verDetalle(${componente.item})" title="${state.soloReferenciasFacturacion ? 'Editar norma de comparación' : 'Ver detalle'}">
+                <x-heroicon-o-eye style="width: 16px; height: 16px;" />
+            </button>`
+            : '';
 
         // Indicador sutil si proviene de un agrupador
         const claseFila = esDeAgrupador ? 'componente-de-agrupador' : '';
@@ -4789,6 +5008,31 @@
         if (intNotaEd) {
             intNotaEd.value = tn.intern;
         }
+
+        const selectLeyComp = document.getElementById('edit_componente_ley_normativa');
+        if (selectLeyComp) {
+            const leyesCatalogo = catalogs.leyesNormativas || catalogs.leyes;
+            poblarSelectLeyesNormativas(selectLeyComp, leyesCatalogo);
+
+            const leyGuardada = componente.ley_normativa_id ? String(componente.ley_normativa_id).trim() : '';
+            if (leyGuardada) {
+                selectLeyComp.value = leyGuardada;
+                if (selectLeyComp.value !== leyGuardada) {
+                    const optExtra = document.createElement('option');
+                    optExtra.value = leyGuardada;
+                    optExtra.textContent = leyGuardada;
+                    selectLeyComp.appendChild(optExtra);
+                    selectLeyComp.value = leyGuardada;
+                }
+            }
+
+            inicializarSelectLeyNormativa(selectLeyComp, 'modalEditarComponente');
+            if (leyGuardada && window.$) {
+                window.$(selectLeyComp).val(leyGuardada).trigger('change');
+            }
+        }
+
+        aplicarModoEdicionLimitadaModalComponente(modal);
 
         // Abrir modal
         if (window.bootstrap && window.bootstrap.Modal) {
@@ -5084,6 +5328,8 @@
 
         syncCotiReqCadenaRelCheckboxesFromHidden();
 
+        aplicarModoEdicionLimitadaModalEnsayo(modal);
+
         // Abrir modal
         if (window.bootstrap && window.bootstrap.Modal) {
             const modalInstance = new window.bootstrap.Modal(modal);
@@ -5091,8 +5337,81 @@
         }
     }
 
+    function habilitarSelect2LeyNormativa(selectId) {
+        const selectEl = document.getElementById(selectId);
+        if (!selectEl || !window.$) {
+            return;
+        }
+
+        const $select = window.$(selectEl);
+        $select.prop('disabled', false);
+        const $container = $select.next('.select2-container');
+        if ($container.length) {
+            $container.removeClass('select2-container--disabled');
+            $container.find('.select2-selection').attr('aria-disabled', 'false');
+        }
+    }
+
+    function aplicarModoEdicionLimitadaModalEnsayo(modal) {
+        if (!modal || !state.soloReferenciasFacturacion) {
+            return;
+        }
+
+        modal.querySelectorAll('input, select, textarea, button').forEach(function (el) {
+            if (el.id === 'edit_ensayo_ley_normativa') {
+                el.disabled = false;
+                return;
+            }
+            if (el.id === 'btnGuardarEnsayoEditado') {
+                el.disabled = false;
+                return;
+            }
+            if (el.classList.contains('btn-close') || el.getAttribute('data-bs-dismiss') === 'modal') {
+                el.disabled = false;
+                return;
+            }
+            el.disabled = true;
+        });
+
+        habilitarSelect2LeyNormativa('edit_ensayo_ley_normativa');
+
+        const titulo = modal.querySelector('.modal-title');
+        if (titulo) {
+            titulo.textContent = 'Norma de comparación del ítem';
+        }
+    }
+
+    function aplicarModoEdicionLimitadaModalComponente(modal) {
+        if (!modal || !state.soloReferenciasFacturacion) {
+            return;
+        }
+
+        modal.querySelectorAll('input, select, textarea, button').forEach(function (el) {
+            if (el.id === 'edit_componente_ley_normativa') {
+                el.disabled = false;
+                return;
+            }
+            if (el.id === 'btnGuardarComponenteEditado') {
+                el.disabled = false;
+                return;
+            }
+            if (el.classList.contains('btn-close') || el.getAttribute('data-bs-dismiss') === 'modal') {
+                el.disabled = false;
+                return;
+            }
+            el.disabled = true;
+        });
+
+        habilitarSelect2LeyNormativa('edit_componente_ley_normativa');
+
+        const titulo = modal.querySelector('.modal-title');
+        if (titulo) {
+            titulo.textContent = 'Norma de comparación del análisis';
+        }
+    }
+
     function guardarEnsayoEditadoHandler() {
-        if (!state.puedeEditar) {
+        if (!state.puedeEditar && !state.soloReferenciasFacturacion) {
             return;
         }
 
@@ -5109,6 +5428,24 @@
                     title: 'Error',
                     text: 'No se encontró el ensayo a editar.',
                 });
+            }
+            return;
+        }
+
+        if (state.soloReferenciasFacturacion) {
+            const selectLeyEdit = document.getElementById('edit_ensayo_ley_normativa');
+            if (selectLeyEdit) {
+                const lc = selectLeyEdit.value ? String(selectLeyEdit.value).trim() : '';
+                ensayo.ley_normativa_id = lc || null;
+            }
+            renderTabla();
+
+            const modalLimitado = document.getElementById('modalEditarEnsayo');
+            if (modalLimitado && window.bootstrap && window.bootstrap.Modal) {
+                const modalInstance = window.bootstrap.Modal.getInstance(modalLimitado);
+                if (modalInstance) {
+                    modalInstance.hide();
+                }
             }
             return;
         }
@@ -5846,8 +6183,231 @@
             .replace(/'/g, '&#039;');
     }
 
+    function esZonaEditablePresupuestoLimitado(el) {
+        if (!el) {
+            return false;
+        }
+        if (el.type === 'submit' || el.closest('.presupuesto-form-acciones')) {
+            return false;
+        }
+
+        return !!(
+            el.closest('#datosAprobacionWrapper')
+            || el.closest('.cotizacion-contactos-section')
+            || el.closest('#presupuestoCondicionPagoWrapper')
+            || el.closest('#cuotasPanel')
+        );
+    }
+
+    function esControlPermitidoEnEdicionLimitada(el) {
+        if (!el) {
+            return false;
+        }
+        if (esZonaEditablePresupuestoLimitado(el)) {
+            return true;
+        }
+        if (el.classList && el.classList.contains('btn-editar-norma-item')) {
+            return true;
+        }
+        if (el.classList && el.classList.contains('toggle-componentes')) {
+            return true;
+        }
+        if (el.closest && el.closest('.toggle-componentes')) {
+            return true;
+        }
+        return false;
+    }
+
+    function refrescarEdicionLimitadaEnTabla() {
+        if (!state.soloReferenciasFacturacion || !elements.form) {
+            return;
+        }
+
+        Array.from(elements.form.elements).forEach(function (el) {
+            if (el.type === 'hidden' || el.tagName === 'A') {
+                return;
+            }
+            if (el.type === 'submit' || el.closest('.presupuesto-form-acciones')) {
+                return;
+            }
+            if (esControlPermitidoEnEdicionLimitada(el)) {
+                el.disabled = false;
+                return;
+            }
+            el.disabled = true;
+        });
+
+        document.querySelectorAll('.btn-editar-norma-item').forEach(function (btn) {
+            btn.disabled = false;
+        });
+    }
+
+    function appendCampoFormDataSiExiste(fd, name) {
+        const el = elements.form ? elements.form.querySelector('[name="' + name + '"]') : null;
+        if (!el) {
+            return;
+        }
+        if (el.type === 'checkbox') {
+            if (el.checked) {
+                fd.append(name, el.value || '1');
+            }
+            return;
+        }
+        fd.append(name, el.value ?? '');
+    }
+
+    function enviarSoloReferenciasFacturacion(event) {
+        if (!state.soloReferenciasFacturacion || !elements.form) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (typeof window.cotizacionReferenciaFactSyncHidden === 'function') {
+            window.cotizacionReferenciaFactSyncHidden();
+        }
+
+        const fd = new FormData();
+        const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+        fd.append('_token', csrf);
+        fd.append('_method', 'PUT');
+
+        const estadoHidden = elements.form.querySelector('input[name="coti_estado"]');
+        if (estadoHidden) {
+            fd.append('coti_estado', estadoHidden.value);
+        }
+
+        const oc = document.getElementById('coti_oc_referencia');
+        if (oc) {
+            fd.append('coti_oc_referencia', oc.value);
+        }
+
+        const ocReq = document.getElementById('coti_oc_requerido_factura');
+        if (ocReq && ocReq.checked) {
+            fd.append('coti_oc_requerido_factura', '1');
+        }
+
+        const refsHidden = document.getElementById('coti_refs_facturacion_json');
+        fd.append('coti_refs_facturacion_json', refsHidden ? (refsHidden.value || '[]') : '[]');
+
+        [
+            'coti_contacto', 'coti_telefono', 'coti_mail1', 'coti_contacto_tipo1',
+            'coti_contacto2', 'coti_mail2', 'coti_telefono2', 'coti_contacto_tipo2',
+            'coti_contacto3', 'coti_mail3', 'coti_telefono3', 'coti_contacto_tipo3',
+            'coti_contacto4', 'coti_mail4', 'coti_telefono4', 'coti_contacto_tipo4',
+            'coti_cond_pago', 'coti_cuota_desc', 'coti_cuota_cant', 'coti_cuota_monto_total',
+            'coti_cuota_monto_indiv', 'coti_cuota_interes', 'coti_cuota_fact_fin_mes', 'coti_cuota_fact_inicio_mes',
+        ].forEach(function (name) {
+            appendCampoFormDataSiExiste(fd, name);
+        });
+
+        const ensayosLey = state.ensayos.map(function (ensayo) {
+            return {
+                item: ensayo.item,
+                ley_normativa_id: ensayo.ley_normativa_id ? String(ensayo.ley_normativa_id).trim() : null,
+            };
+        });
+        const componentesLey = state.componentes.map(function (componente) {
+            return {
+                item: componente.item,
+                ley_normativa_id: componente.ley_normativa_id ? String(componente.ley_normativa_id).trim() : null,
+            };
+        });
+        fd.append('ensayos_data', JSON.stringify(ensayosLey));
+        fd.append('componentes_data', JSON.stringify(componentesLey));
+
+        const btn = document.getElementById('btnGuardarPresupuesto');
+        if (btn) {
+            btn.disabled = true;
+        }
+
+        fetch(elements.form.action, {
+            method: 'POST',
+            body: fd,
+            credentials: 'same-origin',
+            headers: {
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+        })
+            .then(function (response) {
+                return response.json().then(function (data) {
+                    if (!response.ok || !data.success) {
+                        throw new Error(data.message || 'No se pudieron guardar las referencias.');
+                    }
+                    return data;
+                });
+            })
+            .then(function (data) {
+                if (window.Swal) {
+                    Swal.fire({
+                        icon: 'success',
+                        title: '¡Éxito!',
+                        text: data.message || 'Datos guardados correctamente.',
+                        timer: 3000,
+                        timerProgressBar: true,
+                        showConfirmButton: false,
+                    });
+                }
+                setTimeout(function () {
+                    window.location.reload();
+                }, 900);
+            })
+            .catch(function (error) {
+                if (btn) {
+                    btn.disabled = false;
+                }
+                if (window.Swal) {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Error',
+                        text: error.message || 'No se pudieron guardar los cambios permitidos.',
+                    });
+                }
+            });
+    }
+
     function aplicarRestriccionEdicionSiCorresponde() {
         if (state.puedeEditar || !elements.form) {
+            return;
+        }
+
+        if (state.soloReferenciasFacturacion) {
+            Array.from(elements.form.elements).forEach(function (el) {
+                if (el.type === 'hidden' || el.tagName === 'A') {
+                    return;
+                }
+                if (el.type === 'submit' || el.closest('.presupuesto-form-acciones')) {
+                    return;
+                }
+                if (esControlPermitidoEnEdicionLimitada(el)) {
+                    return;
+                }
+                el.disabled = true;
+            });
+
+            refrescarEdicionLimitadaEnTabla();
+
+            ['btnAbrirModalEnsayo', 'btnAbrirModalComponente'].forEach(function (id) {
+                const btn = document.getElementById(id);
+                if (btn) {
+                    btn.disabled = true;
+                    btn.classList.add('d-none');
+                }
+            });
+
+            const tabla = elements.tablaItems ? elements.tablaItems.closest('table') : null;
+            if (tabla) {
+                tabla.classList.remove('tabla-items-bloqueada');
+                tabla.classList.add('tabla-items-edicion-limitada');
+            }
+
+            if (elements.form) {
+                elements.form.setAttribute('novalidate', 'novalidate');
+                elements.form.addEventListener('submit', enviarSoloReferenciasFacturacion, true);
+            }
+
             return;
         }
 
@@ -5904,7 +6464,10 @@
 
     if (elements.form) {
         // Usar fase de captura (true) para rellenar hidden antes de cualquier otro listener (p. ej. confirmación en edit)
-        elements.form.addEventListener('submit', function () {
+        elements.form.addEventListener('submit', function (event) {
+            if (state.soloReferenciasFacturacion) {
+                return;
+            }
             sincronizarDestinatarioAntesDeEnviar();
             const ensayosJson = JSON.stringify(state.ensayos.map(serializarEnsayo));
             const componentesJson = JSON.stringify(state.componentes.map(serializarComponente));

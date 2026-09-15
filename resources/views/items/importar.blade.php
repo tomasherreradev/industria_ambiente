@@ -3,11 +3,14 @@
 @section('title', 'Importar Determinaciones')
 
 @section('content')
-<div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h1 class="h4 mb-0">Importar Determinaciones desde Excel</h1>
-        <a href="{{ route('items.index') }}" class="btn btn-outline-secondary">Volver</a>
-    </div>
+@include('partials.ucrud-styles')
+
+<div class="container-fluid py-4 ucrud ucrud-layout--fluid">
+    @include('partials.ucrud-form-header', [
+        'title' => 'Importar determinaciones',
+        'subtitle' => 'Carga masiva desde archivo Excel o CSV.',
+        'backUrl' => route('items.index'),
+    ])
 
     @if(session('success'))
         <div id="flash-success" data-message="{{ session('success') }}" style="display:none"></div>
@@ -18,7 +21,7 @@
     @endif
 
     @if($errors->any())
-        <div class="alert alert-danger">
+        <div class="ucrud-alert ucrud-alert--danger">
             <h5 class="alert-heading">Errores encontrados:</h5>
             <ul class="mb-0">
                 @foreach($errors->all() as $error)
@@ -29,7 +32,7 @@
     @endif
 
     @if(session('import_errors'))
-        <div class="alert alert-warning">
+        <div class="ucrud-alert ucrud-alert--warning">
             <h5 class="alert-heading">Errores durante la importación:</h5>
             <ul class="mb-0">
                 @foreach(session('import_errors') as $error)
@@ -39,13 +42,11 @@
         </div>
     @endif
 
-    <div class="row">
-        <div class="col-md-8">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0">Subir Archivo Excel</h5>
-                </div>
-                <div class="card-body">
+    <div class="row g-3">
+        <div class="col-lg-8">
+            <div class="ucrud-panel">
+                <div class="ucrud-form">
+                    <p class="ucrud-form__section-title" style="margin-top:0;">Subir archivo Excel</p>
                     <form method="POST" action="{{ route('items.importar-procesar') }}" enctype="multipart/form-data" id="formImportar">
                         @csrf
 
@@ -94,9 +95,9 @@
                             </ul>
                         </div>
 
-                        <div class="d-flex justify-content-end gap-2">
-                            <a href="{{ route('items.index') }}" class="btn btn-secondary">Cancelar</a>
-                            <button type="submit" class="btn btn-primary" id="btnImportar">
+                        <div class="ucrud-form__actions">
+                            <a href="{{ route('items.index') }}" class="ucrud-btn ucrud-btn--ghost">Cancelar</a>
+                            <button type="submit" class="ucrud-btn ucrud-btn--primary" id="btnImportar">
                                 <x-heroicon-o-arrow-up-tray style="width: 16px; height: 16px;" />
                                 Importar
                             </button>
@@ -106,12 +107,10 @@
             </div>
         </div>
 
-        <div class="col-md-4">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0">Plantilla Excel</h5>
-                </div>
-                <div class="card-body">
+        <div class="col-lg-4">
+            <div class="ucrud-panel">
+                <div class="ucrud-detail-block">
+                    <h2 class="ucrud-detail-block__title">Plantilla Excel</h2>
                     <p class="text-muted small">
                         Descarga la plantilla Excel con el formato correcto y ejemplos de datos.
                     </p>
@@ -126,18 +125,16 @@
                             Si está marcado, se incluirá una hoja adicional con los componentes actuales (ID, nombre, método, matriz y precio).
                         </small>
                     </div>
-                    <a href="{{ route('items.descargar-plantilla') }}" class="btn btn-outline-primary w-100" id="btnDescargarPlantilla">
+                    <a href="{{ route('items.descargar-plantilla') }}" class="ucrud-btn ucrud-btn--outline-primary w-100" id="btnDescargarPlantilla">
                         <x-heroicon-o-arrow-down-tray style="width: 16px; height: 16px;" />
-                        Descargar Plantilla
+                        Descargar plantilla
                     </a>
                 </div>
             </div>
 
-            <div class="card mt-3">
-                <div class="card-header">
-                    <h5 class="mb-0">Formato de Columnas</h5>
-                </div>
-                <div class="card-body">
+            <div class="ucrud-panel mt-3">
+                <div class="ucrud-detail-block">
+                    <h2 class="ucrud-detail-block__title">Formato de columnas</h2>
                     <table class="table table-sm table-bordered mb-0">
                         <thead>
                             <tr>

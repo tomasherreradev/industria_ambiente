@@ -1,6 +1,6 @@
 <style>
     @page {
-        margin: 54mm 10mm 22mm 10mm;
+        margin: 56mm 0 40mm 0;
     }
 
     body {
@@ -15,47 +15,76 @@
         position: fixed;
         left: 0;
         right: 0;
-        top: -54mm;
-        height: 34mm;
+        top: -56mm;
+        height: 46mm;
         z-index: 10;
+        overflow: hidden;
+        padding: 0;
+        margin: 0;
     }
 
     .pdf-header img {
-        width: 100%;
-        height: 100%;
         display: block;
+        width: 100%;
+        height: auto;
+        max-height: 46mm;
+        object-fit: contain;
+        object-position: top center;
     }
 
     .pdf-footer {
         position: fixed;
         left: 0;
         right: 0;
-        bottom: -22mm;
-        height: 22mm;
+        bottom: -40mm;
+        height: 40mm;
         z-index: 10;
+        overflow: hidden;
+        padding: 0;
+        margin: 0;
         box-sizing: border-box;
-        padding: 2mm 3mm 0 3mm;
-        border-top: 1px solid #000;
+    }
+
+    .pdf-footer-notes {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
         text-align: center;
         font-size: 6pt;
-        line-height: 1.5;
+        line-height: 1.45;
         color: #000;
+        padding: 1.5mm 3mm 1mm 3mm;
+        border-top: 1px solid #000;
+        box-sizing: border-box;
     }
 
     .pdf-footer .footer-version {
         font-weight: 700;
-        margin-bottom: 1mm;
+        margin-bottom: 0.5mm;
     }
 
     .pdf-footer .footer-legal {
         font-style: italic;
     }
 
+    .pdf-footer img {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        display: block;
+        width: 100%;
+        height: auto;
+        max-height: 24mm;
+        object-fit: contain;
+        object-position: bottom center;
+    }
+
     .pdf-title-bar {
         position: fixed;
         left: 10mm;
         right: 10mm;
-        top: -13mm;
+        top: -8mm;
         z-index: 11;
         width: calc(100% - 20mm);
         box-sizing: border-box;
@@ -88,7 +117,7 @@
     }
 
     .content {
-        padding: 0;
+        padding: 0 10mm;
         margin-top: -2mm;
     }
 

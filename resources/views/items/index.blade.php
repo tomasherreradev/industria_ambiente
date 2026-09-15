@@ -3,196 +3,222 @@
 @section('title', 'Determinaciones')
 
 @section('content')
-<div class="container-fluid">
-    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-3 gap-2">
-        <h1 class="h4 mb-0">Determinaciones</h1>
-        <div class="d-flex flex-wrap gap-2">
-            <a href="{{ route('items.exportar', array_filter(['q' => $search, 'tipo' => $tipo, 'matriz' => $matrizCodigo])) }}" class="btn btn-outline-success">
+<link rel="stylesheet" href="{{ asset('css/usuarios-crud.css') }}?v={{ filemtime(public_path('css/usuarios-crud.css')) }}">
+
+@php
+    $hayFiltros = $search || $tipo || $matrizCodigo;
+@endphp
+
+<div class="container-fluid py-4 ucrud" data-ucrud-root>
+    <header class="ucrud-header">
+        <div class="ucrud-header__titles">
+            <h1 class="ucrud-title">
+                Determinaciones
+                <span class="ucrud-count">{{ $items->total() }}</span>
+            </h1>
+            <p class="ucrud-subtitle">Catálogo de ítems, métodos, matrices y precios.</p>
+        </div>
+
+        <div class="ucrud-header__actions">
+            <a href="{{ route('items.exportar', array_filter(['q' => $search, 'tipo' => $tipo, 'matriz' => $matrizCodigo])) }}"
+               class="ucrud-btn ucrud-btn--outline-success">
                 <x-heroicon-o-arrow-down-tray style="width: 16px; height: 16px;" />
                 <span class="d-none d-sm-inline">Exportar</span>
             </a>
-            <a href="{{ route('items.importar') }}" class="btn btn-success">
+            <a href="{{ route('items.importar') }}" class="ucrud-btn ucrud-btn--success">
                 <x-heroicon-o-arrow-down-tray style="width: 16px; height: 16px;" />
-                <span class="d-none d-sm-inline">Importar desde Excel</span>
+                <span class="d-none d-sm-inline">Importar Excel</span>
                 <span class="d-sm-none">Importar</span>
             </a>
-            <a href="{{ route('items.cambios-masivos-precios') }}" class="btn btn-warning">
+            <a href="{{ route('items.cambios-masivos-precios') }}" class="ucrud-btn ucrud-btn--warning">
                 <x-heroicon-o-arrow-trending-up style="width: 16px; height: 16px;" />
-                <span class="d-none d-md-inline">Cambios Masivos de Precios</span>
-                <span class="d-md-none">Cambios Precios</span>
+                <span class="d-none d-md-inline">Cambios masivos</span>
+                <span class="d-md-none">Precios</span>
             </a>
-            <a href="{{ route('items.historial-precios') }}" class="btn btn-info">
+            <a href="{{ route('items.historial-precios') }}" class="ucrud-btn ucrud-btn--info">
                 <x-heroicon-o-clock style="width: 16px; height: 16px;" />
-                <span class="d-none d-sm-inline">Historial de Precios</span>
-                <span class="d-sm-none">Historial</span>
+                <span class="d-none d-sm-inline">Historial</span>
             </a>
-            <a href="{{ route('items.create') }}" class="btn btn-primary">
-                <x-heroicon-o-plus style="width: 16px; height: 16px;" class="d-sm-none" />
+            <a href="{{ route('items.create') }}" class="ucrud-btn ucrud-btn--primary">
+                <x-heroicon-o-plus style="width: 16px; height: 16px;" />
                 <span class="d-none d-sm-inline">Nueva determinación</span>
                 <span class="d-sm-none">Nueva</span>
             </a>
         </div>
-    </div>
+    </header>
 
     @if(session('success'))
         <div id="flash-success" data-message="{{ session('success') }}" style="display:none"></div>
     @endif
 
-    <form method="GET" action="{{ route('items.index') }}" class="row g-2 mb-3">
-        <div class="col-auto">
-            <input type="text" name="q" value="{{ $search }}" class="form-control" placeholder="Buscar descripción">
-        </div>
-        <div class="col-auto">
-            <select name="tipo" class="form-select">
-                <option value="">Todos los tipos</option>
-                <option value="agrupador" {{ $tipo === 'agrupador' ? 'selected' : '' }}>Agrupador</option>
-                <option value="componente" {{ $tipo === 'componente' ? 'selected' : '' }}>Componente</option>
-            </select>
-        </div>
-        <div class="col-auto">
-            <select name="matriz" class="form-select">
-                <option value="">Todas las matrices</option>
-                @foreach($matrices as $matriz)
-                    <option value="{{ $matriz->matriz_codigo }}" {{ $matrizCodigo === $matriz->matriz_codigo ? 'selected' : '' }}>
-                        {{ $matriz->matriz_codigo }} - {{ $matriz->matriz_descripcion }}
-                    </option>
-                @endforeach
-            </select>
-        </div>
-        <div class="col-auto">
-            <button type="submit" class="btn btn-outline-secondary">Buscar</button>
-        </div>
-        @if($search || $tipo || $matrizCodigo)
-        <div class="col-auto">
-            <a href="{{ route('items.index') }}" class="btn btn-outline-danger">Limpiar</a>
-        </div>
+    <form method="GET" action="{{ route('items.index') }}" class="ucrud-toolbar ucrud-toolbar--wide">
+        <label class="ucrud-search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                <circle cx="11" cy="11" r="7"/>
+                <path d="m20 20-3.1-3.1"/>
+            </svg>
+            <input type="text" name="q" value="{{ $search }}" class="ucrud-input" placeholder="Buscar descripción…" aria-label="Buscar determinaciones">
+        </label>
+
+        <select name="tipo" class="ucrud-select" aria-label="Filtrar por tipo">
+            <option value="">Todos los tipos</option>
+            <option value="agrupador" @selected($tipo === 'agrupador')>Agrupador</option>
+            <option value="componente" @selected($tipo === 'componente')>Componente</option>
+        </select>
+
+        <select name="matriz" class="ucrud-select" aria-label="Filtrar por matriz">
+            <option value="">Todas las matrices</option>
+            @foreach($matrices as $matriz)
+                <option value="{{ $matriz->matriz_codigo }}" @selected($matrizCodigo === $matriz->matriz_codigo)>
+                    {{ $matriz->matriz_codigo }} - {{ $matriz->matriz_descripcion }}
+                </option>
+            @endforeach
+        </select>
+
+        <button type="submit" class="ucrud-btn ucrud-btn--primary">Buscar</button>
+
+        @if($hayFiltros)
+            <a href="{{ route('items.index') }}" class="ucrud-btn ucrud-btn--ghost">Limpiar</a>
         @endif
     </form>
 
-    <div class="card">
-        <div class="card-body p-0">
-            <div class="table-responsive">
-                <table class="table table-striped mb-0">
+    <div class="ucrud-panel">
+        @if($items->isEmpty())
+            <div class="ucrud-empty">
+                <div class="ucrud-empty__icon">
+                    <x-heroicon-o-beaker style="width: 28px; height: 28px;" />
+                </div>
+                <p class="ucrud-empty__title">No hay ítems registrados</p>
+                <p class="ucrud-empty__text">
+                    {{ $hayFiltros ? 'Probá ajustar los filtros de búsqueda.' : 'Creá la primera determinación.' }}
+                </p>
+            </div>
+        @else
+            <div class="ucrud-tablewrap">
+                <table class="ucrud-table ucrud-table--sticky-actions">
                     <thead>
                         <tr>
-                            <th style="width: 80px;">ID</th>
+                            <th>ID</th>
                             <th>Determinación</th>
-                            <th style="width: 180px;">Tipo</th>
-                            <th>Límite de detección</th>
-                            <th>Unidad de medida</th>
-                            <th>Método Muestreo</th>
-                            <th>Método Análisis</th>
+                            <th>Tipo</th>
+                            <th>Límite detección</th>
+                            <th>Unidad</th>
+                            <th>Método muestreo</th>
+                            <th>Método análisis</th>
                             <th>Matriz</th>
-                            <th>Componentes asociados</th>
+                            <th>Componentes</th>
                             <th>Precio</th>
-                            <th style="width: 180px; text-align: center;">Acciones</th>
+                            <th>Acciones</th>
                         </tr>
                     </thead>
                     <tbody>
-                        @forelse($items as $item)
-                            <tr>
-                                <td class="align-middle">{{ $item->id }}</td>
-                                <td class="align-middle">
-                                    {{ $item->cotio_descripcion }}
-                                    {{-- Para componentes, mostrar solo agrupadores reales (es_muestra = true) en los que se usan --}}
-                                    @php
-                                        $agrupadoresReales = !$item->es_muestra
-                                            ? $item->agrupadores->where('es_muestra', true)
-                                            : collect();
-                                    @endphp
+                        @foreach($items as $i => $item)
+                            @php
+                                $agrupadoresReales = ! $item->es_muestra
+                                    ? $item->agrupadores->where('es_muestra', true)
+                                    : collect();
+                            @endphp
+                            <tr class="ucrud-animate-in" style="--i: {{ $i }}">
+                                <td><span class="ucrud-code">{{ $item->id }}</span></td>
+                                <td>
+                                    <span class="ucrud-user__name d-block">{{ $item->cotio_descripcion }}</span>
                                     @if($agrupadoresReales->isNotEmpty())
-                                        <br>
-                                        <small class="text-muted">
-                                            (Usado en: {{ $agrupadoresReales->pluck('cotio_descripcion')->join(', ') }})
-                                        </small>
+                                        <span class="ucrud-user__meta">
+                                            Usado en: {{ $agrupadoresReales->pluck('cotio_descripcion')->join(', ') }}
+                                        </span>
                                     @endif
                                 </td>
-                                <td class="align-middle">{{ $item->es_muestra ? 'Agrupador' : 'Componente' }}</td>
-                                <td class="align-middle">{{ $item->limites_establecidos ?? '-' }}</td>
-                                <td class="align-middle">{{ $item->unidad_medida ?? '-' }}</td>
-                                <td class="align-middle">{{ optional($item->metodoMuestreo)->metodo_descripcion ?? ($item->metodo_muestreo ? trim($item->metodo_muestreo) : '-') }}</td>
-                                <td class="align-middle">{{ optional($item->metodoAnalitico)->metodo_descripcion ?? ($item->metodo ? trim($item->metodo) : '-') }}</td>
-                                <td class="align-middle">
+                                <td>
+                                    <span class="ucrud-chip {{ $item->es_muestra ? 'ucrud-chip--blue' : 'ucrud-chip--slate' }}">
+                                        {{ $item->es_muestra ? 'Agrupador' : 'Componente' }}
+                                    </span>
+                                </td>
+                                <td>{{ $item->limites_establecidos ?? '—' }}</td>
+                                <td>{{ $item->unidad_medida ?? '—' }}</td>
+                                <td>{{ optional($item->metodoMuestreo)->metodo_descripcion ?? ($item->metodo_muestreo ? trim($item->metodo_muestreo) : '—') }}</td>
+                                <td>{{ optional($item->metodoAnalitico)->metodo_descripcion ?? ($item->metodo ? trim($item->metodo) : '—') }}</td>
+                                <td>
                                     @if($item->matrices->isNotEmpty())
                                         {{ $item->matrices->pluck('matriz_descripcion')->join(', ') }}
                                     @else
-                                        -
+                                        <span class="ucrud-dim">—</span>
                                     @endif
                                 </td>
-                                <td class="align-middle">
+                                <td>
                                     @if($item->es_muestra)
-                                        <span class="badge bg-info text-dark">{{ $item->componentesAsociados->count() }}</span>
+                                        <span class="ucrud-chip ucrud-chip--cyan">{{ $item->componentesAsociados->count() }}</span>
                                     @else
-                                        <span class="text-muted">-</span>
+                                        <span class="ucrud-dim">—</span>
                                     @endif
                                 </td>
-                                <td class="align-middle">
+                                <td>
                                     @if($item->precio !== null)
                                         $ {{ number_format($item->precio, 2, ',', '.') }}
                                     @else
-                                        -
+                                        <span class="ucrud-dim">—</span>
                                     @endif
                                 </td>
-                                <td class="text-center" style="vertical-align: middle;">
-                                    <a href="{{ route('items.edit', $item) }}" class="btn btn-sm btn-outline-primary">
-                                        <x-heroicon-o-pencil style="width: 16px; height: 16px;" />
-                                    </a>
-                                    <form action="{{ route('items.delete', $item) }}" method="POST" class="d-inline js-delete-form">
-                                        @csrf
-                                        @method('DELETE')
-                                        <button type="submit" class="btn btn-sm btn-outline-danger">
-                                            <x-heroicon-o-trash style="width: 16px; height: 16px;" />
-                                        </button>
-                                    </form>
+                                <td>
+                                    <div class="ucrud-actions">
+                                        <a href="{{ route('items.edit', $item) }}" class="ucrud-iconbtn" title="Editar" aria-label="Editar ítem">
+                                            <x-heroicon-o-pencil style="width: 16px; height: 16px;" />
+                                        </a>
+                                        <form action="{{ route('items.delete', $item) }}" method="POST" class="d-inline js-delete-form">
+                                            @csrf
+                                            @method('DELETE')
+                                            <button type="submit" class="ucrud-iconbtn ucrud-iconbtn--danger" title="Eliminar" aria-label="Eliminar ítem">
+                                                <x-heroicon-o-trash style="width: 16px; height: 16px;" />
+                                            </button>
+                                        </form>
+                                    </div>
                                 </td>
                             </tr>
-                        @empty
-                            <tr>
-                                <td colspan="10" class="text-center py-4 text-muted">No hay ítems registrados.</td>
-                            </tr>
-                        @endforelse
+                        @endforeach
                     </tbody>
                 </table>
             </div>
-        </div>
-        @if($items->hasPages())
-            <div class="card-footer">{{ $items->links() }}</div>
+
+            @if($items->hasPages())
+                <div class="ucrud-pagination">
+                    {{ $items->links() }}
+                </div>
+            @endif
         @endif
     </div>
-
-    <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const flash = document.getElementById('flash-success');
-        if (flash && flash.dataset.message) {
-            Swal.fire({
-                icon: 'success',
-                title: 'Éxito',
-                text: flash.dataset.message,
-                timer: 2000,
-                showConfirmButton: false
-            });
-        }
-
-        document.querySelectorAll('.js-delete-form').forEach(function(form) {
-            form.addEventListener('submit', function(e) {
-                e.preventDefault();
-                Swal.fire({
-                    title: '¿Eliminar este ítem?',
-                    icon: 'warning',
-                    showCancelButton: true,
-                    confirmButtonText: 'Sí, eliminar',
-                    cancelButtonText: 'Cancelar',
-                    confirmButtonColor: '#d33'
-                }).then((result) => {
-                    if (result.isConfirmed) {
-                        form.submit();
-                    }
-                });
-            });
-        });
-    });
-    </script>
 </div>
 @endsection
 
+@push('scripts')
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const flash = document.getElementById('flash-success');
+    if (flash && flash.dataset.message) {
+        Swal.fire({
+            icon: 'success',
+            title: 'Éxito',
+            text: flash.dataset.message,
+            timer: 2000,
+            showConfirmButton: false
+        });
+    }
 
+    document.querySelectorAll('.js-delete-form').forEach(function (form) {
+        form.addEventListener('submit', function (e) {
+            e.preventDefault();
+            Swal.fire({
+                title: '¿Eliminar este ítem?',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Sí, eliminar',
+                cancelButtonText: 'Cancelar',
+                confirmButtonColor: '#d33'
+            }).then(function (result) {
+                if (result.isConfirmed) {
+                    form.submit();
+                }
+            });
+        });
+    });
+});
+</script>
+@endpush

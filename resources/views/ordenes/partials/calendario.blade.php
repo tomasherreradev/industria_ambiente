@@ -1,143 +1,30 @@
 {{-- Incluido dentro de ordenes/index: no usar @extends aquí (rompe @section del layout padre). --}}
-<link href='https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.css' rel='stylesheet' />
-<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+@include('partials.operativo-calendario-assets')
 
-<style>
-    #calendar-container {
-        padding: 20px;
-        max-width: 1200px;
-        margin: 0 auto;
-    }
-    #calendar {
-        height: 800px;
-        background: white;
-        border-radius: 8px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    }
-    .calendar-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 20px;
-        padding: 15px 20px;
-        background: white;
-        border-radius: 8px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    }
-    .fc-event {
-        cursor: pointer;
-        font-size: 0.85em;
-        padding: 2px 4px;
-    }
-    .fc-event-warning { background-color: #ffc107; border-color: #ffc107; }
-    .fc-event-success { background-color: #28a745; border-color: #28a745; }
-    .fc-event-info { background-color: #17a2b8; border-color: #17a2b8; }
-    .fc-event-danger { background-color: #dc3545; border-color: #dc3545; }
-    .fc-event-primary { background-color: #0d6efd; border-color: #0d6efd; }
-    .fc-event-secondary { background-color: #6c757d; border-color: #6c757d; }
-    .view-switcher {
-        display: flex;
-        gap: 10px;
-        align-items: center;
-    }
-    .badge-analisis-count {
-        font-size: 0.7em;
-        margin-left: 5px;
-        vertical-align: middle;
-    }
-    .fc-toolbar-title {
-        font-size: 1.25em;
-    }
-    .user-selector {
-        position: relative;
-        display: inline-block;
-    }
-    .user-selector-btn {
-        background-color: #f8f9fa;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        padding: 5px 10px;
-        cursor: pointer;
-    }
-    .user-selector-dropdown {
-        position: absolute;
-        right: 0;
-        z-index: 1000;
-        min-width: 200px;
-        padding: 5px 0;
-        margin: 2px 0 0;
-        font-size: 14px;
-        text-align: left;
-        list-style: none;
-        background-color: #fff;
-        background-clip: padding-box;
-        border: 1px solid rgba(0,0,0,.15);
-        border-radius: 4px;
-        box-shadow: 0 6px 12px rgba(0,0,0,.175);
-    }
-    .user-selector-item {
-        display: block;
-        padding: 3px 20px;
-        clear: both;
-        font-weight: 400;
-        line-height: 1.42857143;
-        color: #333;
-        white-space: nowrap;
-    }
-    .user-selector-item:hover {
-        background-color: #f5f5f5;
-    }
-    @media (max-width: 768px) {
-        #calendar {
-            height: 600px;
-        }
-        .calendar-header {
-            flex-direction: column;
-            gap: 10px;
-        }
-        .view-switcher {
-            width: 100%;
-            justify-content: space-between;
-        }
-    }
+@php
+    $eventCount = collect($events)->where('cotio_subitem', 0)->count();
+@endphp
 
-
-    .dropdown-menu {
-        max-height: 300px;
-        overflow-y: auto;
-    }
-
-</style>
-
-<div id="calendar-container">
-    <div class="calendar-header">
+<div class="ucrud-panel op-calendario" id="calendar-container">
+    <div class="op-calendario__header">
         <div>
-            <h2 class="mb-0">
-                {{-- @if($viewTasks)
-                    Tareas de: <strong>{{ $userToView }}</strong>
-                    <small class="text-muted">({{ count($events) }} tareas)</small>
-                @else --}}
-                    Calendario de Órdenes
-                    @if(request('matriz'))
-                        <small class="text-muted">
-                            ({{ collect($events)->where('cotio_subitem', 0)->count() }}
-                            {{ collect($events)->where('cotio_subitem', 0)->count() === 1 ? 'orden' : 'ordenes' }})
-                        </small>                        
-                    @endif
-                {{-- @endif --}}
-            </h2>
+            <h2 class="op-calendario__title">Calendario de órdenes</h2>
+            @if(request('matriz'))
+                <span class="op-calendario__meta">
+                    {{ $eventCount }} {{ $eventCount === 1 ? 'orden' : 'órdenes' }}
+                </span>
+            @endif
         </div>
-        
-        <div class="view-switcher">
-            @if($viewTasks)
-                <a href="{{ route('ordenes.index', ['view' => 'calendario'] + request()->except(['user_to_view', 'view_tasks'])) }}" 
-                   class="btn btn-sm btn-outline-secondary me-2">
-                   <i class="fas fa-arrow-left"></i> Volver
+
+        <div class="op-calendario__toolbar">
+            @if($viewTasks ?? false)
+                <a href="{{ route('ordenes.index', ['view' => 'calendario'] + request()->except(['user_to_view', 'view_tasks'])) }}"
+                   class="ucrud-btn ucrud-btn--ghost ucrud-btn--sm">
+                    <i class="fas fa-arrow-left"></i> Volver
                 </a>
             @endif
 
-            {{-- añadir filtro por matriz en el calendario --}}
-            <form action="{{ route('ordenes.index') }}" method="GET" class="d-flex align-items-center gap-2" style="margin: 0px !important;">
+            <form action="{{ route('ordenes.index') }}" method="GET" class="op-calendario__filter-form">
                 <input type="hidden" name="view" value="calendario">
                 @if(request('view_tasks'))
                     <input type="hidden" name="view_tasks" value="{{ request('view_tasks') }}">
@@ -148,91 +35,44 @@
                 @foreach(request()->except(['matriz', 'view', 'view_tasks', 'user_to_view']) as $key => $value)
                     <input type="hidden" name="{{ $key }}" value="{{ $value }}">
                 @endforeach
-                
-                <select name="matriz" class="form-select form-select-sm" style="width: 100%; max-width: 150px;">
+
+                <select name="matriz" class="ucrud-select">
                     <option value="">Todas las matrices</option>
                     @foreach($matrices as $matriz)
-                        <option value="{{ $matriz->matriz_codigo }}" {{ request('matriz') == $matriz->matriz_codigo ? 'selected' : '' }}>
+                        <option value="{{ $matriz->matriz_codigo }}" @selected(request('matriz') == $matriz->matriz_codigo)>
                             {{ $matriz->matriz_descripcion }}
                         </option>
                     @endforeach
                 </select>
-                <button type="submit" class="btn btn-sm btn-outline-secondary">
+                <button type="submit" class="ucrud-btn ucrud-btn--ghost ucrud-btn--sm">
                     <i class="fas fa-filter"></i> Filtrar
                 </button>
             </form>
-          
-          
-            
-            <button id="current-week-btn" class="btn btn-sm btn-primary">
+
+            <button id="current-week-btn" type="button" class="ucrud-btn ucrud-btn--primary ucrud-btn--sm">
                 <i class="fas fa-calendar-day"></i> Hoy
             </button>
-            
-            <div class="btn-group">
-                <a href="{{ route('ordenes.index', ['view' => 'lista'] + request()->except('view')) }}" 
-                   class="btn btn-sm {{ $viewType === 'lista' ? 'btn-primary' : 'btn-outline-secondary' }}">
-                   <i class="fas fa-list"></i> Lista
-                </a>
-                <a href="{{ route('ordenes.index', ['view' => 'calendario'] + request()->except('view')) }}" 
-                   class="btn btn-sm {{ $viewType === 'calendario' ? 'btn-primary' : 'btn-outline-secondary' }}">
-                   <i class="fas fa-calendar"></i> Calendario
-                </a>
-            </div>
-            
-            @if(auth()->user()->usu_nivel >= 900)
-                <div class="dropdown ms-2">
-                    {{-- <button class="btn btn-sm btn-outline-secondary dropdown-toggle" 
-                            type="button" 
-                            id="userDropdownMenu" 
-                            data-bs-toggle="dropdown" 
-                            aria-expanded="false">
-                        <i class="fas fa-user"></i> Ver tareas de
-                    </button> --}}
-                    <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdownMenu">
-                        @foreach($usuarios as $usuario)
-                        <li>
-                            <a class="dropdown-item d-flex justify-content-between align-items-center" 
-                            href="{{ route('ordenes.index', [
-                                'view' => 'calendario',
-                                'view_tasks' => true,
-                                'user_to_view' => $usuario->usu_codigo
-                            ] + request()->except(['user_to_view', 'view_tasks'])) }}">
-                                {{ $usuario->usu_descripcion }}
-                                @if($viewTasks && $userToView == $usuario->usu_descripcion)
-                                    <i class="fas fa-check ms-2"></i>
-                                @endif
-                            </a>
-                        </li>
-                        @endforeach
-                    </ul>
-                </div>
-            @endif
         </div>
     </div>
 
-    <div id="calendar"></div>
-    
-    @if($events->isEmpty())
-    <div class="alert alert-info mt-3">
-        @if($viewTasks)
-            <i class="fas fa-info-circle me-2"></i>
-            No hay tareas asignadas a <strong>{{ $userToView }}</strong> en el período seleccionado.
-        @else
-            <i class="fas fa-info-circle me-2"></i>
-            @if(request('matriz'))
-                @php
-                    $matrizSeleccionada = $matrices->firstWhere('matriz_codigo', request('matriz'));
-                @endphp
-                No hay muestras programadas para la matriz 
-                <strong>{{ $matrizSeleccionada ? $matrizSeleccionada->matriz_descripcion : 'seleccionada' }}</strong> 
-                en el período actual.
-            @else
-                No hay muestras programadas para mostrar en el calendario.
-            @endif
-        @endif
-        <br>
-        <small class="text-muted">El calendario se mostrará cuando haya eventos programados en las fechas visibles.</small>
-    </div>
+    @if($events->isNotEmpty())
+        <div id="calendar"></div>
+    @else
+        <div class="ucrud-alert ucrud-alert--info mb-0" role="status">
+            <span>
+                @if($viewTasks ?? false)
+                    No hay tareas asignadas a {{ $userToView }} en el período seleccionado.
+                @elseif(request('matriz'))
+                    @php
+                        $matrizSeleccionada = $matrices->firstWhere('matriz_codigo', request('matriz'));
+                    @endphp
+                    No hay órdenes programadas para la matriz
+                    {{ $matrizSeleccionada ? $matrizSeleccionada->matriz_descripcion : 'seleccionada' }}.
+                @else
+                    No hay órdenes programadas para mostrar en el calendario.
+                @endif
+            </span>
+        </div>
     @endif
 </div>
 

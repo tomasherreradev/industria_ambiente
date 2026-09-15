@@ -1,64 +1,54 @@
 @extends('layouts.app')
 
-@section('content')
-<div class="container py-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2>{{ $leyNormativa->nombre }}</h2>
-        <div>
-            <a href="{{ route('leyes-normativas.edit', $leyNormativa) }}" class="btn btn-primary me-2">
-                <x-heroicon-o-pencil style="width: 16px; height: 16px;" class="me-1" /> Editar
-            </a>
-            <a href="{{ route('leyes-normativas.index') }}" class="btn btn-outline-secondary">
-                <x-heroicon-o-arrow-left style="width: 16px; height: 16px;" class="me-1" /> Volver
-            </a>
-        </div>
-    </div>
+@section('title', $leyNormativa->nombre)
 
-    <div class="row">
-        <div class="col-md-8">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0">Información de la Normativa</h5>
-                </div>
-                <div class="card-body">
-                    <div class="row">
-                        <div class="col-md-4">
-                            <div class="mb-3">
-                                <label class="form-label fw-bold">Código:</label>
-                                <p><code>{{ $leyNormativa->codigo }}</code></p>
-                            </div>
+@section('content')
+@include('partials.ucrud-styles')
+
+<div class="container py-4 ucrud">
+    @include('partials.ucrud-form-header', [
+        'title' => $leyNormativa->nombre,
+        'subtitle' => $leyNormativa->codigo,
+        'actions' => '<a href="' . route('leyes-normativas.edit', $leyNormativa) . '" class="ucrud-btn ucrud-btn--primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" width="16" height="16"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Editar</a><a href="' . route('leyes-normativas.index') . '" class="ucrud-btn ucrud-btn--ghost"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" width="16" height="16"><path d="m15 18-6-6 6-6"/></svg> Volver</a>',
+    ])
+
+    <div class="row g-3">
+        <div class="col-lg-8">
+            <div class="ucrud-panel">
+                <div class="ucrud-detail-block">
+                    <h2 class="ucrud-detail-block__title">Información de la normativa</h2>
+                    <div class="ucrud-detail-grid">
+                        <div>
+                            <div class="ucrud-detail-item__label">Código</div>
+                            <div class="ucrud-detail-item__value"><span class="ucrud-code">{{ $leyNormativa->codigo }}</span></div>
                         </div>
-                        <div class="col-md-4">
-                            <div class="mb-3">
-                                <label class="form-label fw-bold">Grupo:</label>
-                                <p><span class="badge bg-info">{{ $leyNormativa->grupo }}</span></p>
-                            </div>
+                        <div>
+                            <div class="ucrud-detail-item__label">Grupo</div>
+                            <div class="ucrud-detail-item__value"><span class="ucrud-chip ucrud-chip--cyan">{{ $leyNormativa->grupo }}</span></div>
                         </div>
-                        <div class="col-md-4">
-                            <div class="mb-3">
-                                <label class="form-label fw-bold">Estado:</label>
-                                <p>
-                                    @if($leyNormativa->activo)
-                                        <span class="badge bg-success">Activa</span>
-                                    @else
-                                        <span class="badge bg-secondary">Inactiva</span>
-                                    @endif
-                                </p>
+                        <div>
+                            <div class="ucrud-detail-item__label">Estado</div>
+                            <div class="ucrud-detail-item__value">
+                                <span class="ucrud-chip {{ $leyNormativa->activo ? 'ucrud-chip--green' : 'ucrud-chip--muted' }}">
+                                    {{ $leyNormativa->activo ? 'Activa' : 'Inactiva' }}
+                                </span>
                             </div>
                         </div>
                     </div>
+                </div>
+                <div class="ucrud-detail-block">
 
                     @if($leyNormativa->articulo)
                         <div class="mb-3">
-                            <label class="form-label fw-bold">Artículo:</label>
-                            <p>{{ $leyNormativa->articulo }}</p>
+                            <div class="ucrud-detail-item__label">Artículo</div>
+                            <div class="ucrud-detail-item__value">{{ $leyNormativa->articulo }}</div>
                         </div>
                     @endif
 
                     @if($leyNormativa->descripcion)
                         <div class="mb-3">
-                            <label class="form-label fw-bold">Descripción:</label>
-                            <p>{{ $leyNormativa->descripcion }}</p>
+                            <div class="ucrud-detail-item__label">Descripción</div>
+                            <div class="ucrud-detail-item__value">{{ $leyNormativa->descripcion }}</div>
                         </div>
                     @endif
 
@@ -176,12 +166,10 @@
             </div>
         </div>
 
-        <div class="col-md-4">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0">Uso de la Normativa</h5>
-                </div>
-                <div class="card-body">
+        <div class="col-lg-4">
+            <div class="ucrud-panel">
+                <div class="ucrud-detail-block">
+                    <h2 class="ucrud-detail-block__title">Uso de la normativa</h2>
                     @if($leyNormativa->cotios->count() > 0)
                         <p class="text-success">
                             <i class="fas fa-check-circle"></i>
@@ -202,17 +190,15 @@
                 </div>
             </div>
 
-            <div class="card mt-3">
-                <div class="card-header">
-                    <h5 class="mb-0">Acciones</h5>
-                </div>
-                <div class="card-body">
-                    <div class="d-grid gap-2">
-                        <a href="{{ route('leyes-normativas.edit', $leyNormativa) }}" class="btn btn-primary">
-                            <i class="fas fa-edit"></i> Editar Normativa
+            <div class="ucrud-panel mt-3">
+                <div class="ucrud-detail-block">
+                    <h2 class="ucrud-detail-block__title">Acciones</h2>
+                    <div class="d-flex flex-column gap-2">
+                        <a href="{{ route('leyes-normativas.edit', $leyNormativa) }}" class="ucrud-btn ucrud-btn--primary">
+                            <x-heroicon-o-pencil style="width: 16px; height: 16px;" /> Editar normativa
                         </a>
-                        <a href="{{ route('leyes-normativas.delete', $leyNormativa) }}" class="btn btn-outline-danger">
-                            <i class="fas fa-trash"></i> Eliminar Normativa
+                        <a href="{{ route('leyes-normativas.delete', $leyNormativa) }}" class="ucrud-btn ucrud-btn--ghost" style="color:#d0453c;border-color:#f0c4c1;">
+                            <x-heroicon-o-trash style="width: 16px; height: 16px;" /> Eliminar normativa
                         </a>
                     </div>
                 </div>

@@ -1,25 +1,23 @@
-<link href="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.css" rel="stylesheet">
+@include('partials.operativo-calendario-assets')
 
-<div class="tareas-calendario-wrap">
-    <div class="calendar-header d-none d-md-flex">
-        <h2 class="mb-0">Calendario de Muestras</h2>
-        <div class="view-switcher">
-            <button type="button" id="current-week-btn" class="btn btn-sm btn-primary">
-                <x-heroicon-o-calendar-days style="width: 16px; height: 16px;" class="me-1" />
+<div class="ucrud-panel op-calendario tareas-calendario-wrap">
+    <div class="op-calendario__header">
+        <div>
+            <h2 class="op-calendario__title">Calendario de OTs</h2>
+        </div>
+        <div class="op-calendario__toolbar">
+            <button type="button" id="current-week-btn" class="ucrud-btn ucrud-btn--primary ucrud-btn--sm">
+                <x-heroicon-o-calendar-days style="width: 16px; height: 16px;" />
                 Hoy
             </button>
-            <a href="{{ route('mis-ordenes', ['view' => 'lista']) }}" class="btn btn-sm btn-outline-secondary">
-                <x-heroicon-o-list-bullet style="width: 16px; height: 16px;" class="me-1" />
-                Vista de Lista
-            </a>
         </div>
     </div>
 
     @if($events->isNotEmpty())
         <div id="calendar" class="tareas-calendario-widget"></div>
     @else
-        <div class="alert alert-info mb-0">
-            No hay muestras programadas para mostrar en el calendario.
+        <div class="ucrud-alert ucrud-alert--info mb-0" role="status">
+            <span>No hay órdenes programadas para mostrar en el calendario.</span>
         </div>
     @endif
 </div>

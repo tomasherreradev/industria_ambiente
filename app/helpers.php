@@ -119,6 +119,32 @@ if (! function_exists('userPuedeCargarItems')) {
     }
 }
 
+if (! function_exists('userPuedeGestionarOrdenes')) {
+    function userPuedeGestionarOrdenes(): bool
+    {
+        if (! Auth::check()) {
+            return false;
+        }
+
+        $user = Auth::user();
+
+        return $user && $user->puedeGestionarOrdenes();
+    }
+}
+
+if (! function_exists('userDebeVerOrdenesPorSector')) {
+    function userDebeVerOrdenesPorSector(): bool
+    {
+        if (! Auth::check()) {
+            return false;
+        }
+
+        $user = Auth::user();
+
+        return $user && \App\Support\OrdenesAccesoPorSector::debeFiltrarPorSector($user);
+    }
+}
+
 if (! function_exists('userCanEditInformeProtocoloPdf')) {
     function userCanEditInformeProtocoloPdf(): bool
     {

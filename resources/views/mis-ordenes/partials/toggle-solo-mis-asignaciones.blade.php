@@ -13,14 +13,14 @@
             ])));
     @endphp
     <div class="d-flex align-items-center gap-2 {{ $wrapperClass ?? '' }}">
-        <div class="btn-group btn-group-sm" role="group" aria-label="Alcance de análisis visibles">
+        <div class="ucrud-view-switch ucrud-view-switch--text" role="group" aria-label="Alcance de análisis visibles">
             <a href="{{ $urlTodos }}"
-               class="btn {{ $soloActivo ? 'btn-outline-secondary' : 'btn-primary' }}"
+               class="ucrud-view-switch__btn {{ $soloActivo ? '' : 'active' }}"
                title="Ver todos los análisis de las muestras">
                 Todos
             </a>
             <a href="{{ $urlSolo }}"
-               class="btn {{ $soloActivo ? 'btn-primary' : 'btn-outline-secondary' }}"
+               class="ucrud-view-switch__btn {{ $soloActivo ? 'active' : '' }}"
                title="Ver solo análisis asignados a mi usuario">
                 Solo mis asignaciones
             </a>

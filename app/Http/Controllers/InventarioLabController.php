@@ -51,8 +51,9 @@ class InventarioLabController extends Controller
 
     public function show($id)
     {
-        $inventario = InventarioLab::find($id);
-        return view('inventarios.show', compact('inventario'));
+        $inventario = InventarioLab::findOrFail($id);
+
+        return view('inventarios.edit', compact('inventario'));
     }
 
     public function update(Request $request, $id)

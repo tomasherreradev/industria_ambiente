@@ -1,0 +1,726 @@
+/* =============================================================
+   Vistas operativas: órdenes, muestras, portales, detalle
+   Extiende ucrud — no altera lógica de estados Bootstrap
+   ============================================================= */
+
+.ucrud-operativo {
+    --op-success: #157347;
+    --op-success-bg: #e9faf2;
+    --op-warning: #96650b;
+    --op-warning-bg: #fef6e6;
+    --op-danger: #b5352c;
+    --op-danger-bg: #fdf1f1;
+    --op-info: #0f7f92;
+    --op-info-bg: #e7f8fb;
+    --op-muted: #5a6178;
+}
+
+/* ---------------------------------------- Switch vista lista -- */
+
+.ucrud-view-switch {
+    display: inline-flex;
+    padding: .25rem;
+    gap: .15rem;
+    border: 1px solid var(--ucrud-border);
+    border-radius: 999px;
+    background: #eef0f7;
+}
+
+.ucrud-view-switch__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 999px;
+    color: var(--ucrud-muted);
+    text-decoration: none;
+    transition: background-color .2s ease, color .2s ease, box-shadow .2s ease;
+}
+
+.ucrud-view-switch__btn:hover {
+    color: var(--ucrud-ink);
+    background: rgba(255, 255, 255, .65);
+}
+
+.ucrud-view-switch__btn.active {
+    background: var(--ucrud-surface);
+    color: var(--ucrud-primary);
+    box-shadow: 0 1px 2px rgba(16, 24, 40, .1), 0 4px 12px rgba(var(--ucrud-primary-rgb), .15);
+}
+
+.ucrud-view-switch--text .ucrud-view-switch__btn {
+    width: auto;
+    min-width: auto;
+    height: auto;
+    padding: .35rem .75rem;
+    font-size: .78rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+/* ---------------------------------------- Filas por estado -- */
+
+.ucrud-operativo .ucrud-table tbody tr.op-row--suspension,
+.ucrud-operativo .ucrud-table tbody tr.table-danger {
+    background: #fff8f8;
+}
+
+.ucrud-operativo .ucrud-table tbody tr.op-row--priority,
+.ucrud-operativo .ucrud-table tbody tr.table-warning {
+    background: #fffdf5;
+}
+
+.ucrud-operativo .ucrud-table tbody tr.op-row--cuotas,
+.ucrud-operativo .ucrud-table tbody tr.table-info {
+    background: #f3fbfd;
+}
+
+.ucrud-operativo .ucrud-table tbody tr[class*="border-left"],
+.ucrud-operativo .ucrud-table tbody tr.op-row--suspension,
+.ucrud-operativo .ucrud-table tbody tr.op-row--priority,
+.ucrud-operativo .ucrud-table tbody tr.op-row--cuotas {
+    border-left: 4px solid transparent;
+}
+
+.ucrud-operativo .ucrud-table tbody tr.op-row--suspension,
+.ucrud-operativo .ucrud-table tbody tr.table-danger[style*="dc3545"] {
+    border-left-color: var(--op-danger) !important;
+}
+
+.ucrud-operativo .ucrud-table tbody tr.op-row--priority,
+.ucrud-operativo .ucrud-table tbody tr.table-warning[style*="ffc107"] {
+    border-left-color: #e6a817 !important;
+}
+
+.ucrud-operativo .ucrud-table tbody tr.op-row--cuotas,
+.ucrud-operativo .ucrud-table tbody tr.table-info[style*="0dcaf0"] {
+    border-left-color: var(--op-info) !important;
+}
+
+/* ---------------------------------------- Progreso listado -- */
+
+.ucrud-operativo .op-progress {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+}
+
+.ucrud-operativo .op-progress__bar {
+    flex: 1 1 auto;
+    height: .55rem;
+    border-radius: 999px;
+    overflow: hidden;
+    background: #eef0f7;
+    display: flex;
+}
+
+.ucrud-operativo .op-progress__bar .progress-bar {
+    height: 100%;
+    border-radius: 0;
+}
+
+.ucrud-operativo .op-progress__bar .progress-bar + .progress-bar {
+    border-left: 1px solid rgba(255, 255, 255, .35);
+}
+
+.ucrud-operativo .op-progress__count {
+    font-size: .75rem;
+    font-weight: 600;
+    color: var(--ucrud-muted);
+    white-space: nowrap;
+}
+
+/* ---------------------------------------- Fila expandible OT -- */
+
+.ucrud-operativo .orden-row {
+    cursor: pointer;
+}
+
+.ucrud-operativo .orden-row:not(.collapsed) .chevron-icon,
+.ucrud-operativo .orden-row[aria-expanded="true"] .chevron-icon {
+    transform: rotate(90deg);
+}
+
+.ucrud-operativo .collapse-row {
+    background: transparent !important;
+}
+
+.ucrud-operativo .collapse-row:hover {
+    background: transparent !important;
+}
+
+.ucrud-operativo .collapse-row > td {
+    padding: 0 !important;
+    border-bottom: none !important;
+}
+
+.ucrud-operativo .collapse-row .bg-light {
+    background: #f7f8fc !important;
+    border-top: 1px solid var(--ucrud-line);
+}
+
+.ucrud-operativo .collapse .table-sm {
+    border-radius: .65rem;
+    overflow: hidden;
+}
+
+.ucrud-operativo .collapse .table-sm thead th {
+    font-size: .68rem;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--ucrud-muted);
+    background: #eef0f7;
+}
+
+/* ---------------------------------------- Cards mobile list -- */
+
+.ucrud-operativo .op-mobile-card {
+    background: var(--ucrud-surface);
+    border: 1px solid var(--ucrud-border);
+    border-radius: var(--ucrud-radius);
+    box-shadow: var(--ucrud-shadow);
+    overflow: hidden;
+}
+
+.ucrud-operativo .op-mobile-card.border-danger { border-left: 4px solid var(--op-danger) !important; }
+.ucrud-operativo .op-mobile-card.border-warning { border-left: 4px solid #e6a817 !important; }
+.ucrud-operativo .op-mobile-card.border-info { border-left: 4px solid var(--op-info) !important; }
+.ucrud-operativo .op-mobile-card.border-success { border-left: 4px solid var(--op-success) !important; }
+
+/* ---------------------------------------- Detalle cotización -- */
+
+.ucrud-detalle .ucrud-header {
+    margin-bottom: 1rem;
+}
+
+.ucrud-detalle .ucrud-title span,
+.ucrud-detalle .ucrud-title .text-primary {
+    color: var(--ucrud-primary) !important;
+}
+
+/* Info cotización */
+.ucrud-detalle .op-coti-info,
+.ucrud-detalle .card.shadow-sm.mb-4:first-of-type,
+.ucrud-detalle > .card.shadow-sm.mb-4 {
+    border: 1px solid var(--ucrud-border);
+    border-radius: var(--ucrud-radius);
+    box-shadow: var(--ucrud-shadow);
+    overflow: hidden;
+}
+
+.ucrud-detalle .card-header.bg-dark {
+    background: linear-gradient(135deg, #2f3245 0%, #1e2030 100%) !important;
+    border-bottom: none;
+    padding: 1rem 1.15rem !important;
+}
+
+.ucrud-detalle .card-header.bg-dark h5 {
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+/* Secciones pendientes / análisis */
+.ucrud-detalle > .d-lg-block > .row > div > .card.shadow-sm.mb-4 > .card-header.bg-primary,
+.ucrud-detalle .card > .card-header.bg-primary:not(.bg-dark) {
+    background: linear-gradient(135deg, var(--ucrud-primary) 0%, var(--ucrud-primary-dark) 100%) !important;
+    border-bottom: none;
+    padding: .85rem 1.15rem;
+}
+
+.ucrud-detalle .card.shadow-sm,
+.ucrud-detalle .card.mi-tarjeta {
+    border: 1px solid var(--ucrud-border);
+    border-radius: .85rem;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, .04);
+    overflow: hidden;
+}
+
+/* Headers de muestra/OT por estado — refina sin cambiar clases PHP */
+.ucrud-detalle .card-header.bg-secondary {
+    background: #6c757d !important;
+}
+
+.ucrud-detalle .card-header.bg-warning {
+    background: linear-gradient(135deg, #f0ad4e 0%, #ec971f 100%) !important;
+    color: #1a1a1a !important;
+}
+
+.ucrud-detalle .card-header.bg-success {
+    background: linear-gradient(135deg, #198754 0%, #157347 100%) !important;
+}
+
+.ucrud-detalle .card-header.bg-danger {
+    background: linear-gradient(135deg, #dc3545 0%, #b5352c 100%) !important;
+}
+
+.ucrud-detalle .card-header.bg-info {
+    background: linear-gradient(135deg, #36b9cc 0%, #2c9faf 100%) !important;
+}
+
+.ucrud-detalle .card-header.text-white {
+    font-weight: 600;
+}
+
+.ucrud-detalle .card-body.collapse-content,
+.ucrud-detalle .card-body {
+    padding: 1rem 1.15rem;
+}
+
+/* Badges de estado en detalle */
+.ucrud-detalle .badge.bg-success { background: var(--op-success-bg) !important; color: var(--op-success) !important; border: 1px solid #c8eddc; }
+.ucrud-detalle .badge.bg-warning { background: var(--op-warning-bg) !important; color: var(--op-warning) !important; border: 1px solid #f6e2b8; }
+.ucrud-detalle .badge.bg-danger  { background: var(--op-danger-bg) !important; color: var(--op-danger) !important; border: 1px solid #f3cccc; }
+.ucrud-detalle .badge.bg-info    { background: var(--op-info-bg) !important; color: var(--op-info) !important; border: 1px solid #c3ebf2; }
+.ucrud-detalle .badge.bg-secondary { background: #f1f3f8 !important; color: var(--op-muted) !important; border: 1px solid #e2e5ef; }
+
+.ucrud-detalle .card-header .badge.bg-warning.text-dark {
+    background: rgba(255, 255, 255, .92) !important;
+    color: #96650b !important;
+    border: none;
+}
+
+/* Prioridad borde dorado */
+.ucrud-detalle .card[style*="ffc107"] {
+    border: 2px solid #e6a817 !important;
+    box-shadow: 0 0 0 3px rgba(230, 168, 23, .15) !important;
+}
+
+/* Botones toolbar detalle */
+.ucrud-detalle .btn-outline-secondary {
+    border-color: var(--ucrud-border);
+    color: var(--ucrud-muted);
+    border-radius: .75rem;
+    font-weight: 600;
+    font-size: .875rem;
+}
+
+.ucrud-detalle .btn-outline-secondary:hover {
+    background: #f4f6fb;
+    border-color: #d9dceb;
+    color: var(--ucrud-ink);
+}
+
+.ucrud-detalle .btn-sm,
+.ucrud-detalle .btn-group .btn {
+    border-radius: .65rem;
+    font-weight: 600;
+    font-size: .8125rem;
+}
+
+.ucrud-detalle .btn-primary {
+    background: var(--ucrud-primary);
+    border-color: var(--ucrud-primary);
+}
+
+.ucrud-detalle .btn-primary:hover {
+    background: var(--ucrud-primary-dark);
+    border-color: var(--ucrud-primary-dark);
+}
+
+/* Alertas dentro detalle */
+.ucrud-detalle > .alert,
+.ucrud-detalle .alert {
+    border-radius: .85rem;
+    border: 1px solid transparent;
+    font-size: .875rem;
+}
+
+.ucrud-detalle .alert-success { background: var(--op-success-bg); border-color: #c9edda; color: var(--op-success); }
+.ucrud-detalle .alert-warning { background: var(--op-warning-bg); border-color: #f6e2b8; color: var(--op-warning); }
+.ucrud-detalle .alert-danger  { background: var(--op-danger-bg); border-color: #f3cccc; color: var(--op-danger); }
+
+/* Leyenda listados */
+.ucrud-operativo .op-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .5rem;
+    margin-bottom: .75rem;
+    font-size: .8125rem;
+    color: var(--ucrud-muted);
+}
+
+.ucrud-operativo .op-legend .badge {
+    font-size: .65rem;
+    padding: .2rem .45rem;
+}
+
+.ucrud-operativo .ucrud-table thead th a {
+    color: inherit;
+    font-size: inherit;
+    font-weight: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+}
+
+.ucrud-operativo .ucrud-table thead th a:hover {
+    color: var(--ucrud-primary);
+}
+
+.ucrud-btn--sm {
+    padding: .42rem .8rem;
+    font-size: .8125rem;
+    border-radius: .65rem;
+}
+
+.ucrud-alert--info {
+    background: #e7f3ff;
+    border-color: #c9dff7;
+    color: #245a8a;
+}
+
+/* ---------------------------------------- Vista calendario -- */
+
+.ucrud-operativo .op-calendario {
+    padding: 1rem 1.15rem 1.25rem;
+}
+
+.ucrud-operativo .op-calendario__header {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: .75rem;
+    margin-bottom: 1rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--ucrud-line);
+}
+
+.ucrud-operativo .op-calendario__title {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--ucrud-ink);
+}
+
+.ucrud-operativo .op-calendario__meta {
+    font-size: .8125rem;
+    font-weight: 500;
+    color: var(--ucrud-muted);
+}
+
+.ucrud-operativo .op-calendario__toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .5rem;
+}
+
+.ucrud-operativo .op-calendario #calendar {
+    height: min(72vh, 800px);
+    background: var(--ucrud-surface);
+    border: 1px solid var(--ucrud-border);
+    border-radius: .85rem;
+    overflow: hidden;
+}
+
+.ucrud-operativo .op-calendario .fc-event {
+    cursor: pointer;
+    font-size: .78rem;
+    padding: 2px 4px;
+    border-radius: .35rem;
+}
+
+.ucrud-operativo .op-calendario .fc-event-warning { background-color: #f0ad4e; border-color: #ec971f; }
+.ucrud-operativo .op-calendario .fc-event-success { background-color: #198754; border-color: #157347; }
+.ucrud-operativo .op-calendario .fc-event-info    { background-color: #36b9cc; border-color: #2c9faf; }
+.ucrud-operativo .op-calendario .fc-event-danger  { background-color: #dc3545; border-color: #b5352c; }
+.ucrud-operativo .op-calendario .fc-event-primary { background-color: var(--ucrud-primary); border-color: var(--ucrud-primary-dark); }
+.ucrud-operativo .op-calendario .fc-event-secondary { background-color: #6c757d; border-color: #5a6268; }
+
+.ucrud-operativo .op-calendario .fc-event-cuotas {
+    box-shadow: inset 4px 0 0 0 #0dcaf0;
+    font-weight: 600;
+}
+
+.ucrud-operativo .op-calendario .fc .fc-toolbar-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--ucrud-ink);
+}
+
+.ucrud-operativo .op-calendario .fc .fc-button-primary {
+    background: var(--ucrud-primary);
+    border-color: var(--ucrud-primary);
+}
+
+.ucrud-operativo .op-calendario .fc .fc-button-primary:hover {
+    background: var(--ucrud-primary-dark);
+    border-color: var(--ucrud-primary-dark);
+}
+
+.ucrud-operativo .op-calendario .fc .fc-button-primary:not(:disabled).fc-button-active,
+.ucrud-operativo .op-calendario .fc .fc-button-primary:not(:disabled):active {
+    background: var(--ucrud-primary-dark);
+    border-color: var(--ucrud-primary-dark);
+}
+
+/* ---------------------------------------- Vista documento -- */
+
+.ucrud-operativo .op-documento {
+    display: flex;
+    flex-direction: column;
+    gap: .65rem;
+}
+
+.ucrud-operativo .op-documento-card,
+.ucrud-operativo .documento-card {
+    border: 1px solid var(--ucrud-border);
+    border-radius: var(--ucrud-radius);
+    background: var(--ucrud-surface);
+    box-shadow: var(--ucrud-shadow);
+    overflow: hidden;
+    transition: box-shadow .18s ease, transform .18s ease;
+}
+
+.ucrud-operativo .op-documento-card:hover,
+.ucrud-operativo .documento-card:hover {
+    box-shadow: 0 4px 18px rgba(16, 24, 40, .08);
+}
+
+.ucrud-operativo .op-documento-card.border-danger,
+.ucrud-operativo .documento-card.border-danger { border-left: 4px solid var(--op-danger) !important; background: #fffafa; }
+.ucrud-operativo .op-documento-card.border-warning,
+.ucrud-operativo .documento-card.border-warning { border-left: 4px solid #e6a817 !important; background: #fffdf8; }
+.ucrud-operativo .op-documento-card.border-info,
+.ucrud-operativo .documento-card.border-info { border-left: 4px solid var(--op-info) !important; background: #f8fdfe; }
+
+.ucrud-operativo .op-documento-card > .card-header,
+.ucrud-operativo .documento-card > .card-header {
+    background: #f7f8fc;
+    border-bottom: 1px solid var(--ucrud-line);
+    padding: .85rem 1rem;
+}
+
+.ucrud-operativo .op-documento-card > .card-body,
+.ucrud-operativo .documento-card > .card-body {
+    padding: .85rem 1rem;
+}
+
+.ucrud-operativo .op-documento .badge-sm {
+    font-size: .68rem;
+    padding: .2rem .45rem;
+    font-weight: 600;
+}
+
+.ucrud-operativo .op-documento .chevron-icon {
+    transition: transform .2s ease;
+}
+
+.ucrud-operativo .op-documento .chevron-icon.rotated {
+    transform: rotate(180deg);
+}
+
+.ucrud-operativo .op-documento .progress {
+    height: .45rem;
+    background: #eef0f7;
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.ucrud-operativo .op-documento .btn-xs {
+    padding: .2rem .4rem;
+    font-size: .75rem;
+}
+
+.ucrud-operativo .op-documento .ot-badge {
+    cursor: pointer;
+    transition: transform .1s ease, opacity .1s ease;
+}
+
+.ucrud-operativo .op-documento .ot-badge:hover {
+    transform: scale(1.05);
+    opacity: .9;
+}
+
+.ucrud-operativo .op-calendario__filter-form {
+    display: flex;
+    align-items: center;
+    gap: .45rem;
+    margin: 0;
+}
+
+.ucrud-operativo .op-calendario__filter-form .ucrud-select {
+    min-width: 9rem;
+    max-width: 11rem;
+}
+
+/* Headers de tarjetas por estado (muestreo / OT) */
+.op-header--revision,
+.ucrud-detalle .card-header.op-header--revision {
+    background: #6eb5d6 !important;
+    color: #fff !important;
+    border-color: #5aa3c4 !important;
+}
+
+.op-header--revision a:not(.badge),
+.op-header--revision strong,
+.ucrud-detalle .card-header.op-header--revision a:not(.badge) {
+    color: #fff !important;
+}
+
+.ucrud-detalle .card-header.bg-success,
+.op-header--analizado {
+    background: #198754 !important;
+    color: #fff !important;
+}
+
+.ucrud-detalle .card-header.bg-success a:not(.badge),
+.op-header--analizado a:not(.badge) {
+    color: #fff !important;
+}
+
+/* Chips de personas (analistas / muestreadores) sobre header de color */
+.ucrud-detalle .card-header .op-person-chip,
+.ucrud-detalle .card-header .badge.bg-light.text-dark,
+.op-header--revision .badge.bg-light,
+.ucrud-detalle .card-header.bg-success .badge.bg-light,
+.ucrud-detalle .card-header.bg-warning .badge.bg-light,
+.ucrud-detalle .card-header.op-header--revision .badge.bg-light {
+    background: rgba(255, 255, 255, .95) !important;
+    color: #1a2332 !important;
+    border: 1px solid rgba(255, 255, 255, .6) !important;
+    font-weight: 600;
+}
+
+.ucrud-detalle .card-header .badge.bg-info,
+.ucrud-detalle .card-header a .badge.bg-info,
+.ucrud-detalle .card-header .op-header-tag,
+.ucrud-detalle .card-header a .op-header-tag {
+    background: rgba(255, 255, 255, .95) !important;
+    color: #1a2332 !important;
+    border: 1px solid rgba(255, 255, 255, .65) !important;
+    font-weight: 600;
+}
+
+.ucrud-detalle .card-header .op-header-tag--info,
+.ucrud-detalle .card-header a .op-header-tag--info {
+    background: rgba(255, 255, 255, .95) !important;
+    color: #0b5ed7 !important;
+    border: 1px solid rgba(255, 255, 255, .65) !important;
+}
+
+.ucrud-detalle .card-header .op-header-tag--warning,
+.ucrud-detalle .card-header a .op-header-tag--warning {
+    background: rgba(255, 255, 255, .95) !important;
+    color: #96650b !important;
+    border: 1px solid rgba(255, 255, 255, .65) !important;
+}
+
+.ucrud-detalle .card-header .op-header-tag--success,
+.ucrud-detalle .card-header a .op-header-tag--success {
+    background: rgba(255, 255, 255, .95) !important;
+    color: #157347 !important;
+    border: 1px solid rgba(255, 255, 255, .65) !important;
+}
+
+/* Header tarjeta OT (ordenes/show) */
+.op-ot-card-header {
+    display: flex;
+    flex-direction: column;
+    gap: .65rem;
+}
+
+.op-ot-card-header__top {
+    align-items: flex-start !important;
+}
+
+.op-ot-card-header__analistas {
+    padding-top: .65rem;
+    border-top: 1px solid rgba(255, 255, 255, .22);
+}
+
+.op-ot-card-header__analistas-label {
+    display: block;
+    margin-bottom: .35rem;
+    font-size: .68rem;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    opacity: .85;
+}
+
+.op-ot-card-header__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .35rem;
+}
+
+.op-ot-card-header .op-person-chip {
+    font-size: .72rem;
+    padding: .28rem .55rem;
+    font-weight: 600;
+    background: rgba(255, 255, 255, .14) !important;
+    color: #fff !important;
+    border: 1px solid rgba(255, 255, 255, .32) !important;
+}
+
+.op-ot-card-header .op-person-chip .btn-close {
+    filter: brightness(0) invert(1);
+    opacity: .75;
+}
+
+.op-ot-card-header .op-person-chip .btn-close:hover {
+    opacity: 1;
+}
+
+.op-ot-card-header .op-person-chip--more {
+    background: rgba(255, 255, 255, .1) !important;
+    color: rgba(255, 255, 255, .92) !important;
+    border: 1px dashed rgba(255, 255, 255, .4) !important;
+    cursor: help;
+    font-weight: 700;
+}
+
+.op-ot-card-header__qr {
+    display: inline-flex;
+    padding: .25rem;
+    border-radius: .5rem;
+    opacity: .92;
+}
+
+.op-ot-card-header__qr:hover {
+    background: rgba(255, 255, 255, .12);
+    opacity: 1;
+}
+
+/* Estado en celdas tabla cotizaciones */
+.ucrud-operativo .ucrud-table tbody td.estado-aprobado { background: var(--op-success-bg); color: var(--op-success); font-weight: 600; }
+.ucrud-operativo .ucrud-table tbody td.estado-espera   { background: var(--op-warning-bg); color: var(--op-warning); font-weight: 600; }
+.ucrud-operativo .ucrud-table tbody td.estado-rechazado { background: var(--op-danger-bg); color: var(--op-danger); font-weight: 600; }
+.ucrud-operativo .ucrud-table tbody td.estado-otro      { background: #f1f3f8; color: var(--op-muted); font-weight: 600; }
+
+@media (max-width: 767.98px) {
+    .ucrud-operativo .ucrud-header {
+        align-items: flex-start;
+    }
+
+    .ucrud-operativo .ucrud-header__actions {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .ucrud-operativo .ucrud-filters__grid {
+        grid-template-columns: 1fr;
+    }
+
+    .ucrud-operativo .op-calendario #calendar {
+        height: 560px;
+    }
+
+    .ucrud-operativo .op-calendario__header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .ucrud-operativo .op-calendario__toolbar {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .ucrud-operativo .op-calendario .fc .fc-toolbar {
+        flex-direction: column;
+        gap: .5rem;
+    }
+}

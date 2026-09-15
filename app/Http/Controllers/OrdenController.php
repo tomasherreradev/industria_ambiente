@@ -27,7 +27,11 @@ use App\Support\AsignacionSectorLaboratorio;
 use App\Support\LeyNormativaPresentacion;
 use App\Support\PrioridadListado;
 use App\Support\EtiquetaMetodoAnalisis;
+use App\Support\ListadoProgresoOrden;
 use App\Support\OrdenesLaboratorioListado;
+use App\Support\OrdenesAccesoPorSector;
+use App\Support\AnalisisResultadoValidacion;
+use App\Support\FechaAnalisisInformePdf;
 use App\Models\Metodo;
 
 class OrdenController extends Controller
@@ -165,6 +169,10 @@ class OrdenController extends Controller
                         });
                 });
             }
+
+            if (OrdenesAccesoPorSector::debeFiltrarPorSector($user)) {
+                OrdenesAccesoPorSector::aplicarFiltroInstanciaPorSectoresUsuario($query, $user);
+            }
     
             // Obtener resultados ordenados por fecha
             $instancias = $query->orderBy('fecha_inicio_ot', 'asc')->get();
@@ -254,12 +262,48 @@ class OrdenController extends Controller
         // Vista de Lista/Documento - misma base que OrdenesLaboratorioListado
         $baseQuery = OrdenesLaboratorioListado::baseCotiQuery($request);
 
-        $pagination = $baseQuery->orderBy('coti_num', 'desc')
-            ->paginate($viewType === 'documento' ? 100 : 100);
+        if (OrdenesAccesoPorSector::debeFiltrarPorSector($user)) {
+            OrdenesAccesoPorSector::aplicarFiltroCotiPorSectoresUsuario($baseQuery, $user);
+        }
 
-        CotizacionClienteEtiqueta::precargarEmpresasRelacionadas($pagination->getCollection());
+        $perPage = 100;
+        $tieneOrdenExplicito = OrdenesLaboratorioListado::tieneOrdenExplicito($request);
+        $ordenPorProgreso = ListadoProgresoOrden::esOrdenPorProgreso($request->query('sort'));
+        $dirProgreso = strtolower((string) $request->query('dir', '')) === 'desc' ? 'desc' : 'asc';
 
-        $ordenes = OrdenesLaboratorioListado::construirOrdenesDesdeCotizaciones($pagination->getCollection());
+        if ($ordenPorProgreso) {
+            $cotizaciones = $baseQuery->get();
+            CotizacionClienteEtiqueta::precargarEmpresasRelacionadas($cotizaciones);
+
+            $ordenes = OrdenesLaboratorioListado::construirOrdenesDesdeCotizaciones($cotizaciones, true);
+
+            if (OrdenesAccesoPorSector::debeFiltrarPorSector($user)) {
+                $ordenes = OrdenesAccesoPorSector::filtrarOrdenesPorSector($ordenes, $user);
+            }
+
+            $ordenesOrdenadas = ListadoProgresoOrden::ordenarOrdenesLaboratorio($ordenes, $dirProgreso);
+            $pagination = ListadoProgresoOrden::paginar($ordenesOrdenadas, $perPage, $request);
+            $ordenes = collect($pagination->items())->mapWithKeys(function (array $orden) {
+                return [(int) $orden['cotizacion']->coti_num => $orden];
+            });
+        } else {
+            OrdenesLaboratorioListado::aplicarOrdenListado($baseQuery, $request);
+
+            $pagination = $baseQuery
+                ->paginate($perPage)
+                ->withQueryString();
+
+            CotizacionClienteEtiqueta::precargarEmpresasRelacionadas($pagination->getCollection());
+
+            $ordenes = OrdenesLaboratorioListado::construirOrdenesDesdeCotizaciones(
+                $pagination->getCollection(),
+                $tieneOrdenExplicito
+            );
+
+            if (OrdenesAccesoPorSector::debeFiltrarPorSector($user)) {
+                $ordenes = OrdenesAccesoPorSector::filtrarOrdenesPorSector($ordenes, $user);
+            }
+        }
     
         return view('ordenes.index', [
             'ordenes' => $ordenes,
@@ -508,8 +552,12 @@ public function showOrdenes(Request $request)
     $soloMisAsignaciones = $this->resolverSoloMisAsignacionesMisOrdenes($user, $request);
 
     if ($soloMisAsignaciones) {
-        $this->aplicarFiltroUsuarioResponsableAnalisisInstancia($queryAnalisis, $codigo);
-        $queryMuestras->whereRaw('1 = 0');
+        if (OrdenesAccesoPorSector::debeFiltrarPorSector($user)) {
+            OrdenesAccesoPorSector::aplicarFiltroInstanciaPorSectoresUsuario($queryAnalisis, $user);
+        } else {
+            $this->aplicarFiltroUsuarioResponsableAnalisisInstancia($queryAnalisis, $codigo);
+            $queryMuestras->whereRaw('1 = 0');
+        }
     }
     // Privilegiado sin filtro: todas las muestras/análisis activos (resto de filtros aplican después)
 
@@ -853,7 +901,16 @@ public function showOrdenes(Request $request)
 
 public function showDetalle($ordenId)
 {
+    $user = Auth::user();
     $cotizacion = Coti::findOrFail($ordenId);
+
+    if (! OrdenesAccesoPorSector::cotizacionVisibleParaUsuario((int) $cotizacion->coti_num, $user)) {
+        abort(403, 'No tiene acceso a esta orden de trabajo.');
+    }
+
+    $filtrarPorSector = OrdenesAccesoPorSector::debeFiltrarPorSector($user);
+    $sectoresUsuario = $filtrarPorSector ? OrdenesAccesoPorSector::sectoresUsuario($user) : collect();
+
     $inventario = InventarioLab::all();
 
     // Obtener categorías (muestras) que van a lab: sin muestreo (lleva_muestreo=false)
@@ -984,7 +1041,22 @@ public function showDetalle($ordenId)
                 }
 
                 return $tareaClonada;
-            });
+            })->filter(function ($tareaClonada) use ($filtrarPorSector, $sectoresUsuario) {
+                if (! $filtrarPorSector) {
+                    return true;
+                }
+
+                $instanciaAnalisis = $tareaClonada->instancia ?? null;
+                if (! $instanciaAnalisis || ! $instanciaAnalisis->id) {
+                    return false;
+                }
+
+                return OrdenesAccesoPorSector::instanciaTieneResponsablesEnSectores($instanciaAnalisis, $sectoresUsuario);
+            })->values();
+
+            if ($filtrarPorSector && $analisisParaInstancia->isEmpty()) {
+                continue;
+            }
 
             $instanciasConAnalisis->push([
                 'muestra' => $instanciaMuestra,
@@ -1017,6 +1089,15 @@ public function verOrden($cotizacion, $item, $instance = null)
         $cotizacion = Coti::findOrFail($cotizacion);
     }
     $instance = $instance ?? 1;
+    $user = Auth::user();
+
+    if (! OrdenesAccesoPorSector::cotizacionVisibleParaUsuario((int) $cotizacion->coti_num, $user)) {
+        abort(403, 'No tiene acceso a esta orden de trabajo.');
+    }
+
+    $filtrarPorSector = OrdenesAccesoPorSector::debeFiltrarPorSector($user);
+    $sectoresUsuario = $filtrarPorSector ? OrdenesAccesoPorSector::sectoresUsuario($user) : collect();
+
     $usuariosAnalistas = User::where('rol', '!=', 'sector')
                 ->orderBy('usu_descripcion')
                 ->get();
@@ -1038,6 +1119,15 @@ public function verOrden($cotizacion, $item, $instance = null)
                     'cotio_subitem' => 0,
                     'instance_number' => $instance,
                 ])->first();
+
+    if ($instanciaMuestra) {
+        AnalisisResultadoValidacion::sincronizarEstadoMuestraDesdeAnalisis(
+            $instanciaMuestra->cotio_numcoti,
+            $instanciaMuestra->cotio_item,
+            $instanciaMuestra->instance_number
+        );
+        $instanciaMuestra->refresh();
+    }
 
     $variablesOrdenadas = collect();
     if ($instanciaMuestra && $instanciaMuestra->valoresVariables) {
@@ -1075,14 +1165,24 @@ public function verOrden($cotizacion, $item, $instance = null)
             ->orderBy('cotio_subitem')
             ->get();
 
-        $instanciaIds = $tareas->map(function ($tarea) use ($instance) {
-            return CotioInstancia::where([
+        $instanciaIds = $tareas->map(function ($tarea) use ($instance, $filtrarPorSector, $sectoresUsuario) {
+            $instanciaAnalisis = CotioInstancia::with('responsablesAnalisis')->where([
                 'cotio_numcoti' => $tarea->cotio_numcoti,
                 'cotio_item' => $tarea->cotio_item,
                 'cotio_subitem' => $tarea->cotio_subitem,
                 'instance_number' => $instance,
                 'active_ot' => true
-            ])->first()?->id;
+            ])->first();
+
+            if (! $instanciaAnalisis) {
+                return null;
+            }
+
+            if ($filtrarPorSector && ! OrdenesAccesoPorSector::instanciaTieneResponsablesEnSectores($instanciaAnalisis, $sectoresUsuario)) {
+                return null;
+            }
+
+            return $instanciaAnalisis->id;
         })->filter()->values();
 
         if ($instanciaIds->isNotEmpty()) {
@@ -1158,7 +1258,17 @@ public function verOrden($cotizacion, $item, $instance = null)
             return $tarea;
         }
         return null;
-    })->filter();
+    })->filter(function ($tarea) use ($filtrarPorSector, $sectoresUsuario) {
+        if (! $tarea || ! $filtrarPorSector) {
+            return (bool) $tarea;
+        }
+
+        return OrdenesAccesoPorSector::instanciaTieneResponsablesEnSectores($tarea->instancia, $sectoresUsuario);
+    });
+
+    if ($filtrarPorSector && $instanciaMuestra && ! OrdenesAccesoPorSector::muestraTieneAnalisisEnSectores($instanciaMuestra, $sectoresUsuario)) {
+        abort(403, 'No tiene acceso a los análisis de esta muestra en su laboratorio.');
+    }
 
     $usuarios = User::where('usu_nivel', '<=', 500)
                 ->orderBy('usu_descripcion')
@@ -1206,6 +1316,8 @@ public function verOrden($cotizacion, $item, $instance = null)
 
 public function asignarDetallesAnalisis(Request $request) 
 {
+    $this->authorizeGestionOrdenes();
+
     try {
         DB::beginTransaction();
         
@@ -1516,7 +1628,11 @@ public function showOrdenesAll(Request $request, $cotio_numcoti, $cotio_item, $c
         ->where('instance_number', $instance);
 
         if ($soloMisAsignaciones) {
-            $this->aplicarFiltroUsuarioResponsableAnalisisInstancia($analisisQuery, $usuarioActual);
+            if (OrdenesAccesoPorSector::debeFiltrarPorSector($usuario)) {
+                OrdenesAccesoPorSector::aplicarFiltroInstanciaPorSectoresUsuario($analisisQuery, $usuario);
+            } else {
+                $this->aplicarFiltroUsuarioResponsableAnalisisInstancia($analisisQuery, $usuarioActual);
+            }
         }
 
         $analisis = $analisisQuery->orderBy('cotio_subitem')->get()->each(function ($item) {
@@ -1685,6 +1801,7 @@ public function updateAnalistaFechasAnalisis(Request $request, CotioInstancia $i
     if (! $this->userCanEditAnalistaFechasInforme($user, $instancia)) {
         abort(403, 'No autorizado para editar estas fechas.');
     }
+    $this->authorizeAccesoInstanciaAnalisis($instancia);
 
     if ($this->instanciaMuestraEstaAnalizada($instancia)) {
         abort(403, 'No se pueden editar fechas: la muestra ya está analizada.');
@@ -1718,6 +1835,8 @@ public function updateAnalistaFechasAnalisis(Request $request, CotioInstancia $i
 
 public function asignacionMasiva(Request $request, $ordenId)
 {
+    $this->authorizeGestionOrdenes();
+
     Log::info('Iniciando asignación masiva', [
         'ordenId' => $ordenId,
         'user' => Auth::user()->usu_codigo ?? 'unknown',
@@ -2473,6 +2592,8 @@ protected function getInstanciasGemelas(CotioInstancia $instancia)
 
 public function removerResponsable(Request $request, $ordenId)
 {
+    $this->authorizeGestionOrdenes();
+
     $validated = $request->validate([
         'instancia_id' => 'required|integer|exists:cotio_instancias,id',
         'user_codigo' => 'required|string|exists:usu,usu_codigo',
@@ -2568,10 +2689,11 @@ public function enableInforme(Request $request)
         ])->firstOrFail();
 
         if ($instancia->cotio_estado_analisis !== 'analizado') {
-            return response()->json([
-                'success' => false,
-                'message' => 'La instancia no está en estado analizado.',
-            ], 400);
+            return redirect()->back()->with('error', 'La instancia no está en estado analizado.');
+        }
+
+        if (! AnalisisResultadoValidacion::muestraPuedeMarcarseAnalizada($instancia)) {
+            return redirect()->back()->with('error', AnalisisResultadoValidacion::mensajeMuestraNoAnalizable($instancia));
         }
 
         DB::beginTransaction();
@@ -2698,6 +2820,13 @@ public function aprobarInforme($instancia_id)
             ], 400);
         }
 
+        if ((int) $instancia->cotio_subitem === 0 && ! AnalisisResultadoValidacion::muestraPuedeMarcarseAnalizada($instancia)) {
+            return response()->json([
+                'success' => false,
+                'message' => AnalisisResultadoValidacion::mensajeMuestraNoAnalizable($instancia),
+            ], 422);
+        }
+
         DB::beginTransaction();
 
         $instancia->aprobado_informe = true;
@@ -2735,27 +2864,7 @@ public function aprobarInforme($instancia_id)
      */
     private function textoFechaAnalisisParaInforme(CotioInstancia $tarea): string
     {
-        $mFi = $tarea->analista_fecha_inicio ?? null;
-        $mFf = $tarea->analista_fecha_fin ?? null;
-        if ($mFi && $mFf) {
-            return Carbon::parse($mFi)->format('d/m/Y') . ' – ' . Carbon::parse($mFf)->format('d/m/Y');
-        }
-        if ($mFi) {
-            return 'Desde ' . Carbon::parse($mFi)->format('d/m/Y');
-        }
-        if ($mFf) {
-            return 'Hasta ' . Carbon::parse($mFf)->format('d/m/Y');
-        }
-        $fechaAnalisis = $tarea->fecha_carga_ot
-            ?? $tarea->fecha_carga_resultado_3
-            ?? $tarea->fecha_carga_resultado_2
-            ?? $tarea->fecha_carga_resultado_1
-            ?? null;
-        if ($fechaAnalisis) {
-            return Carbon::parse($fechaAnalisis)->format('d/m/Y') . ' (fecha de carga de resultado)';
-        }
-
-        return '—';
+        return FechaAnalisisInformePdf::textoDescriptivoOt($tarea);
     }
 
     /**
@@ -3133,32 +3242,53 @@ public function finalizarTodas(Request $request)
             'active_ot' => true
         ];
 
-            // Base query para muestra principal + análisis asociados
-            $baseQuery = CotioInstancia::where($params)
-                ->where(function($query) use ($request) {
+            $pendientes = CotioInstancia::where($params)
+                ->where(function ($query) use ($request) {
                     $query->where('cotio_subitem', $request->cotio_subitem)
                           ->orWhere('cotio_subitem', '>', 0);
-                });
-
-            // Verificar si existen registros a afectar
-            $total = (clone $baseQuery)->count();
-            if ($total === 0) {
-                return redirect()->back()->with('info', 'No hay muestras o análisis activos para finalizar.');
-            }
-
-            // Actualizar solo pendientes (toggle efectivo)
-            $updatedCount = (clone $baseQuery)
+                })
                 ->where(function ($q) {
                     $q->whereNull('cotio_estado_analisis')
                       ->orWhere('cotio_estado_analisis', '!=', 'analizado');
                 })
-                ->update(['cotio_estado_analisis' => 'analizado']);
+                ->get();
 
-            if ($updatedCount === 0) {
-                return redirect()->back()->with('info', 'Todas las muestras y análisis ya se encontraban finalizados.');
+            if ($pendientes->isEmpty()) {
+                return redirect()->back()->with('info', 'No hay muestras o análisis activos para finalizar.');
             }
 
-            return redirect()->back()->with('success', 'Se finalizaron correctamente ' . $updatedCount . ' registros.');
+            $omitidos = collect();
+            $updatedCount = 0;
+
+            foreach ($pendientes as $instancia) {
+                if (! AnalisisResultadoValidacion::analisisPuedeMarcarseAnalizado($instancia)) {
+                    $omitidos->push($instancia);
+                    continue;
+                }
+
+                $instancia->update(['cotio_estado_analisis' => 'analizado']);
+                $updatedCount++;
+            }
+
+            if ($updatedCount === 0) {
+                return redirect()->back()->with(
+                    'error',
+                    AnalisisResultadoValidacion::mensajeVariasSinResultado($omitidos->unique('id'))
+                );
+            }
+
+            AnalisisResultadoValidacion::sincronizarEstadoMuestraDesdeAnalisis(
+                $request->cotio_numcoti,
+                $request->cotio_item,
+                $request->instance_number
+            );
+
+            $mensaje = 'Se finalizaron correctamente ' . $updatedCount . ' registros.';
+            if ($omitidos->isNotEmpty()) {
+                $mensaje .= ' ' . AnalisisResultadoValidacion::mensajeVariasSinResultado($omitidos->unique('id'));
+            }
+
+            return redirect()->back()->with('success', $mensaje);
 
     } catch (\Exception $e) {
         return redirect()->back()->with('error', 'Error al finalizar muestras y análisis: ' . $e->getMessage());
@@ -3198,7 +3328,23 @@ public function actualizarEstado(Request $request)
             ], 404);
         }
 
+        if ((int) $validated['cotio_subitem'] > 0) {
+            $this->authorizeAccesoInstanciaAnalisis($item);
+        } elseif (OrdenesAccesoPorSector::debeFiltrarPorSector(Auth::user()) && ! Auth::user()->puedeGestionarOrdenes()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No autorizado para modificar el estado de la muestra.',
+            ], 403);
+        }
+
         $vehiculoAsignado = $item->vehiculo_asignado;
+
+        if ($validated['estado'] === 'analizado' && ! AnalisisResultadoValidacion::analisisPuedeMarcarseAnalizado($item)) {
+            return response()->json([
+                'success' => false,
+                'message' => AnalisisResultadoValidacion::mensajeNoAnalizable($item),
+            ], 422);
+        }
 
         if(Auth::user()->hasRole('coordinador_lab') || Auth::user()->usu_nivel >= '900') {
             $item->cotio_estado_analisis = $validated['estado'];
@@ -3251,18 +3397,12 @@ public function actualizarEstado(Request $request)
 
         $item->save();
 
-        if (
-            (int) $validated['cotio_subitem'] === 0
-            && $validated['estado'] === 'analizado'
-            && (Auth::user()->hasRole('coordinador_lab') || Auth::user()->usu_nivel >= 900)
-        ) {
-            CotioInstancia::where([
-                'cotio_numcoti' => $validated['cotio_numcoti'],
-                'cotio_item' => $validated['cotio_item'],
-                'instance_number' => $validated['instance_number'],
-            ])
-                ->where('cotio_subitem', '>', 0)
-                ->update(['cotio_estado_analisis' => 'analizado']);
+        if ((int) $validated['cotio_subitem'] > 0 && $validated['estado'] === 'analizado') {
+            AnalisisResultadoValidacion::sincronizarEstadoMuestraDesdeAnalisis(
+                $validated['cotio_numcoti'],
+                $validated['cotio_item'],
+                $validated['instance_number']
+            );
         }
 
         DB::commit();
@@ -3326,6 +3466,8 @@ public function apiHerramientasInstancia($instanciaId)
 
     public function deshacerAsignaciones(Request $request)
     {
+        $this->authorizeGestionOrdenes();
+
         try {
             $instanciaId = $request->instancia_id;
             $cotizacionId = $request->cotizacion_id;
@@ -3454,6 +3596,8 @@ public function apiHerramientasInstancia($instanciaId)
     }
     public function editarResponsables(Request $request, $cotio_numcoti)
     {
+        $this->authorizeGestionOrdenes();
+
         try {
             $validated = $request->validate([
                 'cotio_item' => 'required',
@@ -3536,6 +3680,8 @@ public function apiHerramientasInstancia($instanciaId)
 
     public function quitarResponsable(Request $request, $cotio_numcoti)
     {
+        $this->authorizeGestionOrdenes();
+
         try {
             $validated = $request->validate([
                 'cotio_item' => 'required',
@@ -3963,6 +4109,7 @@ public function apiHerramientasInstancia($instanciaId)
     public function requestReview(Request $request, $instance)
     {
         $instancia = CotioInstancia::findOrFail($instance);
+        $this->authorizeAccesoInstanciaAnalisis($instancia);
         $instancia->request_review = true;
         $instancia->observaciones_request_review = $request->observaciones;
         $instancia->save();
@@ -4005,10 +4152,99 @@ public function apiHerramientasInstancia($instanciaId)
     public function requestReviewCancel(Request $request, $instance)
     {
         $instancia = CotioInstancia::findOrFail($instance);
+        $this->authorizeAccesoInstanciaAnalisis($instancia);
         $instancia->request_review = false;
         $instancia->observaciones_request_review = null;
         $instancia->save();
         return response()->json(['success' => true]);
+    }
+
+    public function solicitudCambioOrden(Request $request, $cotizacion)
+    {
+        $user = Auth::user();
+        if (! $user || ! OrdenesAccesoPorSector::debeFiltrarPorSector($user)) {
+            abort(403, 'No autorizado para solicitar cambios en esta orden.');
+        }
+
+        $validated = $request->validate([
+            'motivo' => 'required|string|max:2000',
+            'cotio_item' => 'nullable|integer|min:1',
+            'instance_number' => 'nullable|integer|min:1',
+            'instancia_id' => 'nullable|integer|exists:cotio_instancias,id',
+        ]);
+
+        $cotizacionModel = Coti::findOrFail($cotizacion);
+        if (! OrdenesAccesoPorSector::cotizacionVisibleParaUsuario((int) $cotizacionModel->coti_num, $user)) {
+            abort(403, 'No tiene acceso a esta orden de trabajo.');
+        }
+
+        $instanciaReferencia = null;
+        if (! empty($validated['instancia_id'])) {
+            $instanciaReferencia = CotioInstancia::find($validated['instancia_id']);
+        } elseif (! empty($validated['cotio_item']) && ! empty($validated['instance_number'])) {
+            $instanciaReferencia = CotioInstancia::where([
+                'cotio_numcoti' => $cotizacionModel->coti_num,
+                'cotio_item' => $validated['cotio_item'],
+                'cotio_subitem' => 0,
+                'instance_number' => $validated['instance_number'],
+            ])->first();
+        }
+
+        if ($instanciaReferencia && AnalisisResultadoValidacion::instanciaEstaAnalizada($instanciaReferencia)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No se puede solicitar cambios: la muestra ya está analizada.',
+            ], 422);
+        }
+
+        $motivo = trim((string) $validated['motivo']);
+        $contexto = sprintf(
+            'COTI %s%s',
+            $cotizacionModel->coti_num,
+            $instanciaReferencia
+                ? sprintf(' (muestra ítem %s, instancia %s)', $instanciaReferencia->cotio_item, $instanciaReferencia->instance_number)
+                : ''
+        );
+
+        $mensajeBase = sprintf(
+            'Solicitud de cambio en orden de trabajo %s. Solicitado por: %s (%s). Motivo: %s',
+            $contexto,
+            $user->usu_descripcion ?? $user->usu_codigo,
+            $user->usu_codigo,
+            $motivo
+        );
+
+        try {
+            foreach (OrdenesAccesoPorSector::usuariosGestoresOrdenes() as $gestor) {
+                $urlGestor = $instanciaReferencia
+                    ? (SimpleNotification::generarUrlPorRol($gestor->usu_codigo, $instanciaReferencia->id)
+                        ?? route('ordenes.ver-detalle', ['cotizacion' => $cotizacionModel->coti_num], true))
+                    : route('ordenes.ver-detalle', ['cotizacion' => $cotizacionModel->coti_num], true);
+
+                SimpleNotification::create([
+                    'coordinador_codigo' => $gestor->usu_codigo,
+                    'sender_codigo' => $user->usu_codigo,
+                    'instancia_id' => $instanciaReferencia?->id,
+                    'mensaje' => $mensajeBase,
+                    'url' => $urlGestor,
+                ]);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('No se pudieron enviar notificaciones de solicitud de cambio', [
+                'cotizacion' => $cotizacionModel->coti_num,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'No se pudo enviar la solicitud. Intente nuevamente.',
+            ], 500);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Solicitud de cambio enviada a los coordinadores con permiso de gestión.',
+        ]);
     }
 
     public function finalizarAnalisisSeleccionados(Request $request)
@@ -4020,32 +4256,72 @@ public function apiHerramientasInstancia($instanciaId)
             ]);
 
             $instanciaIds = $request->instancia_ids;
+            $user = Auth::user();
 
             // Verificar que las instancias estén en OT y no estén ya finalizadas
             // Solo trabajar con análisis (cotio_subitem > 0), no con muestras
             $instancias = CotioInstancia::whereIn('id', $instanciaIds)
                 ->where('active_ot', true)
-                ->where('cotio_subitem', '>', 0) // Solo análisis, no muestras
+                ->where('cotio_subitem', '>', 0)
                 ->where(function ($q) {
                     $q->whereNull('cotio_estado_analisis')
                     ->orWhere('cotio_estado_analisis', '!=', 'analizado');
                 })
-                ->get();
+                ->get()
+                ->filter(function (CotioInstancia $instancia) use ($user) {
+                    if (! OrdenesAccesoPorSector::debeFiltrarPorSector($user)) {
+                        return true;
+                    }
+
+                    return OrdenesAccesoPorSector::instanciaTieneResponsablesEnSectores(
+                        $instancia,
+                        OrdenesAccesoPorSector::sectoresUsuario($user)
+                    );
+                })
+                ->values();
 
             if ($instancias->isEmpty()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'No hay análisis válidos para finalizar. Puede que ya estén finalizados o no estén en OT.'
+                    'message' => 'No hay análisis válidos para finalizar en su laboratorio. Puede que ya estén finalizados o no estén en OT.'
                 ], 400);
             }
 
-            // Actualizar estado a 'analizado'
-            $updatedCount = CotioInstancia::whereIn('id', $instancias->pluck('id'))
+            $sinResultado = $instancias->filter(
+                fn (CotioInstancia $instancia) => ! AnalisisResultadoValidacion::instanciaTieneResultado($instancia)
+            );
+            $instanciasValidas = $instancias->reject(
+                fn (CotioInstancia $instancia) => ! AnalisisResultadoValidacion::instanciaTieneResultado($instancia)
+            );
+
+            if ($instanciasValidas->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => AnalisisResultadoValidacion::mensajeVariasSinResultado($sinResultado),
+                ], 422);
+            }
+
+            $updatedCount = CotioInstancia::whereIn('id', $instanciasValidas->pluck('id'))
                 ->update(['cotio_estado_analisis' => 'analizado']);
+
+            $instanciasValidas
+                ->unique(fn (CotioInstancia $i) => $i->cotio_numcoti.'|'.$i->cotio_item.'|'.$i->instance_number)
+                ->each(function (CotioInstancia $analisis) {
+                    AnalisisResultadoValidacion::sincronizarEstadoMuestraDesdeAnalisis(
+                        $analisis->cotio_numcoti,
+                        $analisis->cotio_item,
+                        $analisis->instance_number
+                    );
+                });
+
+            $mensaje = "Se finalizaron correctamente {$updatedCount} análisis.";
+            if ($sinResultado->isNotEmpty()) {
+                $mensaje .= ' ' . AnalisisResultadoValidacion::mensajeVariasSinResultado($sinResultado);
+            }
 
             return response()->json([
                 'success' => true,
-                'message' => "Se finalizaron correctamente {$updatedCount} análisis."
+                'message' => $mensaje,
             ]);
 
         } catch (\Exception $e) {
@@ -4059,6 +4335,8 @@ public function apiHerramientasInstancia($instanciaId)
 
     public function asignarResponsablesAnalisisSeleccionados(Request $request)
     {
+        $this->authorizeGestionOrdenes();
+
         try {
             $request->validate([
                 'instancia_ids' => 'required|array',
@@ -4129,7 +4407,32 @@ public function apiHerramientasInstancia($instanciaId)
 
     private function usuarioEsPrivilegiadoMisOrdenes(User $user): bool
     {
-        return (int) $user->usu_nivel >= 900 || $user->hasRole('coordinador_lab');
+        if ((int) $user->usu_nivel >= 900) {
+            return true;
+        }
+
+        return $user->hasRole('coordinador_lab') && $user->puedeGestionarOrdenes();
+    }
+
+    private function authorizeGestionOrdenes(): void
+    {
+        $user = Auth::user();
+        if (! $user || ! $user->puedeGestionarOrdenes()) {
+            abort(403, 'No autorizado para gestionar órdenes de trabajo.');
+        }
+    }
+
+    private function authorizeAccesoInstanciaAnalisis(CotioInstancia $instancia): void
+    {
+        $user = Auth::user();
+        if (! $user || ! OrdenesAccesoPorSector::debeFiltrarPorSector($user)) {
+            return;
+        }
+
+        $sectores = OrdenesAccesoPorSector::sectoresUsuario($user);
+        if (! OrdenesAccesoPorSector::instanciaTieneResponsablesEnSectores($instancia, $sectores)) {
+            abort(403, 'No tiene acceso a este análisis.');
+        }
     }
 
     /**

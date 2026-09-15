@@ -1,41 +1,28 @@
 @extends('layouts.app')
 
+@section('title', 'Crear inventario de muestreo')
+
 @section('content')
-    <h1>Crear Inventario de Muestreo</h1>
-    <form action="{{ route('inventarios-muestreo.store') }}" method="POST" enctype="multipart/form-data">
-        @csrf
-        <div class="mb-3">
-            <label for="equipamiento" class="form-label">Equipamiento</label>
-            <input type="text" class="form-control" id="equipamiento" name="equipamiento" required placeholder="Ej: Camara de muestreo">
+@include('partials.ucrud-styles')
+
+<div class="container py-4 ucrud">
+    @include('partials.ucrud-form-header', [
+        'title' => 'Crear inventario de muestreo',
+        'subtitle' => 'Alta de equipamiento de campo.',
+        'backUrl' => route('inventarios-muestreo.index'),
+    ])
+
+    <div class="ucrud-panel">
+        <div class="ucrud-form">
+            <form action="{{ route('inventarios-muestreo.store') }}" method="POST" enctype="multipart/form-data">
+                @csrf
+                @include('inventarios-muestreo.partials.form')
+                <div class="ucrud-form__actions">
+                    <button type="submit" class="ucrud-btn ucrud-btn--primary">Guardar</button>
+                    <a href="{{ route('inventarios-muestreo.index') }}" class="ucrud-btn ucrud-btn--ghost">Cancelar</a>
+                </div>
+            </form>
         </div>
-        <div class="mb-3">
-            <label for="marca_modelo" class="form-label">Marca y Modelo</label>
-            <input type="text" class="form-control" id="marca_modelo" name="marca_modelo" placeholder="Ej: ABC123">
-        </div>
-        <div class="mb-3">
-            <label for="n_serie_lote" class="form-label">N° de Serie o Lote</label>
-            <input type="text" class="form-control" id="n_serie_lote" name="n_serie_lote" placeholder="Ej: ABC123">
-        </div>
-        <div class="mb-3">
-            <label for="fecha_calibracion" class="form-label">Fecha de Calibración (vencimiento)</label>
-            <input type="date" class="form-control" id="fecha_calibracion" name="fecha_calibracion" placeholder="Fecha de calibración">
-        </div>
-        <div class="mb-3">
-            <label for="activo" class="form-label">Activo</label>
-            <select class="form-select" id="activo" name="activo">
-                <option value="1">Activo</option>
-                <option value="0">Inactivo</option>
-            </select>
-        </div>
-        <div class="mb-3">
-            <label for="certificado" class="form-label">Certificado de Calibración (PDF)</label>
-            <input type="file" class="form-control" id="certificado" name="certificado" accept=".pdf">
-            <small class="text-muted">Tamaño máximo: 5MB</small>
-        </div>
-        <div class="mb-3">
-            <label for="observaciones" class="form-label">Observaciones</label>
-            <textarea class="form-control" id="observaciones" name="observaciones" placeholder="Observaciones"></textarea>
-        </div>
-        <button type="submit" class="btn btn-primary">Guardar</button>
-    </form>
+    </div>
+</div>
 @endsection

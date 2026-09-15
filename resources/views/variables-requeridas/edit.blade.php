@@ -1,25 +1,31 @@
 @extends('layouts.app')
 
-@section('content')
-<div class="container">
-    <!-- Encabezado -->
-    <h1 class="h3 font-weight-bold mb-4">Editar Variable Requerida</h1>
+@section('title', 'Editar variable requerida')
 
-    <!-- Mensaje de error o éxito -->
+@section('content')
+@include('partials.ucrud-styles')
+
+<div class="container py-4 ucrud">
+    @include('partials.ucrud-form-header', [
+        'title' => 'Editar variable requerida',
+        'subtitle' => $variableRequerida->nombre,
+        'backUrl' => route('variables-requeridas.index'),
+    ])
+
     @if(session('error'))
-        <div class="alert alert-danger alert-dismissible fade show" role="alert">
-            {{ session('error') }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        <div class="ucrud-alert ucrud-alert--danger" role="alert">
+            <span>{{ session('error') }}</span>
         </div>
     @endif
 
-    <!-- Formulario -->
+    <div class="ucrud-panel">
+        <div class="ucrud-form">
     <form action="{{ route('variables-requeridas.update', $variableRequerida->id) }}" method="POST" id="edit-variable-form" novalidate>
         @csrf
         @method('PUT')
 
-        <div class="card shadow-sm mb-4">
-            <div class="card-body">
+        <div class="ucrud-subpanel mb-0">
+            <div class="ucrud-subpanel__body">
                 <!-- Cotio Descripción -->
                 <div class="mb-3">
                     <label for="cotio_descripcion" class="form-label">Cotio Descripción</label>
@@ -76,13 +82,14 @@
             </div>
         </div>
 
-        <!-- Botones de acción -->
-        <div class="d-flex gap-2 mb-4">
-            <button type="submit" class="btn btn-primary">Actualizar</button>
-            <a href="{{ route('variables-requeridas.index') }}" class="btn btn-outline-secondary" id="cancel-button">Cancelar</a>
-            <button type="button" class="btn btn-outline-warning" id="reset-form">Resetear</button>
+        <div class="ucrud-form__actions">
+            <button type="submit" class="ucrud-btn ucrud-btn--primary">Actualizar</button>
+            <a href="{{ route('variables-requeridas.index') }}" class="ucrud-btn ucrud-btn--ghost" id="cancel-button">Cancelar</a>
+            <button type="button" class="ucrud-btn ucrud-btn--ghost" id="reset-form">Resetear</button>
         </div>
     </form>
+        </div>
+    </div>
 
     <!-- Modal de confirmación para cancelar -->
     <div class="modal fade" id="cancelModal" tabindex="-1" aria-labelledby="cancelModalLabel" aria-hidden="true">
@@ -108,26 +115,8 @@
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet">
 
-<style>
-.card-body .form-control.is-invalid, 
-.card-body .form-select.is-invalid {
-    border-color: #dc3545;
-}
-.card-body .invalid-feedback {
-    font-size: 0.875rem;
-}
-.select2-container .select2-selection--single {
-    height: calc(2.25rem + 2px);
-    display: flex;
-    align-items: center;
-}
-.select2-container--bootstrap-5 .select2-selection {
-    border-radius: 0.375rem;
-}
-</style>
-
-<!-- Select2 JS -->
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+@push('scripts')
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // Inicializar Select2
@@ -144,8 +133,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const originalValues = {
         cotio_descripcion: '{{ $variableRequerida->cotio_descripcion }}',
         nombre: '{{ $variableRequerida->nombre }}',
-        obligatorio: '{{ $variableRequerida->obligatorio }}',
-        unidad_medicion: '{{ $variableRequerida->unidad_medicion }}'
+        obligatorio: '{{ $variableRequerida->obligatorio }}'
     };
 
     // Validación en tiempo real
@@ -179,8 +167,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const currentValues = {
             cotio_descripcion: form.querySelector('#cotio_descripcion').value,
             nombre: form.querySelector('#nombre').value,
-            obligatorio: form.querySelector('#obligatorio').value,
-            unidad_medicion: form.querySelector('#unidad_medicion').value
+            obligatorio: form.querySelector('#obligatorio').value
         };
         return JSON.stringify(currentValues) !== JSON.stringify(originalValues);
     }
@@ -197,4 +184,5 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 </script>
+@endpush
 @endsection

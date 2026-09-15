@@ -109,6 +109,28 @@ public function dashboardMuestreo(Request $request)
 
     // Verificar si el usuario es coordinador_muestreo
     $esCoordinadorMuestreo = Auth::user()->rol === 'coordinador_muestreo';
+    $veTodasLasMuestrasMuestreo = $esCoordinadorMuestreo || (int) Auth::user()->usu_nivel >= 900;
+
+    $restringirAlcanceMuestrasUsuario = function ($instanciaQuery) use ($userCodigo, $veTodasLasMuestrasMuestreo) {
+        if ($veTodasLasMuestrasMuestreo) {
+            return;
+        }
+
+        $instanciaQuery->where(function ($query) use ($userCodigo) {
+            $query->where('cotio_instancias.coordinador_codigo', $userCodigo)
+                ->orWhereHas('responsablesMuestreo', function ($q) use ($userCodigo) {
+                    $q->where('instancia_responsable_muestreo.usu_codigo', $userCodigo);
+                });
+        });
+    };
+
+    $filtroInstanciasMuestreoActivas = function ($instanciaQuery) use ($restringirAlcanceMuestrasUsuario) {
+        $instanciaQuery->where('cotio_instancias.cotio_subitem', 0)
+            ->where(function ($q) {
+                $q->where('enable_ot', false)->orWhereNull('enable_ot');
+            });
+        $restringirAlcanceMuestrasUsuario($instanciaQuery);
+    };
     
     // Verificar si es día 1 del mes para filtrar por mes actual
     $esDiaUno = now()->day === 1;
@@ -119,25 +141,17 @@ public function dashboardMuestreo(Request $request)
         'user_codigo' => $userCodigo,
         'rol' => Auth::user()->rol,
         'es_coordinador_muestreo' => $esCoordinadorMuestreo,
+        've_todas_las_muestras_muestreo' => $veTodasLasMuestrasMuestreo,
         'es_dia_uno' => $esDiaUno,
         'fecha_inicio_mes' => $fechaInicioMes->format('Y-m-d'),
         'fecha_fin_mes' => $fechaFinMes->format('Y-m-d')
     ]);
 
     // Base query para muestras (incluye las ya pasadas a laboratorio/documentación)
-    if ($esCoordinadorMuestreo) {
-        $query = CotioInstancia::where('cotio_instancias.cotio_subitem', 0);
-        Log::info('[Dashboard Muestreo] Usuario es coordinador_muestreo - sin restricción de coordinador_codigo');
-    } else {
-        // Para otros usuarios, aplicar restricción de permisos
-        $query = CotioInstancia::where('cotio_instancias.cotio_subitem', 0)
-            ->where(function($query) use ($userCodigo) {
-                // Mostrar muestras donde el usuario es coordinador O tiene muestras asignadas
-                $query->where('cotio_instancias.coordinador_codigo', $userCodigo)
-                      ->orWhereHas('responsablesMuestreo', function($q) use ($userCodigo) {
-                          $q->where('instancia_responsable_muestreo.usu_codigo', $userCodigo);
-                      });
-            });
+    $query = CotioInstancia::where('cotio_instancias.cotio_subitem', 0);
+    $restringirAlcanceMuestrasUsuario($query);
+    if ($veTodasLasMuestrasMuestreo) {
+        Log::info('[Dashboard Muestreo] Alcance completo (coordinador_muestreo o admin)');
     }
 
     // Contar muestras antes de aplicar filtros adicionales
@@ -318,46 +332,20 @@ public function dashboardMuestreo(Request $request)
           ->where('cotio_instancias.cotio_estado', '!=', 'finalizado');
     }])->get();
     
-    // Obtener muestreadores disponibles (usuarios que tienen muestras asignadas)
-    $muestreadores = User::whereHas('instanciasMuestreo', function($q) use ($userCodigo) {
-        $q->where('cotio_instancias.cotio_subitem', 0)
-          ->where(function($q2) {
-              $q2->where('enable_ot', false)->orWhereNull('enable_ot');
-          })
-          ->where(function($query) use ($userCodigo) {
-              $query->where('cotio_instancias.coordinador_codigo', $userCodigo)
-                    ->orWhereHas('responsablesMuestreo', function($q) use ($userCodigo) {
-                        $q->where('instancia_responsable_muestreo.usu_codigo', $userCodigo);
-                    });
-          });
-    })->orderBy('usu_descripcion')->get();
+    // Obtener muestreadores disponibles (usuarios con muestras en el alcance visible)
+    $muestreadores = User::whereHas('instanciasMuestreo', $filtroInstanciasMuestreoActivas)
+        ->orderBy('usu_descripcion')
+        ->get();
     
-    // Obtener vehículos disponibles (vehículos que tienen muestras asignadas)
-    $vehiculosDisponibles = Vehiculo::whereHas('cotioInstancias', function($q) use ($userCodigo) {
-        $q->where('cotio_instancias.cotio_subitem', 0)
-          ->where(function($q2) {
-              $q2->where('enable_ot', false)->orWhereNull('enable_ot');
-          })
-          ->where(function($query) use ($userCodigo) {
-              $query->where('cotio_instancias.coordinador_codigo', $userCodigo)
-                    ->orWhereHas('responsablesMuestreo', function($q) use ($userCodigo) {
-                        $q->where('instancia_responsable_muestreo.usu_codigo', $userCodigo);
-                    });
-          });
-    })->orderBy('patente')->get();
+    // Obtener vehículos disponibles (vehículos con muestras en el alcance visible)
+    $vehiculosDisponibles = Vehiculo::whereHas('cotioInstancias', $filtroInstanciasMuestreoActivas)
+        ->orderBy('patente')
+        ->get();
     
-    // Obtener zonas disponibles (zonas de clientes que tienen muestras)
-    // Primero obtener los códigos de zona únicos de las muestras actuales
-    $zonasCodigos = CotioInstancia::where('cotio_instancias.cotio_subitem', 0)
-        ->where(function($q) {
-            $q->where('enable_ot', false)->orWhereNull('enable_ot');
-        })
-        ->where(function($query) use ($userCodigo) {
-            $query->where('cotio_instancias.coordinador_codigo', $userCodigo)
-                  ->orWhereHas('responsablesMuestreo', function($q) use ($userCodigo) {
-                      $q->where('instancia_responsable_muestreo.usu_codigo', $userCodigo);
-                  });
-        })
+    // Obtener zonas disponibles (zonas de clientes con muestras en el alcance visible)
+    $zonasCodigosQuery = CotioInstancia::query();
+    $filtroInstanciasMuestreoActivas($zonasCodigosQuery);
+    $zonasCodigos = $zonasCodigosQuery
         ->join('coti', 'cotio_instancias.cotio_numcoti', '=', 'coti.coti_num')
         ->join('cli', 'coti.coti_codigocli', '=', 'cli.cli_codigo')
         ->whereNotNull('cli.cli_codigozon')
@@ -401,6 +389,7 @@ public function exportarMuestrasMuestreo(Request $request)
 
         $userCodigo = Auth::user()->usu_codigo;
         $esCoordinadorMuestreo = Auth::user()->rol === 'coordinador_muestreo';
+        $veTodasLasMuestrasMuestreo = $esCoordinadorMuestreo || (int) Auth::user()->usu_nivel >= 900;
 
         $fechaDesde = $request->fecha_desde;
         $fechaHasta = $request->fecha_hasta;
@@ -408,7 +397,7 @@ public function exportarMuestrasMuestreo(Request $request)
         $nombreArchivo = 'muestras_muestreo_' . now()->format('Y_m_d_H_i') . '.xlsx';
 
         return Excel::download(
-            new MuestrasMuestreoExport($fechaDesde, $fechaHasta, $userCodigo, $esCoordinadorMuestreo),
+            new MuestrasMuestreoExport($fechaDesde, $fechaHasta, $userCodigo, $veTodasLasMuestrasMuestreo),
             $nombreArchivo
         );
 

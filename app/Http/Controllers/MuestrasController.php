@@ -23,6 +23,7 @@ use App\Models\InstanciaResponsableMuestreo;
 use App\Support\CotizacionClienteEtiqueta;
 use App\Support\CotizacionCanalEnsayo;
 use App\Support\PrioridadListado;
+use App\Support\ListadoProgresoOrden;
 use App\Support\PortalListadoInstancias;
 use App\Support\TrabajoTecnicoCampo;
 use App\Support\AdjuntosArchivoValidacion;
@@ -420,13 +421,17 @@ private function aplicarFiltroEstadoMuestraEnQueryInstancia($query, ?string $est
 }
 
 /** @var list<string> */
-private const COLUMNAS_ORDEN_LISTADO_MUESTRAS = ['muestra', 'cliente', 'fecha'];
+private const COLUMNAS_ORDEN_LISTADO_MUESTRAS = ['muestra', 'cliente', 'fecha', 'progreso'];
 
 private function normalizarColumnaOrdenMuestras(?string $sort): ?string
 {
     $sort = strtolower(trim((string) $sort));
+    $columnasSql = array_values(array_filter(
+        self::COLUMNAS_ORDEN_LISTADO_MUESTRAS,
+        fn (string $columna) => $columna !== ListadoProgresoOrden::COLUMNA
+    ));
 
-    return in_array($sort, self::COLUMNAS_ORDEN_LISTADO_MUESTRAS, true) ? $sort : null;
+    return in_array($sort, $columnasSql, true) ? $sort : null;
 }
 
 /**
@@ -434,6 +439,10 @@ private function normalizarColumnaOrdenMuestras(?string $sort): ?string
  */
 private function aplicarOrdenListadoMuestras($query, Request $request, bool $tieneFiltroFecha): void
 {
+    if (ListadoProgresoOrden::esOrdenPorProgreso($request->query('sort'))) {
+        return;
+    }
+
     $sort = $this->normalizarColumnaOrdenMuestras($request->query('sort'));
     $dir = strtolower((string) $request->query('dir', '')) === 'desc' ? 'desc' : 'asc';
 
@@ -454,6 +463,145 @@ private function aplicarOrdenListadoMuestras($query, Request $request, bool $tie
     if ($sort !== 'muestra') {
         $query->orderBy('coti.coti_num', 'asc');
     }
+}
+
+/**
+ * @param  iterable<int, Coti>  $cotizaciones
+ */
+private function adjuntarProgresoListadoMuestrasPrincipal(iterable $cotizaciones): void
+{
+    foreach ($cotizaciones as $coti) {
+        $muestrasOriginales = $coti->tareas->where('cotio_subitem', 0)
+            ->filter(function ($tarea) use ($coti) {
+                $descripcion = trim($tarea->cotio_descripcion);
+                if (in_array($descripcion, [
+                    'TRABAJO TECNICO EN CAMPO',
+                    'TRABAJOS EN CAMPO NOCTURNO - VIATICOS',
+                    'VIATICOS',
+                ], true)) {
+                    return false;
+                }
+                if (CotizacionCanalEnsayo::ensayoExcluidoDeMuestras($tarea, optional($coti->matriz)->matriz_descripcion)) {
+                    return false;
+                }
+
+                return $tarea->lleva_muestreo === true;
+            });
+
+        $totalInstancias = $muestrasOriginales->sum('cotio_cantidad');
+        $instancias = $coti->instancias
+            ->where('cotio_subitem', 0)
+            ->filter(function ($instancia) use ($muestrasOriginales) {
+                return $muestrasOriginales->contains(function ($tarea) use ($instancia) {
+                    return $tarea->cotio_item == $instancia->cotio_item;
+                });
+            });
+
+        $muestreadas = $instancias->filter(fn ($instancia) => $this->instanciaEstaMuestreadaParaProgreso($instancia))->count();
+        $enRevision = $instancias->filter(fn ($instancia) => strtolower(trim($instancia->cotio_estado ?? '')) === 'en revision muestreo')->count();
+        $coordinadas = $instancias->filter(fn ($instancia) => strtolower(trim($instancia->cotio_estado ?? '')) === 'coordinado muestreo')->count();
+        $hasSuspension = $instancias->contains(fn ($instancia) => strtolower(trim($instancia->cotio_estado ?? '')) === 'suspension');
+        $hasPriority = PrioridadListado::grupoTienePrioridad($instancias, $coti, $muestrasOriginales);
+
+        $porcentajes = [
+            'muestreadas' => $totalInstancias > 0 ? ($muestreadas / $totalInstancias) * 100 : 0,
+            'en_revision' => $totalInstancias > 0 ? ($enRevision / $totalInstancias) * 100 : 0,
+            'coordinadas' => $totalInstancias > 0 ? ($coordinadas / $totalInstancias) * 100 : 0,
+            'total' => $totalInstancias > 0 ? (($muestreadas + $enRevision + $coordinadas) / $totalInstancias) * 100 : 0,
+        ];
+
+        $coti->total_instancias = $totalInstancias;
+        $coti->instancias_completadas = $muestreadas + $enRevision + $coordinadas;
+        $coti->porcentaje_progreso = $porcentajes;
+        $coti->has_suspension = $hasSuspension;
+        $coti->has_priority = $hasPriority;
+    }
+}
+
+/**
+ * @param  iterable<int, Coti>  $cotizaciones
+ */
+private function adjuntarProgresoListadoMediciones(iterable $cotizaciones): void
+{
+    $cotiNums = collect($cotizaciones)->pluck('coti_num')->map(fn ($n) => (int) $n)->all();
+    $instMedicionesPorCoti = collect();
+
+    if ($cotiNums !== []) {
+        foreach (array_chunk($cotiNums, 50) as $chunk) {
+            $filas = DB::table('cotio_instancias')
+                ->whereIn('cotio_numcoti', $chunk)
+                ->where('cotio_subitem', 0)
+                ->where('enable_modulo_mediciones', true)
+                ->select(['cotio_numcoti', 'cotio_item', 'archivo_informe', 'es_priori'])
+                ->limit(5000)
+                ->get();
+            $instMedicionesPorCoti = $instMedicionesPorCoti->concat($filas);
+        }
+        $instMedicionesPorCoti = $instMedicionesPorCoti->groupBy(fn ($r) => (int) $r->cotio_numcoti);
+    }
+
+    foreach ($cotizaciones as $coti) {
+        $muestrasMedicion = $coti->tareas->where('cotio_subitem', 0)
+            ->filter(function ($tarea) use ($coti) {
+                return CotizacionCanalEnsayo::cotioEnsayoCoincideCanalUnico(
+                    $tarea,
+                    'mediciones',
+                    optional($coti->matriz)->matriz_descripcion
+                );
+            });
+
+        $items = $muestrasMedicion->pluck('cotio_item')->map(fn ($i) => (int) $i)->all();
+        $instancias = collect($instMedicionesPorCoti->get((int) $coti->coti_num, collect()))
+            ->filter(fn ($inst) => in_array((int) $inst->cotio_item, $items, true))
+            ->values();
+
+        $totalInstancias = $instancias->count();
+        $conInforme = $instancias->filter(fn ($instancia) => trim((string) ($instancia->archivo_informe ?? '')) !== '')->count();
+        $sinInforme = max(0, $totalInstancias - $conInforme);
+
+        $porcentajes = [
+            'con_informe' => $totalInstancias > 0 ? ($conInforme / $totalInstancias) * 100 : 0,
+            'sin_informe' => $totalInstancias > 0 ? ($sinInforme / $totalInstancias) * 100 : 0,
+            'total' => $totalInstancias > 0 ? ($conInforme / $totalInstancias) * 100 : 0,
+        ];
+
+        $coti->total_instancias = $totalInstancias;
+        $coti->instancias_completadas = $conInforme;
+        $coti->porcentaje_progreso = $porcentajes;
+        $coti->has_suspension = false;
+        $coti->has_priority = PrioridadListado::grupoTienePrioridad($instancias, $coti, $muestrasMedicion);
+    }
+}
+
+/**
+ * @param  \Illuminate\Database\Eloquent\Builder<\App\Models\Coti>  $query
+ * @param  callable(iterable<int, Coti>): void  $adjuntarProgreso
+ * @return \Illuminate\Contracts\Pagination\LengthAwarePaginator
+ */
+private function paginarListadoCotiConProgreso(
+    $query,
+    Request $request,
+    bool $tieneFiltroFecha,
+    callable $adjuntarProgreso,
+    string $tipoFinalizacion = 'muestreo',
+    int $perPage = 20
+) {
+    if (ListadoProgresoOrden::esOrdenPorProgreso($request->query('sort'))) {
+        $dir = strtolower((string) $request->query('dir', '')) === 'desc' ? 'desc' : 'asc';
+        $collection = $query->get();
+        CotizacionClienteEtiqueta::precargarEmpresasRelacionadas($collection);
+        $adjuntarProgreso($collection);
+        $sorted = ListadoProgresoOrden::ordenarCotizaciones($collection, $dir, $tipoFinalizacion);
+
+        return ListadoProgresoOrden::paginar($sorted, $perPage, $request);
+    }
+
+    $this->aplicarOrdenListadoMuestras($query, $request, $tieneFiltroFecha);
+    $muestras = $query->paginate($perPage)->withQueryString();
+    CotizacionClienteEtiqueta::precargarEmpresasRelacionadas($muestras->getCollection());
+    $adjuntarProgreso($muestras->getCollection());
+
+    return $muestras;
 }
 
     
@@ -719,75 +867,13 @@ public function index(Request $request)
 
     $tieneFiltroFecha = $request->filled('fecha_inicio_muestreo') || $request->filled('fecha_fin_muestreo');
 
-    $this->aplicarOrdenListadoMuestras($query, $request, $tieneFiltroFecha);
+    $muestras = $this->paginarListadoCotiConProgreso(
+        $query,
+        $request,
+        $tieneFiltroFecha,
+        fn (iterable $cotizaciones) => $this->adjuntarProgresoListadoMuestrasPrincipal($cotizaciones)
+    );
 
-    $muestras = $query->paginate(20)->appends($request->query());
-
-        CotizacionClienteEtiqueta::precargarEmpresasRelacionadas($muestras->getCollection());
-
-        // Procesamiento de las muestras (solo las que llevan muestreo)
-        $muestras->each(function ($coti) {
-        // Muestras originales que llevan muestreo
-        $muestrasOriginales = $coti->tareas->where('cotio_subitem', 0)
-            ->filter(function ($tarea) use ($coti) {
-                $descripcion = trim($tarea->cotio_descripcion);
-                // Excluir trabajos técnicos/viáticos
-                if (in_array($descripcion, [
-                    'TRABAJO TECNICO EN CAMPO',
-                    'TRABAJOS EN CAMPO NOCTURNO - VIATICOS',
-                    'VIATICOS'
-                ])) {
-                    return false;
-                }
-                if (CotizacionCanalEnsayo::ensayoExcluidoDeMuestras($tarea, optional($coti->matriz)->matriz_descripcion)) {
-                    return false;
-                }
-                // Incluir solo las que llevan muestreo
-                return $tarea->lleva_muestreo === true;
-            });
-    
-        $totalInstancias = $muestrasOriginales->sum('cotio_cantidad');
-        // Instancias sólo de esas muestras
-        $instancias = $coti->instancias
-            ->where('cotio_subitem', 0)
-            ->filter(function($instancia) use ($muestrasOriginales) {
-                return $muestrasOriginales->contains(function($tarea) use ($instancia) {
-                    return $tarea->cotio_item == $instancia->cotio_item;
-                });
-            });
-        
-        $muestreadas = $instancias->filter(function ($instancia) {
-            return $this->instanciaEstaMuestreadaParaProgreso($instancia);
-        })->count();
-        
-        $enRevision = $instancias->filter(function($instancia) {
-            return strtolower(trim($instancia->cotio_estado ?? '')) === 'en revision muestreo';
-        })->count();
-        
-        $coordinadas = $instancias->filter(function($instancia) {
-            return strtolower(trim($instancia->cotio_estado ?? '')) === 'coordinado muestreo';
-        })->count();
-    
-        $hasSuspension = $instancias->contains(function ($instancia) {
-            return strtolower(trim($instancia->cotio_estado ?? '')) === 'suspension';
-        });
-
-        $hasPriority = PrioridadListado::grupoTienePrioridad($instancias, $coti, $muestrasOriginales);
-        
-        $porcentajes = [
-            'muestreadas' => $totalInstancias > 0 ? ($muestreadas / $totalInstancias) * 100 : 0,
-            'en_revision' => $totalInstancias > 0 ? ($enRevision / $totalInstancias) * 100 : 0,
-            'coordinadas' => $totalInstancias > 0 ? ($coordinadas / $totalInstancias) * 100 : 0,
-            'total' => $totalInstancias > 0 ? (($muestreadas + $enRevision + $coordinadas) / $totalInstancias) * 100 : 0
-        ];
-    
-        $coti->total_instancias = $totalInstancias;
-        $coti->instancias_completadas = $muestreadas + $enRevision + $coordinadas;
-        $coti->porcentaje_progreso = $porcentajes;
-        $coti->has_suspension = $hasSuspension;
-        $coti->has_priority = $hasPriority;
-    });
-    
     return view('muestras.index', [
         'muestras' => $muestras,
         'viewType' => $viewType,
@@ -869,21 +955,14 @@ public function portalListaPorCanalEnsayo(Request $request, string $canal, strin
         $query->whereDate('coti_fechaaprobado', '<=', $request->fecha_fin_muestreo);
     }
 
-    if (empty($request->fecha_inicio_muestreo) && empty($request->fecha_fin_muestreo)) {
-        $query->orderByRaw(PrioridadListado::sqlOrdenJerarquicoListaCotiMuestreo().' ASC')
-            ->orderBy('coti_fechaaprobado', 'asc');
+    $tieneFiltroFecha = $request->filled('fecha_inicio_muestreo') || $request->filled('fecha_fin_muestreo');
 
-        $muestras = $query->paginate(20)->appends($request->query());
-    } else {
-        $query->orderByRaw(PrioridadListado::sqlOrdenJerarquicoListaCotiMuestreo().' ASC')
-            ->orderBy('coti_fechaaprobado', 'desc');
-
-        $muestras = $query->paginate(20)->appends($request->query());
-    }
-
-    CotizacionClienteEtiqueta::precargarEmpresasRelacionadas($muestras->getCollection());
-
-    $this->adjuntarProgresoPortalCanalEnsayo($muestras->getCollection(), $canal);
+    $muestras = $this->paginarListadoCotiConProgreso(
+        $query,
+        $request,
+        $tieneFiltroFecha,
+        fn (iterable $cotizaciones) => $this->adjuntarProgresoPortalCanalEnsayo($cotizaciones, $canal)
+    );
 
     return view('canal-ensayos.lista-portal', [
         'muestras' => $muestras,
@@ -3408,67 +3487,15 @@ public function cancelarMuestreo(Request $request, $coti_num)
             $query->whereDate('coti_fechaaprobado', '<=', $request->fecha_fin_muestreo);
         }
 
-        if (empty($request->fecha_inicio_muestreo) && empty($request->fecha_fin_muestreo)) {
-            $query->orderByRaw(PrioridadListado::sqlOrdenJerarquicoListaCotiMuestreo().' ASC')
-                ->orderBy('coti_fechaaprobado', 'asc');
-            $muestras = $query->paginate(20)->appends($request->query());
-        } else {
-            $query->orderByRaw(PrioridadListado::sqlOrdenJerarquicoListaCotiMuestreo().' ASC')
-                ->orderBy('coti_fechaaprobado', 'desc');
-            $muestras = $query->paginate(20)->appends($request->query());
-        }
+        $tieneFiltroFecha = $request->filled('fecha_inicio_muestreo') || $request->filled('fecha_fin_muestreo');
 
-        CotizacionClienteEtiqueta::precargarEmpresasRelacionadas($muestras->getCollection());
-
-        $cotiNums = $muestras->getCollection()->pluck('coti_num')->map(fn ($n) => (int) $n)->all();
-        $instMedicionesPorCoti = collect();
-        if ($cotiNums !== []) {
-            foreach (array_chunk($cotiNums, 50) as $chunk) {
-                $filas = DB::table('cotio_instancias')
-                    ->whereIn('cotio_numcoti', $chunk)
-                    ->where('cotio_subitem', 0)
-                    ->where('enable_modulo_mediciones', true)
-                    ->select(['cotio_numcoti', 'cotio_item', 'archivo_informe', 'es_priori'])
-                    ->limit(5000)
-                    ->get();
-                $instMedicionesPorCoti = $instMedicionesPorCoti->concat($filas);
-            }
-            $instMedicionesPorCoti = $instMedicionesPorCoti->groupBy(fn ($r) => (int) $r->cotio_numcoti);
-        }
-
-        $muestras->each(function ($coti) use ($instMedicionesPorCoti) {
-            $muestrasMedicion = $coti->tareas->where('cotio_subitem', 0)
-                ->filter(function ($tarea) use ($coti) {
-                    return CotizacionCanalEnsayo::cotioEnsayoCoincideCanalUnico(
-                        $tarea,
-                        'mediciones',
-                        optional($coti->matriz)->matriz_descripcion
-                    );
-                });
-
-            $items = $muestrasMedicion->pluck('cotio_item')->map(fn ($i) => (int) $i)->all();
-            $instancias = collect($instMedicionesPorCoti->get((int) $coti->coti_num, collect()))
-                ->filter(fn ($inst) => in_array((int) $inst->cotio_item, $items, true))
-                ->values();
-
-            $totalInstancias = $instancias->count();
-            $conInforme = $instancias->filter(function ($instancia) {
-                return trim((string) ($instancia->archivo_informe ?? '')) !== '';
-            })->count();
-            $sinInforme = max(0, $totalInstancias - $conInforme);
-
-            $porcentajes = [
-                'con_informe' => $totalInstancias > 0 ? ($conInforme / $totalInstancias) * 100 : 0,
-                'sin_informe' => $totalInstancias > 0 ? ($sinInforme / $totalInstancias) * 100 : 0,
-                'total' => $totalInstancias > 0 ? ($conInforme / $totalInstancias) * 100 : 0,
-            ];
-
-            $coti->total_instancias = $totalInstancias;
-            $coti->instancias_completadas = $conInforme;
-            $coti->porcentaje_progreso = $porcentajes;
-            $coti->has_suspension = false;
-            $coti->has_priority = PrioridadListado::grupoTienePrioridad($instancias, $coti, $muestrasMedicion);
-        });
+        $muestras = $this->paginarListadoCotiConProgreso(
+            $query,
+            $request,
+            $tieneFiltroFecha,
+            fn (iterable $cotizaciones) => $this->adjuntarProgresoListadoMediciones($cotizaciones),
+            'mediciones'
+        );
 
         return view('canal-ensayos.lista-portal', [
             'muestras' => $muestras,

@@ -17,6 +17,7 @@ class MuestrasMuestreoExport implements FromCollection, WithHeadings, WithMappin
     protected $fechaDesde;
     protected $fechaHasta;
     protected $userCodigo;
+    /** @var bool Alcance completo: coordinador_muestreo o admin (usu_nivel >= 900) */
     protected $esCoordinadorMuestreo;
 
     public function __construct($fechaDesde = null, $fechaHasta = null, $userCodigo = null, $esCoordinadorMuestreo = false)

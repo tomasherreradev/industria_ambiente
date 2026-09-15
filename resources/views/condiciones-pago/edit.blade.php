@@ -3,53 +3,52 @@
 @section('title', 'Editar condición de pago')
 
 @section('content')
-<div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h1 class="h4 mb-0">Editar condición de pago</h1>
-        <a href="{{ route('condiciones-pago.index') }}" class="btn btn-outline-secondary">Volver</a>
-    </div>
+@include('partials.ucrud-styles')
 
-    <div class="card">
-        <div class="card-body">
-            <form method="POST" action="{{ route('condiciones-pago.update', $condicion) }}">
+<div class="container py-4 ucrud">
+    @include('partials.ucrud-form-header', [
+        'title' => 'Editar condición de pago',
+        'subtitle' => $condicion->pag_codigo,
+        'backUrl' => route('condiciones-pago.index'),
+    ])
+
+    <div class="ucrud-panel">
+        <div class="ucrud-form">
+            <form method="POST" action="{{ route('condiciones-pago.update', $condicion) }}" id="form-condicion-update">
                 @csrf
                 @method('PUT')
-
                 @include('condiciones-pago._form', ['condicion' => $condicion])
-
-                <div class="d-flex gap-2 mt-4">
-                    <button type="submit" class="btn btn-primary">Actualizar</button>
-                    <a href="{{ route('condiciones-pago.index') }}" class="btn btn-light">Cancelar</a>
-                </div>
             </form>
 
-            <div class="mt-3">
-                <form action="{{ route('condiciones-pago.destroy', $condicion) }}" method="POST" class="js-delete-form d-inline">
+            <div class="ucrud-form__actions">
+                <button type="submit" form="form-condicion-update" class="ucrud-btn ucrud-btn--primary">Actualizar</button>
+                <a href="{{ route('condiciones-pago.index') }}" class="ucrud-btn ucrud-btn--ghost">Cancelar</a>
+                <form action="{{ route('condiciones-pago.destroy', $condicion) }}" method="POST" class="js-delete-form ms-auto">
                     @csrf
                     @method('DELETE')
-                    <button type="submit" class="btn btn-outline-danger">Eliminar</button>
+                    <button type="submit" class="ucrud-btn ucrud-btn--ghost" style="color:#d0453c;border-color:#f0c4c1;">Eliminar condición</button>
                 </form>
             </div>
         </div>
     </div>
 
     @if ($errors->any())
-    <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        Swal.fire({
-            icon: 'error',
-            title: 'Corrige los errores',
-            html: `{!! implode('<br>', $errors->all()) !!}`
+        @push('scripts')
+        <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            Swal.fire({ icon: 'error', title: 'Corrige los errores', html: `{!! implode('<br>', $errors->all()) !!}` });
         });
-    });
-    </script>
+        </script>
+        @endpush
     @endif
+</div>
+@endsection
 
-    <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const form = document.querySelector('.js-delete-form');
-        if (!form) return;
-        form.addEventListener('submit', function(e) {
+@push('scripts')
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.js-delete-form').forEach(function (form) {
+        form.addEventListener('submit', function (e) {
             e.preventDefault();
             Swal.fire({
                 title: '¿Eliminar condición de pago?',
@@ -58,14 +57,11 @@
                 confirmButtonText: 'Sí, eliminar',
                 cancelButtonText: 'Cancelar',
                 confirmButtonColor: '#d33'
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    form.submit();
-                }
+            }).then(function (result) {
+                if (result.isConfirmed) form.submit();
             });
         });
     });
-    </script>
-</div>
-@endsection
-
+});
+</script>
+@endpush

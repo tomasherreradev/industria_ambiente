@@ -1,3 +1,4 @@
+<div class="op-documento">
 @foreach($ordenes as $numCoti => $data)
     @php
         // Usar cotizacion directamente del array (funciona con o sin instancias)
@@ -23,7 +24,7 @@
     @endphp
     
     @if($coti)
-    <div class="card mb-2 shadow-sm documento-card
+    <div class="card mb-2 op-documento-card documento-card
         @if($hasSuspension) border-start border-danger border-3
         @elseif($hasPriority) border-start border-warning border-3
         @else border-start border-3
@@ -74,13 +75,13 @@
                 
                 <!-- Botones de acción -->
                 <div class="btn-group btn-group-sm">
-                    <a href="{{ url('/ordenes/' . $numCoti) }}" class="btn btn-outline-primary btn-xs" title="Gestionar orden">
+                    <a href="{{ url('/ordenes/' . $coti->coti_num) }}" class="btn btn-outline-primary btn-xs" title="Gestionar orden">
                         <x-heroicon-o-pencil style="width: 14px; height: 14px;" />
                     </a>
                     <a href="{{ url('/cotizaciones/'.$coti->coti_num) }}" class="btn btn-outline-secondary btn-xs" title="Ver cotización">
                         <x-heroicon-o-document-magnifying-glass style="width: 14px; height: 14px;" />
                     </a>
-                    <a href="https://www.google.com/maps/search/?api=1&query={{ urlencode($coti->coti_direccioncli.', '.$coti->coti_localidad.', '.$coti->coti_partido) }}" 
+                    <a href="https://www.google.com/maps/search/?api=1&query={{ urlencode(\App\Support\CotizacionClienteEtiqueta::direccionDestinatarioMapsQuery($coti)) }}" 
                        target="_blank" class="btn btn-outline-info btn-xs" title="Ver en mapa">
                         <x-heroicon-o-map style="width: 14px; height: 14px;" />
                     </a>
@@ -115,7 +116,7 @@
                     
                     <div class="col-12 col-md-6">
                         <strong class="text-muted">Dirección:</strong> 
-                        {{ $coti->coti_direccioncli }}, {{ $coti->coti_localidad }}
+                        {{ \App\Support\CotizacionClienteEtiqueta::direccionDestinatarioTexto($coti) ?: '—' }}
                     </div>
                     @if($coti->coti_observaciones)
                         <div class="col-12 col-md-6">
@@ -178,7 +179,7 @@
                             <x-heroicon-o-information-circle style="width: 14px; height: 14px;" class="me-1" />
                             Sin órdenes de trabajo creadas
                         </span>
-                        <a href="{{ url('/ordenes/' . $numCoti) }}" class="btn btn-xs btn-outline-primary">
+                        <a href="{{ url('/ordenes/' . $coti->coti_num) }}" class="btn btn-xs btn-outline-primary">
                             <x-heroicon-o-plus style="width: 12px; height: 12px;" class="me-1" />
                             Crear OTs
                         </a>
@@ -189,57 +190,11 @@
     </div>
     @endif
 @endforeach
-
-<div class="d-flex justify-content-center mt-3">
-    {{ $pagination->links() }}
 </div>
 
-@push('styles')
-<style>
-    .documento-card {
-        transition: transform 0.15s, box-shadow 0.15s;
-    }
-    .documento-card:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 2px 8px rgba(0,0,0,0.12) !important;
-    }
-    .chevron-icon {
-        transition: transform 0.2s ease;
-    }
-    .chevron-icon.rotated {
-        transform: rotate(180deg);
-    }
-    .badge-sm {
-        font-size: 0.7rem;
-        padding: 0.2em 0.5em;
-    }
-    .btn-xs {
-        padding: 0.2rem 0.4rem;
-        font-size: 0.75rem;
-    }
-    .progress {
-        background-color: #e9ecef;
-        border-radius: 4px;
-    }
-    .progress-bar + .progress-bar {
-        border-left: 1px solid rgba(255,255,255,0.3);
-    }
-    .border-danger.border-3 {
-        background-color: rgba(220, 53, 69, 0.02);
-    }
-    .border-warning.border-3 {
-        background-color: rgba(255, 193, 7, 0.02);
-    }
-    .ot-badge {
-        cursor: pointer;
-        transition: transform 0.1s, opacity 0.1s;
-    }
-    .ot-badge:hover {
-        transform: scale(1.05);
-        opacity: 0.9;
-    }
-</style>
-@endpush
+<div class="ucrud-panel ucrud-pagination mt-3">
+    {{ $pagination->links() }}
+</div>
 
 @push('scripts')
 <script>

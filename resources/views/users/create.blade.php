@@ -133,6 +133,16 @@
                                 <label for="admin_lab" class="form-check-label">Administrador de laboratorio</label>
                                 <div class="form-text">Puede ver quién aprobó los informes en órdenes de trabajo.</div>
                             </div>
+                            <div class="form-check mt-2">
+                                <input type="checkbox"
+                                       name="puede_gestionar_ordenes"
+                                       id="puede_gestionar_ordenes"
+                                       class="form-check-input"
+                                       value="1"
+                                       @checked((bool) old('puede_gestionar_ordenes', false))>
+                                <label for="puede_gestionar_ordenes" class="form-check-label">Puede gestionar órdenes</label>
+                                <div class="form-text">Permite asignar y modificar órdenes de trabajo (analistas, sectores, fechas).</div>
+                            </div>
                         </div>
 
                         <div class="mb-3">
@@ -206,6 +216,7 @@
         const wrapperSectoresMultiples = document.getElementById('wrapper_sectores_multiples');
         const wrapperAdminLab = document.getElementById('wrapper_admin_lab');
         const adminLabCheckbox = document.getElementById('admin_lab');
+        const puedeGestionarOrdenesCheckbox = document.getElementById('puede_gestionar_ordenes');
 
         if (!form || !rolSelect) return;
 
@@ -226,6 +237,7 @@
             } else {
                 wrapperAdminLab.style.display = 'none';
                 if (adminLabCheckbox) adminLabCheckbox.checked = false;
+                if (puedeGestionarOrdenesCheckbox) puedeGestionarOrdenesCheckbox.checked = false;
             }
         }
 

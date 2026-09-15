@@ -3,14 +3,17 @@
 @section('title', 'Nuevo Parámetro')
 
 @section('content')
-<div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h1 class="h4 mb-0">Nuevo Parámetro</h1>
-        <a href="{{ route('items.index') }}" class="btn btn-outline-secondary">Volver</a>
-    </div>
+@include('partials.ucrud-styles')
 
-    <div class="card">
-        <div class="card-body">
+<div class="container-fluid py-4 ucrud ucrud-layout--fluid">
+    @include('partials.ucrud-form-header', [
+        'title' => 'Nueva determinación',
+        'subtitle' => 'Alta de ítem, métodos, matrices y precio.',
+        'backUrl' => route('items.index'),
+    ])
+
+    <div class="ucrud-panel">
+        <div class="ucrud-form">
             <form method="POST" action="{{ route('items.store') }}">
                 @csrf
 
@@ -175,9 +178,9 @@
                     </div>
                 </div>
 
-                <div class="d-flex gap-2">
-                    <button type="submit" class="btn btn-primary">Guardar</button>
-                    <a href="{{ route('items.index') }}" class="btn btn-light">Cancelar</a>
+                <div class="ucrud-form__actions">
+                    <button type="submit" class="ucrud-btn ucrud-btn--primary">Guardar</button>
+                    <a href="{{ route('items.index') }}" class="ucrud-btn ucrud-btn--ghost">Cancelar</a>
                 </div>
             </form>
         </div>

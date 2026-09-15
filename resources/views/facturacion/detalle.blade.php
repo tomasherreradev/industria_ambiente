@@ -71,23 +71,21 @@
         <div class="col-md-6">
             <div class="card h-100">
                 <div class="card-header bg-info text-white">
-                    <h5 class="mb-0">Información de la Cotización</h5>
+                    <h5 class="mb-0">Datos de facturación</h5>
                 </div>
                 <div class="card-body">
                     @if($factura->cotizacion)
+                        @php
+                            $factura->cotizacion->loadMissing('cliente');
+                            $fiscalDet = \App\Support\CotizacionClienteEtiqueta::datosFacturacionFiscales($factura->cotizacion);
+                            $razonFact = $fiscalDet['razon_social'] ?? '';
+                            $cuitFact = $fiscalDet['cuit'] ?? '';
+                        @endphp
                         <dl class="row">
-                            <dt class="col-sm-5">Número:</dt>
+                            <dt class="col-sm-5">Cotización:</dt>
                             <dd class="col-sm-7"><strong>#{{ $factura->cotizacion->coti_num }}</strong></dd>
 
-                            @php
-                                $factura->cotizacion?->loadMissing('cliente');
-                                $fiscalDet = $factura->cotizacion
-                                    ? \App\Support\CotizacionClienteEtiqueta::datosFacturacionFiscales($factura->cotizacion)
-                                    : null;
-                                $razonFact = $fiscalDet['razon_social'] ?? '';
-                                $cuitFact = $fiscalDet['cuit'] ?? '';
-                            @endphp
-                            <dt class="col-sm-5">Cliente (facturación):</dt>
+                            <dt class="col-sm-5">Razón social:</dt>
                             <dd class="col-sm-7">{{ $razonFact !== '' ? $razonFact : 'N/A' }}</dd>
 
                             <dt class="col-sm-5">CUIT:</dt>
@@ -115,6 +113,31 @@
             </div>
         </div>
     </div>
+
+    @if($factura->cotizacion)
+        @php
+            $destFactura = \App\Support\CotizacionClienteEtiqueta::destinatarioResumen($factura->cotizacion);
+        @endphp
+        <div class="card mt-4">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0">Destinatario del trabajo</h5>
+            </div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-3">Cliente / sucursal:</dt>
+                    <dd class="col-sm-9">{{ ($destFactura['nombre'] ?? '') !== '' && ($destFactura['nombre'] ?? '') !== '—' ? $destFactura['nombre'] : 'N/A' }}</dd>
+
+                    @if(($destFactura['establecimiento'] ?? '') !== '')
+                        <dt class="col-sm-3">Establecimiento:</dt>
+                        <dd class="col-sm-9">{{ $destFactura['establecimiento'] }}</dd>
+                    @endif
+
+                    <dt class="col-sm-3">Dirección:</dt>
+                    <dd class="col-sm-9">{{ ($destFactura['direccion'] ?? '') !== '' ? $destFactura['direccion'] : 'N/A' }}</dd>
+                </dl>
+            </div>
+        </div>
+    @endif
 
     <!-- Items Facturados -->
     <div class="card mt-4">

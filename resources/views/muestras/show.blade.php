@@ -5,34 +5,53 @@
 </head>
 
 @section('content')
+    @include('partials.operativo-styles')
     <link rel="stylesheet" href="{{ asset('css/tareas-muestreo-mobile.css') }}?v={{ filemtime(public_path('css/tareas-muestreo-mobile.css')) }}">
-    <div class="container py-4">
+    <div class="container py-4 ucrud ucrud-operativo ucrud-detalle">
         @php
             $backUrl = url('/muestras');
+            $backLabel = 'Volver a Muestras';
             if (isset($canalParaFiltrar)) {
                 switch ($canalParaFiltrar) {
                     case 'consultoria':
                         $backUrl = url('/consultoria');
+                        $backLabel = 'Volver a Consultoría';
                         break;
                     case 'mediciones':
                         $backUrl = route('mediciones.index');
+                        $backLabel = 'Volver a Mediciones';
                         break;
                     case 'asp':
                         $backUrl = url('/asp');
+                        $backLabel = 'Volver a ASP';
                         break;
                     case 'clarke_fire':
                         $backUrl = url('/clarke-fire');
+                        $backLabel = 'Volver a Clarke Fire';
                         break;
                 }
             }
             $esPortalMediciones = $esPortalMediciones ?? CotizacionCanalEnsayo::esRequestPortalMediciones();
         @endphp
-        <a href="{{ $backUrl }}" class="btn btn-outline-secondary mb-4">← Volver</a>
-        <h2 class="mb-4">Muestras de Cotización <span class="text-primary">{{ $cotizacion->coti_num }}</span></h2>
+
+        @include('partials.ucrud-form-header', [
+            'title' => 'Muestras de cotización #' . $cotizacion->coti_num,
+            'subtitle' => \App\Support\CotizacionClienteEtiqueta::paraLista($cotizacion),
+            'backUrl' => $backUrl,
+            'backLabel' => $backLabel,
+        ])
 
         @if (session('success'))
-            <div class="alert alert-success">
-                {{ session('success') }}
+            <div class="ucrud-alert ucrud-alert--success" role="status">
+                <x-heroicon-o-check-circle style="width: 18px; height: 18px;" />
+                <span>{{ session('success') }}</span>
+            </div>
+        @endif
+
+        @if (session('error'))
+            <div class="ucrud-alert ucrud-alert--danger" role="alert">
+                <x-heroicon-o-exclamation-circle style="width: 18px; height: 18px;" />
+                <span>{{ session('error') }}</span>
             </div>
         @endif
 
@@ -152,15 +171,17 @@
                                             && \App\Support\TrabajoTecnicoCampo::estadoEsMuestreado($instancia->cotio_estado ?? null);
                                         $isViaticos = $descripcion === 'VIATICOS';
 
-                                        // Determinar clase de fondo según estado
-                                        $headerClass = $categoria->enable_ot ? 'bg-warning' : 'bg-secondary';
-                                        if ($instancia->active_muestreo && $instancia->fecha_muestreo) {
-                                            $headerClass = 'bg-success';
-                                        }
-
-                                        if ($instancia->cotio_estado == 'suspension') {
-                                            $headerClass = 'bg-danger';
-                                        }
+                                        // Determinar clase de fondo según estado (verde solo finalizadas/analizadas)
+                                        $estadoMuestreo = strtolower(trim((string) ($instancia->cotio_estado ?? '')));
+                                        $headerClass = match ($estadoMuestreo) {
+                                            'suspension' => 'bg-danger',
+                                            'muestreado', 'completado', 'finalizado', 'analizado' => 'bg-success',
+                                            'en revision muestreo', 'en revision analisis', 'en proceso', 'en revision' => 'op-header--revision',
+                                            'coordinado muestreo', 'coordinado analisis', 'coordinado' => 'bg-warning',
+                                            default => $categoria->enable_ot ? 'bg-warning' : 'bg-secondary',
+                                        };
+                                        $headerTextClass = $headerClass === 'bg-warning' ? 'text-dark' : 'text-white';
+                                        $headerMutedClass = $headerTextClass === 'text-dark' ? 'text-dark opacity-75' : 'text-light';
 
                                         // Parsear notas internas de la muestra (JSON o formato antiguo simple)
                                         $notasInternas = [];
@@ -213,7 +234,7 @@
                                                         style="border: 3px solid #ffc107; box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.35);" @endif>
                                                             <!-- Encabezado de la tarjeta -->
                                                             <div
-                                                                class="card-header text-white d-flex align-items-center justify-content-between flex-wrap p-3 {{ $headerClass }} {{ $instancia->active_ot ? 'bg-success' : '' }}">
+                                                                class="card-header d-flex align-items-center justify-content-between flex-wrap p-3 {{ $headerClass }} {{ $headerTextClass === 'text-white' ? 'text-white' : '' }}">
                                                                 <div class="d-flex align-items-center gap-2 flex-wrap">
                                                                     <!-- Checkbox principal -->
                                                                     @php
@@ -245,18 +266,18 @@
                                             'instance' => $instancia->instance_number,
                                             'canal' => $canalParaFiltrar ?? null
                                         ]) }}"
-                                                                                class="text-decoration-none d-inline-flex align-items-center flex-wrap {{ $categoria->enable_ot ? 'text-dark' : 'text-white'}}">
+                                                                                class="text-decoration-none d-inline-flex align-items-center flex-wrap {{ $headerTextClass }}">
                                                                                 <strong>{{ $descripcion }}</strong>
                                                                                     @if($esEnsayoMediciones)
-                                                                                        <span class="badge bg-info text-dark ms-1">Mediciones</span>
+                                                                                        <span class="badge op-header-tag op-header-tag--info ms-1">Mediciones</span>
                                                                                     @elseif($esFacturacionDirectaEnsayo)
-                                                                                        <span class="badge bg-light text-dark ms-1">Consultoría</span>
+                                                                                        <span class="badge op-header-tag ms-1">Consultoría</span>
                                                                                     @elseif($listoFacturarTrabajoTecnico)
-                                                                                        <span class="badge bg-light text-success ms-1">Listo para facturar</span>
+                                                                                        <span class="badge op-header-tag ms-1">Listo para facturar</span>
                                                                                     @endif
                                                                                     @if($esPrioriEfectiva)
                                                                                         <x-heroicon-o-star style="width: 18px; height: 18px; color: #ffc107;" class="ms-1" title="Prioridad" />
-                                                                                        <span class="badge bg-warning text-dark ms-1">Prioridad</span>
+                                                                                        <span class="badge op-header-tag op-header-tag--warning ms-1">Prioridad</span>
                                                                                     @endif
                                                                                 <span class="ms-2">(muestra {{ $instancia->instance_number }} /
                                                                                     {{ $categoria->cotio_cantidad ?? '-' }})</span>
@@ -268,25 +289,25 @@
 
                                                                             @if($tieneNotaInterna)
                                                                                 <button type="button"
-                                                                                    class="btn btn-sm {{ $categoria->enable_ot ? 'btn-outline-dark' : 'btn-outline-light' }} p-1"
+                                                                                    class="btn btn-sm {{ $headerTextClass === 'text-dark' ? 'btn-outline-dark' : 'btn-outline-light' }} p-1"
                                                                                     data-bs-toggle="modal"
                                                                                     data-bs-target="#notaInternaModal{{ $instancia->id }}"
                                                                                     title="Ver nota interna">
                                                                                     <x-heroicon-o-document-text style="width: 18px; height: 18px;"
-                                                                                        class="{{ $categoria->enable_ot ? 'text-dark' : 'text-white' }}" />
+                                                                                        class="{{ $headerTextClass }}" />
                                                                                 </button>
                                                                             @endif
                                                                         </div>
 
                                                                         @if($instancia->active_muestreo && $instancia->fecha_muestreo)
                                                                             <div class="d-flex flex-column mt-1">
-                                                                                <small class="text-light">
+                                                                                <small class="{{ $headerMutedClass }}">
                                                                                     Coordinado el: {{ $instancia->fecha_muestreo->format('d/m/Y H:i') }}
                                                                                     @if($instancia->coordinador)
                                                                                         por {{ $instancia->coordinador->usu_descripcion }}
                                                                                     @endif
                                                                                 </small>
-                                                                                <small class="text-light">
+                                                                                <small class="{{ $headerMutedClass }}">
                                                                                     Fecha de inicio:
                                                                                     {{ $instancia->fecha_inicio_muestreo ? $instancia->fecha_inicio_muestreo->format('d/m/Y H:i') : 'No definida' }}
                                                                                 </small>
@@ -296,7 +317,7 @@
                                                                         <!-- Mostrar responsables asignados -->
                                                                         @if($responsables->isNotEmpty())
                                                                             <div class="mt-1">
-                                                                                <small class="text-light">Muestreadores:</small>
+                                                                                <small class="{{ $headerMutedClass }}">Muestreadores:</small>
                                                                                 <div class="d-flex flex-wrap gap-1">
                                                                                     @foreach($responsables as $responsable)
                                                                                         <span class="badge bg-info">

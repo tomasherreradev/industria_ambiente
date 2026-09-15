@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Http\Request;
 use App\Models\User;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 
 
 class AuthController extends Controller
@@ -137,28 +138,59 @@ class AuthController extends Controller
     public function update(Request $request, $id)
     {
         $user = User::findOrFail($id);
-        $isAdmin = $user->usu_nivel >= 900;
-    
-        // Filtrar solo los campos que se deben actualizar
-        $data = $request->only(['usu_descripcion', 'usu_clave', 'usu_codigo']);
-    
+        $editor = Auth::user();
+        $isAdmin = (int) ($editor->usu_nivel ?? 0) >= 900;
+        $rolesValidos = [
+            'laboratorio', 'muestreador', 'coordinador_lab', 'coordinador_muestreo', 'facturador',
+            'ventas', 'firmador', 'coordinador_consul', 'coordinador_mediciones', 'asp', 'clarke_fire',
+            'cliente', 'cadena_custodia',
+        ];
+
+        $rules = [
+            'usu_descripcion' => 'required|string|max:255',
+            'usu_clave' => 'nullable|string|min:4',
+        ];
+
         if ($isAdmin) {
-            $data = array_merge($data, $request->only([
-                'usu_correo', 'usu_nivel', 'usu_estado', 'rol'
-            ]));
+            $rules['usu_nivel'] = 'nullable|integer|min:0|max:9999';
+            $rules['usu_estado'] = 'nullable|in:0,1';
+            $rules['rol'] = ['nullable', 'string', 'max:50', Rule::in($rolesValidos)];
+            $rules['roles_adicionales'] = 'nullable|array';
+            $rules['roles_adicionales.*'] = ['string', 'max:50', Rule::in($rolesValidos)];
         }
-    
-        // Verificar si se envió una nueva clave, si es así, encriptarla con MD5
-        if (!empty($data['usu_clave'])) {
-            $data['usu_clave'] = md5($data['usu_clave']);  // Encriptado con MD5
-        } else {
-            unset($data['usu_clave']); // Si no se proporciona clave, no se actualiza
+
+        $validated = $request->validate($rules);
+
+        $data = ['usu_descripcion' => $validated['usu_descripcion']];
+
+        if ($isAdmin) {
+            if (array_key_exists('usu_nivel', $validated) && $validated['usu_nivel'] !== null) {
+                $data['usu_nivel'] = (int) $validated['usu_nivel'];
+            }
+            if (array_key_exists('usu_estado', $validated)) {
+                $data['usu_estado'] = (bool) $validated['usu_estado'];
+            }
+            if (!empty($validated['rol'])) {
+                $data['rol'] = $validated['rol'];
+            }
         }
-    
-        // Llenar y guardar el usuario con los nuevos datos
+
+        if (!empty($validated['usu_clave'])) {
+            $data['usu_clave'] = md5($validated['usu_clave']);
+        }
+
         $user->fill($data);
         $user->save();
-    
+
+        if ($isAdmin) {
+            $principal = (string) ($user->rol ?? '');
+            $adicionales = array_values(array_filter(
+                array_map('strval', (array) $request->input('roles_adicionales', [])),
+                fn ($r) => $r !== '' && $r !== $principal
+            ));
+            $user->syncRoles($adicionales);
+        }
+
         return redirect()->route('auth.show', $user->usu_codigo)->with('success', 'Perfil actualizado correctamente.');
     }
     

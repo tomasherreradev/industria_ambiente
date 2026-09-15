@@ -182,6 +182,125 @@ class VentasController extends Controller {
         CotizacionReferenciasFacturacion::sincronizarColumnasLegacyDesdeFilas($cotizacion, $rows);
     }
 
+    private function cotizacionEstaEnEspera(Ventas $cotizacion): bool
+    {
+        return str_starts_with(trim((string) ($cotizacion->coti_estado ?? '')), 'E');
+    }
+
+    private function cotizacionEstaAprobada(Ventas $cotizacion): bool
+    {
+        return str_starts_with(trim((string) ($cotizacion->coti_estado ?? '')), 'A');
+    }
+
+    private function actualizarSoloReferenciasFacturacionVentas(Request $request, Ventas $cotizacion): void
+    {
+        $erroresRefs = CotizacionReferenciasFacturacion::validarRequest($request);
+        if ($erroresRefs !== []) {
+            throw ValidationException::withMessages($erroresRefs);
+        }
+
+        $this->aplicarReferenciasFacturacionVentas($request, $cotizacion);
+        $this->aplicarContactosVentasDesdeRequest($request, $cotizacion);
+        $this->aplicarCondicionPagoVentasDesdeRequest($request, $cotizacion);
+        $cotizacion->save();
+        $this->actualizarLeyNormativaItemsPresupuestoLimitado($request, (int) $cotizacion->coti_num);
+    }
+
+    private function aplicarContactosVentasDesdeRequest(Request $request, Ventas $cotizacion): void
+    {
+        $cotizacion->coti_contacto = $this->sanitizeNullableString($request->coti_contacto, 120);
+        $cotizacion->coti_telefono = $request->coti_telefono;
+        $cotizacion->coti_mail1 = $this->sanitizeNullableString($request->coti_mail1, 120);
+        $cotizacion->coti_contacto_tipo1 = $this->sanitizeNullableString($request->coti_contacto_tipo1, 30);
+        $cotizacion->coti_contacto2 = $this->sanitizeNullableString($request->coti_contacto2, 120);
+        $cotizacion->coti_mail2 = $this->sanitizeNullableString($request->coti_mail2, 120);
+        $cotizacion->coti_telefono2 = $this->sanitizeNullableString($request->coti_telefono2, 50);
+        $cotizacion->coti_contacto_tipo2 = $this->sanitizeNullableString($request->coti_contacto_tipo2, 30);
+        $cotizacion->coti_contacto3 = $this->sanitizeNullableString($request->coti_contacto3, 120);
+        $cotizacion->coti_mail3 = $this->sanitizeNullableString($request->coti_mail3, 120);
+        $cotizacion->coti_telefono3 = $this->sanitizeNullableString($request->coti_telefono3, 50);
+        $cotizacion->coti_contacto_tipo3 = $this->sanitizeNullableString($request->coti_contacto_tipo3, 30);
+        $cotizacion->coti_contacto4 = $this->sanitizeNullableString($request->coti_contacto4, 120);
+        $cotizacion->coti_mail4 = $this->sanitizeNullableString($request->coti_mail4, 120);
+        $cotizacion->coti_telefono4 = $this->sanitizeNullableString($request->coti_telefono4, 50);
+        $cotizacion->coti_contacto_tipo4 = $this->sanitizeNullableString($request->coti_contacto_tipo4, 30);
+    }
+
+    private function aplicarCondicionPagoVentasDesdeRequest(Request $request, Ventas $cotizacion): void
+    {
+        $cotizacion->coti_cond_pago = $request->filled('coti_cond_pago')
+            ? $this->sanitizeNullableString($request->coti_cond_pago, 10)
+            : null;
+        $esCuotas = ($cotizacion->coti_cond_pago === 'CUOTAS');
+        $cotizacion->coti_cuotas = $esCuotas;
+
+        if ($esCuotas) {
+            $cotizacion->coti_cuota_desc = $this->sanitizeNullableString($request->coti_cuota_desc, 100);
+            $cotizacion->coti_cuota_cant = $request->filled('coti_cuota_cant') ? (int) $request->coti_cuota_cant : null;
+            $cotizacion->coti_cuota_monto_total = $request->filled('coti_cuota_monto_total')
+                ? $this->parseDecimalValue($request->coti_cuota_monto_total)
+                : null;
+            $cotizacion->coti_cuota_monto_indiv = $request->filled('coti_cuota_monto_indiv')
+                ? $this->parseDecimalValue($request->coti_cuota_monto_indiv)
+                : null;
+            $interes = $this->parseDecimalValue($request->coti_cuota_interes);
+            $cotizacion->coti_cuota_interes = $interes !== null ? $interes : 0.0;
+            $cotizacion->coti_cuota_fact_fin_mes = $request->has('coti_cuota_fact_fin_mes') && $request->coti_cuota_fact_fin_mes == '1';
+            $cotizacion->coti_cuota_fact_inicio_mes = $request->has('coti_cuota_fact_inicio_mes') && $request->coti_cuota_fact_inicio_mes == '1';
+        } else {
+            $cotizacion->coti_cuota_desc = null;
+            $cotizacion->coti_cuota_cant = null;
+            $cotizacion->coti_cuota_monto_total = null;
+            $cotizacion->coti_cuota_monto_indiv = null;
+            $cotizacion->coti_cuota_interes = null;
+            $cotizacion->coti_cuota_fact_fin_mes = null;
+            $cotizacion->coti_cuota_fact_inicio_mes = null;
+        }
+    }
+
+    private function actualizarLeyNormativaItemsPresupuestoLimitado(Request $request, int $cotiNum): void
+    {
+        $ensayos = json_decode((string) $request->input('ensayos_data', '[]'), true);
+        if (! is_array($ensayos)) {
+            $ensayos = [];
+        }
+
+        $componentes = json_decode((string) $request->input('componentes_data', '[]'), true);
+        if (! is_array($componentes)) {
+            $componentes = [];
+        }
+
+        foreach ($ensayos as $ensayo) {
+            if (! is_array($ensayo) || ! isset($ensayo['item'])) {
+                continue;
+            }
+
+            $ley = ! empty($ensayo['ley_normativa_id'] ?? '')
+                ? trim((string) $ensayo['ley_normativa_id'])
+                : null;
+
+            Cotio::where('cotio_numcoti', $cotiNum)
+                ->where('cotio_item', (int) $ensayo['item'])
+                ->where('cotio_subitem', 0)
+                ->update(['ley_aplicacion' => $ley]);
+        }
+
+        foreach ($componentes as $componente) {
+            if (! is_array($componente) || ! isset($componente['item'])) {
+                continue;
+            }
+
+            $ley = ! empty($componente['ley_normativa_id'] ?? '')
+                ? trim((string) $componente['ley_normativa_id'])
+                : null;
+
+            Cotio::where('cotio_numcoti', $cotiNum)
+                ->where('cotio_item', (int) $componente['item'])
+                ->where('cotio_subitem', '>', 0)
+                ->update(['ley_aplicacion' => $ley]);
+        }
+    }
+
     /**
      * Si la cotización queda aprobada (coti_estado A) y no hay fecha de aprobado, guarda la fecha del día.
      * Si el usuario envió coti_fechaaprobado en el formulario, debe asignarse antes de llamar a este método.
@@ -1910,8 +2029,10 @@ class VentasController extends Controller {
             $condicionesPago = collect();
         }
 
-        // Ahora siempre permitimos editar la cotización, incluso si está aprobada.
-        $puedeEditar = true;
+        // En Espera: edición completa. Aprobado: solo campos operativos limitados. Otros estados: solo lectura.
+        $edicionCompletaPermitida = $this->cotizacionEstaEnEspera($cotizacion) && $editandoVersionActual;
+        $soloReferenciasFacturacion = $this->cotizacionEstaAprobada($cotizacion) && $editandoVersionActual;
+        $puedeEditar = $edicionCompletaPermitida;
 
         $agrupadoresCatalogo = CotioItems::muestras()
             ->with(['componentesAsociados', 'matrices'])
@@ -1930,6 +2051,8 @@ class VentasController extends Controller {
                 return in_array((int) $c->cotio_item, $itemsPermitidos, true);
             })->values();
             $puedeEditar = false;
+            $soloReferenciasFacturacion = false;
+            $edicionCompletaPermitida = false;
         }
 
         $adjuntosPorItem = CotioAdjunto::where('cotio_numcoti', $cotizacion->coti_num)
@@ -2104,6 +2227,7 @@ class VentasController extends Controller {
         $cotizacionConfig = [
             'modo' => 'edit',
             'puedeEditar' => $puedeEditar,
+            'soloReferenciasFacturacion' => $soloReferenciasFacturacion,
             'ensayosIniciales' => $ensayosIniciales,
             'componentesIniciales' => $componentesIniciales,
             'coti_req_cadena_custodia_relacionada' => (bool) ($cotizacion->coti_req_cadena_custodia_relacionada ?? false),
@@ -2153,7 +2277,9 @@ class VentasController extends Controller {
             'sectoresCliente',
             'divisas',
             'condicionesPago',
-            'edicionLockActivo'
+            'edicionLockActivo',
+            'edicionCompletaPermitida',
+            'soloReferenciasFacturacion'
         ));
     }
     
@@ -2239,6 +2365,35 @@ class VentasController extends Controller {
                     return redirect()->route('ventas.edit', $id)
                         ->with('error', 'Otro usuario está editando este presupuesto o tu sesión de edición expiró. Volvé a abrirlo.');
                 }
+            }
+
+            if ($this->cotizacionEstaAprobada($cotizacion)) {
+                $this->actualizarSoloReferenciasFacturacionVentas($request, $cotizacion);
+                CotizacionEdicionBloqueo::liberar((int) $id, Auth::user());
+
+                $mensaje = 'Datos del presupuesto actualizados correctamente.';
+
+                if ($request->expectsJson()) {
+                    return response()->json([
+                        'success' => true,
+                        'message' => $mensaje,
+                    ]);
+                }
+
+                return redirect()->route('ventas.edit', $id)
+                    ->with('success', $mensaje);
+            }
+
+            if (! $this->cotizacionEstaEnEspera($cotizacion)) {
+                if ($request->expectsJson()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Este presupuesto no puede modificarse en su estado actual.',
+                    ], 422);
+                }
+
+                return redirect()->route('ventas.edit', $id)
+                    ->with('error', 'Este presupuesto no puede modificarse en su estado actual.');
             }
 
             $erroresRefs = CotizacionReferenciasFacturacion::validarRequest($request);
@@ -2478,6 +2633,13 @@ class VentasController extends Controller {
                 ->with('success', 'Cotización actualizada exitosamente');
                 
         } catch (ValidationException $e) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => collect($e->errors())->flatten()->first() ?? 'Error de validación.',
+                ], 422);
+            }
+
             return redirect()->back()
                 ->withErrors($e->validator)
                 ->withInput();
@@ -2486,6 +2648,13 @@ class VentasController extends Controller {
                 'id' => $id,
                 'error' => $e->getMessage()
             ]);
+
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Error al actualizar la cotización: ' . $e->getMessage(),
+                ], 500);
+            }
             
             return redirect()->route('ventas.index')
                 ->with('error', 'Error al actualizar la cotización: ' . $e->getMessage());

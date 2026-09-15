@@ -1,72 +1,20 @@
 <div class="d-none d-lg-block">
-    @php
-        $sortActual = request('sort');
-        $dirActual = strtolower((string) request('dir', 'asc')) === 'desc' ? 'desc' : 'asc';
-        $urlOrdenColumna = function (string $columna) use ($sortActual, $dirActual) {
-            $nuevaDir = ($sortActual === $columna && $dirActual === 'asc') ? 'desc' : 'asc';
-
-            return request()->fullUrlWithQuery([
-                'sort' => $columna,
-                'dir' => $nuevaDir,
-                'page' => null,
-            ]);
-        };
-        $claseIconoOrden = function (string $columna) use ($sortActual, $dirActual) {
-            if ($sortActual !== $columna) {
-                return 'text-muted opacity-50';
-            }
-
-            return 'text-primary';
-        };
-    @endphp
     @if($muestras->contains(fn($c) => !empty($c->coti_cuotas)))
-        <p class="small text-muted mb-2 d-flex align-items-center flex-wrap gap-2">
-            <span class="badge bg-info text-white me-0"><x-heroicon-o-check class="d-inline" style="width: 11px; height: 11px;" /></span>
-            <span><strong>Cuotas</strong> = cotización con <strong>cuotas</strong> (seguir coordinando según plazos del plan).</span>
+        <p class="op-legend">
+            <span class="badge bg-info text-white"><x-heroicon-o-check class="d-inline" style="width: 11px; height: 11px;" /></span>
+            <span><strong>Cuotas</strong> = cotización con cuotas (seguir coordinando según plazos del plan).</span>
         </p>
     @endif
-    <div class="table-responsive">
-        <table class="table table-hover align-middle">
-            <thead class="table-light">
+    <div class="ucrud-panel">
+        <div class="ucrud-tablewrap">
+            <table class="ucrud-table ucrud-table--sticky-actions">
+                <thead>
                 <tr>
-                    <th width="100">
-                        <a href="{{ $urlOrdenColumna('muestra') }}" class="text-decoration-none text-dark d-inline-flex align-items-center gap-1">
-                            Muestra
-                            <span class="{{ $claseIconoOrden('muestra') }}" style="font-size: 0.75rem;" aria-hidden="true">
-                                @if($sortActual === 'muestra')
-                                    {{ $dirActual === 'desc' ? '↓' : '↑' }}
-                                @else
-                                    ↕
-                                @endif
-                            </span>
-                        </a>
-                    </th>
-                    <th>
-                        <a href="{{ $urlOrdenColumna('cliente') }}" class="text-decoration-none text-dark d-inline-flex align-items-center gap-1">
-                            Cliente
-                            <span class="{{ $claseIconoOrden('cliente') }}" style="font-size: 0.75rem;" aria-hidden="true">
-                                @if($sortActual === 'cliente')
-                                    {{ $dirActual === 'desc' ? '↓' : '↑' }}
-                                @else
-                                    ↕
-                                @endif
-                            </span>
-                        </a>
-                    </th>
-                    <th width="140" class="text-center">Muestras</th>
-                    <th width="140" class="text-center">
-                        <a href="{{ $urlOrdenColumna('fecha') }}" class="text-decoration-none text-dark d-inline-flex align-items-center justify-content-center gap-1 w-100">
-                            Fecha de aprobación
-                            <span class="{{ $claseIconoOrden('fecha') }}" style="font-size: 0.75rem;" aria-hidden="true">
-                                @if($sortActual === 'fecha')
-                                    {{ $dirActual === 'desc' ? '↓' : '↑' }}
-                                @else
-                                    ↕
-                                @endif
-                            </span>
-                        </a>
-                    </th>
-                    <th width="150" class="text-center">Acciones</th>
+                    @include('partials.th-ordenable', ['columna' => 'muestra', 'etiqueta' => 'Muestra', 'width' => '100'])
+                    @include('partials.th-ordenable', ['columna' => 'cliente', 'etiqueta' => 'Cliente'])
+                    @include('partials.th-ordenable', ['columna' => 'progreso', 'etiqueta' => 'Muestras', 'width' => '140', 'centrado' => true])
+                    @include('partials.th-ordenable', ['columna' => 'fecha', 'etiqueta' => 'Fecha de aprobación', 'width' => '140', 'centrado' => true])
+                    <th style="width: 150px; text-align: center;">Acciones</th>
                 </tr>
             </thead>
             <tbody>
@@ -96,8 +44,8 @@
                         </td>
                         <td class="text-center">
                             @if($coti->total_instancias > 0)
-                                <div class="d-flex align-items-center gap-2">
-                                    <div class="progress flex-grow-1" style="height: 20px;">
+                                <div class="op-progress">
+                                    <div class="op-progress__bar">
                                         @if(($portalTipo ?? '') === 'mediciones')
                                             <div class="progress-bar bg-success"
                                                  role="progressbar"
@@ -127,13 +75,13 @@
                                         </div>
                                         @endif
                                     </div>
-                                    <small class="text-nowrap">
+                                    <span class="op-progress__count">
                                         @if(($portalTipo ?? '') === 'mediciones')
                                             {{ $coti->instancias_completadas }}/{{ $coti->total_instancias }} informes
                                         @else
                                             {{ $coti->instancias_completadas }}/{{ $coti->total_instancias }}
                                         @endif
-                                    </small>
+                                    </span>
                                 </div>
                                 @if(($portalTipo ?? '') === 'mediciones')
                                     <small class="d-block mt-1 text-muted">
@@ -162,40 +110,36 @@
                             @endif
                         </td>
                         <td class="text-center">
-                            <div class="btn-group" role="group">
+                            <div class="ucrud-actions">
                                 @if(userPuedeGestionarMuestrasCotizacion())
                                     @php
                                         $urlGestion = ($portalCanal ?? '') === 'mediciones'
                                             ? route('mediciones.show', $coti->coti_num)
                                             : url('/show/'.$coti->coti_num) . (isset($portalCanal) ? '?canal='.$portalCanal : '');
                                     @endphp
-                                    <a href="{{ $urlGestion }}" 
-                                        class="btn btn-sm btn-outline-primary" 
-                                        data-bs-toggle="tooltip" 
+                                    <a href="{{ $urlGestion }}"
+                                        class="ucrud-iconbtn"
+                                        data-bs-toggle="tooltip"
                                         title="Gestionar muestras"
                                         data-bs-placement="bottom">
                                         <x-heroicon-o-pencil style="width: 15px; height: 15px;" />
                                     </a>
                                 @endif
-                                <a href="{{ url('/cotizaciones/'.$coti->coti_num) }}" 
-                                   class="btn btn-sm btn-outline-secondary" 
-                                   data-bs-toggle="tooltip" 
+                                <a href="{{ url('/cotizaciones/'.$coti->coti_num) }}"
+                                   class="ucrud-iconbtn"
+                                   data-bs-toggle="tooltip"
                                    title="Ver detalles"
                                    data-bs-placement="bottom">
                                     <x-heroicon-o-document-magnifying-glass style="width: 15px; height: 15px;" />
                                 </a>
 
                                 @php
-                                    $direccionPartes = array_filter([
-                                        trim((string)($coti->coti_direccioncli ?? '')),
-                                        trim((string)($coti->coti_localidad ?? '')),
-                                        trim((string)($coti->coti_partido ?? '')),
-                                    ]);
-                                    $direccionCompleta = implode(', ', $direccionPartes);
+                                    $direccionCompleta = \App\Support\CotizacionClienteEtiqueta::direccionDestinatarioTexto($coti);
+                                    $mapsQueryDestinatario = \App\Support\CotizacionClienteEtiqueta::direccionDestinatarioMapsQuery($coti);
                                 @endphp
 
                                 <button type="button"
-                                        class="btn btn-sm btn-outline-secondary"
+                                        class="ucrud-iconbtn"
                                         data-bs-toggle="tooltip"
                                         title="Copiar dirección"
                                         data-bs-placement="bottom"
@@ -203,12 +147,12 @@
                                         data-direccion="{{ e($direccionCompleta) }}">
                                     <x-heroicon-o-document-duplicate style="width: 15px; height: 15px;" />
                                 </button>
-                                <a href="https://www.google.com/maps/search/?api=1&query={{ urlencode($coti->coti_direccioncli.', '.$coti->coti_localidad.', '.$coti->coti_partido) }}" 
-                                   class="btn btn-sm btn-outline-info" 
-                                   data-bs-toggle="tooltip" 
+                                <a href="https://www.google.com/maps/search/?api=1&query={{ urlencode($mapsQueryDestinatario) }}"
+                                   class="ucrud-iconbtn"
+                                   data-bs-toggle="tooltip"
                                    title="Ver en mapa"
                                    target="_blank"
-                                   data-bs-placement="bottom">  
+                                   data-bs-placement="bottom">
                                    <x-heroicon-o-map style="width: 15px; height: 15px;" />
                                 </a>
                             </div>
@@ -217,6 +161,7 @@
                 @endforeach
             </tbody>
         </table>
+        </div>
     </div>
 </div>
 
@@ -241,7 +186,7 @@
                     })->count();
             @endphp
             <div class="col-12">
-                <div class="card shadow-sm border-start border-4 
+                <div class="op-mobile-card border-start border-4 
                     @if($coti->has_suspension) border-danger
                     @elseif($coti->has_priority) border-warning
                     @elseif(! empty($coti->coti_cuotas)) border-info
@@ -343,71 +288,9 @@
         @endforeach
     </div>
 </div>
-<div class="d-flex justify-content-center mt-4">
+<div class="ucrud-panel ucrud-pagination mt-3">
     {{ $muestras->links() }}
 </div>
-
-@push('styles')
-<style>
-    .progress {
-        background-color: #f0f3f5;
-    }
-    .table-hover tbody tr:hover {
-        background-color: #f8f9fa;
-    }
-    .card {
-        transition: transform 0.2s;
-    }
-    .card:hover {
-        transform: translateY(-2px);
-    }
-    .badge {
-        font-weight: 500;
-        letter-spacing: 0.5px;
-    }
-    .text-danger {
-        color: #dc3545 !important;
-    }
-    .progress-bar {
-        position: relative;
-        overflow: visible;
-    }
-    
-    .progress-bar + .progress-bar {
-        border-left: 1px solid rgba(255,255,255,0.3);
-    }
-    
-    .progress-legend {
-        display: flex;
-        justify-content: center;
-        gap: 1rem;
-        margin-top: 0.5rem;
-        font-size: 0.75rem;
-    }
-    
-    .progress-legend-item {
-        display: flex;
-        align-items: center;
-        gap: 0.25rem;
-    }
-    
-    .progress-legend-color {
-        width: 12px;
-        height: 12px;
-        border-radius: 2px;
-    }
-    
-    /* Estilo para filas prioritarias */
-    tr[style*="border-left: 4px solid #ffc107"] {
-        background-color: rgba(255, 193, 7, 0.05);
-    }
-    
-    /* Estilo para cards prioritarias en móvil */
-    .border-warning {
-        background-color: rgba(255, 193, 7, 0.05);
-    }
-</style>
-@endpush
 
 <script>
     // Copia al portapapeles usando Clipboard API (si está disponible) y fallback.

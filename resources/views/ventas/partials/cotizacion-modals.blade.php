@@ -266,7 +266,7 @@
 </div>
 
 <!-- Modal Editar Componente -->
-<div class="modal fade" id="modalEditarComponente" tabindex="-1" aria-labelledby="modalEditarComponenteLabel" aria-hidden="true">
+<div class="modal fade" id="modalEditarComponente" tabindex="-1" aria-labelledby="modalEditarComponenteLabel" aria-hidden="true" data-bs-focus="false">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header bg-warning text-dark">
@@ -324,6 +324,16 @@
                     </div>
 
                     <div class="row mb-3">
+                        <div class="col-md-12">
+                            <label for="edit_componente_ley_normativa" class="form-label">Ley/Normativa:</label>
+                            <select class="form-select ley-normativa-select" id="edit_componente_ley_normativa" name="edit_componente_ley_normativa">
+                                <option value="">Seleccionar normativa...</option>
+                            </select>
+                            <small class="text-muted">Norma de comparación aplicable a este análisis</small>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
                         <div class="col-md-6">
                             <label for="edit_comp_nota_imprimible" class="form-label">Nota imprimible</label>
                             <textarea class="form-control" id="edit_comp_nota_imprimible" name="edit_comp_nota_imprimible" rows="3" maxlength="150" placeholder="Texto para el cliente en cotización / PDF"></textarea>
@@ -346,7 +356,7 @@
 </div>
 
 <!-- Modal Editar Ensayo -->
-<div class="modal fade" id="modalEditarEnsayo" tabindex="-1" aria-labelledby="modalEditarEnsayoLabel" aria-hidden="true">
+<div class="modal fade" id="modalEditarEnsayo" tabindex="-1" aria-labelledby="modalEditarEnsayoLabel" aria-hidden="true" data-bs-focus="false">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header bg-warning text-dark">

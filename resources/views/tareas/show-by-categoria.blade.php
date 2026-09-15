@@ -10,21 +10,19 @@
             ? \Carbon\Carbon::parse($instancia->fecha_fin_muestreo)->format('d/m/Y H:i')
             : 'N/A');
 @endphp
+@include('partials.operativo-styles')
 <link rel="stylesheet" href="{{ asset('css/tareas-muestreo-mobile.css') }}?v={{ filemtime(public_path('css/tareas-muestreo-mobile.css')) }}">
-<div class="container py-4 tarea-detalle-page">
-    <!-- Encabezado -->
-    <div class="d-flex justify-content-between align-items-center mb-4 tarea-detalle-header">
-        <h1 class="mb-0">Detalle de Muestra</h1>
-        <a href="{{ $canalParaFiltrar ? route('muestras.show', ['coti_num' => $instancia->cotio_numcoti, 'canal' => $canalParaFiltrar]) : route('mis-tareas') }}" class="btn btn-outline-secondary btn-volver">
-            <i class="fas fa-arrow-left me-1"></i> Volver
-        </a>
-    </div>
+<div class="container py-4 ucrud ucrud-operativo ucrud-detalle tarea-detalle-page" data-ucrud-root>
+    @include('partials.ucrud-form-header', [
+        'title' => 'Detalle de muestra',
+        'subtitle' => $instancia->cotio_descripcion ?? null,
+        'backUrl' => $canalParaFiltrar ? route('muestras.show', ['coti_num' => $instancia->cotio_numcoti, 'canal' => $canalParaFiltrar]) : route('mis-tareas'),
+    ])
 
-    <!-- Mensaje de éxito -->
     @if(session('success'))
-        <div class="alert alert-success alert-dismissible fade show" role="alert">
-            {{ session('success') }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        <div class="ucrud-alert ucrud-alert--success mb-3" role="status">
+            <x-heroicon-o-check-circle style="width: 18px; height: 18px;" />
+            <span>{{ session('success') }}</span>
         </div>
     @endif
 

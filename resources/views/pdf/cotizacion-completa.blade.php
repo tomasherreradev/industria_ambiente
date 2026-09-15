@@ -98,7 +98,7 @@
 
     <div class="client-info">
         <p><strong>{{ \App\Support\CotizacionClienteEtiqueta::lineaClienteConEstablecimiento($cotizacion) }}</strong></p>
-        <p>{{ $cotizacion->coti_direccioncli }}, {{ $cotizacion->coti_localidad }}, {{ $cotizacion->coti_partido }}</p>
+        <p>{{ \App\Support\CotizacionClienteEtiqueta::direccionDestinatarioTexto($cotizacion) ?: '—' }}</p>
         
         <p>Atn. {{ $cotizacion->coti_contacto }}<br>
         Tel.: {{ $cotizacion->coti_telefono }}<br>

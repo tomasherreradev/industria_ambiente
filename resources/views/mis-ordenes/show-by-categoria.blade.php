@@ -25,49 +25,51 @@
         return $normalizeStr($a->cotio_descripcion);
     })->filter()->unique()->values()->toArray();
 @endphp
+@include('partials.operativo-styles')
 <link rel="stylesheet" href="{{ asset('css/tareas-muestreo-mobile.css') }}?v={{ filemtime(public_path('css/tareas-muestreo-mobile.css')) }}">
-<div class="container py-4 tarea-detalle-page">
-    <!-- Encabezado -->
-    @php
-        $detalleRouteBase = [
-            'cotio_numcoti' => optional($instancia)->cotio_numcoti ?? request()->route('cotio_numcoti'),
-            'cotio_item' => optional($instancia)->cotio_item ?? request()->route('cotio_item'),
-            'cotio_subitem' => optional($instancia)->cotio_subitem ?? request()->route('cotio_subitem', 0),
-            'instance' => $instanceNumber ?? request()->route('instance', 1),
-        ];
-        $urlDetalleTodos = route('ordenes.all.show', $detalleRouteBase);
-        $urlDetalleSolo = route('ordenes.all.show', array_merge($detalleRouteBase, ['solo_mis_asignaciones' => 1]));
-        $misOrdenesVolverQuery = array_merge(
-            request()->except('page'),
-            !empty($soloMisAsignaciones) ? ['solo_mis_asignaciones' => 1] : []
-        );
-    @endphp
-    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 mb-4 tarea-detalle-header">
-        <h1 class="mb-0">
-            Detalle de Muestra
-            @if($instanceNumber && $instancia)
-                <span class="fs-5 text-muted d-block d-md-inline tarea-detalle-hero-subtitle">(Muestra #{{ $instancia->instance_number }} · OT {{ $instancia->otn ?? '—' }})</span>
-            @elseif($instanceNumber)
-                <span class="fs-5 text-muted d-block d-md-inline tarea-detalle-hero-subtitle">(Muestra #{{ $instanceNumber }})</span>
+@php
+    $detalleRouteBase = [
+        'cotio_numcoti' => optional($instancia)->cotio_numcoti ?? request()->route('cotio_numcoti'),
+        'cotio_item' => optional($instancia)->cotio_item ?? request()->route('cotio_item'),
+        'cotio_subitem' => optional($instancia)->cotio_subitem ?? request()->route('cotio_subitem', 0),
+        'instance' => $instanceNumber ?? request()->route('instance', 1),
+    ];
+    $urlDetalleTodos = route('ordenes.all.show', $detalleRouteBase);
+    $urlDetalleSolo = route('ordenes.all.show', array_merge($detalleRouteBase, ['solo_mis_asignaciones' => 1]));
+    $misOrdenesVolverQuery = array_merge(
+        request()->except('page'),
+        !empty($soloMisAsignaciones) ? ['solo_mis_asignaciones' => 1] : []
+    );
+    $subtituloDetalle = ($instanceNumber && $instancia)
+        ? 'Muestra #' . $instancia->instance_number . ' · OT ' . ($instancia->otn ?? '—')
+        : ($instanceNumber ? 'Muestra #' . $instanceNumber : null);
+@endphp
+<div class="container py-4 ucrud ucrud-operativo ucrud-detalle tarea-detalle-page" data-ucrud-root>
+    <header class="ucrud-header">
+        <div class="ucrud-header__titles">
+            <h1 class="ucrud-title">Detalle de muestra</h1>
+            @if($subtituloDetalle)
+                <p class="ucrud-subtitle">{{ $subtituloDetalle }}</p>
             @endif
-        </h1>
-        <div class="d-flex flex-wrap align-items-center gap-2 tarea-detalle-acciones">
+        </div>
+        <div class="ucrud-header__actions d-flex flex-wrap align-items-center gap-2">
             @include('mis-ordenes.partials.toggle-solo-mis-asignaciones', [
                 'puedeAlternarVistaAsignaciones' => $puedeAlternarVistaAsignaciones ?? false,
                 'soloMisAsignaciones' => $soloMisAsignaciones ?? false,
                 'urlMisOrdenesTodos' => $urlDetalleTodos,
                 'urlMisOrdenesSolo' => $urlDetalleSolo,
             ])
-            <a href="{{ route('mis-ordenes', $misOrdenesVolverQuery) }}" class="btn btn-outline-secondary btn-volver">
-                <i class="fas fa-arrow-left"></i> Volver
+            <a href="{{ route('mis-ordenes', $misOrdenesVolverQuery) }}" class="ucrud-btn ucrud-btn--ghost">
+                <x-heroicon-o-arrow-left style="width: 16px; height: 16px;" />
+                Volver
             </a>
         </div>
-    </div>
+    </header>
 
     @if(session('success'))
-        <div class="alert alert-success alert-dismissible fade show" role="alert">
-            {{ session('success') }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        <div class="ucrud-alert ucrud-alert--success mb-3" role="status">
+            <x-heroicon-o-check-circle style="width: 18px; height: 18px;" />
+            <span>{{ session('success') }}</span>
         </div>
     @endif
 

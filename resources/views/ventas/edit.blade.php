@@ -56,9 +56,20 @@
                 </div>
             @endif
 
+            @if(!($edicionCompletaPermitida ?? true) && ($soloReferenciasFacturacion ?? false))
+                <div class="alert alert-warning mb-0 mx-4 mt-3 mb-3">
+                    Este presupuesto está <strong>Aprobado</strong>. Solo puede modificar:
+                    orden de compra, número de recepción (remito), condición de pago, contactos y la norma de comparación de cada ítem.
+                </div>
+            @endif
+
             <div class="card shadow-sm">
                 <div class="card-body p-0">
-                    <form method="POST" action="{{ route('ventas.update', $cotizacion->coti_num) }}" id="cotizacionForm" enctype="multipart/form-data">
+                    <form method="POST"
+                          action="{{ route('ventas.update', $cotizacion->coti_num) }}"
+                          id="cotizacionForm"
+                          enctype="multipart/form-data"
+                          @if($soloReferenciasFacturacion ?? false) novalidate data-solo-referencias="1" @endif>
                         @csrf
                         @method('PUT')
                         
@@ -70,7 +81,7 @@
                                     <div class="position-relative" id="clienteBuscadorWrapper">
                                         <div class="input-group">
                                     <input type="text" class="form-control form-control-sm" id="cliente_codigo" name="coti_codigocli" 
-                                           value="{{ trim($cotizacion->coti_codigocli) }}" placeholder="Escribe nombre o código..." autocomplete="off" required>
+                                           value="{{ trim($cotizacion->coti_codigocli) }}" placeholder="Escribe nombre o código..." autocomplete="off" @if($edicionCompletaPermitida ?? true) required @endif>
                                             <button class="btn btn-outline-secondary btn-sm" type="button" id="btnBuscarCliente">
                                                 <x-heroicon-o-magnifying-glass style="width: 14px; height: 14px;" />
                                             </button>
@@ -97,17 +108,17 @@
                                     @endphp
                                     <input type="hidden" name="coti_req_cadena_custodia_relacionada" id="input_coti_req_cadena_custodia_relacionada" value="{{ $__cotiReqRelEdit ? '1' : '0' }}">
                                 </div>
-                                <div class="col-md-4">
+                                <div class="col-md-3">
                                     <label for="cliente_nombre" class="form-label fw-semibold mb-1">&nbsp;</label>
                                     <input type="text" class="form-control form-control-sm" id="cliente_nombre" 
                                            value="{{ optional($cotizacion->cliente)->cli_razonsocial }}" placeholder="Seleccione un cliente" readonly>
                                 </div>
-                                <div class="col-md-2">
+                                <div class="col-md-3">
                                     <label for="sucursal" class="form-label fw-semibold mb-1">Sucursal:</label>
                                     <div id="sucursalWrapper">
                                         <input type="text" class="form-control form-control-sm" id="sucursal" name="coti_codigosuc"
                                                value="{{ trim((string) ($cotizacion->coti_codigosuc ?? '')) }}" placeholder="Código sucursal">
-                                        <select class="form-select form-select-sm d-none mt-1" id="sucursal_select">
+                                        <select class="form-select form-select-sm d-none" id="sucursal_select">
                                             <option value="">Seleccionar sucursal...</option>
                                         </select>
                                     </div>
@@ -208,26 +219,43 @@
                                     <div class="row mb-4">
                                         <div class="col-md-2">
                                             <label for="estado" class="form-label">Estado:</label>
-                                            <select class="form-select" id="estado" name="coti_estado">
-                                                @php
-                                                    $estado = trim($cotizacion->coti_estado);
-                                                    $estadoActual = 'E';
-                                                    if(str_starts_with($estado, 'A')) {
-                                                        $estadoActual = 'A';
-                                                    } elseif(str_starts_with($estado, 'R')) {
-                                                        $estadoActual = 'R';
-                                                    } elseif(str_starts_with($estado, 'P')) {
-                                                        $estadoActual = 'P';
-                                                    } elseif(str_starts_with($estado, 'S')) {
-                                                        $estadoActual = 'S';
-                                                    }
-                                                @endphp
-                                                <option value="E" {{ $estadoActual == 'E' ? 'selected' : '' }}>En Espera</option>
-                                                <option value="A" {{ $estadoActual == 'A' ? 'selected' : '' }}>Aprobado</option>
-                                                <option value="R" {{ $estadoActual == 'R' ? 'selected' : '' }}>Rechazado</option>
-                                                <option value="P" {{ $estadoActual == 'P' ? 'selected' : '' }}>En Proceso</option>
-                                                <option value="S" {{ $estadoActual == 'S' ? 'selected' : '' }}>Suspendida</option>
-                                            </select>
+                                            @php
+                                                $estado = trim($cotizacion->coti_estado);
+                                                $estadoActual = 'E';
+                                                if (str_starts_with($estado, 'A')) {
+                                                    $estadoActual = 'A';
+                                                } elseif (str_starts_with($estado, 'R')) {
+                                                    $estadoActual = 'R';
+                                                } elseif (str_starts_with($estado, 'P')) {
+                                                    $estadoActual = 'P';
+                                                } elseif (str_starts_with($estado, 'S')) {
+                                                    $estadoActual = 'S';
+                                                }
+                                                $estadoEtiquetas = [
+                                                    'E' => 'En Espera',
+                                                    'A' => 'Aprobado',
+                                                    'R' => 'Rechazado',
+                                                    'P' => 'En Proceso',
+                                                    'S' => 'Suspendida',
+                                                ];
+                                            @endphp
+                                            @if($edicionCompletaPermitida ?? true)
+                                                <select class="form-select" id="estado" name="coti_estado">
+                                                    <option value="E" {{ $estadoActual == 'E' ? 'selected' : '' }}>En Espera</option>
+                                                    <option value="A" {{ $estadoActual == 'A' ? 'selected' : '' }}>Aprobado</option>
+                                                    <option value="R" {{ $estadoActual == 'R' ? 'selected' : '' }}>Rechazado</option>
+                                                    <option value="P" {{ $estadoActual == 'P' ? 'selected' : '' }}>En Proceso</option>
+                                                    <option value="S" {{ $estadoActual == 'S' ? 'selected' : '' }}>Suspendida</option>
+                                                </select>
+                                            @else
+                                                <input type="hidden" name="coti_estado" value="{{ $estadoActual }}">
+                                                <input type="text"
+                                                       class="form-control bg-light"
+                                                       id="estado"
+                                                       value="{{ $estadoEtiquetas[$estadoActual] ?? $estadoActual }}"
+                                                       readonly
+                                                       tabindex="-1">
+                                            @endif
 
                                             @if(!empty($cotizacion->cancelada))
                                                 <div class="mt-3">
@@ -307,7 +335,7 @@
                                                 </div>
                                             </div>
 
-                                            <div class="row mb-3">
+                                            <div class="row mb-3" id="presupuestoCondicionPagoWrapper">
                                                 <div class="col-md-6">
                                                     <label for="coti_cond_pago" class="form-label">Condición de pago</label>
                                                     <select class="form-select" id="coti_cond_pago" name="coti_cond_pago">
@@ -443,7 +471,10 @@
                                     </div>
                                 </div>
                                 
-                                @include('ventas.partials.cotizacion-approval-fields', ['cotizacion' => $cotizacion])
+                                @include('ventas.partials.cotizacion-approval-fields', [
+                                    'cotizacion' => $cotizacion,
+                                    'forzarVisible' => $soloReferenciasFacturacion ?? false,
+                                ])
                             </div>
 
                             <!-- Solapa Gestión -->
@@ -560,16 +591,20 @@
                         </div>
 
                         <!-- Botones de acción -->
-                        <div class="card-footer bg-light border-top">
+                        <div class="card-footer bg-light border-top presupuesto-form-acciones">
                             <div class="d-flex justify-content-between">
                                 <div class="d-flex gap-2">
                                     <a href="{{ route('ventas.index') }}" class="btn btn-secondary">
                                         <x-heroicon-o-x-mark style="width: 16px; height: 16px;" class="me-1" />
                                         Cancelar
                                     </a>
-                                    <button type="submit" class="btn btn-primary">
+                                    <button type="submit" class="btn btn-primary" id="btnGuardarPresupuesto">
                                         <x-heroicon-o-check style="width: 16px; height: 16px;" class="me-1" />
-                                        Actualizar
+                                        @if($soloReferenciasFacturacion ?? false)
+                                            Guardar cambios 
+                                        @else
+                                            Actualizar
+                                        @endif
                                     </button>
                                 </div>
                             </div>
@@ -584,186 +619,7 @@
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 
-{{--
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Búsqueda de clientes
-    const clienteInput = document.getElementById('cliente_codigo');
-    const clienteNombre = document.getElementById('cliente_nombre');
-    const btnBuscarCliente = document.getElementById('btnBuscarCliente');
-    
-    let searchTimeout;
-    
-    // Búsqueda automática mientras se escribe
-    clienteInput.addEventListener('input', function() {
-        clearTimeout(searchTimeout);
-        const termino = this.value.trim();
-        
-        if (termino.length < 2) {
-            return;
-        }
-        
-        searchTimeout = setTimeout(() => {
-            buscarClientes(termino);
-        }, 300);
-    });
 
-    // Búsqueda al hacer clic en el botón
-    btnBuscarCliente.addEventListener('click', function() {
-        const termino = clienteInput.value.trim();
-        if (termino.length >= 2) {
-            buscarClientes(termino);
-        }
-    });
-
-    // Función para buscar clientes
-    function buscarClientes(termino) {
-        fetch(`/api/clientes/buscar?q=${encodeURIComponent(termino)}`)
-            .then(response => response.json())
-            .then(data => {
-                if (data.length > 0) {
-                    const coincidenciaExacta = data.find(cliente => 
-                        cliente.codigo.trim().toLowerCase() === termino.toLowerCase()
-                    );
-                    
-                    if (coincidenciaExacta) {
-                        seleccionarCliente(coincidenciaExacta.codigo);
-                    } else if (data.length === 1) {
-                        seleccionarCliente(data[0].codigo);
-                    } else {
-                        mostrarOpcionesClientes(data);
-                    }
-                }
-            })
-            .catch(error => {
-                console.error('Error buscando clientes:', error);
-            });
-    }
-
-    // Función para seleccionar un cliente
-    function seleccionarCliente(codigoCliente) {
-        fetch(`/api/clientes/${encodeURIComponent(codigoCliente)}`)
-            .then(response => response.json())
-            .then(cliente => {
-                if (cliente.error) {
-                    return;
-                }
-                
-                clienteInput.value = cliente.codigo;
-                clienteNombre.value = cliente.razon_social;
-                
-                // Actualizar campos
-                const empresaField = document.getElementById('empresa');
-                const direccionField = document.getElementById('direccion_cliente');
-                const localidadField = document.getElementById('localidad_cliente');
-                const cuitField = document.getElementById('cuit_cliente');
-                const codigoPostalField = document.getElementById('codigo_postal_cliente');
-                const telefonoField = document.getElementById('telefono');
-                
-                if (empresaField) empresaField.value = cliente.razon_social || '';
-                if (direccionField) direccionField.value = cliente.direccion || '';
-                if (localidadField) localidadField.value = cliente.localidad || '';
-                if (cuitField) cuitField.value = cliente.cuit || '';
-                if (codigoPostalField) codigoPostalField.value = cliente.codigo_postal || '';
-                if (telefonoField) telefonoField.value = cliente.telefono || '';
-                
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Cliente Seleccionado',
-                    text: `Se han actualizado los datos de ${cliente.razon_social}`,
-                    timer: 2000,
-                    showConfirmButton: false,
-                    toast: true,
-                    position: 'top-end'
-                });
-            })
-            .catch(error => {
-                console.error('Error obteniendo datos del cliente:', error);
-            });
-    }
-
-    // Función para mostrar opciones de clientes
-    function mostrarOpcionesClientes(clientes) {
-        const opciones = {};
-        clientes.forEach((cliente) => {
-            opciones[cliente.codigo] = cliente.text;
-        });
-
-        Swal.fire({
-            title: 'Seleccionar Cliente',
-            text: `Se encontraron ${clientes.length} clientes. Seleccione uno:`,
-            input: 'select',
-            inputOptions: opciones,
-            inputPlaceholder: 'Seleccione un cliente...',
-            showCancelButton: true,
-            confirmButtonText: 'Seleccionar',
-            cancelButtonText: 'Cancelar',
-            inputValidator: (value) => {
-                if (!value) {
-                    return 'Debe seleccionar un cliente';
-                }
-            }
-        }).then((result) => {
-            if (result.isConfirmed && result.value) {
-                seleccionarCliente(result.value);
-            }
-        });
-    }
-
-    // Validación del formulario
-    const form = document.getElementById('cotizacionForm');
-    if (form) {
-        form.addEventListener('submit', function(e) {
-            const clienteCodigo = document.getElementById('cliente_codigo');
-            if (!clienteCodigo.value.trim()) {
-                e.preventDefault();
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Error de Validación',
-                    text: 'El código de cliente es obligatorio'
-                });
-                clienteCodigo.focus();
-                return;
-            }
-            
-            Swal.fire({
-                title: '¿Guardar cambios?',
-                text: 'Se actualizarán los datos de la cotización',
-                icon: 'question',
-                showCancelButton: true,
-                confirmButtonText: 'Sí, guardar',
-                cancelButtonText: 'Cancelar'
-            }).then((result) => {
-                if (!result.isConfirmed) {
-                    e.preventDefault();
-                }
-            });
-        });
-    }
-
-    // Notificaciones de sesión
-    @if(session('success'))
-        Swal.fire({
-            icon: 'success',
-            title: '¡Éxito!',
-            text: '{{ session("success") }}',
-            showConfirmButton: false,
-            timer: 3000,
-            timerProgressBar: true
-        });
-    @endif
-
-    @if(session('error'))
-        Swal.fire({
-            icon: 'error',
-            title: 'Error',
-            text: '{{ session("error") }}',
-            confirmButtonColor: '#dc3545'
-        });
-    @endif
-});
-</script>
---}}
 
 @include('ventas.partials.cotizacion-modals')
 @include('ventas.partials.cotizacion-styles')
@@ -773,6 +629,7 @@ document.addEventListener('DOMContentLoaded', function() {
         $configuracionCotizacion = $cotizacionConfig ?? [
             'modo' => 'edit',
             'puedeEditar' => true,
+            'soloReferenciasFacturacion' => false,
             'ensayosIniciales' => [],
             'componentesIniciales' => [],
         ];

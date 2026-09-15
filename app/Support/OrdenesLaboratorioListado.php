@@ -102,6 +102,47 @@ final class OrdenesLaboratorioListado
         return $query;
     }
 
+    /** @var list<string> */
+    public const COLUMNAS_ORDEN = ['cotizacion', 'cliente', 'progreso', 'fecha', 'matriz'];
+
+    public static function tieneOrdenExplicito(Request $request): bool
+    {
+        $sort = strtolower(trim((string) $request->query('sort', '')));
+
+        return in_array($sort, self::COLUMNAS_ORDEN, true);
+    }
+
+    public static function aplicarOrdenListado(Builder $query, Request $request): void
+    {
+        $sort = strtolower(trim((string) $request->query('sort', '')));
+        $dir = strtolower((string) $request->query('dir', '')) === 'desc' ? 'desc' : 'asc';
+
+        if ($sort === ListadoProgresoOrden::COLUMNA) {
+            return;
+        }
+
+        if (! in_array($sort, self::COLUMNAS_ORDEN, true)) {
+            $query->orderBy('coti_num', 'desc');
+
+            return;
+        }
+
+        match ($sort) {
+            'cotizacion' => $query->orderBy('coti_num', $dir),
+            'cliente' => $query->orderByRaw("LOWER(COALESCE(coti_empresa, '')) {$dir}"),
+            'fecha' => $query->orderBy('coti_fechaaprobado', $dir),
+            'matriz' => $query
+                ->leftJoin('matriz as matriz_orden_listado', 'coti.coti_codigomatriz', '=', 'matriz_orden_listado.matriz_codigo')
+                ->select('coti.*')
+                ->orderBy('matriz_orden_listado.matriz_descripcion', $dir),
+            default => $query->orderBy('coti_num', 'desc'),
+        };
+
+        if ($sort !== 'cotizacion') {
+            $query->orderBy('coti_num', 'asc');
+        }
+    }
+
     /**
      * @return Collection<int, CotioInstancia>
      */
@@ -149,7 +190,7 @@ final class OrdenesLaboratorioListado
     /**
      * @param  iterable<Coti>  $cotizaciones
      */
-    public static function construirOrdenesDesdeCotizaciones(iterable $cotizaciones): Collection
+    public static function construirOrdenesDesdeCotizaciones(iterable $cotizaciones, bool $preservarOrdenConsulta = false): Collection
     {
         $ordenes = collect();
 
@@ -201,6 +242,15 @@ final class OrdenesLaboratorioListado
                 'estado_predominante' => $estadoPredominante,
                 'tiene_instancias' => $instancias->isNotEmpty(),
             ];
+        }
+
+        if ($preservarOrdenConsulta) {
+            return collect($cotizaciones)
+                ->mapWithKeys(function (Coti $coti) use ($ordenes) {
+                    $item = $ordenes->get($coti->coti_num);
+
+                    return $item ? [$coti->coti_num => $item] : [];
+                });
         }
 
         return $ordenes->sortBy(function ($orden) {

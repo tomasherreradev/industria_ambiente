@@ -211,6 +211,20 @@
         pointer-events: none;
     }
 
+    .tabla-items-edicion-limitada {
+        opacity: 0.88;
+    }
+
+    .tabla-items-edicion-limitada .btn-editar-norma-item,
+    .tabla-items-edicion-limitada .toggle-componentes {
+        pointer-events: auto;
+    }
+
+    #modalEditarEnsayo .select2-container,
+    #modalEditarComponente .select2-container {
+        z-index: 1060;
+    }
+
     /* Resumen de componentes seleccionados */
     .componentes-resumen-card {
         border: 1px dashed #ced4da;
@@ -308,6 +322,53 @@
     
     .select2-results__option--highlighted .empresa-option-item .text-muted {
         color: rgba(255, 255, 255, 0.8);
+    }
+
+    /* Sucursales y empresas relacionadas en cabecera de cotización */
+    #sucursalWrapper .select2-container,
+    #coti_para_wrapper .select2-container {
+        width: 100% !important;
+    }
+
+    #sucursalWrapper .select2-selection__rendered,
+    #coti_para_wrapper .select2-selection__rendered {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .select2-container--open .select2-dropdown--below {
+        min-width: min(420px, 92vw);
+    }
+
+    .sucursal-option-item,
+    .empresa-option-item {
+        padding: 0.5rem 0;
+        white-space: normal;
+        line-height: 1.35;
+    }
+
+    .sucursal-option-item .fw-semibold,
+    .empresa-option-item .fw-semibold {
+        color: #495057;
+        font-size: 0.9rem;
+        font-weight: 600;
+        word-break: break-word;
+    }
+
+    .sucursal-option-item .small,
+    .empresa-option-item .small {
+        font-size: 0.8rem;
+        line-height: 1.6;
+        word-break: break-word;
+    }
+
+    .select2-results__option--highlighted .sucursal-option-item .fw-semibold {
+        color: #ffffff;
+    }
+
+    .select2-results__option--highlighted .sucursal-option-item .text-muted {
+        color: rgba(255, 255, 255, 0.85);
     }
 
     /* Contenedor de componentes preseleccionados */

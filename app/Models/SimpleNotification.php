@@ -32,6 +32,51 @@ class SimpleNotification extends Model
         return $this->belongsTo(CotioInstancia::class, 'instancia_id');
     }
 
+    public function esSolicitudCambioOrden(): bool
+    {
+        return str_starts_with(trim((string) ($this->mensaje ?? '')), 'Solicitud de cambio en orden de trabajo');
+    }
+
+    /**
+     * @return array{contexto: string, solicitante_nombre: string, solicitante_codigo: string, motivo: string}|null
+     */
+    public function detalleSolicitudCambio(): ?array
+    {
+        if (! $this->esSolicitudCambioOrden()) {
+            return null;
+        }
+
+        if (! preg_match(
+            '/^Solicitud de cambio en orden de trabajo (.+)\. Solicitado por: (.+) \(([^)]+)\)\. Motivo: (.+)$/s',
+            trim((string) $this->mensaje),
+            $matches
+        )) {
+            return null;
+        }
+
+        return [
+            'contexto' => trim($matches[1]),
+            'solicitante_nombre' => trim($matches[2]),
+            'solicitante_codigo' => trim($matches[3]),
+            'motivo' => trim($matches[4]),
+        ];
+    }
+
+    public function resumenCorto(int $max = 90): string
+    {
+        $detalle = $this->detalleSolicitudCambio();
+        if ($detalle) {
+            return 'Solicitud de cambio: ' . \Illuminate\Support\Str::limit($detalle['motivo'], $max);
+        }
+
+        return \Illuminate\Support\Str::limit((string) ($this->mensaje ?? ''), $max);
+    }
+
+    public function urlDetalle(): string
+    {
+        return route('notificaciones.show', $this->id);
+    }
+
     /**
      * Genera la URL correspondiente según el rol del destinatario
      * Usa config('app.url') para asegurar que use el dominio correcto según el entorno

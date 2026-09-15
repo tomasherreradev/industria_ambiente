@@ -50,8 +50,9 @@ class InventarioMuestreoController extends Controller
 
     public function show($id)
     {
-        $inventario = InventarioMuestreo::find($id);
-        return view('inventarios-muestreo.show', compact('inventario'));
+        $inventario = InventarioMuestreo::findOrFail($id);
+
+        return view('inventarios-muestreo.edit', compact('inventario'));
     }
 
     public function update(Request $request, $id)

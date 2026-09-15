@@ -121,7 +121,7 @@
                     <h2 class="fw-bold">{{ $categoria->cotio_descripcion }} ({{ $instanciaActual->instance_number ?? ''}} / {{ $categoria->cotio_cantidad ?? ''}})</h2>
                     <div class="d-flex gap-2">
                         <a class="btn btn-outline-primary"
-                            href="https://www.google.com/maps/search/?api=1&query={{ $cotizacion->coti_direccioncli }}, {{ $cotizacion->coti_localidad }}, {{ $cotizacion->coti_partido }}">
+                            href="https://www.google.com/maps/search/?api=1&query={{ urlencode(\App\Support\CotizacionClienteEtiqueta::direccionDestinatarioMapsQuery($cotizacion)) }}">
                             <x-heroicon-o-map class="me-1" style="width: 18px; height: 18px;" />
                             <span class="d-none d-md-inline">Ver en Maps</span>
                         </a>

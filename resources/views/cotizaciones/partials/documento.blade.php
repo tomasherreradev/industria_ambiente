@@ -1,3 +1,4 @@
+<div class="op-documento">
 @foreach($cotizaciones as $coti)
 @php
     $estado = trim($coti->coti_estado);
@@ -14,7 +15,7 @@
         default => $estado
     };
 @endphp
-    <div class="card mb-4 shadow-sm">
+    <div class="card mb-3 op-documento-card documento-card">
         <div class="card-header bg-white">
             <div class="d-flex flex-md-row justify-content-between align-items-center align-items-md-center">
                 <button class="btn btn-link text-decoration-none p-0 text-start d-flex align-items-center" 
@@ -31,7 +32,7 @@
                     <x-heroicon-o-chevron-up id="chevron-{{ $coti->coti_num }}" class="text-primary chevron-icon" style="width: 20px; height: 20px;" />
                 </button>
                 <a class="btn btn-outline-primary mt-md-0"
-                   href="https://www.google.com/maps/search/?api=1&query={{ $coti->coti_direccioncli }}, {{ $coti->coti_localidad }}, {{ $coti->coti_partido }}">
+                   href="https://www.google.com/maps/search/?api=1&query={{ urlencode(\App\Support\CotizacionClienteEtiqueta::direccionDestinatarioMapsQuery($coti)) }}">
                     <span class="d-none d-md-inline">Ver en Maps</span>
                     <x-heroicon-o-map class="d-md-none" style="width: 18px; height: 18px;" />
                 </a>
@@ -41,7 +42,7 @@
                 <div class="d-lg-none"><strong>Estado:</strong> <span class="badge {{ $badgeClass }}">{{ $estadoText }}</span></div>
                 <div><strong>Fecha Alta:</strong> {{ $coti->coti_fechaalta }}</div>
                 <div><strong>Fecha Aprobación:</strong> {{ $coti->coti_fechaaprobado ?: 'Pendiente' }}</div>
-                <div><strong>Dirección:</strong> {{ $coti->coti_direccioncli }}, {{ $coti->coti_localidad }}</div>
+                <div><strong>Dirección:</strong> {{ \App\Support\CotizacionClienteEtiqueta::direccionDestinatarioTexto($coti) ?: '—' }}</div>
                 <div><strong>Cliente:</strong> {{ \App\Support\CotizacionClienteEtiqueta::lineaClienteConEstablecimiento($coti) }}</div>
                 <div><strong>Responsable:</strong> {{ $coti->responsable->usu_descripcion ?? 'Sin asignar' }}</div>
             </div>
@@ -58,19 +59,11 @@
         </div>
     </div>
 @endforeach
-
-<div class="d-flex justify-content-center mt-4">
-    {{ $cotizaciones->links() }}
 </div>
 
-<style>
-    .chevron-icon {
-        transition: transform 0.3s ease;
-    }
-    .chevron-icon.rotated {
-        transform: rotate(180deg);
-    }
-</style>
+<div class="ucrud-panel ucrud-pagination mt-3">
+    {{ $cotizaciones->links() }}
+</div>
 
 <script>
     function toggleChevron(iconId) {

@@ -1,7 +1,6 @@
-<div class="card shadow-sm">
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-hover mb-0">
+<div class="ucrud-panel op-documento">
+    <div class="table-responsive">
+        <table class="ucrud-table mb-0">
                 <thead class="d-none d-md-table-header-group">
                     <tr>
                         <th>Cotización</th>
@@ -101,8 +100,8 @@
                                 </div>
                             </td>
                             <td class="d-none d-md-table-cell">
-                                {{ $cotizacion->coti_establecimiento ?? '' }}
-                                <div class="small text-muted">{{ $cotizacion->coti_localidad ?? '' }}</div>
+                                {{ $cotizacion->coti_establecimiento ?: \App\Support\CotizacionClienteEtiqueta::etiquetaSucursalEstablecimiento($cotizacion) }}
+                                <div class="small text-muted">{{ \App\Support\CotizacionClienteEtiqueta::direccionDestinatarioPartes($cotizacion)['localidad'] ?: '' }}</div>
                             </td>
                             <td class="d-none d-md-table-cell">
                                 {{ $instanceNumber }}
@@ -137,15 +136,14 @@
                     @endforeach
                 </tbody>
             </table>
-        </div>
     </div>
 </div>
 
-<div class="d-flex justify-content-center mt-3">
-    @if($tareasPaginadas instanceof \Illuminate\Pagination\LengthAwarePaginator)
-        {{ $tareasPaginadas->onEachSide(1)->links('pagination::bootstrap-4') }}
-    @endif
+@if($tareasPaginadas instanceof \Illuminate\Pagination\LengthAwarePaginator)
+<div class="ucrud-panel ucrud-pagination mt-3">
+    {{ $tareasPaginadas->onEachSide(1)->links('pagination::bootstrap-4') }}
 </div>
+@endif
 
 <style>
     .table-hover tbody tr:hover {

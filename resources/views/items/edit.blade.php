@@ -3,14 +3,17 @@
 @section('title', 'Editar Parámetro')
 
 @section('content')
-<div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h1 class="h4 mb-0">Editar Parámetro</h1>
-        <a href="{{ route('items.index') }}" class="btn btn-outline-secondary">Volver</a>
-    </div>
+@include('partials.ucrud-styles')
 
-    <div class="card">
-        <div class="card-body">
+<div class="container-fluid py-4 ucrud ucrud-layout--fluid">
+    @include('partials.ucrud-form-header', [
+        'title' => 'Editar determinación',
+        'subtitle' => $item->cotio_descripcion,
+        'backUrl' => route('items.index'),
+    ])
+
+    <div class="ucrud-panel">
+        <div class="ucrud-form">
             <form method="POST" action="{{ route('items.update', $item) }}">
                 @csrf
                 @method('PUT')
@@ -188,17 +191,16 @@
                     </div>
                 </div>
 
-                <div class="d-flex gap-2 align-items-center">
-                    <button type="submit" class="btn btn-primary">Actualizar</button>
-                    <a href="{{ route('items.index') }}" class="btn btn-light">Cancelar</a>
+                <div class="ucrud-form__actions">
+                    <button type="submit" class="ucrud-btn ucrud-btn--primary">Actualizar</button>
+                    <a href="{{ route('items.index') }}" class="ucrud-btn ucrud-btn--ghost">Cancelar</a>
                 </div>
             </form>
 
-            <div class="mt-3 d-flex">
-                <form action="{{ route('items.delete', $item) }}" method="POST" class="js-delete-form">
+            <form action="{{ route('items.delete', $item) }}" method="POST" class="js-delete-form px-3 pb-3">
                     @csrf
                     @method('DELETE')
-                    <button type="submit" class="btn btn-outline-danger">Eliminar</button>
+                    <button type="submit" class="ucrud-btn ucrud-btn--ghost" style="color:#d0453c;border-color:#f0c4c1;">Eliminar determinación</button>
                 </form>
             </div>
         </div>

@@ -162,7 +162,7 @@
         </div>
 
         <div class="client-info">
-            <div class="client-title">DATOS DEL CLIENTE</div>
+            <div class="client-title">DATOS DE FACTURACIÓN</div>
             @if($factura->cotizacion)
                 @php
                     $factura->cotizacion->loadMissing('cliente');
@@ -177,6 +177,18 @@
                 <div>Información del cliente no disponible</div>
             @endif
         </div>
+
+        @if($factura->cotizacion)
+            @php $destFacturaTpl = \App\Support\CotizacionClienteEtiqueta::destinatarioResumen($factura->cotizacion); @endphp
+            <div class="client-info" style="margin-top: 15px; background-color: #eef1f4;">
+                <div class="client-title">DESTINATARIO DEL TRABAJO</div>
+                <div><strong>Cliente / sucursal:</strong> {{ ($destFacturaTpl['nombre'] ?? '') !== '' && ($destFacturaTpl['nombre'] ?? '') !== '—' ? $destFacturaTpl['nombre'] : 'N/A' }}</div>
+                @if(($destFacturaTpl['establecimiento'] ?? '') !== '')
+                    <div><strong>Establecimiento:</strong> {{ $destFacturaTpl['establecimiento'] }}</div>
+                @endif
+                <div><strong>Dirección:</strong> {{ ($destFacturaTpl['direccion'] ?? '') !== '' ? $destFacturaTpl['direccion'] : 'N/A' }}</div>
+            </div>
+        @endif
 
         <table class="items-table">
             <thead>

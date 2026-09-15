@@ -1,95 +1,116 @@
 @extends('layouts.app')
 
-@section('content')
-<div class="container py-3 py-md-4">
-    <header class="d-flex flex-md-row justify-content-between align-items-center align-items-md-center">
-        <h1 class="mb-md-4">{{ $portalTitulo }}</h1>
+@section('title', $portalTitulo ?? 'Portal')
 
-        <div class="d-flex gap-2 align-items-center mb-2">
-            <button class="btn btn-sm btn-outline-primary me-2" type="button" data-bs-toggle="collapse"
-                    data-bs-target="#collapseSearchCanalPortal" aria-expanded="false" aria-controls="collapseSearchCanalPortal"
-                    id="searchToggleBtnCanalPortal">
-                <x-heroicon-o-magnifying-glass style="width: 16px; height: 16px;" class="me-1"/>
-                <span class="d-none d-sm-inline">Buscar</span>
-            </button>
+@section('content')
+@include('partials.operativo-styles')
+
+@php
+    $hayFiltros = request()->hasAny(['search', 'estado', 'matriz', 'fecha_inicio_muestreo', 'fecha_fin_muestreo', 'sort', 'dir']);
+    $totalRegistros = method_exists($muestras ?? null, 'total') ? $muestras->total() : ($muestras ?? collect())->count();
+    $subtitulos = [
+        'consultoria' => 'Ensayos y trabajos de consultoría.',
+        'mediciones' => 'Mediciones con informes y seguimiento.',
+        'asp' => 'Ensayos del área ASP.',
+        'clarke_fire' => 'Ensayos Clarke Fire.',
+    ];
+    $subtitulo = $subtitulos[$portalCanal ?? ''] ?? 'Listado de cotizaciones del canal.';
+@endphp
+
+<div class="container py-4 ucrud ucrud-operativo" data-ucrud-root>
+    <header class="ucrud-header">
+        <div class="ucrud-header__titles">
+            <h1 class="ucrud-title">
+                {{ $portalTitulo }}
+                <span class="ucrud-count">{{ number_format($totalRegistros, 0, ',', '.') }}</span>
+            </h1>
+            <p class="ucrud-subtitle">{{ $subtitulo }}</p>
         </div>
     </header>
 
-    <div class="collapse mb-4" id="collapseSearchCanalPortal">
-        <div class="card shadow-sm">
-            <div class="card-body">
-                <form method="GET" action="{{ route($portalRouteName) }}" class="row g-3">
-                    <input type="hidden" name="view" value="lista">
-
-                    <div class="col-md-4">
-                        <label for="search" class="form-label">Buscar</label>
-                        <input type="text" class="form-control" id="search" name="search"
-                               placeholder="Número, empresa o establecimiento"
-                               value="{{ request('search') }}">
-                    </div>
-
-                    <div class="col-md-2">
-                        <label for="estado" class="form-label">Estado</label>
-                        <select class="form-select" id="estado" name="estado">
-                            <option value="">Todos</option>
-                            <option value="A" {{ request('estado') == 'A' ? 'selected' : '' }}>Aprobado</option>
-                            <option value="E" {{ request('estado') == 'E' ? 'selected' : '' }}>En espera</option>
-                            <option value="S" {{ request('estado') == 'S' ? 'selected' : '' }}>Rechazado</option>
-                        </select>
-                    </div>
-
-                    <div class="col-md-2">
-                        <label for="matriz" class="form-label">Matriz</label>
-                        <select class="form-select" id="matriz" name="matriz">
-                            <option value="">Todas</option>
-                            @foreach($matrices as $matriz)
-                                <option value="{{ $matriz->matriz_codigo }}"
-                                    {{ request('matriz') == $matriz->matriz_codigo ? 'selected' : '' }}>
-                                    {{ $matriz->matriz_descripcion }}
-                                </option>
-                            @endforeach
-                        </select>
-                    </div>
-
-                    <div class="col-md-2">
-                        <label for="fecha_inicio_muestreo" class="form-label">Alta desde</label>
-                        <input type="date" class="form-control" id="fecha_inicio_muestreo"
-                               name="fecha_inicio_muestreo" value="{{ request('fecha_inicio_muestreo') }}">
-                    </div>
-
-                    <div class="col-md-2">
-                        <label for="fecha_fin_muestreo" class="form-label">Alta hasta</label>
-                        <input type="date" class="form-control" id="fecha_fin_muestreo"
-                               name="fecha_fin_muestreo" value="{{ request('fecha_fin_muestreo') }}">
-                    </div>
-
-                    <div class="col-12">
-                        <div class="d-flex justify-content-end gap-2">
-                            <button type="submit" class="btn btn-primary">
-                                <x-heroicon-o-magnifying-glass class="me-1" style="width: 16px; height: 16px;" />
-                                Buscar
-                            </button>
-                            <a href="{{ route($portalRouteName) }}" class="btn btn-outline-secondary">
-                                Limpiar
-                            </a>
-                        </div>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-
     @if(session('success'))
-        <div class="alert alert-success">{{ session('success') }}</div>
+        <div class="ucrud-alert ucrud-alert--success" role="status">
+            <x-heroicon-o-check-circle style="width: 18px; height: 18px;" />
+            <span>{{ session('success') }}</span>
+        </div>
     @endif
 
     @if(session('error'))
-        <div class="alert alert-danger">{{ session('error') }}</div>
+        <div class="ucrud-alert ucrud-alert--danger" role="alert">
+            <x-heroicon-o-exclamation-circle style="width: 18px; height: 18px;" />
+            <span>{{ session('error') }}</span>
+        </div>
     @endif
 
+    <div class="ucrud-filters">
+        <p class="ucrud-filters__title">Filtros</p>
+        <form method="GET" action="{{ route($portalRouteName) }}" class="ucrud-filters__grid">
+            <input type="hidden" name="view" value="lista">
+            @if(request('sort'))
+                <input type="hidden" name="sort" value="{{ request('sort') }}">
+            @endif
+            @if(request('dir'))
+                <input type="hidden" name="dir" value="{{ request('dir') }}">
+            @endif
+
+            <div class="ucrud-field">
+                <label for="search">Buscar</label>
+                <input type="text" class="ucrud-input" style="padding-left: .9rem;" id="search" name="search"
+                       placeholder="Número, empresa o establecimiento" value="{{ request('search') }}">
+            </div>
+
+            <div class="ucrud-field">
+                <label for="estado">Estado</label>
+                <select class="ucrud-select" style="width: 100%;" id="estado" name="estado">
+                    <option value="">Todos</option>
+                    <option value="A" @selected(request('estado') == 'A')>Aprobado</option>
+                    <option value="E" @selected(request('estado') == 'E')>En espera</option>
+                    <option value="S" @selected(request('estado') == 'S')>Rechazado</option>
+                </select>
+            </div>
+
+            <div class="ucrud-field">
+                <label for="matriz">Matriz</label>
+                <select class="ucrud-select" style="width: 100%;" id="matriz" name="matriz">
+                    <option value="">Todas</option>
+                    @foreach($matrices as $matriz)
+                        <option value="{{ $matriz->matriz_codigo }}" @selected(request('matriz') == $matriz->matriz_codigo)>
+                            {{ $matriz->matriz_descripcion }}
+                        </option>
+                    @endforeach
+                </select>
+            </div>
+
+            <div class="ucrud-field">
+                <label for="fecha_inicio_muestreo">Alta desde</label>
+                <input type="date" class="ucrud-input" style="padding-left: .9rem;" id="fecha_inicio_muestreo"
+                       name="fecha_inicio_muestreo" value="{{ request('fecha_inicio_muestreo') }}">
+            </div>
+
+            <div class="ucrud-field">
+                <label for="fecha_fin_muestreo">Alta hasta</label>
+                <input type="date" class="ucrud-input" style="padding-left: .9rem;" id="fecha_fin_muestreo"
+                       name="fecha_fin_muestreo" value="{{ request('fecha_fin_muestreo') }}">
+            </div>
+
+            <div class="ucrud-filters__actions">
+                @if($hayFiltros)
+                    <a href="{{ route($portalRouteName) }}" class="ucrud-btn ucrud-btn--ghost">Limpiar</a>
+                @endif
+                <button type="submit" class="ucrud-btn ucrud-btn--primary">Buscar</button>
+            </div>
+        </form>
+    </div>
+
     @if(($muestras ?? collect())->isEmpty())
-        <div class="alert alert-warning mb-0">
-            No hay cotizaciones con ensayos de esta área según los filtros.
+        <div class="ucrud-panel">
+            <div class="ucrud-empty">
+                <div class="ucrud-empty__icon">
+                    <x-heroicon-o-document-magnifying-glass style="width: 28px; height: 28px;" />
+                </div>
+                <p class="ucrud-empty__title">Sin resultados</p>
+                <p class="ucrud-empty__text">No hay cotizaciones con ensayos de esta área según los filtros.</p>
+            </div>
         </div>
     @else
         @include('muestras.partials.lista')

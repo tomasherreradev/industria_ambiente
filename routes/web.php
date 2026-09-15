@@ -88,6 +88,7 @@ Route::middleware(CheckAuth::class)->group(function () {
 
     
     Route::get('/notificaciones', [SimpleNotificationController::class, 'index'])->name('notificaciones.index');
+    Route::get('/notificaciones/{id}', [SimpleNotificationController::class, 'show'])->name('notificaciones.show');
     Route::post('/notificaciones/{id}/leida', [SimpleNotificationController::class, 'marcarComoLeida'])->name('notificaciones.leida');
     Route::post('/notificaciones/leer-todas', [SimpleNotificationController::class, 'marcarTodasComoLeidas'])->name('notificaciones.leer-todas');
     Route::post('/notificaciones/marcar-leidas', [SimpleNotificationController::class, 'marcarLeidas'])->name('notificaciones.marcar-leidas');
@@ -252,6 +253,7 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
     Route::post('/ordenes/{cotizacion}/deshacer-asignaciones', [OrdenController::class, 'deshacerAsignaciones'])->name('ordenes.deshacer-asignaciones');
     Route::post('/ordenes/{instance}/request-review', [OrdenController::class, 'requestReview'])->name('ordenes.request-review');
     Route::post('/ordenes/{instance}/request-review-cancel', [OrdenController::class, 'requestReviewCancel'])->name('ordenes.request-review-cancel');
+    Route::post('/ordenes/{cotizacion}/solicitud-cambio', [OrdenController::class, 'solicitudCambioOrden'])->name('ordenes.solicitud-cambio');
 
     // Gestión de muestras
     Route::get('/muestras', [MuestrasController::class, 'index'])->name('muestras.index');
@@ -508,6 +510,7 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
     Route::post('/ordenes/{cotizacion}/deshacer-asignaciones', [OrdenController::class, 'deshacerAsignaciones'])->name('ordenes.deshacer-asignaciones');
     Route::post('/ordenes/{instance}/request-review', [OrdenController::class, 'requestReview'])->name('ordenes.request-review');
     Route::post('/ordenes/{instance}/request-review-cancel', [OrdenController::class, 'requestReviewCancel'])->name('ordenes.request-review-cancel');
+    Route::post('/ordenes/{cotizacion}/solicitud-cambio', [OrdenController::class, 'solicitudCambioOrden'])->name('ordenes.solicitud-cambio');
 
     // Gestión de usuarios
     Route::get('/users', [UserController::class, 'showUsers'])->name('users.showUsers');

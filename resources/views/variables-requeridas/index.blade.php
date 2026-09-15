@@ -1,269 +1,176 @@
 @extends('layouts.app')
 
+@section('title', 'Variables Requeridas')
 
 @section('content')
-<div class="container">
-    <!-- Encabezado -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="h3 font-weight-bold">Variables Requeridas</h1>
-        <a href="{{ route('variables-requeridas.create') }}" class="btn btn-primary btn-sm">
-            <i class="fas fa-plus mr-1"></i> Crear Nueva
-        </a>
-    </div>
+<link rel="stylesheet" href="{{ asset('css/usuarios-crud.css') }}?v={{ filemtime(public_path('css/usuarios-crud.css')) }}">
 
-    <!-- Mensaje de éxito -->
+@php
+    $hayFiltros = request()->filled('search') || request()->filled('obligatorio');
+    $totalVariables = $groupedVariables->flatten(1)->count();
+@endphp
+
+<div class="container py-4 ucrud" data-ucrud-root>
+    <header class="ucrud-header">
+        <div class="ucrud-header__titles">
+            <h1 class="ucrud-title">
+                Variables requeridas
+                <span class="ucrud-count">{{ $totalVariables }}</span>
+            </h1>
+            <p class="ucrud-subtitle">Variables de muestreo agrupadas por determinación.</p>
+        </div>
+
+        <div class="ucrud-header__actions">
+            <a href="{{ route('variables-requeridas.create') }}" class="ucrud-btn ucrud-btn--primary">
+                <x-heroicon-o-plus style="width: 16px; height: 16px;" />
+                Crear nueva
+            </a>
+        </div>
+    </header>
+
     @if(session('success'))
-        <div class="alert alert-success alert-dismissible fade show" role="alert">
-            {{ session('success') }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        <div class="ucrud-alert ucrud-alert--success" role="status">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="9"/>
+                <path d="m8.5 12.5 2.5 2.5 4.5-5"/>
+            </svg>
+            <span>{{ session('success') }}</span>
         </div>
     @endif
 
-    <!-- Buscador -->
-<div class="card shadow-sm mb-4">
-    <div class="card-body">
-        <form action="{{ route('variables-requeridas.index') }}" method="GET" class="row g-3 align-items-end">
-            <div class="col-md-7 col-sm-12">
-                <label for="search" class="form-label visually-hidden">Buscar</label>
-                <input type="text" name="search" id="search" class="form-control" 
-                       placeholder="Buscar por descripción o nombre..." 
-                       value="{{ request('search') }}">
-            </div>
-            <div class="col-md-3 col-sm-12">
-                <label for="obligatorio" class="form-label visually-hidden">Obligatorio</label>
-                <select name="obligatorio" id="obligatorio" class="form-select">
-                    <option value="">Todos</option>
-                    <option value="1" {{ request('obligatorio') == '1' ? 'selected' : '' }}>Obligatorios</option>
-                    <option value="0" {{ request('obligatorio') == '0' ? 'selected' : '' }}>Opcionales</option>
-                </select>
-            </div>
-            <div class="col-md-2 col-sm-12">
-                <button type="submit" class="btn btn-primary w-100">
-                    <i class="fas fa-search mr-1"></i> Buscar
-                </button>
-            </div>
-        </form>
-    </div>
-</div>
+    <form action="{{ route('variables-requeridas.index') }}" method="GET" class="ucrud-toolbar ucrud-toolbar--wide">
+        <label class="ucrud-search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                <circle cx="11" cy="11" r="7"/>
+                <path d="m20 20-3.1-3.1"/>
+            </svg>
+            <input type="text" name="search" class="ucrud-input" placeholder="Buscar por descripción o nombre…"
+                   value="{{ request('search') }}" aria-label="Buscar variables">
+        </label>
 
-    <!-- Acordeón de variables -->
-    <div class="accordion" id="variablesAccordion">
-        @foreach($groupedVariables as $cotioDescripcion => $variables)
-        <div class="card shadow-sm mb-3">
-            <div class="card-header bg-light" id="heading{{ $loop->index }}">
-                <h2 class="mb-0">
-                    <div class="d-flex justify-content-between align-items-center w-100">
-                        <button class="btn btn-link text-left text-dark text-decoration-none p-0 border-0 bg-transparent" 
-                                type="button" 
-                                data-bs-toggle="collapse" 
-                                data-bs-target="#collapse{{ $loop->index }}" 
-                                aria-expanded="{{ $loop->first ? 'true' : 'false' }}" 
+        <select name="obligatorio" class="ucrud-select" aria-label="Filtrar por obligatoriedad">
+            <option value="">Todas</option>
+            <option value="1" @selected(request('obligatorio') == '1')>Obligatorias</option>
+            <option value="0" @selected(request('obligatorio') == '0')>Opcionales</option>
+        </select>
+
+        <button type="submit" class="ucrud-btn ucrud-btn--primary">Buscar</button>
+
+        @if($hayFiltros)
+            <a href="{{ route('variables-requeridas.index') }}" class="ucrud-btn ucrud-btn--ghost">Limpiar</a>
+        @endif
+    </form>
+
+    @if($groupedVariables->isEmpty())
+        <div class="ucrud-panel">
+            <div class="ucrud-empty">
+                <div class="ucrud-empty__icon">
+                    <x-heroicon-o-variable style="width: 28px; height: 28px;" />
+                </div>
+                <p class="ucrud-empty__title">No hay variables para mostrar</p>
+                <p class="ucrud-empty__text">
+                    {{ $hayFiltros ? 'Probá ajustar la búsqueda o quitar los filtros.' : 'Creá la primera variable requerida.' }}
+                </p>
+            </div>
+        </div>
+    @else
+        <div class="ucrud-accordion" id="variablesAccordion">
+            @foreach($groupedVariables as $cotioDescripcion => $variables)
+                <div class="ucrud-accordion__item">
+                    <div class="ucrud-accordion__header" id="heading{{ $loop->index }}">
+                        <button class="ucrud-accordion__toggle" type="button"
+                                data-bs-toggle="collapse"
+                                data-bs-target="#collapse{{ $loop->index }}"
+                                aria-expanded="{{ $loop->first ? 'true' : 'false' }}"
                                 aria-controls="collapse{{ $loop->index }}">
                             <span>{{ $cotioDescripcion }}</span>
-                            <span class="badge bg-primary rounded-pill ms-2">{{ count($variables) }} variables</span>
+                            <span class="ucrud-chip ucrud-chip--blue">{{ count($variables) }} variables</span>
                         </button>
-                        <div class="d-flex gap-2">
-                            <a href="{{ route('variables-requeridas.edit-group', urlencode($cotioDescripcion)) }}" 
-                               class="btn btn-sm btn-outline-primary"
-                               title="Editar grupo">
-                                <i class="fas fa-edit"></i> Editar grupo
-                            </a>
+                        <a href="{{ route('variables-requeridas.edit-group', urlencode($cotioDescripcion)) }}"
+                           class="ucrud-btn ucrud-btn--ghost" title="Editar grupo">
+                            <x-heroicon-o-pencil-square style="width: 16px; height: 16px;" />
+                            Editar grupo
+                        </a>
+                    </div>
+
+                    <div id="collapse{{ $loop->index }}"
+                         class="collapse ucrud-accordion__body {{ $loop->first ? 'show' : '' }}"
+                         aria-labelledby="heading{{ $loop->index }}"
+                         data-bs-parent="#variablesAccordion">
+                        <div class="ucrud-tablewrap">
+                            <table class="ucrud-table ucrud-table--sticky-actions">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Nombre</th>
+                                        <th>Obligatorio</th>
+                                        <th>Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach($variables as $i => $variable)
+                                        <tr class="ucrud-animate-in" style="--i: {{ $i }}">
+                                            <td><span class="ucrud-code">{{ $variable->id }}</span></td>
+                                            <td><span class="ucrud-user__name">{{ $variable->nombre }}</span></td>
+                                            <td>
+                                                <span class="ucrud-chip {{ $variable->obligatorio ? 'ucrud-chip--green' : 'ucrud-chip--amber' }}">
+                                                    {{ $variable->obligatorio ? 'Sí' : 'No' }}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <div class="ucrud-actions">
+                                                    <a href="{{ route('variables-requeridas.edit', $variable->id) }}"
+                                                       class="ucrud-iconbtn"
+                                                       title="Editar"
+                                                       aria-label="Editar variable {{ $variable->nombre }}">
+                                                        <x-heroicon-o-pencil style="width: 16px; height: 16px;" />
+                                                    </a>
+                                                    <button type="button"
+                                                            class="ucrud-iconbtn ucrud-iconbtn--danger"
+                                                            data-bs-toggle="modal"
+                                                            data-bs-target="#deleteModal{{ $variable->id }}"
+                                                            title="Eliminar"
+                                                            aria-label="Eliminar variable {{ $variable->nombre }}">
+                                                        <x-heroicon-o-trash style="width: 16px; height: 16px;" />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
                         </div>
                     </div>
-                </h2>
-            </div>
-
-            <div id="collapse{{ $loop->index }}" 
-                 class="collapse {{ $loop->first ? 'show' : '' }}" 
-                 aria-labelledby="heading{{ $loop->index }}" 
-                 data-bs-parent="#variablesAccordion">
-                <div class="card-body p-0">
-                    <table class="table table-hover mb-0">
-                        <thead class="table-light">
-                            <tr>
-                                <th scope="col" class="col-1">ID</th>
-                                <th scope="col" class="col-5">Nombre</th>
-                                {{-- <th scope="col" class="col-2">Unidad de Medición</th> --}}
-                                <th scope="col" class="col-2">Obligatorio</th>
-                                <th scope="col" class="col-2">Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach($variables as $variable)
-                            <tr>
-                                <td>{{ $variable->id }}</td>
-                                <td>{{ $variable->nombre }}</td>
-                                {{-- <td>{{ $variable->unidad_medicion ?? 'N/A' }}</td> --}}
-                                <td>
-                                    <span class="badge {{ $variable->obligatorio ? 'bg-success' : 'bg-warning' }} text-white">
-                                        {{ $variable->obligatorio ? 'Sí' : 'No' }}
-                                    </span>
-                                </td>
-                                <td class="col-2">
-                                    <div class="d-flex gap-2">
-                                        <a href="{{ route('variables-requeridas.edit', $variable->id) }}" 
-                                           class="btn btn-sm btn-outline-warning" 
-                                           title="Editar" 
-                                           aria-label="Editar variable {{ $variable->nombre }}">
-                                            <x-heroicon-o-pencil style="width: 16px; height: 16px;"/>
-                                        </a>
-                                        <button type="button" 
-                                                class="btn btn-sm btn-outline-danger" 
-                                                data-bs-toggle="modal" 
-                                                data-bs-target="#deleteModal{{ $variable->id }}"
-                                                title="Eliminar"
-                                                aria-label="Eliminar variable {{ $variable->nombre }}">
-                                            <x-heroicon-o-trash style="width: 16px; height: 16px;"/>
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-
-                            <!-- Modal de confirmación de eliminación -->
-                            <div class="modal fade" id="deleteModal{{ $variable->id }}" tabindex="-1" aria-labelledby="deleteModalLabel{{ $variable->id }}" aria-hidden="true">
-                                <div class="modal-dialog">
-                                    <div class="modal-content">
-                                        <div class="modal-header">
-                                            <h5 class="modal-title" id="deleteModalLabel{{ $variable->id }}">Confirmar eliminación</h5>
-                                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                                        </div>
-                                        <div class="modal-body">
-                                            ¿Estás seguro de que deseas eliminar la variable "{{ $variable->nombre }}"?
-                                        </div>
-                                        <div class="modal-footer">
-                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                                            <form action="{{ route('variables-requeridas.destroy', $variable->id) }}" method="POST">
-                                                @csrf
-                                                @method('DELETE')
-                                                <button type="submit" class="btn btn-danger">Eliminar</button>
-                                            </form>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            @endforeach
-                        </tbody>
-                    </table>
                 </div>
-            </div>
+            @endforeach
         </div>
+
+        @foreach($groupedVariables as $variables)
+            @foreach($variables as $variable)
+                <div class="modal fade" id="deleteModal{{ $variable->id }}" tabindex="-1"
+                     aria-labelledby="deleteModalLabel{{ $variable->id }}" aria-hidden="true">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="deleteModalLabel{{ $variable->id }}">Confirmar eliminación</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                            </div>
+                            <div class="modal-body">
+                                ¿Estás seguro de que deseas eliminar la variable "{{ $variable->nombre }}"?
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                                <form action="{{ route('variables-requeridas.destroy', $variable->id) }}" method="POST">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button type="submit" class="btn btn-danger">Eliminar</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            @endforeach
         @endforeach
-    </div>
-
-    <!-- Paginación -->
-    {{-- @if($groupedVariables->hasPages())
-        <div class="d-flex justify-content-center mt-4">
-            {{ $groupedVariables->appends(request()->query())->links('pagination::bootstrap-5') }}
-        </div>
-    @endif --}}
+    @endif
 </div>
-
-<style>
-    .accordion .card-header .btn-link {
-        text-decoration: none;
-        color: #212529;
-        font-weight: 500;
-    }
-    .accordion .card-header .btn-link:hover {
-        color: #0d6efd;
-    }
-    .badge {
-        font-size: 0.9rem;
-        padding: 0.5em 1em;
-    }
-    .table th, .table td {
-        vertical-align: middle;
-    }
-    .table-hover tbody tr:hover {
-        background-color: rgba(0, 123, 255, 0.05);
-    }
-    @media (max-width: 576px) {
-        .btn-sm {
-            font-size: 0.8rem;
-            padding: 0.25rem 0.5rem;
-        }
-        .badge {
-            font-size: 0.75rem;
-        }
-    }
-</style>
-
-<script>
-    // Asegurar que los modales funcionen correctamente
-    document.addEventListener('DOMContentLoaded', function () {
-        var modals = document.querySelectorAll('.modal');
-        modals.forEach(function(modal) {
-            modal.addEventListener('shown.bs.modal', function () {
-                modal.querySelector('.btn-close').focus();
-            });
-        });
-    });
-</script>
-
-
-<script>
-    document.addEventListener('DOMContentLoaded', function () {
-        const searchForm = document.getElementById('searchForm');
-        const searchInput = document.getElementById('search');
-        const obligatorioSelect = document.getElementById('obligatorio');
-        const accordion = document.getElementById('variablesAccordion');
-        const loadingSpinner = document.getElementById('loadingSpinner');
-        const noResults = document.getElementById('noResults');
-    
-        function performSearch() {
-            const search = searchInput.value.trim();
-            const obligatorio = obligatorioSelect.value;
-    
-            // Mostrar spinner
-            loadingSpinner.classList.remove('d-none');
-            noResults.classList.add('d-none');
-    
-            // Realizar búsqueda AJAX
-            fetch('{{ route('variables-requeridas.index') }}?' + new URLSearchParams({
-                search: search,
-                obligatorio: obligatorio,
-                ajax: 1 // Indicador para el backend
-            }))
-                .then(response => response.json())
-                .then(data => {
-                    // Ocultar spinner
-                    loadingSpinner.classList.add('d-none');
-    
-                    // Actualizar acordeón
-                    accordion.innerHTML = data.html;
-    
-                    // Mostrar mensaje si no hay resultados
-                    if (data.groupedVariables.length === 0) {
-                        noResults.classList.remove('d-none');
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    loadingSpinner.classList.add('d-none');
-                    noResults.classList.remove('d-none');
-                    noResults.textContent = 'Ocurrió un error al realizar la búsqueda.';
-                });
-        }
-    
-        // Escuchar cambios en el formulario
-        searchForm.addEventListener('submit', function (e) {
-            e.preventDefault();
-            if (searchInput.value.length >= 3 || obligatorioSelect.value !== '') {
-                performSearch();
-            }
-        });
-    
-        // Búsqueda en tiempo real (opcional, descomentar si se desea)
-        /*
-        searchInput.addEventListener('input', function () {
-            if (this.value.length >= 3 || this.value === '') {
-                performSearch();
-            }
-        });
-        obligatorioSelect.addEventListener('change', performSearch);
-        */
-    });
-    </script>
-
-
 @endsection

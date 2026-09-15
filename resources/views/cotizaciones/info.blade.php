@@ -1,4 +1,4 @@
-<div class="card shadow-sm mb-4">
+<div class="card shadow-sm mb-4 op-coti-info">
     <div class="card-header bg-dark text-white p-3"
          style="cursor: pointer; background-color: #000000 !important;"
          onclick="toggleInfo('{{ $cotizacion->coti_num }}')">
@@ -48,6 +48,7 @@
             $cotizacion->loadMissing(['cliente', 'sucursal']);
             $lineaClienteInfo = \App\Support\CotizacionClienteEtiqueta::paraLista($cotizacion);
             $establecimientoInfo = trim((string) ($cotizacion->coti_establecimiento ?? ''));
+            $direccionDestinatarioInfo = \App\Support\CotizacionClienteEtiqueta::direccionDestinatarioTexto($cotizacion);
         @endphp
 
         @if($empresaRelacionada)
@@ -72,7 +73,7 @@
 
         <div class="mb-2">
             <strong>Dirección:</strong>
-            {{ $cotizacion->coti_direccioncli }}, {{ $cotizacion->coti_localidad }}, {{ $cotizacion->coti_partido }}
+            {{ $direccionDestinatarioInfo !== '' ? $direccionDestinatarioInfo : '—' }}
         </div>
 
         <div class="mb-2">

@@ -5,13 +5,33 @@
 </head>
 
 @section('content')
-<div class="container py-4">
-    <a href="{{ url('/ordenes') }}" class="btn btn-outline-secondary mb-4">← Volver a Ordenes</a>
-    <h2 class="mb-4">Análisis de cotización <span class="text-primary">{{ $cotizacion->coti_num }}</span></h2>
-    
+@include('partials.operativo-styles')
+
+<div class="container py-4 ucrud ucrud-operativo ucrud-detalle">
+    @php
+        $headerActions = '<a href="' . e(url('/ordenes')) . '" class="ucrud-btn ucrud-btn--ghost"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width:16px;height:16px"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" /></svg> Volver a Órdenes</a>';
+        if (userDebeVerOrdenesPorSector() && !userPuedeGestionarOrdenes()) {
+            $headerActions .= ' <button type="button" class="ucrud-btn ucrud-btn--ghost" data-bs-toggle="modal" data-bs-target="#modalSolicitudCambioOrden"><i class="fas fa-paper-plane me-1"></i> Solicitud de cambio</button>';
+        }
+    @endphp
+
+    @include('partials.ucrud-form-header', [
+        'title' => 'Análisis de cotización #' . $cotizacion->coti_num,
+        'subtitle' => \App\Support\CotizacionClienteEtiqueta::paraLista($cotizacion),
+        'actions' => $headerActions,
+    ])
+
     @if (session('success'))
-        <div class="alert alert-success">
-            {{ session('success') }}
+        <div class="ucrud-alert ucrud-alert--success" role="status">
+            <x-heroicon-o-check-circle style="width: 18px; height: 18px;" />
+            <span>{{ session('success') }}</span>
+        </div>
+    @endif
+
+    @if (session('error'))
+        <div class="ucrud-alert ucrud-alert--danger" role="alert">
+            <x-heroicon-o-exclamation-circle style="width: 18px; height: 18px;" />
+            <span>{{ session('error') }}</span>
         </div>
     @endif
 
@@ -75,7 +95,11 @@
                                 @php
                                     $muestra = $instancia['muestra'];
                                     $esPrioriEfectiva = \App\Support\PrioridadListado::prioridadEfectivaMuestreo($categoria, $cotizacion, $muestra);
-                                    $responsables = $muestra->responsablesAnalisis ?? collect();
+                                    $responsables = ($muestra->responsablesAnalisis ?? collect())
+                                        ->unique(fn ($u) => trim((string) ($u->usu_codigo ?? '')))
+                                        ->values();
+                                    $responsablesVisibles = $responsables->take(6);
+                                    $responsablesExtra = max(0, $responsables->count() - $responsablesVisibles->count());
                                     
                                     // Verificar si es una instancia virtual (no persistida)
                                     $esInstanciaVirtual = !is_numeric($muestra->id);
@@ -127,14 +151,15 @@
                                         $headerClass = 'bg-success';
                                         $badgeClass = 'bg-success border border-white';
                                     } elseif ($muestra->cotio_estado_analisis === 'en revision analisis') {
-                                        $headerClass = 'bg-success';
+                                        $headerClass = 'op-header--revision';
                                         $badgeClass = 'bg-info border border-white';
                                     }
                                 @endphp
                                 <div class="mb-4">
                                     <div class="card shadow-sm h-100" @if($esPrioriEfectiva) style="border: 3px solid #ffc107; box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.35);" @endif>
-                                        <div class="card-header {{ $headerClass }} text-white d-flex align-items-center justify-content-between flex-wrap p-3">
-                                            <div class="d-flex align-items-center gap-2 flex-grow-1">
+                                        <div class="card-header {{ $headerClass }} text-white p-3 op-ot-card-header">
+                                            <div class="op-ot-card-header__top d-flex align-items-start justify-content-between gap-3 flex-wrap w-100">
+                                            <div class="d-flex align-items-start gap-2 flex-grow-1 min-w-0">
                                                 <!-- Checkbox for Sample -->
                                                 @php
                                                     $muestraActiva = $muestra->active_ot;
@@ -189,23 +214,16 @@
                                                                     @endif
                                                                     {{ $categoria->cotio_descripcion }} (#{{ $muestra->otn ? $muestra->otn : $muestra->instance_number ?? 'N/A' }}@include('partials.muestra-precinto-sufijo', ['instancia' => $muestra]))
                                                                     <small class="fw-normal">(muestra {{ $muestra->instance_number }} / {{ $categoria->cotio_cantidad ?? '-' }})</small>
-                                                                    @if($esPrioriEfectiva)
-                                                                        <span class="badge bg-warning text-dark ms-1">Prioridad</span>
-                                                                    @endif
                                                                 </h6>
+                                                                @if($esPrioriEfectiva)
+                                                                    <span class="badge op-header-tag op-header-tag--warning ms-1">Prioridad</span>
+                                                                @endif
                                                                 @if($esInstanciaVirtual)
-                                                                    <div class="ms-2">
-                                                                        <span class="badge bg-info text-white">
-                                                                            <x-heroicon-o-plus-circle style="width: 12px; height: 12px;" class="me-1" />
-                                                                            Nueva
-                                                                        </span>
-                                                                    </div>
+                                                                    <span class="badge op-header-tag op-header-tag--info ms-1">Nueva</span>
                                                                 @elseif($muestra->active_ot)
-                                                                    <div class="ms-2">
-                                                                        <span class="badge {{ $badgeClass }} text-white">
-                                                                            {{ str_replace('_', ' ', ucwords($muestra->cotio_estado_analisis)) }}
-                                                                        </span>
-                                                                    </div>
+                                                                    <span class="badge op-header-tag op-header-tag--success ms-1">
+                                                                        {{ str_replace('_', ' ', ucwords($muestra->cotio_estado_analisis)) }}
+                                                                    </span>
                                                                 @endif
                                                             </div>
                                                             @if($muestra->active_ot && $muestra->coordinadorLab)
@@ -233,62 +251,24 @@
                                                 </div>
                                             </div>
                     
-                                            <!-- Re-coordination Button -->
-                                            @if($muestra->cotio_estado_analisis === 'suspension' || $muestra->cotio_estado_analisis === 'coordinado analisis')
-                                                    <div style="margin-right: 10px; margin-top: -10px;">
-                                                        <button 
-                                                        type="button" 
-                                                        class="btn btn-sm btn-danger text-white"
+                                            <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                                                @if(userPuedeGestionarOrdenes() && ($muestra->cotio_estado_analisis === 'suspension' || $muestra->cotio_estado_analisis === 'coordinado analisis'))
+                                                    <button
+                                                        type="button"
+                                                        class="btn btn-sm btn-outline-light"
                                                         onclick="confirmarRecoordinacion({{ $muestra->id }}, '{{ $cotizacion->coti_num }}')"
                                                         title="Recoordinar muestra"
-                                                        aria-label="Recoordinar muestra {{ $categoria->cotio_descripcion }} (Instancia {{ $muestra->instance_number }})"
-                                                    >
+                                                        aria-label="Recoordinar muestra {{ $categoria->cotio_descripcion }} (Instancia {{ $muestra->instance_number }})">
                                                         <i class="fas fa-sync-alt me-1"></i> Anular
                                                     </button>
-                                                </div>
-                                            @endif
-                                            <!-- Analysts Section -->
-                                            @if($responsables->isNotEmpty())
-                                                <div>
-                                                    <small class="text-light d-block mb-1">Analistas:</small>
-                                                    <div class="d-flex flex-wrap gap-1">
-                                                        @foreach($responsables as $responsable)
-                                                            <span class="badge bg-light text-dark d-flex align-items-center gap-1">
-                                                                {{ $responsable->usu_descripcion }}
-                                                                <button 
-                                                                    type="button" 
-                                                                    class="btn-close btn-close-dark"
-                                                                    style="font-size: 0.4rem;"
-                                                                    onclick="removerResponsable(event, {{ $muestra->cotio_numcoti }}, {{ $muestra->id }}, '{{ $responsable->usu_codigo }}', 'analisis', true)"
-                                                                    title="Remover analista"
-                                                                    aria-label="Remover {{ $responsable->usu_descripcion }}"
-                                                                ></button>
-                                                            </span>
-                                                        @endforeach
-                                                    </div>
-                                                </div>
-                                            @endif
-
-                                            @if($esPrioriEfectiva)
-                                                <div class="mb-2 d-flex align-items-center justify-content-between">
-                                                    <span data-bs-toggle="tooltip" 
-                                                          data-bs-placement="bottom" 
-                                                          data-bs-html="true"
-                                                          data-bs-title="<i class='fas fa-star text-warning me-1'></i><strong>Muestra prioritaria</strong><br><small>Marcada en ventas o en coordinación</small>">
-                                                        <x-heroicon-o-star style="width: 20px; height: 20px; color: #ffc107; cursor: pointer;" />
-                                                    </span>
-                                                </div>
-                                            @endif
-
-                                            <!-- QR Code Icon -->
-                                            <div class="d-flex align-items-center gap-2">
-                                                <a 
+                                                @endif
+                                                <a
                                                     href="#"
-                                                    class="text-decoration-none text-white"
+                                                    class="text-decoration-none text-white op-ot-card-header__qr"
                                                     title="Generar CT para esta muestra"
                                                     data-url="{{ route('qr.universal', [
-                                                        'cotio_numcoti' => $cotizacion->coti_num, 
-                                                        'cotio_item' => $categoria->cotio_item, 
+                                                        'cotio_numcoti' => $cotizacion->coti_num,
+                                                        'cotio_item' => $categoria->cotio_item,
                                                         'cotio_subitem' => 0,
                                                         'instance' => $muestra->instance_number
                                                     ]) }}"
@@ -296,11 +276,39 @@
                                                     data-categoria="{{ $categoria->cotio_descripcion }}"
                                                     data-instance="{{ $muestra->instance_number }}"
                                                     data-fechaanalisis="{{ $muestra->fecha_ot ?? $muestra->fecha_inicio_ot }}"
-                                                    onclick="generateQr(this)"
-                                                >
-                                                    <x-heroicon-o-qr-code class="text-white" style="width: 24px; height: 24px;"/>
+                                                    onclick="generateQr(this)">
+                                                    <x-heroicon-o-qr-code style="width: 22px; height: 22px;" />
                                                 </a>
                                             </div>
+                                            </div>
+
+                                            @if($responsables->isNotEmpty())
+                                                <div class="op-ot-card-header__analistas w-100">
+                                                    <span class="op-ot-card-header__analistas-label">Analistas</span>
+                                                    <div class="op-ot-card-header__chips">
+                                                        @foreach($responsablesVisibles as $responsable)
+                                                            <span class="badge op-person-chip d-inline-flex align-items-center gap-1">
+                                                                {{ $responsable->usu_descripcion }}
+                                                                @if(userPuedeGestionarOrdenes())
+                                                                    <button
+                                                                        type="button"
+                                                                        class="btn-close"
+                                                                        style="font-size: .45rem;"
+                                                                        onclick="removerResponsable(event, {{ $muestra->cotio_numcoti }}, {{ $muestra->id }}, '{{ $responsable->usu_codigo }}', 'analisis', true)"
+                                                                        title="Remover analista"
+                                                                        aria-label="Remover {{ $responsable->usu_descripcion }}"></button>
+                                                                @endif
+                                                            </span>
+                                                        @endforeach
+                                                        @if($responsablesExtra > 0)
+                                                            <span class="badge op-person-chip op-person-chip--more"
+                                                                  title="{{ $responsables->slice(6)->pluck('usu_descripcion')->join(', ') }}">
+                                                                +{{ $responsablesExtra }} más
+                                                            </span>
+                                                        @endif
+                                                    </div>
+                                                </div>
+                                            @endif
                                         </div>
                                         <div class="card-body">
                                             @if(isset($metodosUnicos) && $metodosUnicos->isNotEmpty())
@@ -421,6 +429,7 @@
 
 
 
+@if(userPuedeGestionarOrdenes())
 <div class="modal fade" id="modalAsignacionMasiva" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
@@ -513,6 +522,7 @@
         <i class="fas fa-check-circle me-2"></i>Pasar a Análisis
     </button>
 </div>
+@endif
 
 <!-- Modales de Nota Interna -->
 @foreach($agrupadas as $grupo)
@@ -584,6 +594,30 @@
         @endforeach
     @endif
 @endforeach
+
+@if(userDebeVerOrdenesPorSector() && !userPuedeGestionarOrdenes())
+<div class="modal fade" id="modalSolicitudCambioOrden" tabindex="-1" aria-labelledby="modalSolicitudCambioOrdenLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalSolicitudCambioOrdenLabel">Solicitud de cambio</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small">Se notificará a los coordinadores con permiso de gestión de órdenes.</p>
+                <div class="mb-3">
+                    <label for="motivoSolicitudCambioOrden" class="form-label">Motivo del cambio</label>
+                    <textarea id="motivoSolicitudCambioOrden" class="form-control" rows="4" maxlength="2000" placeholder="Ej.: la fecha debería ser 15/09/2026"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-warning" onclick="enviarSolicitudCambioOrden()">Enviar solicitud</button>
+            </div>
+        </div>
+    </div>
+</div>
+@endif
 
 @endsection
 
@@ -1476,6 +1510,40 @@
             });
         });
     }
+
+    @if(userDebeVerOrdenesPorSector() && !userPuedeGestionarOrdenes())
+    async function enviarSolicitudCambioOrden() {
+        const motivo = (document.getElementById('motivoSolicitudCambioOrden')?.value || '').trim();
+        if (!motivo) {
+            Swal.fire({ title: 'Motivo requerido', text: 'Indique el motivo del cambio solicitado.', icon: 'warning' });
+            return;
+        }
+
+        try {
+            const response = await fetch('{{ route('ordenes.solicitud-cambio', $cotizacion->coti_num) }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                    'Accept': 'application/json',
+                },
+                body: JSON.stringify({ motivo }),
+            });
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                bootstrap.Modal.getInstance(document.getElementById('modalSolicitudCambioOrden'))?.hide();
+                document.getElementById('motivoSolicitudCambioOrden').value = '';
+                Swal.fire({ title: 'Enviado', text: data.message || 'Solicitud enviada correctamente.', icon: 'success' });
+            } else {
+                Swal.fire({ title: 'Error', text: data.message || 'No se pudo enviar la solicitud.', icon: 'error' });
+            }
+        } catch (error) {
+            console.error(error);
+            Swal.fire({ title: 'Error', text: 'Ocurrió un error al enviar la solicitud.', icon: 'error' });
+        }
+    }
+    @endif
 </script>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>

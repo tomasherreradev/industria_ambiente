@@ -3,21 +3,21 @@
 @section('title', 'Historial de Cambios de Precios')
 
 @section('content')
-<div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h1 class="h4 mb-0">Historial de Cambios de Precios</h1>
-        <div>
-            <a href="{{ route('items.cambios-masivos-precios') }}" class="btn btn-primary">Nuevo Cambio Masivo</a>
-            <a href="{{ route('items.index') }}" class="btn btn-outline-secondary">Volver</a>
-        </div>
-    </div>
+@include('partials.ucrud-styles')
+
+<div class="container-fluid py-4 ucrud ucrud-layout--fluid">
+    @include('partials.ucrud-form-header', [
+        'title' => 'Historial de cambios de precios',
+        'subtitle' => 'Registro de ajustes masivos y revertidos.',
+        'actions' => '<a href="' . route('items.cambios-masivos-precios') . '" class="ucrud-btn ucrud-btn--primary">Nuevo cambio masivo</a><a href="' . route('items.index') . '" class="ucrud-btn ucrud-btn--ghost">Volver</a>',
+    ])
 
     @if(session('success'))
         <div id="flash-success" data-message="{{ session('success') }}" style="display:none"></div>
     @endif
 
     @if($errors->any())
-        <div class="alert alert-danger">
+        <div class="ucrud-alert ucrud-alert--danger">
             <ul class="mb-0">
                 @foreach($errors->all() as $error)
                     <li>{{ $error }}</li>
@@ -26,12 +26,12 @@
         </div>
     @endif
 
-    <div class="card mb-3">
-        <div class="card-body">
-            <form method="GET" action="{{ route('items.historial-precios') }}" class="row g-2">
-                <div class="col-md-4">
-                    <label for="operacion_id" class="form-label">Filtrar por Operación</label>
-                    <select name="operacion_id" id="operacion_id" class="form-select">
+    <div class="ucrud-filters">
+        <p class="ucrud-filters__title">Filtros</p>
+        <form method="GET" action="{{ route('items.historial-precios') }}" class="ucrud-filters__grid">
+                <div class="ucrud-field">
+                    <label for="operacion_id">Operación</label>
+                    <select name="operacion_id" id="operacion_id" class="ucrud-select" style="width:100%;">
                         <option value="">Todas las operaciones</option>
                         @foreach($operaciones as $operacion)
                             <option value="{{ $operacion->operacion_id }}" {{ request('operacion_id') == $operacion->operacion_id ? 'selected' : '' }}>
@@ -40,27 +40,23 @@
                         @endforeach
                     </select>
                 </div>
-                <div class="col-md-3">
-                    <label class="form-label">&nbsp;</label>
+                <div class="ucrud-field">
+                    <label for="solo_activos">Estado</label>
                     <div class="form-check mt-2">
                         <input class="form-check-input" type="checkbox" name="solo_activos" id="solo_activos" value="1" {{ request('solo_activos') ? 'checked' : '' }}>
-                        <label class="form-check-label" for="solo_activos">
-                            Solo cambios activos (no revertidos)
-                        </label>
+                        <label class="form-check-label" for="solo_activos">Solo cambios activos</label>
                     </div>
                 </div>
-                <div class="col-md-3 d-flex align-items-end">
-                    <button type="submit" class="btn btn-outline-secondary">Filtrar</button>
-                    <a href="{{ route('items.historial-precios') }}" class="btn btn-outline-secondary ms-2">Limpiar</a>
+                <div class="ucrud-filters__actions">
+                    <button type="submit" class="ucrud-btn ucrud-btn--primary">Filtrar</button>
+                    <a href="{{ route('items.historial-precios') }}" class="ucrud-btn ucrud-btn--ghost">Limpiar</a>
                 </div>
             </form>
-        </div>
     </div>
 
-    <div class="card">
-        <div class="card-body p-0">
-            <div class="table-responsive">
-                <table class="table table-striped mb-0">
+    <div class="ucrud-panel">
+            <div class="ucrud-tablewrap">
+                <table class="ucrud-table ucrud-table--sticky-actions">
                     <thead>
                         <tr>
                             <th style="width: 100px;">Fecha</th>
@@ -87,7 +83,12 @@
                                     <small>{{ $fechaCambio->format('d/m/Y') }}<br>{{ $fechaCambio->format('H:i') }}</small>
                                 </td>
                                 <td class="align-middle">
-                                    <strong>{{ $cambio->item->cotio_descripcion }}</strong><br>
+                                    @if($cambio->item)
+                                        <strong>{{ $cambio->item->cotio_descripcion }}</strong>
+                                    @else
+                                        <span class="text-muted">Ítem no disponible</span>
+                                    @endif
+                                    <br>
                                     <small class="text-muted">ID: {{ $cambio->item_id }}</small>
                                 </td>
                                 <td class="align-middle">${{ number_format($cambio->precio_anterior, 2, ',', '.') }}</td>
@@ -96,9 +97,9 @@
                                 </td>
                                 <td class="align-middle">
                                     @if($cambio->tipo_cambio === 'porcentaje')
-                                        <span class="badge bg-info">%</span>
+                                        <span class="ucrud-chip ucrud-chip--cyan">%</span>
                                     @else
-                                        <span class="badge bg-secondary">Fijo</span>
+                                        <span class="ucrud-chip ucrud-chip--slate">Fijo</span>
                                     @endif
                                 </td>
                                 <td class="align-middle">
@@ -116,12 +117,12 @@
                                 </td>
                                 <td class="align-middle">
                                     @if($cambio->revertido)
-                                        <span class="badge bg-danger">Revertido</span>
+                                        <span class="ucrud-chip ucrud-chip--rose">Revertido</span>
                                         @if($cambio->fecha_reversion)
                                             <br><small class="text-muted">{{ ($cambio->fecha_reversion instanceof \Carbon\Carbon) ? $cambio->fecha_reversion->format('d/m/Y H:i') : \Carbon\Carbon::parse($cambio->fecha_reversion)->format('d/m/Y H:i') }}</small>
                                         @endif
                                     @else
-                                        <span class="badge bg-success">Activo</span>
+                                        <span class="ucrud-chip ucrud-chip--green">Activo</span>
                                     @endif
                                 </td>
                                 <td class="align-middle">
@@ -132,26 +133,24 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="9" class="text-center py-4 text-muted">No hay cambios registrados.</td>
+                                <td colspan="10" class="text-center py-4 text-muted">No hay cambios registrados.</td>
                             </tr>
                         @endforelse
                     </tbody>
                 </table>
             </div>
-        </div>
         @if($historial->hasPages())
-            <div class="card-footer">{{ $historial->links() }}</div>
+            <div class="ucrud-pagination">{{ $historial->links() }}</div>
         @endif
     </div>
 
     @if($operaciones->isNotEmpty())
-        <div class="card mt-3">
-            <div class="card-header">
-                <h5 class="mb-0">Operaciones Masivas</h5>
+        <div class="ucrud-panel mt-3">
+            <div class="ucrud-detail-block">
+                <h2 class="ucrud-detail-block__title">Operaciones masivas</h2>
             </div>
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-sm mb-0">
+                <div class="ucrud-tablewrap">
+                    <table class="ucrud-table ucrud-table--sticky-actions">
                         <thead>
                             <tr>
                                 <th>ID Operación</th>
@@ -174,36 +173,39 @@
                                     <td>{{ $operacion->cantidad }} cambios</td>
                                     <td>
                                         @if($todosRevertidos)
-                                            <span class="badge bg-danger">Revertida</span>
+                                            <span class="ucrud-chip ucrud-chip--rose">Revertida</span>
                                         @elseif($algunosRevertidos)
-                                            <span class="badge bg-warning">Parcialmente revertida</span>
+                                            <span class="ucrud-chip ucrud-chip--amber">Parcial</span>
                                         @else
-                                            <span class="badge bg-success">Activa</span>
+                                            <span class="ucrud-chip ucrud-chip--green">Activa</span>
                                         @endif
                                     </td>
                                     <td>
-                                        <a href="{{ route('items.historial-precios', ['operacion_id' => $operacion->operacion_id]) }}" class="btn btn-sm btn-outline-info">
-                                            Ver Detalles
+                                        <div class="ucrud-actions">
+                                        <a href="{{ route('items.historial-precios', ['operacion_id' => $operacion->operacion_id]) }}" class="ucrud-iconbtn" title="Ver detalles">
+                                            <x-heroicon-o-eye style="width: 16px; height: 16px;" />
                                         </a>
                                         @if(!$todosRevertidos)
                                             <form action="{{ route('items.revertir-cambios', $operacion->operacion_id) }}" method="POST" class="d-inline js-revertir-form">
                                                 @csrf
-                                                <button type="submit" class="btn btn-sm btn-outline-danger">
-                                                    Revertir
+                                                <button type="submit" class="ucrud-iconbtn ucrud-iconbtn--danger" title="Revertir">
+                                                    <x-heroicon-o-arrow-path style="width: 16px; height: 16px;" />
                                                 </button>
                                             </form>
                                         @endif
+                                        </div>
                                     </td>
                                 </tr>
                             @endforeach
                         </tbody>
                     </table>
                 </div>
-            </div>
         </div>
     @endif
+</div>
 
-    <script>
+@push('scripts')
+<script>
     document.addEventListener('DOMContentLoaded', function() {
         const flash = document.getElementById('flash-success');
         if (flash && flash.dataset.message) {
@@ -235,7 +237,7 @@
             });
         });
     });
-    </script>
-</div>
+</script>
+@endpush
 @endsection
 

@@ -321,7 +321,11 @@ class CotioInstancia extends Model
                     $instancia->cotio_estado : $instancia->cotio_estado_analisis;
                 
                 $usuario = Auth::user();
-                
+
+                if (! $usuario) {
+                    return;
+                }
+
                 SimpleNotification::create([
                     'coordinador_codigo' => $instancia->coordinador_codigo,
                     'sender_codigo' => $usuario->usu_codigo,

@@ -215,70 +215,14 @@ class InformeController extends Controller
 
     public function index(Request $request)
     {
-        $verTodas = $request->query('ver_todas', false);
         $viewType = $request->get('view', 'lista');
         $matrices = Matriz::orderBy('matriz_descripcion')->get();
         $currentMonth = $request->get('month') ? Carbon::parse($request->get('month')) : now();
-        
-        // Consulta base para informes
-        $baseQuery = CotioInstancia::with([
-            'cotizacion.matriz',
-            'cotizacion.cliente',
-            'cotizacion.sucursal',
-            'muestra.leyNormativa.variables',
-            'tareas' => function($query) {
-                $query->where('enable_inform', true)
-                      ->orderBy('cotio_subitem');
-            },
-            'cotizacion.instancias'
-        ])
-        ->where('enable_inform', true)
-        ->where('aprobado_informe', true)
-        ->where('cotio_subitem', 0);
+        $vistaActiva = $this->resolverVistaInformes($request);
 
-        CotizacionCanalEnsayo::aplicarWhereInstanciaVisibleEnInformes($baseQuery);
-
-        // Aplicar filtros comunes
-        if ($request->has('search') && !empty($request->search)) {
-            $searchTerm = '%'.$request->search.'%';
-            $baseQuery->whereHas('cotizacion', function($q) use ($searchTerm) {
-                $q->where('coti_num', 'like', $searchTerm)
-                  ->orWhereRaw('LOWER(coti_empresa) LIKE ?', [strtolower($searchTerm)])
-                  ->orWhereRaw('LOWER(coti_establecimiento) LIKE ?', [strtolower($searchTerm)]);
-            });
-        }
-
-        if ($request->has('matriz') && !empty($request->matriz)) {
-            $baseQuery->whereHas('cotizacion', function($q) use ($request) {
-                $q->where('coti_matriz', $request->matriz);
-            });
-        }
-
-        if ($request->has('tipo_informe') && !empty($request->tipo_informe)) {
-            $baseQuery->where(function($q) use ($request) {
-                foreach ($this->getMuestrasPorTipoInforme($request->tipo_informe) as $muestraId) {
-                    $q->orWhere('id', $muestraId);
-                }
-            });
-        }
-
-        if ($request->has('fecha_inicio') && !empty($request->fecha_inicio)) {
-            $baseQuery->whereDate('fecha_inicio_muestreo', '>=', $request->fecha_inicio);
-        }
-
-        if ($request->has('fecha_fin') && !empty($request->fecha_fin)) {
-            $baseQuery->whereDate('fecha_fin_muestreo', '<=', $request->fecha_fin);
-        }
-
-        if ($request->filled('estado_firma')) {
-            if ($request->estado_firma === 'firmados') {
-                $baseQuery->where('firmado', true);
-            } elseif ($request->estado_firma === 'pendiente') {
-                $baseQuery->where(function ($q) {
-                    $q->where('firmado', false)->orWhereNull('firmado');
-                });
-            }
-        }
+        $baseQuery = $this->queryInformesIndexBase($request);
+        $estadisticas = $this->calcularEstadisticasInformesIndex($baseQuery);
+        $this->aplicarFiltroFirmaVista($baseQuery, $vistaActiva);
 
         // Vista de calendario
         if ($viewType === 'calendario') {
@@ -288,15 +232,16 @@ class InformeController extends Controller
                 $instancias->map->cotizacion->unique(fn ($c) => $c->coti_num)->filter()->values()
             );
 
-            $events = $instancias->map(function($instancia) {
+            $events = $instancias->map(function ($instancia) {
                 $clienteEtiqueta = CotizacionClienteEtiqueta::paraLista($instancia->cotizacion);
+
                 return [
                     'title' => $clienteEtiqueta . ' - ' . $instancia->cotio_numcoti,
                     'start' => $instancia->fecha_creacion_inform,
                     'url' => route('informes.pdf', [
                         'cotio_numcoti' => $instancia->cotio_numcoti,
                         'cotio_item' => $instancia->cotio_item,
-                        'instance_number' => $instancia->instance_number
+                        'instance_number' => $instancia->instance_number,
                     ]),
                     'extendedProps' => [
                         'empresa' => $clienteEtiqueta,
@@ -304,8 +249,10 @@ class InformeController extends Controller
                         'instancia' => $instancia->instance_number,
                         'identificacion' => trim((string) ($instancia->cotio_identificacion ?? '')),
                         'ley_categoria' => LeyNormativaPresentacion::textoPlano($instancia->muestra),
+                        'firmado' => (bool) $instancia->firmado,
                     ],
-                    'className' => 'informe-' . $this->determinarTipoInforme($instancia),
+                    'className' => 'informe-' . $this->determinarTipoInforme($instancia)
+                        . ($instancia->firmado ? ' informe-firmado' : ' informe-pendiente-firma'),
                 ];
             });
 
@@ -313,7 +260,10 @@ class InformeController extends Controller
                 'events' => $events,
                 'viewType' => $viewType,
                 'matrices' => $matrices,
-                'currentMonth' => $currentMonth
+                'currentMonth' => $currentMonth,
+                'vistaActiva' => $vistaActiva,
+                'estadisticas' => $estadisticas,
+                'request' => $request,
             ]);
         }
 
@@ -323,7 +273,7 @@ class InformeController extends Controller
             $perPage = max(10, min(100, (int) $request->get('per_page')));
         }
 
-        $pagination = $baseQuery
+        $pagination = (clone $baseQuery)
             ->orderBy('cotio_numcoti', $request->get('orden_cotizacion', 'desc'))
             ->orderBy('cotio_item', 'asc')
             ->orderBy('instance_number', 'asc')
@@ -334,34 +284,135 @@ class InformeController extends Controller
             $pagination->getCollection()->map->cotizacion->unique(fn ($c) => $c->coti_num)->filter()->values()
         );
 
-        // Agrupar por cotización
         $informesPorCotizacion = $pagination->groupBy('cotio_numcoti')->map(function ($group) {
             $cotizacion = $group->first()->cotizacion;
-            
+
             return [
                 'cotizacion' => $cotizacion,
-                'muestras' => $group->map(function($muestra) {
+                'muestras' => $group->map(function ($muestra) {
                     $muestra->tipo_informe = $this->determinarTipoInforme($muestra);
+
                     return $muestra;
                 }),
                 'total_muestras' => $group->count(),
-                'informes_finales' => $group->filter(function($muestra) {
+                'informes_finales' => $group->filter(function ($muestra) {
                     return $this->determinarTipoInforme($muestra) === 'final';
                 })->count(),
-                'informes_firmados' => $group->filter(function($muestra) {
-                    return $muestra->firmado;
-                })->count()
+                'informes_firmados' => $group->filter(function ($muestra) {
+                    return (bool) $muestra->firmado;
+                })->count(),
             ];
         });
-
 
         return view('informes.index', [
             'informesPorCotizacion' => $informesPorCotizacion,
             'pagination' => $pagination,
             'viewType' => $viewType,
             'matrices' => $matrices,
-            'request' => $request
+            'request' => $request,
+            'vistaActiva' => $vistaActiva,
+            'estadisticas' => $estadisticas,
         ]);
+    }
+
+    protected function resolverVistaInformes(Request $request): string
+    {
+        if ($request->filled('vista') && in_array($request->vista, ['pendientes', 'firmados', 'todos'], true)) {
+            return $request->vista;
+        }
+
+        if ($request->filled('estado_firma')) {
+            return $request->estado_firma === 'firmados' ? 'firmados' : 'pendientes';
+        }
+
+        return 'pendientes';
+    }
+
+    protected function queryInformesIndexBase(Request $request)
+    {
+        $query = CotioInstancia::with([
+            'cotizacion.matriz',
+            'cotizacion.cliente',
+            'cotizacion.sucursal',
+            'muestra.leyNormativa.variables',
+            'tareas' => function ($q) {
+                $q->where('enable_inform', true)->orderBy('cotio_subitem');
+            },
+            'cotizacion.instancias',
+        ])
+            ->where('enable_inform', true)
+            ->where('aprobado_informe', true)
+            ->where('cotio_subitem', 0);
+
+        CotizacionCanalEnsayo::aplicarWhereInstanciaVisibleEnInformes($query);
+
+        if ($request->filled('search')) {
+            $searchTerm = '%' . $request->search . '%';
+            $query->whereHas('cotizacion', function ($q) use ($searchTerm) {
+                $q->where('coti_num', 'like', $searchTerm)
+                    ->orWhereRaw('LOWER(coti_empresa) LIKE ?', [strtolower($searchTerm)])
+                    ->orWhereRaw('LOWER(coti_establecimiento) LIKE ?', [strtolower($searchTerm)]);
+            });
+        }
+
+        if ($request->filled('matriz')) {
+            $query->whereHas('cotizacion', function ($q) use ($request) {
+                $q->where('coti_matriz', $request->matriz);
+            });
+        }
+
+        if ($request->filled('tipo_informe')) {
+            $muestraIds = $this->getMuestrasPorTipoInforme($request->tipo_informe);
+            $query->where(function ($q) use ($muestraIds) {
+                foreach ($muestraIds as $muestraId) {
+                    $q->orWhere('id', $muestraId);
+                }
+            });
+        }
+
+        if ($request->filled('fecha_inicio')) {
+            $query->whereDate('fecha_inicio_muestreo', '>=', $request->fecha_inicio);
+        }
+
+        if ($request->filled('fecha_fin')) {
+            $query->whereDate('fecha_fin_muestreo', '<=', $request->fecha_fin);
+        }
+
+        return $query;
+    }
+
+    protected function aplicarFiltroFirmaVista($query, string $vista): void
+    {
+        if ($vista === 'firmados') {
+            $query->where('firmado', true);
+
+            return;
+        }
+
+        if ($vista === 'pendientes') {
+            $query->where(function ($q) {
+                $q->where('firmado', false)->orWhereNull('firmado');
+            });
+        }
+    }
+
+    protected function calcularEstadisticasInformesIndex($baseQuery): array
+    {
+        $pendientesQuery = clone $baseQuery;
+        $this->aplicarFiltroFirmaVista($pendientesQuery, 'pendientes');
+
+        $firmadosQuery = clone $baseQuery;
+        $this->aplicarFiltroFirmaVista($firmadosQuery, 'firmados');
+
+        $pendientes = $pendientesQuery->count();
+        $firmados = $firmadosQuery->count();
+
+        return [
+            'pendientes_firma' => $pendientes,
+            'firmados' => $firmados,
+            'total' => $pendientes + $firmados,
+            'cotizaciones_pendientes' => (clone $pendientesQuery)->pluck('cotio_numcoti')->unique()->count(),
+        ];
     }
 
 
@@ -837,7 +888,11 @@ class InformeController extends Controller
         CotizacionClienteEtiqueta::precargarEmpresasRelacionadas([$muestra->cotizacion]);
         $cotizacionData = $muestra->cotizacion->toArray();
         $cotizacionData['cliente_etiqueta'] = CotizacionClienteEtiqueta::paraLista($muestra->cotizacion);
-        $cotizacionData['cliente_establecimiento'] = trim((string) ($muestra->cotizacion->coti_establecimiento ?? ''));
+        $cotizacionData['cliente_establecimiento'] = CotizacionClienteEtiqueta::etiquetaSucursalEstablecimiento($muestra->cotizacion);
+        if ($cotizacionData['cliente_establecimiento'] === '') {
+            $cotizacionData['cliente_establecimiento'] = trim((string) ($muestra->cotizacion->coti_establecimiento ?? ''));
+        }
+        $cotizacionData['cliente_direccion_destinatario'] = CotizacionClienteEtiqueta::direccionDestinatarioTexto($muestra->cotizacion);
 
         Log::info($muestra->valoresVariables);
     

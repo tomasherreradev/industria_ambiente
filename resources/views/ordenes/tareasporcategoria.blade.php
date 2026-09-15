@@ -34,6 +34,11 @@
             Volver a la cotización
         </a>
         <div class="d-flex flex-column flex-md-row gap-2">
+            @if(userDebeVerOrdenesPorSector() && !userPuedeGestionarOrdenes() && ($instanciaActual->cotio_estado_analisis ?? '') !== 'analizado')
+                <button type="button" class="btn btn-outline-warning d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#modalSolicitudCambioOrden">
+                    <i class="fas fa-paper-plane"></i> Solicitud de cambio
+                </button>
+            @endif
             {{-- <button type="button" class="btn btn-secondary d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#asignarModal" disabled>
                 Asignar elementos
             </button> --}}
@@ -90,7 +95,7 @@
                 <h2 class="fw-bold mb-3">{{ $categoria->cotio_descripcion }} (#{{ $instanciaActual->instance_number ?? ''}} / {{ $categoria->cotio_cantidad ?? ''}})</h2>
                 <div class="d-flex gap-2">
                     <a class="btn btn-outline-primary"
-                        href="https://www.google.com/maps/search/?api=1&query={{ $cotizacion->coti_direccioncli }}, {{ $cotizacion->coti_localidad }}, {{ $cotizacion->coti_partido }}">
+                        href="https://www.google.com/maps/search/?api=1&query={{ urlencode(\App\Support\CotizacionClienteEtiqueta::direccionDestinatarioMapsQuery($cotizacion)) }}">
                         <x-heroicon-o-map class="me-1" style="width: 18px; height: 18px;" />
                         <span class="d-none d-md-inline">Ver en Maps</span>
                     </a>
@@ -123,7 +128,7 @@
                                 };
                             @endphp
                             <span class="badge bg-{{ $badgeClass }}">{{ $instanciaActual->cotio_estado_analisis }}</span>
-                                @if($instanciaActual->active_ot == true && $instanciaActual->enable_inform == false)
+                                @if(userPuedeGestionarOrdenes() && $instanciaActual->active_ot == true && $instanciaActual->enable_inform == false)
                                     <button type="button" class="btn btn-sm btn-link" data-bs-toggle="modal" data-bs-target="#estadoModal" data-tipo="categoria">
                                         <x-heroicon-o-pencil style="width: 20px; height: 20px;" />
                                     </button>
@@ -138,7 +143,7 @@
                             @foreach ($todosResponsablesTareas as $responsable)
                                 <span class="badge bg-info d-inline-flex align-items-center me-2 mb-1">
                                     {{ $responsable->usu_descripcion }}
-                                    @if($instanciaActual->cotio_estado_analisis != 'analizado' && $instanciaActual->active_ot == true && $instanciaActual->enable_inform == false)
+                                    @if(userPuedeGestionarOrdenes() && $instanciaActual->cotio_estado_analisis != 'analizado' && $instanciaActual->active_ot == true && $instanciaActual->enable_inform == false)
                                         <button type="button" 
                                                 class="btn btn-sm btn-link text-danger p-0 ms-1" 
                                                 style="font-size: 0.75rem; line-height: 1;"
@@ -479,6 +484,35 @@
     </div>
 
     @if($tareas->count())
+        @php
+            $sectoresVistaUsuario = userDebeVerOrdenesPorSector()
+                ? \App\Support\OrdenesAccesoPorSector::sectoresUsuario(Auth::user())
+                : collect();
+            $analisisSectorUsuario = $sectoresVistaUsuario->isNotEmpty() && $instanciaActual
+                ? \App\Support\AnalisisResultadoValidacion::analisisEnOtDelSector($instanciaActual, $sectoresVistaUsuario)
+                : collect();
+            $analisisSectorFinalizados = $analisisSectorUsuario->filter(
+                fn ($a) => \App\Support\AnalisisResultadoValidacion::instanciaEstaAnalizada($a)
+            );
+            $sectorCompleto = $sectoresVistaUsuario->isNotEmpty() && $instanciaActual
+                ? \App\Support\AnalisisResultadoValidacion::sectoresTodosAnalisisOtAnalizados($instanciaActual, $sectoresVistaUsuario)
+                : false;
+        @endphp
+
+        @if($analisisSectorUsuario->isNotEmpty())
+            <div class="alert alert-info py-2 mb-3">
+                <small>
+                    <strong>Su laboratorio:</strong>
+                    {{ $analisisSectorFinalizados->count() }}/{{ $analisisSectorUsuario->count() }} análisis finalizados.
+                    Puede finalizar los de su sector de forma independiente. Cuando <em>todos</em> los laboratorios
+                    hayan finalizado sus análisis, la muestra pasará automáticamente a «analizado».
+                    @if($sectorCompleto)
+                        <span class="badge bg-success ms-1">Su sector completó</span>
+                    @endif
+                </small>
+            </div>
+        @endif
+
         <div class="card shadow-sm">
             <div class="card-header bg-light d-flex justify-content-between align-items-center">
                 <h5 class="card-title mb-0">Análisis de la muestra</h5>
@@ -523,6 +557,7 @@
                                     </a>
                                 </li>
                                 <li>
+                                    @if(userPuedeGestionarOrdenes())
                                     <a 
                                         class="dropdown-item" 
                                         href="#" 
@@ -530,6 +565,7 @@
                                     >
                                         <i class="fas fa-users me-2"></i> Asignar por sector
                                     </a>
+                                    @endif
                                 </li>
                             </ul>
                         </div>
@@ -548,6 +584,12 @@
                                     <!-- Card Header with Checkbox and Title -->
                                     <div class="d-flex justify-content-between align-items-center p-3" style="background-color: #A6C5E3; border-radius: 0.375rem 0.375rem 0 0;">
                                         <div class="form-check mb-0">
+                                            @php
+                                                $tieneResultadoAnalisis = $tarea->instancia
+                                                    && \App\Support\AnalisisResultadoValidacion::instanciaTieneResultado($tarea->instancia);
+                                                $analisisYaFinalizado = $tarea->instancia
+                                                    && \App\Support\AnalisisResultadoValidacion::instanciaEstaAnalizada($tarea->instancia);
+                                            @endphp
                                             <input class="form-check-input tarea-checkbox tarea-checkbox-analisis" 
                                                 type="checkbox" 
                                                 name="tareas_seleccionadas[]" 
@@ -559,9 +601,11 @@
                                                 data-subitem="{{ $tarea->cotio_subitem }}"
                                                 data-instance="{{ $instanciaActual->instance_number }}"
                                                 data-numcoti="{{ $tarea->cotio_numcoti }}"
+                                                data-tiene-resultado="{{ $tieneResultadoAnalisis ? '1' : '0' }}"
+                                                data-descripcion="{{ $tarea->cotio_descripcion }}"
                                                 data-fecha-inicio="{{ $tarea->instancia && $tarea->instancia->fecha_inicio_ot ? $tarea->instancia->fecha_inicio_ot->format('Y-m-d\TH:i') : '' }}"
                                                 data-fecha-fin="{{ $tarea->instancia && $tarea->instancia->fecha_fin_ot ? $tarea->instancia->fecha_fin_ot->format('Y-m-d\TH:i') : '' }}"
-                                                @disabled($instanciaActual->cotio_estado_analisis === 'analizado')>
+                                                @disabled($analisisYaFinalizado)>
                                             <label class="form-check-label" for="tarea_{{ $tarea->cotio_item }}_{{ $tarea->cotio_subitem }}">
                                                 <h5 class="card-title mb-0 d-flex align-items-center">
                                                     <x-heroicon-o-clipboard-document-list class="me-2" style="width: 1.25rem; height: 1.25rem;" />
@@ -580,7 +624,7 @@
                                                 </h5>
                                             </label>
                                         </div>
-                                        @if($instanciaActual->active_ot == true && $instanciaActual->enable_inform == false)
+                                        @if($instanciaActual->active_ot == true && $instanciaActual->enable_inform == false && ! $analisisYaFinalizado)
                                         <div class="d-flex justify-content-end gap-2">
                                             @if(!$tarea->instancia->request_review)
                                                 <button type="button" class="btn btn-sm btn-outline-dark"
@@ -660,7 +704,7 @@
                                             <div class="d-flex align-items-center mb-2">
                                                 <x-heroicon-o-building-office-2 class="me-2" style="width: 1rem; height: 1rem;" />
                                                 <span class="me-2"><strong>Asignada a:</strong></span>
-                                                @if($instanciaActual->cotio_estado_analisis != 'analizado' && $instanciaActual->active_ot == true && $instanciaActual->enable_inform == false)
+                                                @if(userPuedeGestionarOrdenes() && $instanciaActual->cotio_estado_analisis != 'analizado' && $instanciaActual->active_ot == true && $instanciaActual->enable_inform == false)
                                                     <button type="button" 
                                                             class="btn btn-sm btn-outline-success"
                                                             data-bs-toggle="modal"
@@ -678,7 +722,8 @@
                                             <div class="d-flex flex-wrap">
                                                 @include('ordenes.partials.asignacion-sectores-badges', [
                                                     'responsables' => $tarea->instancia->responsablesAnalisis,
-                                                    'puedeEditar' => $instanciaActual->cotio_estado_analisis != 'analizado'
+                                                    'puedeEditar' => userPuedeGestionarOrdenes()
+                                                        && $instanciaActual->cotio_estado_analisis != 'analizado'
                                                         && $instanciaActual->active_ot == true
                                                         && $instanciaActual->enable_inform == false,
                                                     'cotioNumcoti' => $tarea->cotio_numcoti,
@@ -943,7 +988,7 @@
                                                             </div>
                     
                                                             <div class="mt-3 text-end">
-                                                                @if($instanciaActual->cotio_estado_analisis != 'analizado' && $instanciaActual->active_ot == true && $instanciaActual->enable_inform == false)
+                                                                @if(! $analisisYaFinalizado && $instanciaActual->active_ot == true && $instanciaActual->enable_inform == false)
                                                                     <button type="submit" 
                                                                             class="btn btn-success guardar-todos-resultados"
                                                                             data-form-id="{{ $accordionId }}">
@@ -1008,6 +1053,19 @@
                     <input type="hidden" name="cotio_subitem" id="modal_cotio_subitem" value="0">
                     <input type="hidden" name="instance_number" id="modal_instance_number" value="{{ $instance }}">
                     
+                    @php
+                        $puedeMarcarMuestraAnalizada = \App\Support\AnalisisResultadoValidacion::muestraPuedeMarcarseAnalizada($instanciaActual);
+                        $mensajeMuestraNoAnalizable = $puedeMarcarMuestraAnalizada
+                            ? null
+                            : \App\Support\AnalisisResultadoValidacion::mensajeMuestraNoAnalizable($instanciaActual);
+                    @endphp
+
+                    @if(!$puedeMarcarMuestraAnalizada && ($instanciaActual->cotio_estado_analisis ?? '') !== 'analizado')
+                        <div class="alert alert-warning py-2">
+                            <small>{{ $mensajeMuestraNoAnalizable }}</small>
+                        </div>
+                    @endif
+
                     <div class="mb-3">
                         <label for="modal_estado" class="form-label">
                             <x-heroicon-o-flag class="me-1" style="width: 16px; height: 16px;" />
@@ -1016,7 +1074,7 @@
                         <select class="form-select" id="modal_estado" name="estado" required>
                             <option value="coordinado analisis" {{ ($instanciaActual->cotio_estado_analisis ?? 'coordinado analisis') == 'coordinado analisis' ? 'selected' : '' }}>coordinado analisis</option>
                             <option value="en revision analisis" {{ ($instanciaActual->cotio_estado_analisis ?? 'en revision analisis') == 'en revision analisis' ? 'selected' : '' }}>En revision analisis</option>
-                            <option value="analizado" {{ ($instanciaActual->cotio_estado_analisis ?? 'analizado') == 'analizado' ? 'selected' : '' }}>analizado</option>
+                            <option value="analizado" {{ ($instanciaActual->cotio_estado_analisis ?? 'analizado') == 'analizado' ? 'selected' : '' }} @disabled(!$puedeMarcarMuestraAnalizada && ($instanciaActual->cotio_estado_analisis ?? '') !== 'analizado')>analizado</option>
                             <option value="suspension" {{ ($instanciaActual->cotio_estado_analisis ?? 'suspension') == 'suspension' ? 'selected' : '' }}>Suspension</option>
                         </select>
                     </div>
@@ -1538,6 +1596,30 @@
         </div>
     </div>
 </div>
+
+@if(userDebeVerOrdenesPorSector() && !userPuedeGestionarOrdenes() && ($instanciaActual->cotio_estado_analisis ?? '') !== 'analizado')
+<div class="modal fade" id="modalSolicitudCambioOrden" tabindex="-1" aria-labelledby="modalSolicitudCambioOrdenLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalSolicitudCambioOrdenLabel">Solicitud de cambio</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small">Se notificará a los coordinadores con permiso de gestión de órdenes.</p>
+                <div class="mb-3">
+                    <label for="motivoSolicitudCambioOrden" class="form-label">Motivo del cambio</label>
+                    <textarea id="motivoSolicitudCambioOrden" class="form-control" rows="4" maxlength="2000" placeholder="Ej.: la fecha debería ser 15/09/2026"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-warning" onclick="enviarSolicitudCambioOrden()">Enviar solicitud</button>
+            </div>
+        </div>
+    </div>
+</div>
+@endif
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
@@ -3538,13 +3620,13 @@ function cargarResponsablesActuales(cotioNumcoti, cotioItem, cotioSubitem, insta
 // Función para seleccionar todos los análisis de una muestra
 function seleccionarTodosAnalisis(muestraId, item, instance, numcoti) {
     const checkboxes = document.querySelectorAll(
-        `.tarea-checkbox-analisis[data-muestra-id="${muestraId}"][data-item="${item}"][data-instance="${instance}"][data-numcoti="${numcoti}"]:not(:disabled)`
+        `.tarea-checkbox-analisis[data-muestra-id="${muestraId}"][data-item="${item}"][data-instance="${instance}"][data-numcoti="${numcoti}"]:not(:disabled)[data-tiene-resultado="1"]`
     );
-    
+
     if (checkboxes.length === 0) {
         Swal.fire({
-            title: 'Sin análisis',
-            text: 'No hay análisis disponibles para seleccionar',
+            title: 'Sin análisis finalizables',
+            text: 'No hay análisis con resultados cargados para seleccionar.',
             icon: 'info'
         });
         return;
@@ -3588,7 +3670,19 @@ function finalizarAnalisisSeleccionados(muestraId, item, instance, numcoti) {
         return;
     }
 
-    const instanciaIds = Array.from(checkboxes)
+    const sinResultado = Array.from(checkboxes).filter(cb => cb.dataset.tieneResultado !== '1');
+    const conResultado = Array.from(checkboxes).filter(cb => cb.dataset.tieneResultado === '1');
+
+    if (conResultado.length === 0) {
+        Swal.fire({
+            title: 'Sin resultados',
+            text: 'Ninguno de los análisis seleccionados tiene resultados cargados.',
+            icon: 'warning'
+        });
+        return;
+    }
+
+    const instanciaIds = conResultado
         .map(cb => cb.dataset.instanciaId)
         .filter(id => id && id !== 'null' && id !== '');
 
@@ -3601,9 +3695,18 @@ function finalizarAnalisisSeleccionados(muestraId, item, instance, numcoti) {
         return;
     }
 
+    let confirmText = `¿Deseas finalizar ${instanciaIds.length} análisis seleccionado(s)?`;
+    if (sinResultado.length > 0) {
+        const nombres = sinResultado
+            .map(cb => cb.dataset.descripcion || 'Análisis')
+            .slice(0, 5)
+            .join(', ');
+        confirmText += `\n\nSe omitirán ${sinResultado.length} análisis sin resultados: ${nombres}${sinResultado.length > 5 ? '…' : ''}.`;
+    }
+
     Swal.fire({
         title: '¿Estás seguro?',
-        text: `¿Deseas finalizar ${instanciaIds.length} análisis seleccionado(s)?`,
+        text: confirmText,
         icon: 'question',
         showCancelButton: true,
         confirmButtonText: 'Sí, finalizar',
@@ -3830,6 +3933,53 @@ document.addEventListener('DOMContentLoaded', function() {
         actualizarMenuAcciones(muestraId);
     });
 });
+
+@if(userDebeVerOrdenesPorSector() && !userPuedeGestionarOrdenes() && ($instanciaActual->cotio_estado_analisis ?? '') !== 'analizado')
+async function enviarSolicitudCambioOrden() {
+    const motivo = (document.getElementById('motivoSolicitudCambioOrden')?.value || '').trim();
+    if (!motivo) {
+        Swal.fire({ title: 'Motivo requerido', text: 'Indique el motivo del cambio solicitado.', icon: 'warning' });
+        return;
+    }
+
+    @php
+        $instanciaIdSolicitud = $instanciaActual->id ?? null;
+    @endphp
+
+    try {
+        const payload = {
+            motivo,
+            cotio_item: {{ (int) $categoria->cotio_item }},
+            instance_number: {{ (int) $instance }},
+        };
+        @if($instanciaIdSolicitud)
+        payload.instancia_id = {{ (int) $instanciaIdSolicitud }};
+        @endif
+
+        const response = await fetch('{{ route('ordenes.solicitud-cambio', $cotizacion->coti_num) }}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                'Accept': 'application/json',
+            },
+            body: JSON.stringify(payload),
+        });
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('modalSolicitudCambioOrden'))?.hide();
+            document.getElementById('motivoSolicitudCambioOrden').value = '';
+            Swal.fire({ title: 'Enviado', text: data.message || 'Solicitud enviada correctamente.', icon: 'success' });
+        } else {
+            Swal.fire({ title: 'Error', text: data.message || 'No se pudo enviar la solicitud.', icon: 'error' });
+        }
+    } catch (error) {
+        console.error(error);
+        Swal.fire({ title: 'Error', text: 'Ocurrió un error al enviar la solicitud.', icon: 'error' });
+    }
+}
+@endif
 
 </script>
 

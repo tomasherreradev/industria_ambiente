@@ -181,6 +181,27 @@ final class CotizacionClienteEtiqueta
     }
 
     /**
+     * Resumen del destinatario operativo (sucursal / empresa relacionada) para facturas e informes.
+     *
+     * @return array{nombre: string, establecimiento: string, direccion: string}
+     */
+    public static function destinatarioResumen(?object $coti): array
+    {
+        if (!$coti) {
+            return ['nombre' => '', 'establecimiento' => '', 'direccion' => ''];
+        }
+
+        $coti->loadMissing(['cliente', 'sucursal']);
+        self::precargarEmpresasRelacionadas([$coti]);
+
+        return [
+            'nombre' => self::paraLista($coti),
+            'establecimiento' => self::etiquetaSucursalEstablecimiento($coti),
+            'direccion' => self::direccionDestinatarioTexto($coti),
+        ];
+    }
+
+    /**
      * Razón social del titular (cliente de la cotización), sin sucursal ni empresa relacionada.
      */
     public static function razonSocialTitular(object $coti): string
@@ -296,11 +317,13 @@ final class CotizacionClienteEtiqueta
             $dContactoBase = trim((string) ($coti->coti_contacto ?? ''));
         }
 
-        // Datos editados en la cotización (coti_*) tienen prioridad sobre sucursal/empresa/cliente.
-        $dCuit = self::preferCampoCoti((string) ($coti->coti_cuit ?? ''), $dCuit);
-        $dDir = self::preferCampoCoti((string) ($coti->coti_direccioncli ?? ''), $dDir);
-        $dLoc = self::preferCampoCoti((string) ($coti->coti_localidad ?? ''), $dLoc);
-        $dPart = self::preferCampoCoti((string) ($coti->coti_partido ?? ''), $dPart);
+        // coti_* de la solapa Empresa es facturación; no debe pisar dirección de sucursal / empresa rel.
+        if (! $tieneSucursal && ! $tieneEmpresaRelacionada) {
+            $dCuit = self::preferCampoCoti((string) ($coti->coti_cuit ?? ''), $dCuit);
+            $dDir = self::preferCampoCoti((string) ($coti->coti_direccioncli ?? ''), $dDir);
+            $dLoc = self::preferCampoCoti((string) ($coti->coti_localidad ?? ''), $dLoc);
+            $dPart = self::preferCampoCoti((string) ($coti->coti_partido ?? ''), $dPart);
+        }
         $dContactoBase = self::preferCampoCoti((string) ($coti->coti_contacto ?? ''), $dContactoBase);
 
         return [
@@ -379,8 +402,9 @@ final class CotizacionClienteEtiqueta
     }
 
     /**
-     * Titular de factura: datos del cliente de la cotización (cli_*), sin sucursal ni empresa relacionada.
-     * Fallback a campos de cotización solo si falta información en la ficha del cliente.
+     * Titular de factura: datos guardados en la cotización (solapa Empresa, coti_*),
+     * con fallback a la ficha del cliente titular (cli_*). No usa sucursal ni empresa relacionada
+     * del destinatario del trabajo.
      *
      * @return array{razon_social: string, cuit: string, domicilio: string, localidad: string, provincia: string, email: string}
      */
@@ -389,37 +413,37 @@ final class CotizacionClienteEtiqueta
         $coti->loadMissing('cliente');
         $cli = $coti->cliente;
 
-        $razon = trim((string) (optional($cli)->cli_razonsocial ?? ''));
+        $razon = trim((string) ($coti->coti_empresa ?? ''));
+        if ($razon === '') {
+            $razon = trim((string) (optional($cli)->cli_razonsocial ?? ''));
+        }
         if ($razon === '') {
             $razon = trim((string) (optional($cli)->cli_fantasia ?? ''));
         }
-        if ($razon === '') {
-            $razon = trim((string) ($coti->coti_empresa ?? ''));
-        }
 
-        $cuit = trim((string) (optional($cli)->cli_cuit ?? ''));
+        $cuit = trim((string) ($coti->coti_cuit ?? ''));
         if ($cuit === '') {
-            $cuit = trim((string) ($coti->coti_cuit ?? ''));
+            $cuit = trim((string) (optional($cli)->cli_cuit ?? ''));
         }
 
-        $dom = trim((string) (optional($cli)->cli_direccion ?? ''));
+        $dom = trim((string) ($coti->coti_direccioncli ?? ''));
         if ($dom === '') {
-            $dom = trim((string) ($coti->coti_direccioncli ?? ''));
+            $dom = trim((string) (optional($cli)->cli_direccion ?? ''));
         }
 
-        $loc = trim((string) (optional($cli)->cli_localidad ?? ''));
+        $loc = trim((string) ($coti->coti_localidad ?? ''));
         if ($loc === '') {
-            $loc = trim((string) ($coti->coti_localidad ?? ''));
+            $loc = trim((string) (optional($cli)->cli_localidad ?? ''));
         }
 
-        $prov = trim((string) (optional($cli)->cli_partido ?? ''));
+        $prov = trim((string) ($coti->coti_partido ?? ''));
         if ($prov === '') {
-            $prov = trim((string) ($coti->coti_partido ?? ''));
+            $prov = trim((string) (optional($cli)->cli_partido ?? ''));
         }
 
-        $email = trim((string) (optional($cli)->cli_email ?? ''));
+        $email = trim((string) ($coti->coti_mail1 ?? ''));
         if ($email === '') {
-            $email = trim((string) ($coti->coti_mail1 ?? ''));
+            $email = trim((string) (optional($cli)->cli_email ?? ''));
         }
 
         return [

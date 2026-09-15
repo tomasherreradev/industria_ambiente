@@ -1,17 +1,25 @@
 @extends('layouts.app')
 
-@section('content')
-<div class="container">
-    <!-- Encabezado -->
-    <h1 class="h3 font-weight-bold mb-4">Crear Nuevas Variables Requeridas</h1>
+@section('title', 'Crear variables requeridas')
 
-    <!-- Formulario -->
+@section('content')
+@include('partials.ucrud-styles')
+
+<div class="container py-4 ucrud">
+    @include('partials.ucrud-form-header', [
+        'title' => 'Crear variables requeridas',
+        'subtitle' => 'Asigná variables a una o más determinaciones.',
+        'backUrl' => route('variables-requeridas.index'),
+    ])
+
+    <div class="ucrud-panel">
+        <div class="ucrud-form">
     <form action="{{ route('variables-requeridas.store') }}" method="POST" id="variables-form" novalidate>
         @csrf
 
-        <!-- Selección múltiple de cotio_descripciones -->
-        <div class="card shadow-sm mb-4">
-            <div class="card-body">
+        <div class="ucrud-subpanel mb-4">
+            <div class="ucrud-subpanel__header">Determinaciones</div>
+            <div class="ucrud-subpanel__body">
                 <div class="mb-3">
                     <label for="cotio_descripciones" class="form-label">Cotio Descripciones (Múltiple)</label>
                     <select name="cotio_descripciones[]" id="cotio_descripciones" class="form-select select2" multiple required>
@@ -29,8 +37,7 @@
             </div>
         </div>
 
-        <!-- Variables a crear -->
-        <h4 class="mt-4 mb-3">Variables a Crear</h4>
+        <p class="ucrud-form__section-title">Variables a crear</p>
         <div id="variables-container">
             <div class="variable-group card mb-3 shadow-sm" data-index="0">
                 <div class="card-body">
@@ -76,16 +83,17 @@
             </div>
         </div>
 
-        <!-- Botones de acción -->
-        <div class="d-flex gap-2 mb-4">
-            <button type="button" id="add-variable" class="btn btn-outline-secondary">
-                <i class="fas fa-plus mr-1"></i> Añadir Variable
+        <div class="ucrud-form__actions">
+            <button type="button" id="add-variable" class="ucrud-btn ucrud-btn--ghost">
+                <x-heroicon-o-plus style="width: 16px; height: 16px;" /> Añadir variable
             </button>
-            <button type="submit" class="btn btn-primary">Guardar Variables</button>
-            <a href="{{ route('variables-requeridas.index') }}" class="btn btn-outline-secondary" id="cancel-button">Cancelar</a>
-            <button type="button" class="btn btn-outline-warning" id="reset-form">Resetear</button>
+            <button type="submit" class="ucrud-btn ucrud-btn--primary">Guardar variables</button>
+            <a href="{{ route('variables-requeridas.index') }}" class="ucrud-btn ucrud-btn--ghost" id="cancel-button">Cancelar</a>
+            <button type="button" class="ucrud-btn ucrud-btn--ghost" id="reset-form">Resetear</button>
         </div>
     </form>
+        </div>
+    </div>
 
     <!-- Modal de confirmación para cancelar -->
     <div class="modal fade" id="cancelModal" tabindex="-1" aria-labelledby="cancelModalLabel" aria-hidden="true">
@@ -111,24 +119,8 @@
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet">
 
-<style>
-.variable-group {
-    background-color: #f8f9fa;
-    border-radius: 0.5rem;
-}
-.variable-group .form-control.is-invalid, 
-.variable-group .form-select.is-invalid {
-    border-color: #dc3545;
-}
-.variable-group .invalid-feedback {
-    font-size: 0.875rem;
-}
-.select2-container .select2-selection--multiple {
-    min-height: 38px;
-}
-</style>
-
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+@push('scripts')
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // Inicializar Select2
@@ -259,4 +251,5 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 </script>
+@endpush
 @endsection

@@ -755,20 +755,21 @@
 
         .pdf-like-header,
         .pdf-like-footer {
-            position: absolute;
             left: 0;
             right: 0;
             z-index: 2;
         }
 
         .pdf-like-header {
-            top: 0;
+            position: relative;
+            top: auto;
+            margin-bottom: 4mm;
         }
 
         .pdf-like-footer {
+            position: absolute;
             bottom: 0;
             padding: 12mm 0 0 0;
-            /* padding extra para que se vea como la imagen */
         }
 
         .pdf-like-header-img,
@@ -776,13 +777,20 @@
             display: block;
             width: 100%;
             height: auto;
+            max-height: 48mm;
+            object-fit: contain;
+            object-position: top center;
+        }
+
+        .pdf-like-footer-img {
+            max-height: 28mm;
+            object-position: bottom center;
         }
 
         .pdf-like-body {
             position: relative;
             z-index: 1;
-            /* espacio para header/footer (+ margen extra respecto al encabezado gráfico) */
-            padding: 44mm 15mm 42mm 15mm;
+            padding: 0 15mm 38mm 15mm;
         }
 
         .quote-meta-bar {
@@ -2113,6 +2121,18 @@
                 box-shadow: none;
                 padding: 15mm 10mm;
                 max-width: 210mm;
+            }
+
+            .pdf-document.pdf-like {
+                padding: 0;
+            }
+
+            .pdf-like-header-img {
+                max-height: 46mm;
+            }
+
+            .pdf-like-body {
+                padding: 0 10mm 34mm 10mm;
             }
 
             .items-section {

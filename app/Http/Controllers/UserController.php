@@ -117,6 +117,7 @@ class UserController extends Controller
             $rules['admin_lab'] = 'nullable|boolean';
             $rules['bandeja_solo_informes'] = 'nullable|boolean';
             $rules['puede_cargar_items'] = 'nullable|boolean';
+            $rules['puede_gestionar_ordenes'] = 'nullable|boolean';
 
             $validated = $request->validate($rules);
             Log::debug('Validation passed for new user');
@@ -191,6 +192,8 @@ class UserController extends Controller
             $usuario->bandeja_solo_informes = $this->usuarioTieneRolCoordinadorLabOMediciones($rolFinal, $rolesAdicionalesGuardados)
                 && $request->boolean('bandeja_solo_informes');
             $usuario->puede_cargar_items = $request->boolean('puede_cargar_items');
+            $usuario->puede_gestionar_ordenes = $this->usuarioTieneRolCoordinadorLab($rolFinal, $rolesAdicionalesGuardados)
+                && $request->boolean('puede_gestionar_ordenes');
             $usuario->save();
 
             Log::info('User created successfully', ['user_id' => $usuario->usu_codigo]);
@@ -270,6 +273,7 @@ class UserController extends Controller
         $rules['admin_lab'] = 'nullable|boolean';
         $rules['bandeja_solo_informes'] = 'nullable|boolean';
         $rules['puede_cargar_items'] = 'nullable|boolean';
+        $rules['puede_gestionar_ordenes'] = 'nullable|boolean';
 
         $validated = $request->validate($rules);
 
@@ -332,6 +336,8 @@ class UserController extends Controller
         $usuario->bandeja_solo_informes = $this->usuarioTieneRolCoordinadorLabOMediciones($rolFinal, $rolesAdicionalesGuardados)
             && $request->boolean('bandeja_solo_informes');
         $usuario->puede_cargar_items = $request->boolean('puede_cargar_items');
+        $usuario->puede_gestionar_ordenes = $this->usuarioTieneRolCoordinadorLab($rolFinal, $rolesAdicionalesGuardados)
+            && $request->boolean('puede_gestionar_ordenes');
 
         $usuario->save();
 

@@ -27,19 +27,23 @@
                     <tbody>
                         @forelse($notificaciones as $notificacion)
                         <tr class="{{ $notificacion->leida ? '' : 'table-active' }}">
-                            <td>{{ $notificacion->mensaje }}</td>
+                            <td>
+                                <a href="{{ route('notificaciones.show', $notificacion->id) }}" class="text-decoration-none text-dark">
+                                    {{ $notificacion->resumenCorto(120) }}
+                                </a>
+                            </td>
                             <td>{{ $notificacion->created_at->format('d/m/Y H:i') }}</td>
                             <td>
+                                <a href="{{ route('notificaciones.show', $notificacion->id) }}" class="btn btn-sm btn-primary">
+                                    Ver detalle
+                                </a>
+                                @if(!$notificacion->leida)
                                 <form action="{{ route('notificaciones.leida', $notificacion->id) }}" method="POST" class="d-inline">
                                     @csrf
                                     <button type="submit" class="btn btn-sm btn-outline-secondary">
                                         Marcar como leída
                                     </button>
                                 </form>
-                                @if($notificacion->url)
-                                    <a href="{{ $notificacion->url }}" class="btn btn-sm btn-primary">
-                                        Ver detalle
-                                    </a>
                                 @endif
                             </td>
                         </tr>
@@ -55,5 +59,11 @@
             </div>
         </div>
     </div>
+
+    @if($notificaciones->hasPages())
+        <div class="mt-3">
+            {{ $notificaciones->links() }}
+        </div>
+    @endif
 </div>
 @endsection

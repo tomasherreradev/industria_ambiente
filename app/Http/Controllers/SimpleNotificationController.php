@@ -45,10 +45,25 @@ class SimpleNotificationController extends Controller
                       ->orWhere('sender_codigo', '!=', Auth::user()->usu_codigo); // O donde el emisor no es el usuario actual
             })
             ->orderBy('created_at', 'desc')
-            ->with('instancia')
+            ->with(['instancia', 'sender'])
             ->paginate(10);
             
         return view('notificaciones.index', compact('notificaciones'));
+    }
+
+    public function show($id)
+    {
+        $notificacion = SimpleNotification::where('coordinador_codigo', Auth::user()->usu_codigo)
+            ->with(['instancia', 'sender'])
+            ->findOrFail($id);
+
+        if (! $notificacion->leida) {
+            $notificacion->update(['leida' => true]);
+        }
+
+        $detalleSolicitud = $notificacion->detalleSolicitudCambio();
+
+        return view('notificaciones.show', compact('notificacion', 'detalleSolicitud'));
     }
     public function marcarComoLeida($id)
     {

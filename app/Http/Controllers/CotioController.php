@@ -24,6 +24,8 @@ use App\Models\CotioValorVariable;
 use App\Models\SimpleNotification;
 use App\Support\CotizacionCanalEnsayo;
 use App\Support\CotizacionClienteEtiqueta;
+use App\Support\OrdenesAccesoPorSector;
+use App\Support\AnalisisResultadoValidacion;
 
 class CotioController extends Controller
 {
@@ -1146,6 +1148,14 @@ public function updateResultado(Request $request, $cotio_numcoti, $cotio_item, $
             'instance_number' => $instance,
         ])->firstOrFail();
 
+        $authUser = Auth::user();
+        if ($authUser && OrdenesAccesoPorSector::debeFiltrarPorSector($authUser)) {
+            $sectores = OrdenesAccesoPorSector::sectoresUsuario($authUser);
+            if (! OrdenesAccesoPorSector::instanciaTieneResponsablesEnSectores($instancia, $sectores)) {
+                abort(403, 'No tiene acceso a este análisis.');
+            }
+        }
+
         // Handle image upload
         if ($request->hasFile('image_resultado_final')) {
             $file = $request->file('image_resultado_final');
@@ -1157,38 +1167,21 @@ public function updateResultado(Request $request, $cotio_numcoti, $cotio_item, $
         // Determine if there are changes that require state update
         $hasResultado = $request->filled('resultado') || $request->filled('resultado_2') || $request->filled('resultado_3') || $request->filled('resultado_final');
 
+        $user = Auth::user();
+        $tieneRolLaboratorio = $user && (
+            ($user->rol ?? null) === 'laboratorio'
+            || (function_exists('userHasRole') && userHasRole('laboratorio'))
+        );
+        $esSoloMuestreador = $user
+            && function_exists('userHasRole')
+            && userHasRole('muestreador')
+            && ! $tieneRolLaboratorio;
+
         if ($hasResultado) {
-            $user = Auth::user();
-
-            // Considerar al usuario como "laboratorio" si:
-            // - su rol principal es laboratorio, o
-            // - la función helper userHasRole indica que tiene rol laboratorio
-            $tieneRolLaboratorio = $user && (
-                ($user->rol ?? null) === 'laboratorio'
-                || (function_exists('userHasRole') && userHasRole('laboratorio'))
-            );
-
-            // "Solo muestreador" = tiene rol muestreador y NO tiene laboratorio
-            $esSoloMuestreador = $user
-                && function_exists('userHasRole')
-                && userHasRole('muestreador')
-                && !$tieneRolLaboratorio;
-
             if ($esSoloMuestreador) {
-                // Usuarios que solo son muestreadores: fluyen por el estado de muestreo
                 $instancia->cotio_estado = 'en revision muestreo';
             } else {
-                // Cualquier usuario que tenga rol de laboratorio (principal o adicional)
-                // debe pasar por el flujo de análisis
                 $instancia->cotio_estado_analisis = 'en revision analisis';
-                $muestra = CotioInstancia::where([
-                    'cotio_numcoti' => $cotio_numcoti,
-                    'cotio_item' => $cotio_item,
-                    'cotio_subitem' => 0,
-                    'instance_number' => $instance,
-                ])->firstOrFail();
-                $muestra->cotio_estado_analisis = 'en revision analisis';
-                $muestra->save();
             }
         }
 
@@ -1261,6 +1254,25 @@ public function updateResultado(Request $request, $cotio_numcoti, $cotio_item, $
         }
 
         $instancia->save();
+
+        if ($hasResultado && ! $esSoloMuestreador && (int) $instancia->cotio_subitem > 0) {
+            $muestra = CotioInstancia::where([
+                'cotio_numcoti' => $cotio_numcoti,
+                'cotio_item' => $cotio_item,
+                'cotio_subitem' => 0,
+                'instance_number' => $instance,
+            ])->first();
+
+            if ($muestra && AnalisisResultadoValidacion::muestraTodosAnalisisOtConResultado(
+                $cotio_numcoti,
+                $cotio_item,
+                $instance
+            )) {
+                $muestra->cotio_estado_analisis = 'en revision analisis';
+                $muestra->save();
+            }
+        }
+
         DB::commit();
 
         if ($request->ajax() || $request->wantsJson()) {

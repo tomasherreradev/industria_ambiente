@@ -85,17 +85,17 @@
                                     @endphp
                                     <input type="hidden" name="coti_req_cadena_custodia_relacionada" id="input_coti_req_cadena_custodia_relacionada" value="{{ $__cotiReqRelCreate ? '1' : '0' }}">
                                 </div>
-                                <div class="col-md-4">
+                                <div class="col-md-3">
                                     <label for="cliente_nombre" class="form-label fw-semibold mb-1">&nbsp;</label>
                                     <input type="text" class="form-control form-control-sm" id="cliente_nombre" 
                                            placeholder="Seleccione un cliente" readonly>
                                 </div>
-                                <div class="col-md-2">
+                                <div class="col-md-3">
                                     <label for="sucursal" class="form-label fw-semibold mb-1 text-dark">Sucursal:</label>
                                     <div id="sucursalWrapper">
                                         <input type="text" class="form-control form-control-sm" id="sucursal" name="coti_codigosuc"
                                                value="{{ old('coti_codigosuc') }}" placeholder="Código sucursal">
-                                        <select class="form-select form-select-sm d-none mt-1" id="sucursal_select">
+                                        <select class="form-select form-select-sm d-none" id="sucursal_select">
                                             <option value="">Seleccionar sucursal...</option>
                                         </select>
                                     </div>

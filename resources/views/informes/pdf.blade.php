@@ -15,19 +15,9 @@
 
     @php
         $tituloInformePdf = 'R014 – PROTOCOLO DE ENSAYO';
-        $versionInforme = config('cotizacion_documento.informe_version', '2');
-        $fechaInforme = config('cotizacion_documento.informe_fecha_emision', '20/02/2020');
     @endphp
 
-    <div class="pdf-footer">
-        <div class="footer-version">Versión: {{ $versionInforme }} &nbsp;&nbsp; Fecha de emisión: {{ $fechaInforme }}
-        </div>
-        <div class="footer-legal">Los resultados del presente informe se relacionan solamente con los ítems sometidos a
-            ensayo.</div>
-        <div class="footer-legal">Prohibida su reproducción total o parcial. La reproducción de la misma deberá ser
-            autorizada por Industria y Ambiente S.A.</div>
-        <div style="margin-top: 2mm; font-weight: bold;"></div>
-    </div>
+    @include('informes.partials.pdf-footer')
 
     <div class="pdf-title-bar">
         <table class="pdf-title-bar-table" role="presentation">
@@ -60,7 +50,7 @@
                 $font = $fontMetrics->get_font("helvetica", "normal");
                 $size = 7;
                 $pageText = "Página " . $PAGE_NUM . " de " . $PAGE_COUNT;
-                $y = $pdf->get_height() - 20;
+                $y = $pdf->get_height() - 74;
                 $x = ($pdf->get_width() / 2) - ($fontMetrics->get_text_width($pageText, $font, $size) / 2);
                 $pdf->text($x, $y, $pageText, $font, $size);
             ');

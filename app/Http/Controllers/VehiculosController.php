@@ -41,8 +41,9 @@ class VehiculosController extends Controller
     
     public function getVehiculo($id)
     {
-        $vehiculo = Vehiculo::find($id);
-        return view('vehiculos.show', compact('vehiculo'));
+        $vehiculo = Vehiculo::findOrFail($id);
+
+        return view('vehiculos.edit', compact('vehiculo'));
     }
 
 

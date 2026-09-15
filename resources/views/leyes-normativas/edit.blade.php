@@ -1,19 +1,20 @@
 @extends('layouts.app')
 
-@section('content')
-<div class="container py-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2>Editar Ley/Normativa</h2>
-        <a href="{{ route('leyes-normativas.index') }}" class="btn btn-outline-secondary">
-            <x-heroicon-o-arrow-left style="width: 16px; height: 16px;" class="me-1" /> Volver
-        </a>
-    </div>
+@section('title', 'Editar ley o normativa')
 
-    <div class="row justify-content-center">
-        <div class="col-md-10">
-            <div class="card">
-                <div class="card-body">
-                    <form method="POST" action="{{ route('leyes-normativas.update', $leyNormativa) }}">
+@section('content')
+@include('partials.ucrud-styles')
+
+<div class="container py-4 ucrud">
+    @include('partials.ucrud-form-header', [
+        'title' => 'Editar ley o normativa',
+        'subtitle' => $leyNormativa->codigo,
+        'backUrl' => route('leyes-normativas.index'),
+    ])
+
+    <div class="ucrud-panel">
+        <div class="ucrud-form">
+            <form method="POST" action="{{ route('leyes-normativas.update', $leyNormativa) }}">
                         @csrf
                         @method('PUT')
 
@@ -73,14 +74,14 @@
                         <!-- Variables Asociadas -->
                         <div class="mb-4">
                             <label class="form-label">Variables Asociadas</label>
-                            <div class="card">
-                                <div class="card-header d-flex justify-content-between align-items-center">
-                                    <span>Gestión de Variables</span>
-                                    <button type="button" class="btn btn-sm btn-success" id="addVariableBtn">
-                                        <x-heroicon-o-plus style="width: 16px; height: 16px;" class="me-1" /> Agregar Variable
+                            <div class="ucrud-subpanel">
+                                <div class="ucrud-subpanel__header">
+                                    <span>Gestión de variables</span>
+                                    <button type="button" class="ucrud-btn ucrud-btn--success" style="padding:.4rem .75rem;font-size:.8rem;" id="addVariableBtn">
+                                        <x-heroicon-o-plus style="width: 16px; height: 16px;" /> Agregar variable
                                     </button>
                                 </div>
-                                <div class="card-body">
+                                <div class="ucrud-subpanel__body">
                                     <div id="variablesContainer">
                                         <!-- Las variables se cargarán dinámicamente con JavaScript -->
                                     </div>
@@ -146,19 +147,16 @@
                             </div>
                         </div>
 
-                        <div class="d-flex justify-content-end">
-                            <a href="{{ route('leyes-normativas.index') }}" class="btn btn-secondary me-2">Cancelar</a>
-                            <button type="submit" class="btn btn-primary">Actualizar Normativa</button>
+                        <div class="ucrud-form__actions">
+                            <a href="{{ route('leyes-normativas.index') }}" class="ucrud-btn ucrud-btn--ghost">Cancelar</a>
+                            <button type="submit" class="ucrud-btn ucrud-btn--primary">Actualizar normativa</button>
                         </div>
                     </form>
-                </div>
-            </div>
         </div>
     </div>
 </div>
 
-
-
+@push('scripts')
 <script>
 let variableCounter = 0;
 let availableCotioItems = [];
@@ -436,5 +434,6 @@ async function removeVariableFromDatabase(variableId, row) {
 }
 
 </script>
+@endpush
 @endsection
 

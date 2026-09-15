@@ -1,255 +1,209 @@
 @extends('layouts.app')
-<head>
-    <title>Inventario de Muestreo</title>
-</head>
+
+@section('title', 'Inventario de Muestreo')
 
 @section('content')
-<div class="container py-4">
+<link rel="stylesheet" href="{{ asset('css/usuarios-crud.css') }}?v={{ filemtime(public_path('css/usuarios-crud.css')) }}">
 
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="fs-4">Inventario de Muestreo</h1>
-        <div class="btn-group">
-            <a href="{{ route('inventarios-muestreo.create') }}" class="btn btn-primary btn-sm d-lg-btn-md">
-                <x-heroicon-o-plus class="me-1" style="width: 16px; height: 16px;" />
-                Crear Inventario
+@php
+    $hayFiltros = request()->filled('search') || request()->filled('estado') || request()->filled('n_serie_lote');
+@endphp
+
+<div class="container py-4 ucrud" data-ucrud-root>
+    <header class="ucrud-header">
+        <div class="ucrud-header__titles">
+            <h1 class="ucrud-title">
+                Inventario de Muestreo
+                <span class="ucrud-count">{{ $inventarios->total() }}</span>
+            </h1>
+            <p class="ucrud-subtitle">Equipamiento de campo, fichas y calibraciones de muestreo.</p>
+        </div>
+
+        <div class="ucrud-header__actions">
+            <a href="{{ route('inventarios-muestreo.create') }}" class="ucrud-btn ucrud-btn--primary">
+                <x-heroicon-o-plus style="width: 16px; height: 16px;" />
+                Crear inventario
             </a>
-            <button class="btn btn-outline-primary btn-sm d-lg-btn-md" type="button" data-bs-toggle="collapse" data-bs-target="#collapseSearch" 
-                aria-expanded="false" aria-controls="collapseSearch" id="searchToggleBtn">
-                <x-heroicon-o-magnifying-glass class="me-1" style="width: 16px; height: 16px;" />
-                Buscar
-            </button>
         </div>
-
-    </div>
-
-    <div class="collapse mb-4" id="collapseSearch">
-        <div class="card shadow-sm">
-            <div class="card-body">
-                <form method="GET" action="{{ route('inventarios-muestreo.index') }}" class="row g-3">
-                    <div class="col-md-4">
-                        <label for="search" class="form-label">Buscar equipo</label>
-                        <input type="text" class="form-control" id="search" name="search" 
-                               placeholder="Equipo, marca, modelo, etc." 
-                               value="{{ request('search') }}">
-                    </div>
-                    
-                    <div class="col-md-2">
-                        <label for="estado" class="form-label">Estado</label>
-                        <select class="form-select" id="estado" name="estado">
-                            <option value="">Todos</option>
-                            <option value="libre" {{ request('estado') == 'libre' ? 'selected' : '' }}>Libre</option>
-                            <option value="ocupado" {{ request('estado') == 'ocupado' ? 'selected' : '' }}>Ocupado</option>
-                        </select>
-                    </div>
-                    
-                    <div class="col-md-3">
-                        <label for="n_serie_lote" class="form-label">N° de Serie/Lote</label>
-                        <input type="text" class="form-control" id="n_serie_lote" 
-                               name="n_serie_lote" value="{{ request('n_serie_lote') }}">
-                    </div>
-                    
-                    <div class="col-12">
-                        <div class="d-flex justify-content-end gap-2">
-                            <button type="submit" class="btn btn-primary">
-                                <x-heroicon-o-magnifying-glass class="me-1" style="width: 16px; height: 16px;" />
-                                Buscar
-                            </button>
-                            <a href="{{ route('inventarios-muestreo.index') }}" class="btn btn-outline-secondary">
-                                Limpiar
-                            </a>
-                        </div>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-
-
-    <style>
-        #searchToggleBtn.active {
-            background-color: var(--bs-primary);
-            color: white;
-        }
-        #searchToggleBtn.active:hover {
-            background-color: var(--bs-primary-dark);
-        }
-        
-        @media (max-width: 768px) {
-            .btn-group {
-                margin-top: 0.5rem;
-                width: 100%;
-            }
-            .btn-group .btn {
-                flex: 1;
-            }
-            #searchToggleBtn {
-                margin-right: 0 !important;
-                width: 100%;
-            }
-            .card-body .row {
-                gap: 12px 0;
-            }
-            .card-body .col-md-6,
-            .card-body .col-md-3 {
-                width: 100%;
-                flex: 0 0 100%;
-                max-width: 100%;
-            }
-        }
-
-        #searchToggleBtn .heroicon {
-            transition: transform 0.3s ease;
-        }
-        
-        #searchToggleBtn[aria-expanded="true"] .heroicon {
-            transform: rotate(90deg);
-        }
-        
-        @media (max-width: 768px) {
-            .d-flex.justify-content-between {
-                flex-direction: column;
-                align-items: flex-start !important;
-            }
-            
-            #searchToggleBtn {
-                margin-top: 1rem;
-                width: 100%;
-            }
-        }
-
-    </style>
-
-    
-    @if($inventarios->isEmpty())
-        <div class="alert alert-warning">
-            No hay Inventarios disponibles.
-        </div>
-    @else
+    </header>
 
     @if(session('success'))
-        <div class="alert alert-success">
-            {{ session('success') }}
+        <div class="ucrud-alert ucrud-alert--success" role="status">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="9"/>
+                <path d="m8.5 12.5 2.5 2.5 4.5-5"/>
+            </svg>
+            <span>{{ session('success') }}</span>
         </div>
     @endif
 
-    <!-- Vista en pantallas grandes (tables-like) -->
-    <div class="d-none d-lg-block">
-        <table class="table table-bordered table-hover">
-            <thead class="table-dark">
-                <tr>
-                    <th>Equipamiento</th>
-                    <th>Marca/Modelo</th>
-                    <th>Número de Serie/Lote</th>
-                    <th>Código de Ficha</th>
-                    {{-- <th>Estado</th> --}}
-                    <th>Observaciones</th>
-                    <th>Activo</th>
-                    <th>Fecha de Calibración (vencimiento)</th>
-                    <th>Certificado</th>
-                    <th>Acciones</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach($inventarios as $inventario)
-                    <tr>    
-                        <td>{{ $inventario->equipamiento }}</td>
-                        <td>{{ $inventario->marca_modelo }}</td>
-                        <td>{{ $inventario->n_serie_lote }}</td>
-                        <td>{{ $inventario->codigo_ficha }}</td>
-                        {{-- <td class="<?php echo $inventario->estado === 'libre' ? 'bg-success' : 'bg-danger'; ?>">{{ $inventario->estado === 'libre' ? 'Libre' : 'Ocupado' }}</td> --}}
-                        <td>{{ $inventario->observaciones ?? 'N/A' }}</td>
-                        <td class="<?php echo $inventario->activo === true ? 'bg-success text-white' : 'bg-danger text-white'; ?>">{{ $inventario->activo ? 'Activo' : 'Inactivo' }}</td>
-                        <td>{{ $inventario->fecha_calibracion }}</td>
-                        <td>
-                            @if($inventario->certificado)
-                                <a href="{{ asset('storage/' . $inventario->certificado) }}" target="_blank" rel="noopener noreferrer">
-                                    <x-heroicon-o-document-text style="width: 23px; height: 23px;" />
-                                </a>
-                            @else
-                                <span class="text-muted">N/A</span>
-                            @endif
-                        </td>
-                        <td class="d-flex align-items-start gap-2">
-                            <a class="btn btn-sm btn-primary d-flex align-items-center justify-content-center" 
-                               href="{{ url('/inventarios-muestreo/' . $inventario->id . '/edit') }}" 
-                               title="Editar inventario"
-                               aria-label="Editar inventario">
-                                <x-heroicon-o-pencil style="width: 16px; height: 16px;" />
-                            </a>
-                            <form action="{{ url('/inventarios-muestreo/' . $inventario->id) }}" 
-                                  method="POST" 
-                                  class="d-inline delete-form">
-                                @csrf
-                                @method('DELETE')
-                                <button type="submit" 
-                                        class="btn btn-sm btn-danger d-flex align-items-center justify-content-center" 
-                                        title="Eliminar inventario"
-                                        aria-label="Eliminar inventario">
-                                    <x-heroicon-o-trash style="width: 16px; height: 16px;" />
-                                </button>
-                            </form>
-                        </td>
-
-
-
-
-                    </tr>
-                @endforeach
-            </tbody>
-        </table>
-        {{ $inventarios->links() }}
+    <div class="ucrud-filters">
+        <p class="ucrud-filters__title">Filtros</p>
+        <form method="GET" action="{{ route('inventarios-muestreo.index') }}" class="ucrud-filters__grid">
+            <div class="ucrud-field">
+                <label for="search">Buscar equipo</label>
+                <input type="text" class="ucrud-input" style="padding-left: .9rem;" id="search" name="search"
+                       placeholder="Equipo, marca, modelo…" value="{{ request('search') }}">
+            </div>
+            <div class="ucrud-field">
+                <label for="estado">Estado</label>
+                <select class="ucrud-select" style="width: 100%;" id="estado" name="estado">
+                    <option value="">Todos</option>
+                    <option value="libre" @selected(request('estado') == 'libre')>Libre</option>
+                    <option value="ocupado" @selected(request('estado') == 'ocupado')>Ocupado</option>
+                </select>
+            </div>
+            <div class="ucrud-field">
+                <label for="n_serie_lote">N° de serie/lote</label>
+                <input type="text" class="ucrud-input" style="padding-left: .9rem;" id="n_serie_lote"
+                       name="n_serie_lote" value="{{ request('n_serie_lote') }}">
+            </div>
+            <div class="ucrud-filters__actions">
+                @if($hayFiltros)
+                    <a href="{{ route('inventarios-muestreo.index') }}" class="ucrud-btn ucrud-btn--ghost">Limpiar</a>
+                @endif
+                <button type="submit" class="ucrud-btn ucrud-btn--primary">Buscar</button>
+            </div>
+        </form>
     </div>
 
-    <!-- Vista en pantallas pequeñas (cards) -->
-    <div class="d-block d-lg-none">
-        <div class="row">
-            @foreach($inventarios as $inventario)
-                <div class="col-12 mb-4">
-                    <div class="card shadow-sm">
-                        <div class="card-body">
-                            <h5 class="card-title">{{ $inventario->equipamiento }}</h5>
-                            <p><strong>Marca/Modelo:</strong> {{ $inventario->marca_modelo }}</p>
-                            <p class="text-{{ $inventario->activo ? 'success' : 'danger' }}"><strong>Activo:</strong> {{ $inventario->activo ? 'Activo' : 'Inactivo' }}</p>
-                            
-                            <a class="btn btn-primary" href="{{ url('/inventarios-muestreo/' . $inventario->id) }}">
+    <div class="ucrud-panel">
+        @if($inventarios->isEmpty())
+            <div class="ucrud-empty">
+                <div class="ucrud-empty__icon">
+                    <x-heroicon-o-wrench-screwdriver style="width: 28px; height: 28px;" />
+                </div>
+                <p class="ucrud-empty__title">No hay inventarios disponibles</p>
+                <p class="ucrud-empty__text">
+                    {{ $hayFiltros ? 'Probá ajustar los filtros de búsqueda.' : 'Creá el primer registro de inventario.' }}
+                </p>
+            </div>
+        @else
+            <div class="d-none d-lg-block ucrud-tablewrap">
+                <table class="ucrud-table ucrud-table--sticky-actions">
+                    <thead>
+                        <tr>
+                            <th>Equipamiento</th>
+                            <th>Marca/modelo</th>
+                            <th>N° serie/lote</th>
+                            <th>Código ficha</th>
+                            <th>Observaciones</th>
+                            <th>Activo</th>
+                            <th>Calibración (venc.)</th>
+                            <th>Certificado</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach($inventarios as $i => $inventario)
+                            <tr class="ucrud-animate-in" style="--i: {{ $i }}">
+                                <td><span class="ucrud-user__name">{{ $inventario->equipamiento }}</span></td>
+                                <td>{{ $inventario->marca_modelo }}</td>
+                                <td><span class="ucrud-code">{{ $inventario->n_serie_lote }}</span></td>
+                                <td><span class="ucrud-code">{{ $inventario->codigo_ficha }}</span></td>
+                                <td>{{ $inventario->observaciones ?? '—' }}</td>
+                                <td>
+                                    <span class="ucrud-chip {{ $inventario->activo ? 'ucrud-chip--green' : 'ucrud-chip--rose' }}">
+                                        {{ $inventario->activo ? 'Activo' : 'Inactivo' }}
+                                    </span>
+                                </td>
+                                <td>{{ $inventario->fecha_calibracion }}</td>
+                                <td>
+                                    @if($inventario->certificado)
+                                        <a href="{{ asset('storage/' . $inventario->certificado) }}" target="_blank" rel="noopener noreferrer"
+                                           class="ucrud-iconbtn" title="Ver certificado" aria-label="Ver certificado">
+                                            <x-heroicon-o-document-text style="width: 16px; height: 16px;" />
+                                        </a>
+                                    @else
+                                        <span class="ucrud-dim">N/A</span>
+                                    @endif
+                                </td>
+                                <td>
+                                    <div class="ucrud-actions">
+                                        <a class="ucrud-iconbtn"
+                                           href="{{ url('/inventarios-muestreo/' . $inventario->id . '/edit') }}"
+                                           title="Editar inventario"
+                                           aria-label="Editar inventario">
+                                            <x-heroicon-o-pencil style="width: 16px; height: 16px;" />
+                                        </a>
+                                        <form action="{{ url('/inventarios-muestreo/' . $inventario->id) }}" method="POST" class="d-inline js-delete-form">
+                                            @csrf
+                                            @method('DELETE')
+                                            <button type="submit" class="ucrud-iconbtn ucrud-iconbtn--danger"
+                                                    title="Eliminar inventario" aria-label="Eliminar inventario">
+                                                <x-heroicon-o-trash style="width: 16px; height: 16px;" />
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="d-block d-lg-none">
+                @foreach($inventarios as $i => $inventario)
+                    <div class="ucrud-card-row ucrud-animate-in" style="--i: {{ $i }}">
+                        <div class="ucrud-card__body">
+                            <span class="ucrud-user__name d-block">{{ $inventario->equipamiento }}</span>
+                            <span class="ucrud-card__meta">
+                                <span class="ucrud-code">{{ $inventario->marca_modelo }}</span>
+                                <span class="ucrud-chip {{ $inventario->activo ? 'ucrud-chip--green' : 'ucrud-chip--rose' }}">
+                                    {{ $inventario->activo ? 'Activo' : 'Inactivo' }}
+                                </span>
+                            </span>
+                        </div>
+                        <div class="ucrud-actions">
+                            <a class="ucrud-iconbtn"
+                               href="{{ url('/inventarios-muestreo/' . $inventario->id . '/edit') }}"
+                               title="Editar" aria-label="Editar">
                                 <x-heroicon-o-pencil style="width: 16px; height: 16px;" />
                             </a>
-                            <form action="{{ url('/inventarios-muestreo/' . $inventario->id) }}" method="POST">
+                            <form action="{{ url('/inventarios-muestreo/' . $inventario->id) }}" method="POST" class="d-inline js-delete-form">
                                 @csrf
                                 @method('DELETE')
-                                <button type="submit" class="btn btn-danger">
+                                <button type="submit" class="ucrud-iconbtn ucrud-iconbtn--danger" title="Eliminar" aria-label="Eliminar">
                                     <x-heroicon-o-trash style="width: 16px; height: 16px;" />
                                 </button>
                             </form>
                         </div>
                     </div>
+                @endforeach
+            </div>
+
+            @if($inventarios->hasPages())
+                <div class="ucrud-pagination">
+                    {{ $inventarios->links() }}
                 </div>
-            @endforeach
-        </div>
+            @endif
+        @endif
     </div>
-    {{ $inventarios->links() }}
-
-    @endif
-
 </div>
+@endsection
 
-
-
+@push('scripts')
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const searchToggleBtn = document.getElementById('searchToggleBtn');
-        const collapseSearch = document.getElementById('collapseSearch');
-        
-        collapseSearch.addEventListener('show.bs.collapse', function() {
-            searchToggleBtn.classList.remove('btn-outline-primary');
-            searchToggleBtn.classList.add('btn-primary');
-        });
-        
-        collapseSearch.addEventListener('hide.bs.collapse', function() {
-            searchToggleBtn.classList.remove('btn-primary');
-            searchToggleBtn.classList.add('btn-outline-primary');
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.js-delete-form').forEach(function (form) {
+        form.addEventListener('submit', function (e) {
+            e.preventDefault();
+            Swal.fire({
+                title: '¿Estás seguro?',
+                text: 'No podrás revertir esta acción.',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#3085d6',
+                confirmButtonText: 'Sí, eliminar',
+                cancelButtonText: 'Cancelar'
+            }).then(function (result) {
+                if (result.isConfirmed) {
+                    form.submit();
+                }
+            });
         });
     });
+});
 </script>
-
-@endsection
+@endpush

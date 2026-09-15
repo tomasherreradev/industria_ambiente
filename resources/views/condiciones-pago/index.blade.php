@@ -3,89 +3,125 @@
 @section('title', 'Condiciones de pago')
 
 @section('content')
-<div class="container-fluid">
-    <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
-        <h1 class="h4 mb-0">Condiciones de pago</h1>
-        <a href="{{ route('condiciones-pago.create') }}" class="btn btn-primary">Nueva</a>
-    </div>
+<link rel="stylesheet" href="{{ asset('css/usuarios-crud.css') }}?v={{ filemtime(public_path('css/usuarios-crud.css')) }}">
 
-    <div class="card mb-3">
-        <div class="card-body">
-            <form method="GET" action="{{ route('condiciones-pago.index') }}" class="row g-2 align-items-end">
-                <div class="col-12 col-md-6">
-                    <label class="form-label">Buscar</label>
-                    <input type="text" name="q" class="form-control" value="{{ $q }}" placeholder="Código o descripción">
-                </div>
-                <div class="col-12 col-md-auto">
-                    <button class="btn btn-outline-primary w-100" type="submit">Filtrar</button>
-                </div>
-                <div class="col-12 col-md-auto">
-                    <a class="btn btn-light w-100" href="{{ route('condiciones-pago.index') }}">Limpiar</a>
-                </div>
-            </form>
+@php
+    $hayFiltros = trim((string) $q) !== '';
+@endphp
+
+<div class="container py-4 ucrud" data-ucrud-root>
+    <header class="ucrud-header">
+        <div class="ucrud-header__titles">
+            <h1 class="ucrud-title">
+                Condiciones de pago
+                <span class="ucrud-count">{{ $condiciones->total() }}</span>
+            </h1>
+            <p class="ucrud-subtitle">Plazos y códigos de condición para cotizaciones y facturación.</p>
         </div>
-    </div>
+
+        <div class="ucrud-header__actions">
+            <a href="{{ route('condiciones-pago.create') }}" class="ucrud-btn ucrud-btn--primary">
+                <x-heroicon-o-plus style="width: 16px; height: 16px;" />
+                Nueva
+            </a>
+        </div>
+    </header>
+
+    <form method="GET" action="{{ route('condiciones-pago.index') }}" class="ucrud-toolbar">
+        <label class="ucrud-search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                <circle cx="11" cy="11" r="7"/>
+                <path d="m20 20-3.1-3.1"/>
+            </svg>
+            <input type="text" name="q" class="ucrud-input" value="{{ $q }}" placeholder="Buscar código o descripción…" aria-label="Buscar condiciones de pago">
+        </label>
+
+        <button type="submit" class="ucrud-btn ucrud-btn--primary">Filtrar</button>
+
+        @if($hayFiltros)
+            <a href="{{ route('condiciones-pago.index') }}" class="ucrud-btn ucrud-btn--ghost">Limpiar</a>
+        @endif
+    </form>
 
     @if(session('success'))
-        <div class="alert alert-success">{{ session('success') }}</div>
+        <div class="ucrud-alert ucrud-alert--success" role="status">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="9"/>
+                <path d="m8.5 12.5 2.5 2.5 4.5-5"/>
+            </svg>
+            <span>{{ session('success') }}</span>
+        </div>
     @endif
 
-    <div class="card">
-        <div class="card-body p-0">
-            <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
-                    <thead class="table-light">
+    <div class="ucrud-panel">
+        @if($condiciones->isEmpty())
+            <div class="ucrud-empty">
+                <div class="ucrud-empty__icon">
+                    <x-heroicon-o-banknotes style="width: 28px; height: 28px;" />
+                </div>
+                <p class="ucrud-empty__title">No hay condiciones de pago</p>
+                <p class="ucrud-empty__text">
+                    {{ $hayFiltros ? 'Probá ajustar la búsqueda.' : 'Creá la primera condición de pago.' }}
+                </p>
+            </div>
+        @else
+            <div class="ucrud-tablewrap">
+                <table class="ucrud-table ucrud-table--sticky-actions">
+                    <thead>
                         <tr>
-                            <th style="width: 160px;">Código</th>
+                            <th>Código</th>
                             <th>Descripción</th>
-                            <th style="width: 90px;" class="text-end">Días</th>
-                            <th style="width: 110px;" class="text-center">Activa</th>
-                            <th style="width: 160px;" class="text-end">Acciones</th>
+                            <th>Días</th>
+                            <th>Activa</th>
+                            <th>Acciones</th>
                         </tr>
                     </thead>
                     <tbody>
-                        @forelse($condiciones as $c)
-                            <tr>
-                                <td class="fw-semibold">{{ $c->pag_codigo }}</td>
-                                <td>{{ $c->pag_descripcion }}</td>
+                        @foreach($condiciones as $i => $c)
+                            <tr class="ucrud-animate-in" style="--i: {{ $i }}">
+                                <td><span class="ucrud-code">{{ $c->pag_codigo }}</span></td>
+                                <td><span class="ucrud-user__name">{{ $c->pag_descripcion }}</span></td>
                                 <td class="text-end">{{ $c->pag_dias ?? '—' }}</td>
-                                <td class="text-center">
-                                    @if($c->pag_estado)
-                                        <span class="badge bg-success">Sí</span>
-                                    @else
-                                        <span class="badge bg-secondary">No</span>
-                                    @endif
+                                <td>
+                                    <span class="ucrud-chip {{ $c->pag_estado ? 'ucrud-chip--green' : 'ucrud-chip--muted' }}">
+                                        {{ $c->pag_estado ? 'Sí' : 'No' }}
+                                    </span>
                                 </td>
-                                <td class="text-end">
-                                    <a href="{{ route('condiciones-pago.edit', $c) }}" class="btn btn-sm btn-outline-primary">Editar</a>
-                                    <form action="{{ route('condiciones-pago.destroy', $c) }}" method="POST" class="d-inline js-delete-form">
-                                        @csrf
-                                        @method('DELETE')
-                                        <button type="submit" class="btn btn-sm btn-outline-danger">Eliminar</button>
-                                    </form>
+                                <td>
+                                    <div class="ucrud-actions">
+                                        <a href="{{ route('condiciones-pago.edit', $c) }}" class="ucrud-iconbtn" title="Editar" aria-label="Editar condición">
+                                            <x-heroicon-o-pencil style="width: 16px; height: 16px;" />
+                                        </a>
+                                        <form action="{{ route('condiciones-pago.destroy', $c) }}" method="POST" class="d-inline js-delete-form">
+                                            @csrf
+                                            @method('DELETE')
+                                            <button type="submit" class="ucrud-iconbtn ucrud-iconbtn--danger" title="Eliminar" aria-label="Eliminar condición">
+                                                <x-heroicon-o-trash style="width: 16px; height: 16px;" />
+                                            </button>
+                                        </form>
+                                    </div>
                                 </td>
                             </tr>
-                        @empty
-                            <tr>
-                                <td colspan="5" class="text-center text-muted py-4">No hay condiciones de pago.</td>
-                            </tr>
-                        @endforelse
+                        @endforeach
                     </tbody>
                 </table>
             </div>
-        </div>
-        @if($condiciones->hasPages())
-        <div class="card-footer">
-            {{ $condiciones->links() }}
-        </div>
+
+            @if($condiciones->hasPages())
+                <div class="ucrud-pagination">
+                    {{ $condiciones->links() }}
+                </div>
+            @endif
         @endif
     </div>
 </div>
+@endsection
 
+@push('scripts')
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    document.querySelectorAll('.js-delete-form').forEach(function(form) {
-        form.addEventListener('submit', function(e) {
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.js-delete-form').forEach(function (form) {
+        form.addEventListener('submit', function (e) {
             e.preventDefault();
             Swal.fire({
                 title: '¿Eliminar condición de pago?',
@@ -94,7 +130,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 confirmButtonText: 'Sí, eliminar',
                 cancelButtonText: 'Cancelar',
                 confirmButtonColor: '#d33'
-            }).then((result) => {
+            }).then(function (result) {
                 if (result.isConfirmed) {
                     form.submit();
                 }
@@ -103,5 +139,4 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 </script>
-@endsection
-
+@endpush

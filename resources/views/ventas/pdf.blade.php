@@ -5,7 +5,7 @@
     <title>Cotización #{{ $cotizacion->coti_num }}</title>
     <style>
         @page {
-            margin: 48mm 10mm 36mm 10mm;
+            margin: 52mm 0 30mm 0;
         }
         body {
             font-family: 'Calibri', Arial, sans-serif;
@@ -14,29 +14,40 @@
             margin: 0;
             line-height: 1.3;
         }
-        /* Header / Footer como “plantilla” fija (Dompdf friendly) */
+        /* Header / Footer a ancho completo; márgenes laterales solo en el contenido */
         .pdf-header,
         .pdf-footer {
             position: fixed;
             left: 0;
             right: 0;
             z-index: 10;
-            overflow: visible;
+            overflow: hidden;
+            padding: 0;
+            margin: 0;
         }
         .pdf-header {
-            top: -48mm;
-            height: 38mm;
+            top: -52mm;
+            height: 46mm;
         }
         .pdf-footer {
-            bottom: -36mm;
-            height: 22mm;
-            padding: 0 4rem 1rem 4rem;
+            bottom: -30mm;
+            height: 28mm;
         }
-        .pdf-header img,
+        .pdf-header img {
+            display: block;
+            width: 100%;
+            height: auto;
+            max-height: 46mm;
+            object-fit: contain;
+            object-position: top center;
+        }
         .pdf-footer img {
             display: block;
             width: 100%;
-            height: 100%;
+            height: auto;
+            max-height: 28mm;
+            object-fit: contain;
+            object-position: bottom center;
         }
         /*
          * Saltos entre bloques: solo antes de la 2.ª página.
@@ -45,6 +56,9 @@
          */
         .page + .page {
             page-break-before: always;
+        }
+        .page {
+            padding: 0 10mm;
         }
         .wrapper {
             padding: 0;

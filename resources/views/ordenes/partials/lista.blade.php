@@ -1,20 +1,18 @@
-
 <div class="d-none d-lg-block">
-    <div class="card shadow-sm mb-4">
-        <div class="card-body">
-            <div class="table-responsive">
-                <table class="table table-hover align-middle">
-                    <thead class="table-light">
-                        <tr>
-                            <th width="50"></th>
-                            <th width="120">Cotización</th>
-                            <th>Cliente</th>
-                            <th width="140" class="text-center">Progreso</th>
-                            <th width="120" class="text-center">Fecha</th>
-                            <th width="150">Matriz</th>
-                            <th width="150" class="text-center">Acciones</th>
-                        </tr>
-                    </thead>
+    <div class="ucrud-panel mb-4">
+        <div class="ucrud-tablewrap">
+            <table class="ucrud-table ucrud-table--sticky-actions">
+                <thead>
+                    <tr>
+                        <th style="width: 50px;"></th>
+                        @include('partials.th-ordenable', ['columna' => 'cotizacion', 'etiqueta' => 'Cotización', 'width' => '120'])
+                        @include('partials.th-ordenable', ['columna' => 'cliente', 'etiqueta' => 'Cliente'])
+                        @include('partials.th-ordenable', ['columna' => 'progreso', 'etiqueta' => 'Progreso', 'width' => '140', 'centrado' => true])
+                        @include('partials.th-ordenable', ['columna' => 'fecha', 'etiqueta' => 'Fecha', 'width' => '120', 'centrado' => true])
+                        @include('partials.th-ordenable', ['columna' => 'matriz', 'etiqueta' => 'Matriz', 'width' => '150'])
+                        <th style="width: 150px; text-align: center;">Acciones</th>
+                    </tr>
+                </thead>
                     <tbody>
                         @foreach($ordenes as $numCoti => $instanciaData)
                         @php
@@ -92,8 +90,8 @@
                                 </td>
                                 <td class="text-center">
                                     @if($total > 0)
-                                        <div class="d-flex align-items-center gap-2">
-                                            <div class="progress flex-grow-1" style="height: 20px;">
+                                        <div class="op-progress">
+                                            <div class="op-progress__bar">
                                                 <!-- Segmento de analizadas (verde) -->
                                                 <div class="progress-bar bg-success" 
                                                      role="progressbar" 
@@ -121,9 +119,9 @@
                                                      title="Coordinadas: {{ round($porcentajes['coordinadas']) }}%">
                                                 </div>
                                             </div>
-                                            <small class="text-nowrap">
+                                            <span class="op-progress__count">
                                                 {{ $analizadas + $enProceso + $coordinadas }}/{{ $total }}
-                                            </small>
+                                            </span>
                                         </div>
                                         @if($porcentajes['total'] > 0 && $porcentajes['total'] < 100)
                                             <small class="d-block mt-1 @if($instanciaData['has_suspension']) text-danger fw-bold @else text-muted @endif">
@@ -152,10 +150,10 @@
                                 </td>
                                 <td>{{ $coti->matriz->matriz_descripcion ?? 'N/A' }}</td>
                                 <td class="text-center" onclick="event.stopPropagation();">
-                                    <div class="btn-group" role="group">
-                                        <a href="{{ url('/ordenes/' . $numCoti) }}" 
-                                           class="btn btn-sm btn-outline-primary" 
-                                           data-bs-toggle="tooltip" 
+                                    <div class="ucrud-actions">
+                                        <a href="{{ url('/ordenes/' . $coti->coti_num) }}"
+                                           class="ucrud-iconbtn"
+                                           data-bs-toggle="tooltip"
                                            data-bs-placement="bottom"
                                            title="Gestionar orden">
                                            <x-heroicon-o-pencil style="width: 15px; height: 15px;" />
@@ -236,7 +234,7 @@
                                                     <x-heroicon-o-document-plus style="width: 48px; height: 48px;" class="text-muted mb-3" />
                                                     <h6 class="text-muted mb-2">Sin órdenes de trabajo</h6>
                                                     <p class="text-muted small mb-3">Esta cotización aún no tiene órdenes de trabajo creadas.</p>
-                                                    <a href="{{ url('/ordenes/' . $numCoti) }}" class="btn btn-sm btn-primary">
+                                                    <a href="{{ url('/ordenes/' . $coti->coti_num) }}" class="btn btn-sm btn-primary">
                                                         <x-heroicon-o-plus style="width: 16px; height: 16px;" class="me-1" />
                                                         Crear órdenes de trabajo
                                                     </a>
@@ -249,7 +247,6 @@
                         @endforeach
                     </tbody>
                 </table>
-            </div>
         </div>
     </div>
 </div>
@@ -402,7 +399,7 @@
                                         aria-expanded="false">
                                     <x-heroicon-o-chevron-down class="chevron-icon-mobile" style="width: 15px; height: 15px; transition: transform 0.2s;" />
                                 </button>
-                                <a href="{{ url('/ordenes/' . $numCoti) }}" class="btn btn-sm btn-outline-primary">
+                                <a href="{{ url('/ordenes/' . $coti->coti_num) }}" class="btn btn-sm btn-outline-primary">
                                     <x-heroicon-o-pencil style="width: 15px; height: 15px;" />
                                 </a>
                             </div>
@@ -463,7 +460,7 @@
                                 <div class="text-center py-3">
                                     <x-heroicon-o-document-plus style="width: 32px; height: 32px;" class="text-muted mb-2" />
                                     <p class="text-muted small mb-2">Sin órdenes de trabajo</p>
-                                    <a href="{{ url('/ordenes/' . $numCoti) }}" class="btn btn-sm btn-primary">
+                                    <a href="{{ url('/ordenes/' . $coti->coti_num) }}" class="btn btn-sm btn-primary">
                                         <x-heroicon-o-plus style="width: 14px; height: 14px;" class="me-1" />
                                         Crear OTs
                                     </a>
@@ -477,67 +474,11 @@
     </div>
 </div>
 
-<div class="d-flex justify-content-center mt-4">
+<div class="ucrud-panel ucrud-pagination mt-3">
     {{ $pagination->links() }}
 </div>
 
 <style>
-    .progress {
-        background-color: #f0f3f5;
-    }
-    .progress-bar + .progress-bar {
-        border-left: 1px solid rgba(255,255,255,0.3);
-    }
-    .table-hover tbody tr:hover {
-        background-color: #f8f9fa;
-    }
-    .table-hover tbody tr.orden-row:hover {
-        background-color: #e9ecef;
-    }
-    .card {
-        transition: transform 0.2s;
-    }
-    .card:hover {
-        transform: translateY(-2px);
-    }
-
-    .table-warning {
-        background-color: #fff3cd;
-    }
-    .table-warning:hover {
-        background-color: #ffeeba !important;
-    }
-
-    /* Estilos para filas colapsables */
-    .orden-row {
-        cursor: pointer;
-    }
-    .orden-row:not(.collapsed) .chevron-icon,
-    .orden-row[aria-expanded="true"] .chevron-icon {
-        transform: rotate(90deg);
-    }
-    .collapse-row {
-        background-color: transparent !important;
-    }
-    .collapse-row:hover {
-        background-color: transparent !important;
-    }
-    .collapse-row td {
-        padding: 0 !important;
-    }
-    
-    /* Animación para el icono en móvil */
-    [data-bs-toggle="collapse"][aria-expanded="true"] .chevron-icon-mobile {
-        transform: rotate(180deg);
-    }
-    
-    /* Estilos para la tabla interna de órdenes */
-    .collapse .table-sm th,
-    .collapse .table-sm td {
-        padding: 0.4rem 0.5rem;
-        font-size: 0.85rem;
-    }
-    
     /* Collapse sin animación para evitar el efecto visual de fuente que crece */
     .collapse-row .collapse {
         display: none;
