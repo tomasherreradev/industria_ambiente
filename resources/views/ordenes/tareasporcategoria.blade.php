@@ -27,60 +27,94 @@
     $analisisNormSet = $tareas->map(function($a) use ($normalizeStr) {
         return $normalizeStr($a->cotio_descripcion);
     })->filter()->unique()->values()->toArray();
+
+    $responsablesTareas = ($todosResponsablesTareas ?? collect())
+        ->unique(fn ($u) => trim((string) ($u->usu_codigo ?? '')))
+        ->values();
+
+    $estadoAnalisis = strtolower($instanciaActual->cotio_estado_analisis ?? 'pendiente');
+    $heroHeaderClass = match ($estadoAnalisis) {
+        'analizado', 'finalizado' => 'bg-success op-header--analizado',
+        'en revision analisis' => 'op-header--revision',
+        default => 'bg-primary',
+    };
+    $estadoTagClass = match ($estadoAnalisis) {
+        'coordinado analisis' => 'op-header-tag--warning',
+        'en revision analisis' => 'op-header-tag--info',
+        'analizado', 'finalizado' => 'op-header-tag--success',
+        'suspension' => 'op-header-tag--warning',
+        default => '',
+    };
+
+    $headerActionsOrden = '<a href="' . e(url('/ordenes/' . $cotizacion->coti_num)) . '" class="ucrud-btn ucrud-btn--ghost"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width:16px;height:16px"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" /></svg> Volver a la cotización</a>';
+    if (userDebeVerOrdenesPorSector() && !userPuedeGestionarOrdenes() && ($instanciaActual->cotio_estado_analisis ?? '') !== 'analizado') {
+        $headerActionsOrden .= ' <button type="button" class="ucrud-btn ucrud-btn--ghost" data-bs-toggle="modal" data-bs-target="#modalSolicitudCambioOrden"><i class="fas fa-paper-plane me-1"></i> Solicitud de cambio</button>';
+    }
 @endphp
-<div class="container py-4">
-    <div class="d-flex flex-column gap-2 flex-md-row justify-content-between align-items-center mb-4">
-        <a href="{{ url('/ordenes/'.$cotizacion->coti_num) }}" class="btn btn-outline-secondary d-flex align-items-center gap-2">
-            Volver a la cotización
-        </a>
-        <div class="d-flex flex-column flex-md-row gap-2">
-            @if(userDebeVerOrdenesPorSector() && !userPuedeGestionarOrdenes() && ($instanciaActual->cotio_estado_analisis ?? '') !== 'analizado')
-                <button type="button" class="btn btn-outline-warning d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#modalSolicitudCambioOrden">
-                    <i class="fas fa-paper-plane"></i> Solicitud de cambio
-                </button>
-            @endif
-            {{-- <button type="button" class="btn btn-secondary d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#asignarModal" disabled>
-                Asignar elementos
-            </button> --}}
-            {{-- <button type="button" class="btn btn-primary d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#asignarFrecuenciaModal">
-                Ajustar Frecuencia
-            </button> --}}
-        </div>
-    </div>
+@include('partials.operativo-styles')
+<link rel="stylesheet" href="{{ asset('css/tareas-muestreo-mobile.css') }}?v={{ filemtime(public_path('css/tareas-muestreo-mobile.css')) }}">
+
+<div class="container py-4 ucrud ucrud-operativo ucrud-detalle tarea-detalle-page tarea-categoria-page" data-ucrud-root>
+    @include('partials.ucrud-form-header', [
+        'title' => $categoria->cotio_descripcion,
+        'subtitle' => 'Muestra ' . ($instanciaActual->instance_number ?? $instance) . ' / ' . ($categoria->cotio_cantidad ?? '—') . ' · Cotización #' . $cotizacion->coti_num,
+        'actions' => $headerActionsOrden,
+    ])
 
     @if(session('success'))
-        <div class="alert alert-success alert-dismissible fade show" role="alert">
-            {{ session('success') }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+        <div class="ucrud-alert ucrud-alert--success mb-3" role="status">
+            <x-heroicon-o-check-circle style="width: 18px; height: 18px;" />
+            <span>{{ session('success') }}</span>
         </div>
     @endif
     @if($errors->any())
-        <div class="alert alert-danger alert-dismissible fade show" role="alert">
-            <ul class="mb-0">
+        <div class="ucrud-alert ucrud-alert--danger mb-3" role="alert">
+            <x-heroicon-o-exclamation-circle style="width: 18px; height: 18px;" />
+            <ul class="mb-0 ps-3">
                 @foreach($errors->all() as $err)
                     <li>{{ $err }}</li>
                 @endforeach
             </ul>
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
         </div>
     @endif
 
     @include('cotizaciones.info')
 
     <div class="card shadow-sm mb-4">
-        <div class="card-body">
-            <div class="alert alert-warning mb-3">
-                <strong>Módulo de OT - Asignación de analistas</strong>
-                {{-- @if($instanciaActual->cotio_estado_analisis == 'coordinado analisis')
-                    <button type="button" class="btn btn-danger" id="btnQuitarOT"
-                            data-numcoti="{{ $instanciaActual->cotio_numcoti }}"
-                            data-item="{{ $instanciaActual->cotio_item }}"
-                            data-instance="{{ $instanciaActual->instance_number }}">
-                        Quitar de OT
-                    </button>
-                @endif --}}
+        <div class="card-header {{ $heroHeaderClass }} text-white d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2 tarea-detalle-hero">
+            <div class="tarea-detalle-hero-main">
+                <h5 class="mb-0 tarea-detalle-hero-title">{{ $categoria->cotio_descripcion }}</h5>
+                <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
+                    <span class="badge op-header-tag {{ $estadoTagClass }}">
+                        {{ str_replace('_', ' ', ucwords($instanciaActual->cotio_estado_analisis ?? 'pendiente')) }}
+                    </span>
+                    @if($instanciaActual->es_priori)
+                        <span class="badge op-header-tag op-header-tag--warning">Prioridad</span>
+                    @endif
+                    @if(userPuedeGestionarOrdenes() && $instanciaActual->active_ot == true && $instanciaActual->enable_inform == false)
+                        <button type="button" class="btn btn-sm btn-outline-light py-0 px-2" data-bs-toggle="modal" data-bs-target="#estadoModal" data-tipo="categoria" title="Editar estado">
+                            <x-heroicon-o-pencil style="width: 16px; height: 16px;" />
+                        </button>
+                    @endif
+                </div>
             </div>
+            <div class="d-flex flex-wrap gap-2 tarea-detalle-acciones">
+                <a class="btn btn-sm btn-outline-light"
+                    href="https://www.google.com/maps/search/?api=1&query={{ urlencode(\App\Support\CotizacionClienteEtiqueta::direccionDestinatarioMapsQuery($cotizacion)) }}">
+                    <x-heroicon-o-map style="width: 16px; height: 16px;" />
+                    <span class="d-none d-md-inline ms-1">Maps</span>
+                </a>
+                @if($instanciaActual->latitud && $instanciaActual->longitud)
+                    <a class="btn btn-sm btn-outline-light"
+                        href="https://www.google.com/maps/search/?api=1&query={{ $instanciaActual->latitud }},{{ $instanciaActual->longitud }}">
+                        <x-heroicon-o-map-pin style="width: 16px; height: 16px;" />
+                        <span class="d-none d-md-inline ms-1">Georef.</span>
+                    </a>
+                @endif
+            </div>
+        </div>
 
+        <div class="card-body">
             <form id="formQuitarDirectoAOT" method="POST" action="{{ route('muestras.quitar-directo-a-ot-from-coordinador', [
                 'cotio_numcoti' => $instanciaActual->cotio_numcoti,
                 'cotio_item' => $instanciaActual->cotio_item,
@@ -90,116 +124,68 @@
                 @method('DELETE')
                 <input type="hidden" name="isFromCoordinador" value="true">
             </form>
-            
-            <div class="d-flex justify-content-between align-items-center">
-                <h2 class="fw-bold mb-3">{{ $categoria->cotio_descripcion }} (#{{ $instanciaActual->instance_number ?? ''}} / {{ $categoria->cotio_cantidad ?? ''}})</h2>
-                <div class="d-flex gap-2">
-                    <a class="btn btn-outline-primary"
-                        href="https://www.google.com/maps/search/?api=1&query={{ urlencode(\App\Support\CotizacionClienteEtiqueta::direccionDestinatarioMapsQuery($cotizacion)) }}">
-                        <x-heroicon-o-map class="me-1" style="width: 18px; height: 18px;" />
-                        <span class="d-none d-md-inline">Ver en Maps</span>
-                    </a>
-                    @if($instanciaActual->latitud && $instanciaActual->longitud)
-                        <a class="btn btn-outline-primary"
-                            href="https://www.google.com/maps/search/?api=1&query={{ $instanciaActual->latitud }}, {{ $instanciaActual->longitud }}">
-                            <x-heroicon-o-map-pin class="me-1" style="width: 18px; height: 18px;" />
-                            <span class="d-none d-md-inline">Ver Georeferencia</span>
-                        </a>
+
+            <div class="row gy-3 tarea-detalle-datos">
+                <div class="col-md-4">
+                    <div class="tarea-detalle-dato">
+                        <span class="tarea-detalle-dato-label">Cotización</span>
+                        <span class="tarea-detalle-dato-value">{{ $cotizacion->coti_num }}</span>
+                    </div>
+                    @if($instanciaActual->otn)
+                        <div class="tarea-detalle-dato mt-2">
+                            <span class="tarea-detalle-dato-label">N° OT</span>
+                            <span class="tarea-detalle-dato-value">{{ $instanciaActual->otn }}</span>
+                        </div>
+                    @endif
+                    @if($instanciaActual->coordinadorLab)
+                        <div class="tarea-detalle-dato mt-2">
+                            <span class="tarea-detalle-dato-label">Coordinador</span>
+                            <span class="tarea-detalle-dato-value">{{ trim($instanciaActual->coordinadorLab->usu_descripcion) }}</span>
+                        </div>
                     @endif
                 </div>
-            </div>
-
-            <div class="row mb-3">
-                <div class="col-md-6">
-                    <h4 class="text-muted mb-5">
-                        Cotización: <strong>{{ $cotizacion->coti_num }}</strong>
-                    </h4>
-                        <p class="text-muted mb-1">
-                            Estado: 
-                            @php
-                            // dd($instanciaActual);
-                                $estado = strtolower($instanciaActual->cotio_estado_analisis);
-                                $badgeClass = match ($estado) {
-                                    'coordinado analisis' => 'warning',
-                                    'en revision analisis' => 'info',
-                                    'analizado' => 'success',
-                                    'suspension' => 'danger',
-                                    default => 'secondary'
-                                };
-                            @endphp
-                            <span class="badge bg-{{ $badgeClass }}">{{ $instanciaActual->cotio_estado_analisis }}</span>
-                                @if(userPuedeGestionarOrdenes() && $instanciaActual->active_ot == true && $instanciaActual->enable_inform == false)
-                                    <button type="button" class="btn btn-sm btn-link" data-bs-toggle="modal" data-bs-target="#estadoModal" data-tipo="categoria">
-                                        <x-heroicon-o-pencil style="width: 20px; height: 20px;" />
-                                    </button>
-                                @endif
-                        </p>
-
-
-                    {{-- Mostrar todos los responsables de las tareas --}}
-                    @if(isset($todosResponsablesTareas) && $todosResponsablesTareas->count() > 0)
-                        <p class="text-muted mb-1">
-                            <strong>Asignada a:</strong> 
-                            @foreach ($todosResponsablesTareas as $responsable)
-                                <span class="badge bg-info d-inline-flex align-items-center me-2 mb-1">
-                                    {{ $responsable->usu_descripcion }}
-                                    @if(userPuedeGestionarOrdenes() && $instanciaActual->cotio_estado_analisis != 'analizado' && $instanciaActual->active_ot == true && $instanciaActual->enable_inform == false)
-                                        <button type="button" 
-                                                class="btn btn-sm btn-link text-danger p-0 ms-1" 
-                                                style="font-size: 0.75rem; line-height: 1;"
-                                                onclick="eliminarResponsableTodasTareas('{{ $responsable->usu_codigo }}')"
-                                                title="Eliminar de todas las tareas">
-                                            <x-heroicon-o-x-mark style="width: 12px; height: 12px;" />
-                                        </button>
-                                    @endif
-                                </span>
-                            @endforeach
-
-                            {{-- @if($instanciaActual->cotio_estado_analisis == 'coordinado analisis')
-                                <button type="button" class="btn btn-sm btn-link" data-bs-toggle="modal" data-bs-target="#editarResponsables">
-                                    <x-heroicon-o-pencil style="width: 20px; height: 20px;" />
-                                </button>
-                            @endif --}}
-                        </p>
-                    @endif
-
-                    @if($instanciaActual->es_priori)
-                        <p class="text-muted mb-1">
-                            <strong>Es Prioridad:</strong> 
-                            <span class="badge bg-primary">Sí</span>
-                        </p>
-                    @endif
-
+                <div class="col-md-4">
+                    <div class="tarea-detalle-dato fecha-wrapper" data-fecha-fin="{{ $instanciaActual->fecha_fin_ot ?: '' }}">
+                        <span class="tarea-detalle-dato-label">Inicio análisis</span>
+                        <span class="tarea-detalle-dato-value">{{ $instanciaActual->fecha_inicio_ot ?: 'Faltante' }}</span>
+                    </div>
+                    <div class="tarea-detalle-dato mt-2 fecha-wrapper" data-fecha-fin="{{ $instanciaActual->fecha_fin_ot ?: '' }}">
+                        <span class="tarea-detalle-dato-label">Fin análisis</span>
+                        <span class="tarea-detalle-dato-value fecha-fin">{{ $instanciaActual->fecha_fin_ot ?: 'Faltante' }}</span>
+                    </div>
                 </div>
-                <div class="col-md-6">
-                    <p class="text-muted mb-1">
-                        <strong>Frecuencia:</strong> 
-                        @if ($instanciaActual->es_frecuente)
-                            Frecuente
-                        @else
-                            Puntual
-                        @endif
-                    </p>
-                </div>
-            </div>
-
-            <div class="row mb-3">
-                <div class="col-12">
-                    <div class="d-flex align-items-center gap-3">
-                        <p class="text-muted mb-0 fecha-wrapper" data-fecha-fin="{{ $instanciaActual->fecha_fin_ot ? $instanciaActual->fecha_fin_ot : '' }}">
-                            <strong>Inicio:</strong> 
-                            <span class="{{ $instanciaActual->fecha_inicio_ot ? 'bg-light text-dark px-2 py-1 rounded' : '' }}">
-                                {{ $instanciaActual->fecha_inicio_ot ? $instanciaActual->fecha_inicio_ot : 'Faltante' }}
-                            </span>
-                            &nbsp;&nbsp;|&nbsp;&nbsp;
-                            <strong>Fin:</strong> 
-                            <span class="fecha-fin {{ $instanciaActual->fecha_fin_ot ? 'bg-light text-dark px-2 py-1 rounded' : '' }}">
-                                {{ $instanciaActual->fecha_fin_ot ? $instanciaActual->fecha_fin_ot : 'Faltante' }}
-                            </span>
-                        </p>
+                <div class="col-md-4">
+                    <div class="tarea-detalle-dato">
+                        <span class="tarea-detalle-dato-label">Frecuencia</span>
+                        <span class="tarea-detalle-dato-value">{{ $instanciaActual->es_frecuente ? 'Frecuente' : 'Puntual' }}</span>
+                    </div>
+                    <div class="tarea-detalle-dato mt-2">
+                        <span class="tarea-detalle-dato-label">Instancia</span>
+                        <span class="tarea-detalle-dato-value">{{ $instanciaActual->instance_number ?? $instance }} / {{ $categoria->cotio_cantidad ?? '—' }}</span>
                     </div>
                 </div>
             </div>
+
+            @if($responsablesTareas->isNotEmpty())
+                <div class="tarea-detalle-personas">
+                    <span class="tarea-detalle-personas__label">Analistas asignados</span>
+                    <div class="tarea-detalle-personas__chips">
+                        @foreach($responsablesTareas as $responsable)
+                            <span class="badge op-person-chip op-person-chip--assign d-inline-flex align-items-center gap-1">
+                                {{ $responsable->usu_descripcion }}
+                                @if(userPuedeGestionarOrdenes() && $instanciaActual->cotio_estado_analisis != 'analizado' && $instanciaActual->active_ot == true && $instanciaActual->enable_inform == false)
+                                    <button type="button"
+                                            class="btn-close"
+                                            style="font-size: .45rem;"
+                                            onclick="eliminarResponsableTodasTareas('{{ $responsable->usu_codigo }}')"
+                                            title="Eliminar de todas las tareas"
+                                            aria-label="Eliminar {{ $responsable->usu_descripcion }}"></button>
+                                @endif
+                            </span>
+                        @endforeach
+                    </div>
+                </div>
+            @endif
 
             @php
                 // Parsear notas internas desde JSON
@@ -513,9 +499,9 @@
             </div>
         @endif
 
-        <div class="card shadow-sm">
-            <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                <h5 class="card-title mb-0">Análisis de la muestra</h5>
+        <div class="ucrud-panel mb-4">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                <h2 class="ucrud-panel-title">Análisis de la muestra</h2>
                 <div class="d-flex">
                     @php
                         $todosAnalizados = ($instanciaActual && $instanciaActual->cotio_estado_analisis === 'analizado')
@@ -574,15 +560,13 @@
 
                 </div>
             </div>
-            <div class="card-body">
 
                 <div class="row row-cols-1 row-cols-md-2 g-3">
                     @foreach ($tareas as $tarea)
                         <div class="col">
-                            <div class="card h-100 shadow-sm border-0">
+                            <div class="card h-100 op-analisis-card">
                                 <div class="card-body p-0">
-                                    <!-- Card Header with Checkbox and Title -->
-                                    <div class="d-flex justify-content-between align-items-center p-3" style="background-color: #A6C5E3; border-radius: 0.375rem 0.375rem 0 0;">
+                                    <div class="d-flex justify-content-between align-items-center op-analisis-card__head">
                                         <div class="form-check mb-0">
                                             @php
                                                 $tieneResultadoAnalisis = $tarea->instancia
@@ -656,7 +640,7 @@
                                     </div>
                     
                                     <!-- Card Content -->
-                                    <div class="p-3">
+                                    <div class="op-analisis-card__body">
                                         <!-- Observación Section -->
                                         @if($tarea->instancia && $tarea->instancia->observaciones_ot)
                                             <div class="d-flex align-items-start mb-2">
@@ -896,15 +880,15 @@
                                                             @endphp
                                                             
 
-                                                            <div class="row g-3">
+                                                            <div class="row g-3 op-resultados-grid">
                                                                 @foreach ($resultados as $r)
                                                                     <div class="col-12">
-                                                                        <div class="card border-0 shadow-sm">
-                                                                            <div class="card-header bg-{{ $r['badge'] }} bg-opacity-10 border-0 py-2">
-                                                                                <div class="d-flex justify-content-between align-items-center">
-                                                                                                                                                                         <div class="d-flex align-items-center">
-                                                                                         <span class="badge bg-{{ $r['badge'] }} rounded-pill me-2">{{ $r['label'] }}</span>
-                                                                                         <h6 class="mb-0 text-{{ $r['badge'] }} fw-semibold">{{ $r['titulo'] }}</h6>
+                                                                        <div class="card border-0 shadow-sm op-resultado-card">
+                                                                            <div class="op-resultado-card__head op-resultado-card__head--{{ $r['badge'] }}">
+                                                                                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                                                                                    <div class="d-flex align-items-center flex-wrap gap-2">
+                                                                                         <span class="badge op-resultado-card__pill op-resultado-card__pill--{{ $r['badge'] }}">{{ $r['label'] }}</span>
+                                                                                         <h6 class="mb-0 op-resultado-card__title">{{ $r['titulo'] }}</h6>
                                                                                          @if($r['fecha_carga'])
                                                                                              <span class="badge bg-secondary rounded-pill ms-2" title="Fecha de carga">
                                                                                                  <small>
@@ -919,7 +903,7 @@
                                                                                          @endif
                                                                                      </div>
                                                                                     @if(isset($historialCambios[$tarea->instancia->id]) && $historialCambios[$tarea->instancia->id]->where('campo_modificado', $r['field'])->isNotEmpty())
-                                                                                        <button class="btn btn-sm btn-outline-{{ $r['badge'] }} btn-historial-resultado" 
+                                                                                        <button class="btn btn-sm op-resultado-card__hist-btn btn-historial-resultado" 
                                                                                                 data-instancia-id="{{ $tarea->instancia->id }}"
                                                                                                 data-campo="{{ $r['field'] }}"
                                                                                                 data-bs-toggle="modal" 
@@ -930,7 +914,7 @@
                                                                                     @endif
                                                                                 </div>
                                                                             </div>
-                                                                            <div class="card-body p-3">
+                                                                            <div class="card-body op-resultado-card__body">
                                                                                 <div class="row g-2">
                                                                                     <div class="col-md-6">
                                                                                         <label class="form-label text-muted small mb-1">
@@ -1008,14 +992,15 @@
                         </div>
                     @endforeach
                 </div>
-            </div>
         </div>
     @else
-        <div class="alert alert-info">
-            <x-heroicon-o-information-circle style="width: 20px; height: 20px;" /> No hay tareas asignadas a esta muestra.
+        <div class="ucrud-alert ucrud-alert--info mb-3" role="status">
+            <x-heroicon-o-information-circle style="width: 18px; height: 18px;" />
+            <span>No hay tareas asignadas a esta muestra.</span>
         </div>
     @endif
 
+</div>{{-- /.tarea-categoria-page --}}
 
 <div class="modal fade" id="historialResultadoModal" tabindex="-1" aria-labelledby="historialResultadoModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg">
@@ -2106,7 +2091,9 @@ document.addEventListener('DOMContentLoaded', function () {
 document.addEventListener('DOMContentLoaded', function() {
     var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
     var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-        return new bootstrap.Tooltip(tooltipTriggerEl)
+        return new bootstrap.Tooltip(tooltipTriggerEl, {
+            placement: tooltipTriggerEl.getAttribute('data-bs-placement') || 'bottom',
+        })
     });
 });
 </script>

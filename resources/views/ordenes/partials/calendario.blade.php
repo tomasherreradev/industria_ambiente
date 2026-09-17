@@ -139,7 +139,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             ${info.event.extendedProps.analisis_count > 0 ? 
                               `<br><small>Análisis: ${info.event.extendedProps.analisis_count}</small>` : ''}
                         `,
-                        placement: 'top',
+                        placement: 'bottom',
                         html: true,
                         container: 'body'
                     });

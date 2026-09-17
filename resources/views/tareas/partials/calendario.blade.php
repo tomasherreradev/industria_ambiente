@@ -112,7 +112,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         ${responsablesHTML}
                     </div>
                 `,
-                placement: 'top',
+                placement: 'bottom',
                 html: true,
                 container: 'body',
             });

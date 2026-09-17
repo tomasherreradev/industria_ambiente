@@ -19,6 +19,7 @@ use App\Support\CotizacionContactosFacturacion;
 use App\Support\CotizacionClienteEtiqueta;
 use App\Support\CotizacionPrecioEnsayo;
 use App\Support\CotizacionReferenciasFacturacion;
+use App\Support\CotizacionCuotasPeriodo;
 use App\Support\CotizacionResumenEconomico;
 use App\Services\Afip\AfipDirectWsfeClient;
 use App\Mail\FacturaEnviadaMail;
@@ -311,10 +312,8 @@ public function facturar($coti_num)
             }
         }
         
-        // Determinar fecha de inicio de cuotas: aprobación o fecha de alta como fallback
-        $fechaInicioCuotas = $cotizacion->coti_fechaaprobado
-            ?? $cotizacion->coti_fechaalta
-            ?? now();
+        $fechaInicioCuotas = CotizacionCuotasPeriodo::fechaInicioEjecucion($cotizacion);
+        $fechaFinEjecucion = CotizacionCuotasPeriodo::fechaFinEjecucion($cotizacion);
 
         $descuentoData = $this->obtenerDatosDescuento($cotizacion);
         $resumenEconomico = CotizacionResumenEconomico::calcular(
@@ -342,8 +341,14 @@ public function facturar($coti_num)
             'descripcion'       => $cotizacion->coti_cuota_desc,
             'proxima'           => empty($cuotasFacturadas) ? 1 : max($cuotasFacturadas) + 1,
             'fecha_inicio'      => $fechaInicioCuotas,
+            'fecha_fin'         => $fechaFinEjecucion,
+            'fecha_aprobacion'  => $cotizacion->coti_fechaaprobado,
+            'usa_inicio_custom' => (bool) $cotizacion->coti_cuota_fecha_inicio,
         ];
     }
+
+    $datosCliente = CotizacionClienteEtiqueta::resumenFacturacionCliente($cotizacion);
+    $cliCodigo = trim((string) ($cotizacion->coti_codigocli ?? ''));
 
     return view('facturacion.show', compact(
         'cotizacion',
@@ -354,7 +359,9 @@ public function facturar($coti_num)
         'refsFacturacion',
         'cuotasInfo',
         'contactosEnvioFactura',
-        'estadoEnvioFactura'
+        'estadoEnvioFactura',
+        'datosCliente',
+        'cliCodigo'
     ));
 }
 
@@ -373,6 +380,10 @@ private function validarYResolverEmailsEnvioFactura(Request $request, Coti $coti
         $request->input('emails_envio_factura')
     );
 
+    if ($emails === [] && $request->has('emails_envio_factura')) {
+        return redirect()->back()->with('error', 'Seleccione al menos un email de envío de factura antes de facturar.');
+    }
+
     if ($emails === [] && $estado['requiere_seleccion'] && $contactosCliente->isNotEmpty()) {
         return redirect()->back()->with('error', 'Seleccione al menos un email de envío de factura antes de facturar.');
     }
@@ -390,13 +401,11 @@ private function procesarEnvioFacturaPorCorreo(Coti $cotizacion, Factura $factur
         return;
     }
 
-    if ($estado['requiere_seleccion']) {
-        CotizacionContactosFacturacion::persistirContactosEnvioFacturaEnCoti(
-            $cotizacion,
-            $contactosCliente,
-            $emails
-        );
-    }
+    CotizacionContactosFacturacion::aplicarSeleccionEnvioFacturaEnCoti(
+        $cotizacion,
+        $contactosCliente,
+        $emails
+    );
 
     $this->enviarFacturaPorCorreo($factura, $emails);
 }
@@ -944,15 +953,18 @@ protected function generarFacturaCuotas(Request $request, $cotizacion, $cuotasSe
         5 => 'Mayo', 6 => 'Junio', 7 => 'Julio', 8 => 'Agosto',
         9 => 'Septiembre', 10 => 'Octubre', 11 => 'Noviembre', 12 => 'Diciembre',
     ];
-    $fechaBase = \Carbon\Carbon::parse(
-        $cotizacion->coti_fechaaprobado ?? $cotizacion->coti_fechaalta ?? now()
-    );
-
-    // Validar que ninguna cuota seleccionada sea de un período futuro
+    // Validar que ninguna cuota seleccionada sea de un período futuro o fuera del contrato
     $hoyInicio = Carbon::now()->startOfMonth();
     foreach ($cuotasSeleccionadas as $numCuota) {
-        $fechaCuota = $fechaBase->copy()->addMonths((int) $numCuota - 1)->startOfMonth();
-        if ($fechaCuota->gt($hoyInicio)) {
+        if (! CotizacionCuotasPeriodo::cuotaDentroDePeriodo($cotizacion, (int) $numCuota)) {
+            return redirect()->back()->with(
+                'error',
+                "La cuota {$numCuota} está fuera del período de ejecución definido en la cotización."
+            );
+        }
+
+        $fechaCuota = CotizacionCuotasPeriodo::fechaCuota($cotizacion, (int) $numCuota)->startOfMonth();
+        if (CotizacionCuotasPeriodo::cuotaEsFutura($cotizacion, (int) $numCuota, $hoyInicio)) {
             $nombreMes = $mesesEs[(int) $fechaCuota->format('n')];
             $anio      = $fechaCuota->format('Y');
             return redirect()->back()->with(
@@ -963,7 +975,7 @@ protected function generarFacturaCuotas(Request $request, $cotizacion, $cuotasSe
     }
 
     foreach ($cuotasSeleccionadas as $numCuota) {
-        $fechaCuota = $fechaBase->copy()->addMonths((int) $numCuota - 1);
+        $fechaCuota = CotizacionCuotasPeriodo::fechaCuota($cotizacion, (int) $numCuota);
         $nombreMes = $mesesEs[(int) $fechaCuota->format('n')];
         $anio = $fechaCuota->format('Y');
         $items[] = [
@@ -2360,6 +2372,20 @@ protected function resolverRutaPdfFactura(Factura $factura): string
             $itemsTable = '<tr><td colspan="4" style="text-align:center;padding:0.12in;">No hay ítems registrados</td></tr>';
         }
 
+        $filasItems = $items && is_array($items) ? count(array_filter($items, 'is_array')) : 0;
+        if ($filasItems === 0 && $itemsTable !== '') {
+            $filasItems = 1;
+        }
+        $minFilasItems = max(6, (int) env('FACTURA_PDF_MIN_FILAS_ITEMS', 8));
+        for ($i = $filasItems; $i < $minFilasItems; $i++) {
+            $itemsTable .= '<tr class="filler-row">'
+                . '<td class="c-cant">&nbsp;</td>'
+                . '<td class="c-desc">&nbsp;</td>'
+                . '<td class="c-pu">&nbsp;</td>'
+                . '<td class="c-pt">&nbsp;</td>'
+                . '</tr>';
+        }
+
         $locPart = trim(implode(' ', array_filter([
             trim((string) ($fiscalBill['localidad'] ?? '')),
             trim((string) ($fiscalBill['provincia'] ?? '')),
@@ -2518,11 +2544,11 @@ protected function resolverRutaPdfFactura(Factura $factura): string
         Log::debug('Processed HTML saved to storage/app/debug_bill.html');
 
         $options = [
-            'width' => 8,
-            'marginLeft' => 0.4,
-            'marginRight' => 0.4,
-            'marginTop' => 0.4,
-            'marginBottom' => 0.4
+            'width' => 8.27,
+            'marginLeft' => 0.25,
+            'marginRight' => 0.25,
+            'marginTop' => 0.25,
+            'marginBottom' => 0.25,
         ];
 
         $soloDomPdf = filter_var(env('FACTURA_PDF_SOLO_DOMPDF', false), FILTER_VALIDATE_BOOLEAN);
@@ -2953,5 +2979,120 @@ private function calcularMontoPendientes(): float
             new \App\Exports\IvaVentasExport($fechaDesde, $fechaHasta),
             $fileName
         );
+    }
+
+    public function storeContactoEnvioFactura(Request $request, string $codigo)
+    {
+        $cliente = $this->resolverClientePorCodigo($codigo);
+        if (! $cliente) {
+            return response()->json(['success' => false, 'message' => 'Cliente no encontrado.'], 404);
+        }
+
+        $validated = $request->validate([
+            'nombre' => 'required|string|max:120',
+            'email' => 'required|email|max:120',
+            'telefono' => 'nullable|string|max:30',
+        ]);
+
+        $contacto = ClienteContacto::create([
+            'cli_codigo' => $cliente->cli_codigo,
+            'nombre' => trim($validated['nombre']),
+            'email' => trim($validated['email']),
+            'telefono' => $validated['telefono'] ? trim($validated['telefono']) : null,
+            'tipo' => 'Envío de factura',
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Contacto agregado correctamente.',
+            'contacto' => $this->mapContactoEnvioFactura($contacto),
+            'contactos' => $this->listarContactosEnvioFacturaCliente($cliente->cli_codigo),
+        ]);
+    }
+
+    public function updateContactoEnvioFactura(Request $request, int $contacto)
+    {
+        $contactoModel = ClienteContacto::find($contacto);
+        if (! $contactoModel || ! ClienteContacto::esTipoEnvioFactura($contactoModel->tipo)) {
+            return response()->json(['success' => false, 'message' => 'Contacto no encontrado.'], 404);
+        }
+
+        $validated = $request->validate([
+            'nombre' => 'required|string|max:120',
+            'email' => 'required|email|max:120',
+            'telefono' => 'nullable|string|max:30',
+        ]);
+
+        $contactoModel->update([
+            'nombre' => trim($validated['nombre']),
+            'email' => trim($validated['email']),
+            'telefono' => $validated['telefono'] ? trim($validated['telefono']) : null,
+            'tipo' => 'Envío de factura',
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Contacto actualizado correctamente.',
+            'contacto' => $this->mapContactoEnvioFactura($contactoModel->fresh()),
+            'contactos' => $this->listarContactosEnvioFacturaCliente($contactoModel->cli_codigo),
+        ]);
+    }
+
+    public function destroyContactoEnvioFactura(int $contacto)
+    {
+        $contactoModel = ClienteContacto::find($contacto);
+        if (! $contactoModel || ! ClienteContacto::esTipoEnvioFactura($contactoModel->tipo)) {
+            return response()->json(['success' => false, 'message' => 'Contacto no encontrado.'], 404);
+        }
+
+        $cliCodigo = $contactoModel->cli_codigo;
+        $contactoModel->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Contacto eliminado correctamente.',
+            'contactos' => $this->listarContactosEnvioFacturaCliente($cliCodigo),
+        ]);
+    }
+
+    private function resolverClientePorCodigo(string $codigo): ?Clientes
+    {
+        $codigo = trim($codigo);
+        if ($codigo === '') {
+            return null;
+        }
+
+        return Clientes::whereRaw('LTRIM(RTRIM(cli_codigo)) = ?', [$codigo])->first();
+    }
+
+    /**
+     * @return array<int, array{id: int, nombre: string, telefono: string, email: string, tipo: string}>
+     */
+    private function listarContactosEnvioFacturaCliente(string $cliCodigo): array
+    {
+        return ClienteContacto::query()
+            ->whereRaw('LTRIM(RTRIM(cli_codigo)) = ?', [trim($cliCodigo)])
+            ->envioFactura()
+            ->whereNotNull('email')
+            ->whereRaw("LTRIM(RTRIM(email)) <> ''")
+            ->orderBy('nombre')
+            ->get()
+            ->map(fn (ClienteContacto $c) => $this->mapContactoEnvioFactura($c))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array{id: int, nombre: string, telefono: string, email: string, tipo: string}
+     */
+    private function mapContactoEnvioFactura(ClienteContacto $contacto): array
+    {
+        return [
+            'id' => (int) $contacto->id,
+            'nombre' => trim((string) ($contacto->nombre ?? '')),
+            'telefono' => trim((string) ($contacto->telefono ?? '')),
+            'email' => trim((string) ($contacto->email ?? '')),
+            'tipo' => trim((string) ($contacto->tipo ?? '')),
+        ];
     }
 }

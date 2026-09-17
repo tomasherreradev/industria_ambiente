@@ -1,0 +1,210 @@
+/* Mismo criterio que tarea-categoria-page: panel con aire interno */
+.facturacion-facturar-page .ucrud-panel {
+    padding: 1.25rem 1.35rem 1.35rem;
+}
+
+.facturacion-facturar-page .fact-panel-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem 1rem;
+    margin-bottom: 1.15rem;
+    padding-bottom: 0.85rem;
+    border-bottom: 1px solid var(--ucrud-border, #e5e7eb);
+}
+
+.facturacion-facturar-page .fact-panel-head .ucrud-panel-title {
+    margin: 0 0 0.2rem;
+    font-size: 1.05rem;
+}
+
+.facturacion-facturar-page .fact-panel-head .text-muted,
+.facturacion-facturar-page .fact-panel-head small {
+    display: block;
+    line-height: 1.35;
+}
+
+.facturacion-facturar-page .fact-panel-body > :last-child {
+    margin-bottom: 0;
+}
+
+.facturacion-facturar-page .ucrud-panel .alert {
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+}
+
+.facturacion-facturar-page .fact-dato-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 0.85rem 1rem;
+}
+
+.facturacion-facturar-page .fact-dato {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.75rem 0.9rem;
+    background: #f8f9fc;
+    border-radius: 0.5rem;
+    border: 1px solid #e9ecef;
+    min-height: 100%;
+}
+
+.facturacion-facturar-page .fact-dato-label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #6c757d;
+}
+
+.facturacion-facturar-page .fact-dato-value {
+    font-weight: 600;
+    color: var(--ucrud-ink, #1a1a1a);
+    word-break: break-word;
+}
+
+.facturacion-facturar-page .fact-contacto-list {
+    margin: 0;
+    padding: 0;
+}
+
+.facturacion-facturar-page .fact-contacto-list > li {
+    padding: 0.7rem 0;
+}
+
+.facturacion-facturar-page .fact-contacto-list > li.border-bottom {
+    margin-bottom: 0 !important;
+    padding-bottom: 0.7rem !important;
+}
+
+.facturacion-facturar-page .contacto-envio-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.85rem;
+}
+
+.facturacion-facturar-page .contacto-envio-actions {
+    margin-left: auto;
+    display: flex;
+    flex-shrink: 0;
+    gap: 0.4rem;
+}
+
+.facturacion-facturar-page .contacto-envio-actions .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.1rem;
+    height: 2.1rem;
+    padding: 0;
+}
+
+.facturacion-facturar-page .contacto-envio-actions .btn svg {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+}
+
+.facturacion-facturar-page .fact-resumen-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.facturacion-facturar-page .fact-resumen-item .label {
+    display: block;
+    text-transform: uppercase;
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    color: #6c757d;
+    margin-bottom: 0.25rem;
+}
+
+.facturacion-facturar-page .sample-container {
+    margin-bottom: 0.75rem;
+}
+
+.facturacion-facturar-page .sample-header {
+    background: #fff;
+    border: 1px solid var(--ucrud-border, #e5e7eb);
+    border-radius: 0.65rem;
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.facturacion-facturar-page .sample-header:hover {
+    border-color: var(--ucrud-primary, #0d6efd);
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+}
+
+.facturacion-facturar-page .sample-content {
+    background: #fff;
+    border: 1px solid var(--ucrud-border, #e5e7eb);
+    border-top: none;
+    border-radius: 0 0 0.65rem 0.65rem;
+    padding: 1rem;
+    display: none;
+}
+
+.facturacion-facturar-page .sample-content.open {
+    display: block;
+}
+
+.facturacion-facturar-page .analysis-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+}
+
+.facturacion-facturar-page .analysis-card {
+    border: 1px solid #e8ecef;
+    border-radius: 0.5rem;
+    padding: 0.75rem;
+    background: #fafafa;
+}
+
+.facturacion-facturar-page .ucrud-panel .ucrud-panel-title:not(.fact-panel-head .ucrud-panel-title) {
+    margin-bottom: 1rem;
+}
+
+.facturacion-facturar-page .fact-footer-bar {
+    position: sticky;
+    bottom: 0;
+    z-index: 100;
+    margin-top: 1.5rem;
+    padding: 1rem 1.25rem;
+    background: rgba(255, 255, 255, 0.96);
+    border: 1px solid var(--ucrud-border, #e5e7eb);
+    border-radius: 0.75rem;
+    box-shadow: 0 -4px 20px rgba(15, 23, 42, 0.08);
+    backdrop-filter: blur(6px);
+}
+
+.facturacion-facturar-page .fact-footer-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.facturacion-facturar-page .fact-footer-actions .btn {
+    border-radius: 0.65rem;
+    font-weight: 600;
+}
+
+.facturacion-facturar-page .analysis-checkbox:disabled + h6 {
+    opacity: 0.7;
+    text-decoration: line-through;
+}
+
+.facturacion-facturar-page .fact-btn-facturar-wrap--bloqueado {
+    cursor: help;
+}

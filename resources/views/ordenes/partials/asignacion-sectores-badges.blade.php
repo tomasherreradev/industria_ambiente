@@ -20,7 +20,7 @@
                 class="badge bg-primary rounded-pill sector-asignacion-badge"
                 data-bs-toggle="tooltip"
                 data-bs-html="true"
-                data-bs-placement="top"
+                data-bs-placement="bottom"
                 data-bs-title="{!! $tooltipUsuarios !!}"
             >
                 {{ $grupo['sector_nombre'] }}

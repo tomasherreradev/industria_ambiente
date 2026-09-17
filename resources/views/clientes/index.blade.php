@@ -1,395 +1,299 @@
 @extends('layouts.app')
 
+@section('title', 'Clientes')
+
 @section('content')
-
-<!-- SweetAlert2 CSS -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
-
-<style>
-.dashboard-header {
-    background-color: #28a745;
-    color: white;
-    padding: 2rem;
-    border-radius: 10px;
-    margin-bottom: 2rem;
-}
-
-.stats-card {
-    border: none;
-    border-radius: 10px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    transition: transform 0.2s;
-}
-
-.stats-card:hover {
-    transform: translateY(-5px);
-}
-
-.stats-icon {
-    font-size: 2.5rem;
-    opacity: 0.8;
-}
-
-.table-container {
-    background: white;
-    border-radius: 10px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    overflow: hidden;
-}
-
-.table-header {
-    background: #f8f9fa;
-    padding: 1rem;
-    border-bottom: 2px solid #dee2e6;
-}
-
-.badge-estado {
-    padding: 0.35rem 0.65rem;
-    border-radius: 20px;
-    font-size: 0.75rem;
-    font-weight: 600;
-}
-
-.estado-activo {
-    background: #28a745;
-    color: #fff;
-}
-
-.estado-inactivo {
-    background: #dc3545;
-    color: #fff;
-}
-
-.action-buttons {
-    white-space: nowrap;
-}
-
-.action-buttons .btn {
-    padding: 0.25rem 0.5rem;
-    font-size: 0.875rem;
-}
-
-@media (max-width: 768px) {
-    .stats-card {
-        margin-bottom: 1rem;
-    }
-}
-</style>
+@include('partials.operativo-styles')
 
 @php
-// Estadísticas
-$totalClientes = \App\Models\Clientes::count();
-$activos = \App\Models\Clientes::where('cli_estado', true)->count();
-$inactivos = \App\Models\Clientes::where('cli_estado', false)->count();
-$readOnly = function_exists('userHasRole') ? userHasRole('facturador') : (strtolower(trim((string) (optional(Auth::user())->rol ?? ''))) === 'facturador');
+    $hayFiltros = request()->hasAny(['search', 'estado']);
 @endphp
 
-<div class="container-fluid py-4">
-    <!-- Header -->
-    <div class="dashboard-header">
-        <div class="d-flex justify-content-between align-items-center flex-wrap">
-            <div>
-                <h1 class="mb-1"><x-heroicon-o-users class="me-2" style="width: 16px; height: 16px;" />Dashboard de Clientes</h1>
-                <p class="mb-0 opacity-75">Gestión y análisis de clientes</p>
-            </div>
-            <div class="d-flex align-items-center flex-wrap gap-2">
-                @if(!$readOnly)
-                    <button type="button" class="btn btn-outline-light" data-bs-toggle="modal" data-bs-target="#importModal" style="font-size: 14px;">
-                        <x-heroicon-o-arrow-up-tray class="me-2" style="width: 16px; height: 16px;" />Importar
+<div class="container py-4 ucrud ucrud-operativo" data-ucrud-root>
+    <header class="ucrud-header">
+        <div class="ucrud-header__titles">
+            <h1 class="ucrud-title">
+                Clientes
+                <span class="ucrud-count">{{ $clientes->total() }}</span>
+            </h1>
+            <p class="ucrud-subtitle">
+                {{ number_format($stats['total']) }} registrados ·
+                {{ number_format($stats['activos']) }} activos ·
+                {{ number_format($stats['inactivos']) }} inactivos
+            </p>
+        </div>
+
+        @if(! $readOnly)
+            <div class="ucrud-header__actions d-flex flex-wrap gap-2 justify-content-end">
+                <div class="dropdown">
+                    <button type="button" class="ucrud-btn ucrud-btn--ghost dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                        <x-heroicon-o-arrow-up-tray style="width: 16px; height: 16px;" />
+                        Importar
                     </button>
-                    <a href="{{ route('clientes.plantilla') }}" class="btn btn-outline-light" style="font-size: 14px;">
-                        <x-heroicon-o-arrow-down-tray class="me-2" style="width: 16px; height: 16px;" />Plantilla vacía
-                    </a>
-                    <a href="{{ route('clientes.plantilla-pendientes') }}" class="btn btn-outline-light" style="font-size: 14px;">
-                        <x-heroicon-o-arrow-down-tray class="me-2" style="width: 16px; height: 16px;" />Plantilla pendientes
-                    </a>
-                    <a href="{{ route('clientes.create') }}" class="btn btn-light" style="font-size: 14px;">
-                        <x-heroicon-o-plus class="me-2" style="width: 16px; height: 16px;" />Nuevo Cliente
+                    <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                        <li>
+                            <button type="button" class="dropdown-item d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#importModal">
+                                <x-heroicon-o-arrow-up-tray style="width: 16px; height: 16px;" />
+                                Subir archivo
+                            </button>
+                        </li>
+                        <li><hr class="dropdown-divider my-1"></li>
+                        <li>
+                            <a class="dropdown-item d-flex align-items-center gap-2" href="{{ route('clientes.plantilla') }}">
+                                <x-heroicon-o-arrow-down-tray style="width: 16px; height: 16px;" />
+                                Plantilla vacía
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item d-flex align-items-center gap-2" href="{{ route('clientes.plantilla-pendientes') }}">
+                                <x-heroicon-o-arrow-down-tray style="width: 16px; height: 16px;" />
+                                Plantilla pendientes
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+                <a href="{{ route('clientes.create') }}" class="ucrud-btn ucrud-btn--primary">
+                    <x-heroicon-o-plus style="width: 16px; height: 16px;" />
+                    Nuevo cliente
+                </a>
+            </div>
+        @endif
+    </header>
+
+    <div class="ucrud-filters">
+        <p class="ucrud-filters__title">Filtros</p>
+        <form action="{{ route('clientes.index') }}" method="GET" class="ucrud-filters__grid">
+            <div class="ucrud-field">
+                <label for="search">Buscar</label>
+                <input type="text" name="search" id="search" class="ucrud-input" style="padding-left: .9rem;"
+                       placeholder="Código, razón social, CUIT…" value="{{ request('search') }}">
+            </div>
+            <div class="ucrud-field">
+                <label for="estado">Estado</label>
+                <select name="estado" id="estado" class="ucrud-select" style="width: 100%;">
+                    <option value="">Todos</option>
+                    <option value="1" @selected(request('estado') === '1')>Activos</option>
+                    <option value="0" @selected(request('estado') === '0')>Inactivos</option>
+                </select>
+            </div>
+            <div class="ucrud-filters__actions">
+                @if($hayFiltros)
+                    <a href="{{ route('clientes.index') }}" class="ucrud-btn ucrud-btn--ghost">Limpiar</a>
+                @endif
+                <button type="submit" class="ucrud-btn ucrud-btn--primary">Aplicar filtros</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="ucrud-panel">
+        @if($clientes->isEmpty())
+            <div class="ucrud-empty">
+                <div class="ucrud-empty__icon">
+                    <x-heroicon-o-users style="width: 28px; height: 28px;" />
+                </div>
+                <p class="ucrud-empty__title">No se encontraron clientes</p>
+                <p class="ucrud-empty__text">
+                    {{ $hayFiltros ? 'Probá ajustar los filtros de búsqueda.' : 'Registrá el primer cliente del listado.' }}
+                </p>
+                @if(! $readOnly && ! $hayFiltros)
+                    <a href="{{ route('clientes.create') }}" class="ucrud-btn ucrud-btn--primary mt-2">
+                        <x-heroicon-o-plus style="width: 16px; height: 16px;" />
+                        Nuevo cliente
                     </a>
                 @endif
             </div>
-        </div>
-    </div>
+        @else
+            <div class="d-none d-lg-block ucrud-tablewrap">
+                <table class="ucrud-table ucrud-table--sticky-actions">
+                    <thead>
+                        <tr>
+                            <th>Código</th>
+                            <th>Razón social</th>
+                            <th>Localidad</th>
+                            <th>CUIT</th>
+                            <th>Cotizaciones</th>
+                            <th>Estado</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach($clientes as $i => $cliente)
+                            @php
+                                $codigo = trim($cliente->cli_codigo);
+                                $totalCotizaciones = \App\Models\Ventas::where('coti_codigocli', 'LIKE', $codigo . '%')->count();
+                            @endphp
+                            <tr class="ucrud-animate-in" style="--i: {{ $i }}">
+                                <td><span class="ucrud-code">{{ $codigo }}</span></td>
+                                <td>{{ Str::limit($cliente->cli_razonsocial, 48) ?: '—' }}</td>
+                                <td>{{ Str::limit($cliente->cli_localidad, 32) ?: '—' }}</td>
+                                <td>{{ $cliente->cli_cuit ?: '—' }}</td>
+                                <td>
+                                    <a href="{{ route('ventas.index', ['cliente' => $codigo]) }}" class="ucrud-chip ucrud-chip--cyan text-decoration-none">
+                                        {{ $totalCotizaciones }}
+                                    </a>
+                                </td>
+                                <td>
+                                    @if($cliente->cli_estado)
+                                        <span class="ucrud-chip ucrud-chip--green">Activo</span>
+                                    @else
+                                        <span class="ucrud-chip ucrud-chip--rose">Inactivo</span>
+                                    @endif
+                                </td>
+                                <td>
+                                    <div class="ucrud-actions">
+                                        <a href="{{ route('clientes.edit', $codigo) }}"
+                                           class="ucrud-iconbtn"
+                                           title="{{ $readOnly ? 'Ver' : 'Editar' }}"
+                                           aria-label="{{ $readOnly ? 'Ver cliente' : 'Editar cliente' }}">
+                                            <x-heroicon-o-pencil style="width: 16px; height: 16px;" />
+                                        </a>
+                                        <a href="{{ route('ventas.index', ['cliente' => $codigo]) }}"
+                                           class="ucrud-iconbtn"
+                                           title="Ver cotizaciones"
+                                           aria-label="Ver cotizaciones del cliente">
+                                            <x-heroicon-o-document-text style="width: 16px; height: 16px;" />
+                                        </a>
+                                        @if(! $readOnly)
+                                            <button type="button"
+                                                    class="ucrud-iconbtn ucrud-iconbtn--danger js-delete-cliente"
+                                                    data-codigo="{{ $codigo }}"
+                                                    title="Eliminar"
+                                                    aria-label="Eliminar cliente">
+                                                <x-heroicon-o-trash style="width: 16px; height: 16px;" />
+                                            </button>
+                                        @endif
+                                    </div>
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
 
-    <!-- Modal de Importación -->
+            <div class="d-block d-lg-none">
+                @foreach($clientes as $i => $cliente)
+                    @php
+                        $codigo = trim($cliente->cli_codigo);
+                        $totalCotizaciones = \App\Models\Ventas::where('coti_codigocli', 'LIKE', $codigo . '%')->count();
+                    @endphp
+                    <a href="{{ route('clientes.edit', $codigo) }}" class="ucrud-card ucrud-animate-in" style="--i: {{ $i }}">
+                        <span class="ucrud-card__body">
+                            <span class="ucrud-user__name d-block">{{ Str::limit($cliente->cli_razonsocial, 56) ?: 'Sin razón social' }}</span>
+                            <span class="ucrud-card__meta">
+                                <span class="ucrud-code">{{ $codigo }}</span>
+                                @if($cliente->cli_estado)
+                                    <span class="ucrud-chip ucrud-chip--green">Activo</span>
+                                @else
+                                    <span class="ucrud-chip ucrud-chip--rose">Inactivo</span>
+                                @endif
+                                @if($cliente->cli_cuit)
+                                    <span class="ucrud-user__meta">CUIT {{ $cliente->cli_cuit }}</span>
+                                @endif
+                            </span>
+                            <span class="ucrud-user__meta d-block mt-1">
+                                {{ Str::limit($cliente->cli_localidad, 40) ?: 'Sin localidad' }}
+                                · {{ $totalCotizaciones }} cotizaciones
+                            </span>
+                        </span>
+                        <span class="ucrud-card__chevron" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="m9 6 6 6-6 6"/>
+                            </svg>
+                        </span>
+                    </a>
+                @endforeach
+            </div>
+
+            @if($clientes->hasPages())
+                <div class="ucrud-pagination">
+                    {{ $clientes->links() }}
+                </div>
+            @endif
+        @endif
+    </div>
+</div>
+
+@if(! $readOnly)
     <div class="modal fade" id="importModal" tabindex="-1" aria-labelledby="importModalLabel" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
                 <form action="{{ route('clientes.importar') }}" method="POST" enctype="multipart/form-data">
                     @csrf
-                    <div class="modal-header bg-success text-white">
-                        <h5 class="modal-title" id="importModalLabel">Importar Clientes</h5>
-                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="importModalLabel">Importar clientes</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
                     </div>
                     <div class="modal-body">
-                        <p>Seleccione el archivo Excel (.xlsx, .xls) o CSV con los datos de los clientes.</p>
-                        <div class="mb-3">
-                            <label for="archivo" class="form-label">Archivo</label>
-                            <input type="file" name="archivo" id="archivo" class="form-control" accept=".xlsx, .xls, .csv" required>
+                        <p class="text-muted mb-3">Seleccioná un archivo Excel (.xlsx, .xls) o CSV con los datos de los clientes.</p>
+                        <div class="ucrud-field mb-0">
+                            <label for="archivo">Archivo</label>
+                            <input type="file" name="archivo" id="archivo" class="form-control" accept=".xlsx,.xls,.csv" required>
                         </div>
-                        <div class="alert alert-info py-2 small">
+                        <div class="alert alert-light border mt-3 mb-0 py-2 small">
                             <x-heroicon-o-information-circle style="width: 16px; height: 16px;" class="me-1" />
-                            Use la plantilla vacía o la de pendientes (con clientes del listado precargados) para asegurar el formato correcto.
+                            Usá la plantilla vacía o la de pendientes para asegurar el formato correcto.
                         </div>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                        <button type="submit" class="btn btn-success">Procesar Importación</button>
+                        <button type="button" class="ucrud-btn ucrud-btn--ghost" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="ucrud-btn ucrud-btn--primary">Procesar importación</button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
-
-    <!-- Estadísticas -->
-    <div class="row mb-4">
-        <div class="col-lg-3 col-md-6 mb-3">
-            <div class="card stats-card">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <h6 class="text-muted mb-2">Total</h6>
-                            <h3 class="mb-0 text-success">{{ number_format($totalClientes) }}</h3>
-                        </div>
-                        <div class="stats-icon text-success">
-                            <x-heroicon-o-users class="me-2" style="width: 16px; height: 16px;" />
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="col-lg-3 col-md-6 mb-3">
-            <div class="card stats-card">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <h6 class="text-muted mb-2">Activos</h6>
-                            <h3 class="mb-0 text-success">{{ number_format($activos) }}</h3>
-                        </div>
-                        <div class="stats-icon text-success">
-                            <x-heroicon-o-check-circle class="me-2" style="width: 16px; height: 16px;" />
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="col-lg-3 col-md-6 mb-3">
-            <div class="card stats-card">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <h6 class="text-muted mb-2">Inactivos</h6>
-                            <h3 class="mb-0 text-danger">{{ number_format($inactivos) }}</h3>
-                        </div>
-                        <div class="stats-icon text-danger">
-                            <x-heroicon-o-x-mark class="me-2" style="width: 16px; height: 16px;" />
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Tabla de Clientes -->
-    <div class="table-container">
-        <div class="table-header">
-            <div class="mb-3">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <h5 class="mb-0"><x-heroicon-o-list-bullet class="me-2" style="width: 16px; height: 16px;" />Clientes</h5>
-                    @if(request()->hasAny(['search', 'estado']))
-                        <small class="text-muted">
-                            <x-heroicon-o-funnel class="me-1" style="width: 16px; height: 16px;" />Filtros activos
-                        </small>
-                    @endif
-                </div>
-                
-                <!-- Filtros -->
-                <form method="GET" action="{{ route('clientes.index') }}" id="filterForm">
-                    <div class="row g-2">
-                        <div class="col-md-4">
-                            <label class="form-label small text-muted mb-1">Buscar</label>
-                            <div class="input-group">
-                                <span class="input-group-text"><x-heroicon-o-magnifying-glass class="me-2" style="width: 16px; height: 16px;" /></span>
-                                <input type="text" name="search" class="form-control form-control-sm" 
-                                       value="{{ request('search') }}" 
-                                       placeholder="Código, razón social, CUIT...">
-                            </div>
-                        </div>
-                        
-                        <div class="col-md-2">
-                            <label class="form-label small text-muted mb-1">Estado</label>
-                            <select name="estado" class="form-select form-select-sm" onchange="this.form.submit()">
-                                <option value="">Todos</option>
-                                <option value="1" {{ request('estado') == '1' ? 'selected' : '' }}>Activos</option>
-                                <option value="0" {{ request('estado') == '0' ? 'selected' : '' }}>Inactivos</option>
-                            </select>
-                        </div>
-                        
-                        <div class="col-md-2 d-flex align-items-end">
-                            <button type="button" onclick="limpiarFiltros()" class="btn btn-sm btn-outline-secondary w-100">
-                                <x-heroicon-o-x-mark class="me-1" style="width: 16px; height: 16px;" />Limpiar
-                            </button>
-                        </div>
-                    </div>
-                </form>
-            </div>
-        </div>
-
-        <div class="table-responsive">
-            <table class="table table-hover mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th>Código</th>
-                        <th>Razón Social</th>
-                        <th>Localidad</th>
-                        <th>CUIT</th>
-                        <th>Cotizaciones</th>
-                        <th>Estado</th>
-                        <th class="text-end">Acciones</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach($clientes as $cliente)
-                    <tr>
-                        <td><strong>{{ trim($cliente->cli_codigo) }}</strong></td>
-                        <td>{{ Str::limit($cliente->cli_razonsocial, 40) ?: '-' }}</td>
-                        <td>{{ Str::limit($cliente->cli_localidad, 30) ?: '-' }}</td>
-                        <td>{{ $cliente->cli_cuit ?: '-' }}</td>
-                        <td>
-                            @php
-                                $totalCotizaciones = \App\Models\Ventas::where('coti_codigocli', 'LIKE', trim($cliente->cli_codigo) . '%')->count();
-                            @endphp
-                            <a href="{{ route('ventas.index', ['cliente' => trim($cliente->cli_codigo)]) }}" 
-                               class="badge bg-info text-decoration-none">
-                                {{ $totalCotizaciones }}
-                            </a>
-                        </td>
-                        <td>
-                            @if($cliente->cli_estado)
-                                <span class="badge estado-activo badge-estado">Activo</span>
-                            @else
-                                <span class="badge estado-inactivo badge-estado">Inactivo</span>
-                            @endif
-                        </td>
-                        <td class="text-end action-buttons">
-                            <a href="{{ route('clientes.edit', trim($cliente->cli_codigo)) }}" class="btn btn-sm btn-outline-primary" title="{{ $readOnly ? 'Ver' : 'Ver/Editar' }}">
-                                <x-heroicon-o-pencil style="width: 16px; height: 16px;" />
-                            </a>
-                            <a href="{{ route('ventas.index', ['cliente' => trim($cliente->cli_codigo)]) }}" class="btn btn-sm btn-outline-info" title="Ver Cotizaciones">
-                                <x-heroicon-o-document-text style="width: 16px; height: 16px;" />
-                            </a>
-                            @if(!$readOnly)
-                                <button type="button" 
-                                   class="btn btn-sm btn-outline-danger" 
-                                   onclick="confirmarEliminacion('{{ trim($cliente->cli_codigo) }}')"
-                                   title="Eliminar">
-                                    <x-heroicon-o-trash style="width: 16px; height: 16px;" />
-                                </button>
-                            @endif
-                        </td>
-                    </tr>
-                    @endforeach
-                    
-                    @if($clientes->isEmpty())
-                    <tr>
-                        <td colspan="7" class="text-center py-4">
-                            <x-heroicon-o-users class="me-2" style="width: 32px; height: 32px; color: #6c757d;" />
-                            <p class="text-muted">No hay clientes registrados</p>
-                        </td>
-                    </tr>
-                    @endif
-                </tbody>
-            </table>
-        </div>
-
-        @if($clientes->hasPages())
-        <div class="p-3 border-top">
-            {{ $clientes->links() }}
-        </div>
-        @endif
-    </div>
-</div>
-
-<!-- SweetAlert2 JS -->
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-
-<script>
-// Función para limpiar filtros
-function limpiarFiltros() {
-    window.location.href = '{{ route("clientes.index") }}';
-}
-
-// Función para confirmar eliminación con SweetAlert
-function confirmarEliminacion(codigo) {
-    Swal.fire({
-        title: '¿Está seguro?',
-        text: 'Esta acción eliminará el cliente. No se puede deshacer.',
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#dc3545',
-        cancelButtonColor: '#6c757d',
-        confirmButtonText: 'Sí, eliminar',
-        cancelButtonText: 'Cancelar',
-        customClass: {
-            confirmButton: 'btn btn-danger mx-2',
-            cancelButton: 'btn btn-secondary mx-2'
-        }
-    }).then((result) => {
-        if (result.isConfirmed) {
-            // Crear formulario para enviar DELETE
-            const form = document.createElement('form');
-            form.method = 'POST';
-            form.action = `/clientes/${codigo}`;
-            
-            // Agregar token CSRF
-            const csrf = document.createElement('input');
-            csrf.type = 'hidden';
-            csrf.name = '_token';
-            csrf.value = '{{ csrf_token() }}';
-            form.appendChild(csrf);
-            
-            // Agregar método DELETE
-            const method = document.createElement('input');
-            method.type = 'hidden';
-            method.name = '_method';
-            method.value = 'DELETE';
-            form.appendChild(method);
-            
-            document.body.appendChild(form);
-            form.submit();
-        }
-    });
-}
-
-// Notificaciones de sesión
-@if(session('success'))
-    Swal.fire({
-        icon: 'success',
-        title: '¡Éxito!',
-        text: '{{ session("success") }}',
-        showConfirmButton: false,
-        timer: 3000,
-        timerProgressBar: true
-    });
 @endif
-
-@if(session('error'))
-    Swal.fire({
-        icon: 'error',
-        title: 'Error',
-        text: '{{ session("error") }}',
-        confirmButtonColor: '#dc3545'
-    });
-@endif
-
-@if(session('warning'))
-    Swal.fire({
-        icon: 'warning',
-        title: 'Atención',
-        text: '{{ session("warning") }}',
-        confirmButtonColor: '#ffc107'
-    });
-@endif
-</script>
-
 @endsection
+
+@push('scripts')
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.js-delete-cliente').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            const codigo = btn.getAttribute('data-codigo');
+            Swal.fire({
+                title: '¿Eliminar este cliente?',
+                text: 'Esta acción no se puede deshacer.',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Sí, eliminar',
+                cancelButtonText: 'Cancelar',
+                confirmButtonColor: '#d33',
+            }).then(function (result) {
+                if (!result.isConfirmed) return;
+
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = '/clientes/' + encodeURIComponent(codigo);
+
+                const csrf = document.createElement('input');
+                csrf.type = 'hidden';
+                csrf.name = '_token';
+                csrf.value = '{{ csrf_token() }}';
+                form.appendChild(csrf);
+
+                const method = document.createElement('input');
+                method.type = 'hidden';
+                method.name = '_method';
+                method.value = 'DELETE';
+                form.appendChild(method);
+
+                document.body.appendChild(form);
+                form.submit();
+            });
+        });
+    });
+
+    @if(session('success'))
+        Swal.fire({ icon: 'success', title: '¡Éxito!', text: @json(session('success')), timer: 3000, showConfirmButton: false });
+    @endif
+    @if(session('error'))
+        Swal.fire({ icon: 'error', title: 'Error', text: @json(session('error')) });
+    @endif
+    @if(session('warning'))
+        Swal.fire({ icon: 'warning', title: 'Atención', text: @json(session('warning')) });
+    @endif
+});
+</script>
+@endpush

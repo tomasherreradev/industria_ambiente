@@ -75,7 +75,16 @@ class ClientesController extends Controller {
             ->paginate(20)
             ->withQueryString();
 
-        return View::make('clientes.index', compact('clientes'));
+        $statsBase = Clientes::soloPrincipales();
+        $stats = [
+            'total' => (clone $statsBase)->count(),
+            'activos' => (clone $statsBase)->where('cli_estado', true)->count(),
+            'inactivos' => (clone $statsBase)->where('cli_estado', false)->count(),
+        ];
+
+        $readOnly = $this->esSoloLecturaFacturador();
+
+        return View::make('clientes.index', compact('clientes', 'stats', 'readOnly'));
     }
 
     public function create()

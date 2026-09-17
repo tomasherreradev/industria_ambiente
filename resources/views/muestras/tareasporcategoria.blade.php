@@ -56,215 +56,203 @@
     if ($esTrabajoTecnicoCampo) {
         $mostrarBotonDeshabilitarOt = false;
     }
+
+    $backUrlMuestra = $esVistaMediciones
+        ? route('mediciones.show', $cotizacion->coti_num)
+        : route('muestras.show', ['coti_num' => $cotizacion->coti_num, 'canal' => $canalParaFiltrar ?? null]);
+
+    $instanceDropdownHtml = '<div class="dropdown d-inline-block"><button class="ucrud-btn ucrud-btn--ghost dropdown-toggle" type="button" id="instanceDropdown" data-bs-toggle="dropdown" aria-expanded="false">Muestra ' . (int) $instance . ' de ' . (int) $categoria->cotio_cantidad . '</button><ul class="dropdown-menu dropdown-menu-end" aria-labelledby="instanceDropdown">';
+    for ($i = 1; $i <= (int) $categoria->cotio_cantidad; $i++) {
+        $instanceUrl = $esVistaMediciones
+            ? route('mediciones.ver', ['cotizacion' => $cotizacion->coti_num, 'item' => $categoria->cotio_item, 'instance' => $i])
+            : route('muestras.ver', ['cotizacion' => $cotizacion->coti_num, 'item' => $categoria->cotio_item, 'instance' => $i, 'canal' => $canalParaFiltrar ?? null]);
+        $activeClass = $i == $instance ? ' active' : '';
+        $muestreadaLabel = optional($instanciasMuestra[$i] ?? null)->fecha_muestreo ? ' <small class="text-muted">(Muestreada)</small>' : '';
+        $instanceDropdownHtml .= '<li><a class="dropdown-item' . $activeClass . '" href="' . e($instanceUrl) . '">Muestra ' . $i . $muestreadaLabel . '</a></li>';
+    }
+    $instanceDropdownHtml .= '</ul></div>';
+
+    $headerActionsMuestra = $instanceDropdownHtml . ' <a href="' . e($backUrlMuestra) . '" class="ucrud-btn ucrud-btn--ghost"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width:16px;height:16px"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" /></svg> Volver</a>';
+
+    $estadoMuestreo = strtolower(optional($instanciaActual)->cotio_estado ?? $categoria->cotio_estado ?? 'pendiente');
+    $heroHeaderClassMuestra = match ($estadoMuestreo) {
+        'muestreado', 'analizado', 'finalizado', 'completado' => 'bg-success op-header--analizado',
+        'en revision muestreo', 'en revision analisis' => 'op-header--revision',
+        default => 'bg-primary',
+    };
+    $estadoTagClassMuestra = match ($estadoMuestreo) {
+        'pendiente', 'coordinado muestreo', 'coordinado analisis', 'suspension' => 'op-header-tag--warning',
+        'en proceso', 'en revision muestreo', 'en revision analisis' => 'op-header-tag--info',
+        'finalizado', 'muestreado', 'analizado', 'completado' => 'op-header-tag--success',
+        default => '',
+    };
+
+    $responsablesMuestreo = collect(optional($instanciaActual)->responsablesMuestreo)
+        ->unique(fn ($u) => trim((string) ($u->usu_codigo ?? '')))
+        ->values();
 @endphp
-<div class="container py-4">
-    <div class="d-flex flex-column gap-2 flex-md-row justify-content-between align-items-center mb-4">
-        <a href="{{ $esVistaMediciones ? route('mediciones.show', $cotizacion->coti_num) : route('muestras.show', ['coti_num' => $cotizacion->coti_num, 'canal' => $canalParaFiltrar ?? null]) }}" class="btn btn-outline-secondary d-flex align-items-center gap-2">
-            Volver a la cotización
-        </a>
-        <div class="d-flex flex-column flex-md-row gap-2">
-            <div class="dropdown">
-                <button class="btn btn-secondary dropdown-toggle" type="button" id="instanceDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-                    Muestra {{$instance}} de {{$categoria->cotio_cantidad}}
-                </button>
-                <ul class="dropdown-menu" aria-labelledby="instanceDropdown">
-                    @for($i = 1; $i <= $categoria->cotio_cantidad; $i++)
-                        <li>
-                            <a class="dropdown-item {{$i == $instance ? 'active' : ''}}" 
-                               href="{{ $esVistaMediciones ? route('mediciones.ver', [
-                                   'cotizacion' => $cotizacion->coti_num,
-                                   'item' => $categoria->cotio_item,
-                                   'instance' => $i,
-                               ]) : route('muestras.ver', [
-                                   'cotizacion' => $cotizacion->coti_num,
-                                   'item' => $categoria->cotio_item,
-                                   'instance' => $i,
-                                   'canal' => $canalParaFiltrar ?? null
-                               ]) }}">
-                                Muestra {{$i}}
-                                @if(optional($instanciasMuestra[$i] ?? null)->fecha_muestreo)
-                                    <small class="text-muted">(Muestreada)</small>
-                                @endif
-                            </a>
-                        </li>
-                    @endfor
-                </ul>
-            </div>
+@include('partials.operativo-styles')
+<link rel="stylesheet" href="{{ asset('css/tareas-muestreo-mobile.css') }}?v={{ filemtime(public_path('css/tareas-muestreo-mobile.css')) }}">
+
+<div class="container py-4 ucrud ucrud-operativo ucrud-detalle tarea-detalle-page tarea-categoria-page" data-ucrud-root>
+    @include('partials.ucrud-form-header', [
+        'title' => $categoria->cotio_descripcion,
+        'subtitle' => 'Muestra ' . $instance . ' / ' . ($categoria->cotio_cantidad ?? '—') . ' · Cotización #' . $cotizacion->coti_num,
+        'actions' => $headerActionsMuestra,
+    ])
+
+    @if(session('success'))
+        <div class="ucrud-alert ucrud-alert--success mb-3" role="status">
+            <x-heroicon-o-check-circle style="width: 18px; height: 18px;" />
+            <span>{{ session('success') }}</span>
         </div>
-    </div>
+    @endif
 
     @include('cotizaciones.info')
 
-    
     @if(!$instanciaActual)
-            <div class="alert alert-info mb-3">
+        <div class="ucrud-alert ucrud-alert--info mb-3" role="status">
+            <x-heroicon-o-information-circle style="width: 18px; height: 18px;" />
+            <div>
                 <strong>Muestra {{ $instance }} de {{ $categoria->cotio_cantidad }}</strong>:
                 esta instancia aún no fue creada o no está habilitada para muestreo.
                 @if($instance > 1)
-                    <span class="d-block mt-2 small">Podés abrir otra muestra del menú superior o coordinarla desde el detalle de la cotización.</span>
+                    <span class="d-block mt-1 small">Podés abrir otra muestra del menú superior o coordinarla desde el detalle de la cotización.</span>
                 @endif
             </div>
-        @else
-            <div class="card shadow-sm mb-4">
-                <div class="card-body">
-                    <div class="alert alert-info mb-3">
-                    <strong>Muestra {{$instance}} de {{$categoria->cotio_cantidad}}</strong>
-                    @if($instanciaActual->fecha_muestreo)
-                        - Coordinada el {{ $instanciaActual->fecha_muestreo->format('d/m/Y H:i') }}
-                        @if($instanciaActual->coordinador)
-                            por {{ $instanciaActual->coordinador->usu_descripcion }}
+        </div>
+    @else
+        <div class="card shadow-sm mb-4">
+            <div class="card-header {{ $heroHeaderClassMuestra }} text-white d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2 tarea-detalle-hero">
+                <div class="tarea-detalle-hero-main">
+                    <h5 class="mb-0 tarea-detalle-hero-title">{{ $categoria->cotio_descripcion }}</h5>
+                    <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
+                        <span class="badge op-header-tag {{ $estadoTagClassMuestra }}">
+                            {{ ucfirst($instanciaActual->cotio_estado ?? $categoria->cotio_estado) }}
+                        </span>
+                        @if($instanciaActual->enable_ot && $instanciaActual->es_priori)
+                            <span class="badge op-header-tag op-header-tag--warning">Prioridad</span>
                         @endif
+                        @if($instanciaActual->enable_ot == false && ! $bloquearCambioEstadoMuestreo)
+                            <button type="button" class="btn btn-sm btn-outline-light py-0 px-2" data-bs-toggle="modal" data-bs-target="#estadoModal" data-tipo="categoria" title="Editar estado">
+                                <x-heroicon-o-pencil style="width: 16px; height: 16px;" />
+                            </button>
+                        @endif
+                    </div>
+                    @if($instanciaActual->fecha_muestreo)
+                        <small class="d-block mt-2 text-white-50">
+                            Coordinada el {{ $instanciaActual->fecha_muestreo->format('d/m/Y H:i') }}
+                            @if($instanciaActual->coordinador)
+                                · {{ $instanciaActual->coordinador->usu_descripcion }}
+                            @endif
+                        </small>
                     @endif
                 </div>
-
-                <div class="d-flex justify-content-between align-items-center">
-                    <h2 class="fw-bold">{{ $categoria->cotio_descripcion }} ({{ $instanciaActual->instance_number ?? ''}} / {{ $categoria->cotio_cantidad ?? ''}})</h2>
-                    <div class="d-flex gap-2">
-                        <a class="btn btn-outline-primary"
-                            href="https://www.google.com/maps/search/?api=1&query={{ urlencode(\App\Support\CotizacionClienteEtiqueta::direccionDestinatarioMapsQuery($cotizacion)) }}">
-                            <x-heroicon-o-map class="me-1" style="width: 18px; height: 18px;" />
-                            <span class="d-none d-md-inline">Ver en Maps</span>
+                <div class="d-flex flex-wrap gap-2 tarea-detalle-acciones">
+                    @if(Auth::user()->rol == 'coordinador_muestreo' && ! $bloquearCambioEstadoMuestreo)
+                        @if($instanciaActual->cotio_estado != 'suspension')
+                            <button type="button" class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#suspenderModal">
+                                <i class="fas fa-pause me-1"></i> Suspender
+                            </button>
+                        @endif
+                        @if(in_array($instanciaActual->cotio_estado, ['coordinado muestreo', 'suspension']) && $instanciaActual->enable_ot == false)
+                            <button type="button" class="btn btn-sm btn-outline-light"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#recoordinarModal"
+                                    data-instancia="{{ $instanciaActual->id }}"
+                                    data-cotizacion="{{ $cotizacion->coti_num }}"
+                                    data-item="{{ $instanciaActual->cotio_item }}"
+                                    data-instance="{{ $instanciaActual->instance_number }}">
+                                Recoordinar
+                            </button>
+                        @endif
+                    @endif
+                    <a class="btn btn-sm btn-outline-light"
+                        href="https://www.google.com/maps/search/?api=1&query={{ urlencode(\App\Support\CotizacionClienteEtiqueta::direccionDestinatarioMapsQuery($cotizacion)) }}">
+                        <x-heroicon-o-map style="width: 16px; height: 16px;" />
+                        <span class="d-none d-md-inline ms-1">Maps</span>
+                    </a>
+                    @if($instanciaActual->latitud && $instanciaActual->longitud)
+                        <a class="btn btn-sm btn-outline-light"
+                            href="https://www.google.com/maps/search/?api=1&query={{ $instanciaActual->latitud }},{{ $instanciaActual->longitud }}">
+                            <x-heroicon-o-map-pin style="width: 16px; height: 16px;" />
+                            <span class="d-none d-md-inline ms-1">Georef.</span>
                         </a>
-                        @if($instanciaActual->latitud && $instanciaActual->longitud)
-                            <a class="btn btn-outline-primary"
-                                href="https://www.google.com/maps/search/?api=1&query={{ $instanciaActual->latitud }}, {{ $instanciaActual->longitud }}">
-                                <x-heroicon-o-map-pin class="me-1" style="width: 18px; height: 18px;" />
-                                <span class="d-none d-md-inline">Ver Georeferencia</span>
-                            </a>
-                        @endif
+                    @endif
+                </div>
+            </div>
+
+            <div class="card-body">
+                <div class="row gy-3 tarea-detalle-datos">
+                    <div class="col-md-4">
+                        <div class="tarea-detalle-dato">
+                            <span class="tarea-detalle-dato-label">Cotización</span>
+                            <span class="tarea-detalle-dato-value">{{ $cotizacion->coti_num }}</span>
+                        </div>
+                        <div class="tarea-detalle-dato mt-2">
+                            <span class="tarea-detalle-dato-label">Instancia</span>
+                            <span class="tarea-detalle-dato-value">{{ $instanciaActual->instance_number ?? $instance }} / {{ $categoria->cotio_cantidad ?? '—' }}</span>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="tarea-detalle-dato fecha-wrapper" data-fecha-fin="{{ $instanciaActual->fecha_fin_muestreo ?? $categoria->fecha_fin ?? '' }}">
+                            <span class="tarea-detalle-dato-label">Inicio muestreo</span>
+                            <span class="tarea-detalle-dato-value">{{ $instanciaActual->fecha_inicio_muestreo ?? $categoria->fecha_inicio ?? 'Faltante' }}</span>
+                        </div>
+                        <div class="tarea-detalle-dato mt-2 fecha-wrapper" data-fecha-fin="{{ $instanciaActual->fecha_fin_muestreo ?? $categoria->fecha_fin ?? '' }}">
+                            <span class="tarea-detalle-dato-label">Fin muestreo</span>
+                            <span class="tarea-detalle-dato-value fecha-fin">{{ $instanciaActual->fecha_fin_muestreo ?? $categoria->fecha_fin ?? 'Faltante' }}</span>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="tarea-detalle-dato">
+                            <span class="tarea-detalle-dato-label">Vehículo</span>
+                            <span class="tarea-detalle-dato-value">
+                                @if ($instanciaActual->vehiculo_asignado)
+                                    {{ $instanciaActual->vehiculo->marca ?? 'N/A' }} {{ $instanciaActual->vehiculo->modelo ?? 'N/A' }} ({{ $instanciaActual->vehiculo->patente ?? 'N/A' }})
+                                @else
+                                    Sin asignar
+                                @endif
+                            </span>
+                        </div>
+                        <div class="tarea-detalle-dato mt-2">
+                            <span class="tarea-detalle-dato-label">Frecuencia</span>
+                            <span class="tarea-detalle-dato-value">{{ $instanciaActual->es_frecuente ? 'Frecuencia asignada' : 'Puntual' }}</span>
+                        </div>
                     </div>
                 </div>
-                
-                <div class="row mb-3">
-                    <div class="col-md-6">
-                        <h4 class="text-muted mb-5">
-                            Cotización: <strong>{{ $cotizacion->coti_num }}</strong>
-                        </h4>
-                        <p class="text-muted mb-1">
-                            Estado: 
-                            @php
-                                $estado = strtolower($instanciaActual->cotio_estado ?? $categoria->cotio_estado);
-                                $badgeClass = match ($estado) {
-                                    'pendiente' => 'warning',
-                                    'coordinado muestreo' => 'warning',
-                                    'coordinado analisis' => 'warning',
-                                    'en proceso' => 'info',
-                                    'en revision muestreo' => 'info',
-                                    'en revision analisis' => 'info',
-                                    'finalizado' => 'success',
-                                    'muestreado' => 'success',
-                                    'analizado' => 'success',
-                                    'completado' => 'success',
-                                    'suspension' => 'danger',
-                                    default => 'secondary'
-                                };
-                            @endphp
-                            <span class="badge bg-{{ $badgeClass }}">{{ ucfirst($instanciaActual->cotio_estado ?? $categoria->cotio_estado) }}</span>
-                            @if($instanciaActual->enable_ot == false && ! $bloquearCambioEstadoMuestreo)
-                                <button type="button" class="btn btn-sm btn-link" data-bs-toggle="modal" data-bs-target="#estadoModal" data-tipo="categoria">
-                                    <x-heroicon-o-pencil style="width: 20px; height: 20px;" />
-                                </button>
-                            @endif
-                        </p>
-                        <p class="text-muted mb-1">
-                            <strong>Asignada a:</strong> 
-                            @if ($instanciaActual->responsablesMuestreo->count() > 0)
-                                @foreach ($instanciaActual->responsablesMuestreo as $responsable)
-                                    <span class="badge bg-info d-inline-flex align-items-center me-2 mb-1">
-                                        {{ $responsable->usu_descripcion }}
 
+                <div class="tarea-detalle-personas">
+                    <span class="tarea-detalle-personas__label">Muestreadores</span>
+                    <div class="tarea-detalle-personas__chips">
+                        @if($responsablesMuestreo->isNotEmpty())
+                            @foreach($responsablesMuestreo as $responsable)
+                                <span class="badge op-person-chip op-person-chip--assign d-inline-flex align-items-center gap-1">
+                                    {{ $responsable->usu_descripcion }}
                                     @if($instanciaActual->enable_ot == false)
-                                        <button type="button" 
-                                            class="btn btn-sm btn-link text-danger p-0 ms-1" 
-                                            style="font-size: 0.75rem; line-height: 1;"
-                                            onclick="quitarResponsableMuestreo('{{ $responsable->usu_codigo }}')"
-                                            title="Quitar responsable de muestreo">
-                                            <x-heroicon-o-x-mark style="width: 12px; height: 12px;" />
-                                        </button>
+                                        <button type="button"
+                                                class="btn-close"
+                                                style="font-size: .45rem;"
+                                                onclick="quitarResponsableMuestreo('{{ $responsable->usu_codigo }}')"
+                                                title="Quitar responsable"
+                                                aria-label="Quitar {{ $responsable->usu_descripcion }}"></button>
                                     @endif
-                            
                                 </span>
-                                @endforeach
-                            @else
-                                <span class="badge bg-secondary">Sin asignar</span>
-                            @endif
-                            
-                            @if($instanciaActual->enable_ot == false && $instanciaActual->cotio_estado != 'muestreado')
-                                <button type="button" 
-                                        class="btn btn-sm btn-outline-primary ms-2"
-                                        data-bs-toggle="modal" 
-                                        data-bs-target="#gestionarResponsablesMuestreoModal"
-                                        data-instancia-id="{{ $instanciaActual->id }}"
-                                        title="Gestionar responsables de muestreo">
-                                    <x-heroicon-o-user-plus style="width: 0.875rem; height: 0.875rem;" />
-                                    <span class="d-none d-md-inline ms-1">Gestionar</span>
-                                </button>
-                            @endif
-                            @if(Auth::user()->rol == 'coordinador_muestreo' && ! $bloquearCambioEstadoMuestreo)
-                                @if($instanciaActual->cotio_estado != 'suspension')
-                                    <button type="button" class="btn btn-sm btn-warning ms-2" data-bs-toggle="modal" data-bs-target="#suspenderModal">
-                                        <i class="fas fa-pause me-1"></i> Suspender
-                                    </button>
-                                @endif
-
-                                @if(in_array($instanciaActual->cotio_estado, ['coordinado muestreo', 'suspension']) && $instanciaActual->enable_ot == false)
-                                    <button type="button" 
-                                            class="btn btn-sm btn-outline-primary ms-2"
-                                            data-bs-toggle="modal" 
-                                            data-bs-target="#recoordinarModal"
-                                            data-instancia="{{ $instanciaActual->id }}"
-                                            data-cotizacion="{{ $cotizacion->coti_num }}"
-                                            data-item="{{ $instanciaActual->cotio_item }}"
-                                            data-instance="{{ $instanciaActual->instance_number }}">
-                                        Recoordinar
-                                    </button>
-                                @endif
-                            @endif
-                        </p>
-
-                        @if($instanciaActual->enable_ot == true)
-                            <p class="text-muted mb-1">
-                                <strong>Es Prioridad:</strong> 
-                                <span class="badge bg-primary">{{ $instanciaActual->es_priori ? 'Sí' : 'No' }}</span>
-                            </p>
+                            @endforeach
+                        @else
+                            <span class="badge bg-secondary">Sin asignar</span>
                         @endif
-
-
-                        
-                    </div>
-                    <div class="col-md-6">
-                        <p class="text-muted mb-1">
-                            <strong>Vehículo:</strong> 
-                            @if ($instanciaActual->vehiculo_asignado)
-                                {{ $instanciaActual->vehiculo->marca ?? 'N/A' }} {{ $instanciaActual->vehiculo->modelo ?? 'N/A' }} ({{ $instanciaActual->vehiculo->patente ?? 'N/A' }})
-                            @else
-                                Sin asignar
-                            @endif
-                        </p>
-                        <p class="text-muted mb-1">
-                            <strong>Frecuencia:</strong> 
-                            @if ($instanciaActual->es_frecuente)
-                                Frecuencia asignada
-                            @else
-                                Puntual
-                            @endif
-                        </p>
-                    </div>
-                </div>
-
-                <div class="row mb-3">
-                    <div class="col-12">
-                        <p class="text-muted mb-1 fecha-wrapper" data-fecha-fin="{{ $instanciaActual->fecha_fin_muestreo ?? $categoria->fecha_fin ?? '' }}">
-                            <strong>Inicio:</strong> 
-                            <span class="{{ $instanciaActual->fecha_inicio_muestreo ?? $categoria->fecha_inicio ? 'bg-light text-dark px-2 py-1 rounded' : '' }}">
-                                {{ $instanciaActual->fecha_inicio_muestreo ?? $categoria->fecha_inicio ?? 'Faltante' }}
-                            </span>
-                            &nbsp;&nbsp;|&nbsp;&nbsp;
-                            <strong>Fin:</strong> 
-                            <span class="fecha-fin {{ $instanciaActual->fecha_fin_muestreo ?? $categoria->fecha_fin ? 'bg-light text-dark px-2 py-1 rounded' : '' }}">
-                                {{ $instanciaActual->fecha_fin_muestreo ?? $categoria->fecha_fin ?? 'Faltante' }}
-                            </span>
-                        </p>
+                        @if($instanciaActual->enable_ot == false && $instanciaActual->cotio_estado != 'muestreado')
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-primary ms-1"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#gestionarResponsablesMuestreoModal"
+                                    data-instancia-id="{{ $instanciaActual->id }}"
+                                    title="Gestionar responsables de muestreo">
+                                <x-heroicon-o-user-plus style="width: 0.875rem; height: 0.875rem;" />
+                                <span class="d-none d-md-inline ms-1">Gestionar</span>
+                            </button>
+                        @endif
                     </div>
                 </div>
 
@@ -313,9 +301,9 @@
 
                 {{-- herramientas asignadas --}}
                 @if(isset($herramientasMuestra) && $herramientasMuestra->count())
-                    <div class="card shadow-sm mb-4">
-                        <div class="card-header bg-light">
-                            <h5 class="card-title mb-0 p-2">Herramientas de Muestreo</h5>
+                    <div class="card shadow-sm mb-4 op-section-card">
+                        <div class="card-header op-section-card__header">
+                            <h5 class="op-section-card__title">Herramientas de Muestreo</h5>
                         </div>
                         <div class="card-body">
                             <ul class="list-group">
@@ -342,11 +330,11 @@
                     $puedeEditarDatosMuestraCoord = $esCoordOAdminMuestreo && $instanciaActual->cotio_estado !== 'muestreado';
                     $reqCadenaCustodiaMuestraCategoria = (bool) ($categoria->req_cadena_custodia ?? false);
                 @endphp
-                <div class="card shadow-sm mb-4">
-                    <div class="card-header bg-light d-flex flex-wrap justify-content-between align-items-center gap-2">
-                        <h5 class="card-title mb-0 p-2">Datos de la Muestra</h5>
+                <div class="card shadow-sm mb-4 op-section-card">
+                    <div class="card-header op-section-card__header">
+                        <h5 class="op-section-card__title">Datos de la Muestra</h5>
                         @if($puedeEditarDatosMuestraCoord)
-                            <button type="button" class="btn btn-sm btn-primary me-2 mb-2" data-bs-toggle="modal" data-bs-target="#modalCoordDatosMuestra">
+                            <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#modalCoordDatosMuestra">
                                 <i class="fas fa-edit me-1"></i> Editar identificación y datos de campo
                             </button>
                         @endif
@@ -406,7 +394,7 @@
                 @if($instanciaActual && $variablesMuestra->isNotEmpty())
                 <div class="card shadow-sm my-5">
                     <div class="card-header bg-secondary text-white">
-                        <h5 style="cursor: pointer; color: black; padding: 10px;" data-bs-toggle="collapse" data-bs-target="#variablesCollapse" aria-expanded="false" aria-controls="variablesCollapse">
+                        <h5 style="cursor: pointer; color: white; padding: 10px;" data-bs-toggle="collapse" data-bs-target="#variablesCollapse" aria-expanded="false" aria-controls="variablesCollapse">
                             Variables de Muestra y Observaciones
                         </h5>
                     </div>
@@ -484,12 +472,12 @@
                 @endif
 
                 @if($instanciaActual)
-                <div class="card shadow-sm my-4">
-                    <div class="card-header bg-light py-3 px-3">
-                        <h5 class="mb-0 ps-1">Archivos adjuntos</h5>
-                        <small class="text-muted ps-1">PDF o imágenes de la cotización y de la revisión de muestreo</small>
+                <div class="card shadow-sm my-4 op-section-card">
+                    <div class="card-header op-section-card__header flex-column align-items-start">
+                        <h5 class="op-section-card__title">Archivos adjuntos</h5>
+                        <small class="text-muted">PDF o imágenes de la cotización y de la revisión de muestreo</small>
                     </div>
-                    <div class="card-body p-3">
+                    <div class="card-body">
                         @include('muestras.partials.adjuntos-revision-coord')
                     </div>
                 </div>
@@ -694,9 +682,9 @@
 
 
         @if($tareas->count())
-            <div class="card shadow-sm">
-                <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                    <h5 class="card-title mb-0 p-2">Análisis agregados a la muestra</h5>
+            <div class="ucrud-panel mb-4">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                    <h2 class="ucrud-panel-title">Análisis agregados a la muestra</h2>
                     <div class="d-flex gap-2">
                         <form class="p-2 mb-0" action="{{ route('muestras.finalizar-todas', [
                             'cotio_numcoti' => $categoria->cotio_numcoti,
@@ -712,13 +700,12 @@
                         </form>
                     </div>
                 </div>
-                <div class="card-body">
                     <div class="row row-cols-1 row-cols-md-2 g-3">
                         @foreach ($tareas as $tarea)
                             <div class="col">
-                                <div class="card h-100">
-                                    <div class="card-body" style="background-color: #A6C5E3">
-                                        <div class="form-check mb-2">
+                                <div class="card h-100 op-analisis-card">
+                                    <div class="op-analisis-card__head">
+                                        <div class="form-check mb-0">
                                             <input class="form-check-input tarea-checkbox" 
                                                     type="checkbox" 
                                                     name="tareas_seleccionadas[]" 
@@ -727,10 +714,11 @@
                                                     data-fecha-inicio="{{ $tarea->fecha_inicio_muestreo ? date('Y-m-d\TH:i', strtotime($tarea->fecha_inicio_muestreo)) : '' }}"
                                                     data-fecha-fin="{{ $tarea->fecha_fin_muestreo ? date('Y-m-d\TH:i', strtotime($tarea->fecha_fin_muestreo)) : '' }}">
                                             <label class="form-check-label" for="tarea_{{ $tarea->cotio_item }}_{{ $tarea->cotio_subitem }}">
-                                                <h5 class="card-title">{{ $tarea->cotio_descripcion }}</h5>
+                                                <h5 class="card-title mb-0">{{ $tarea->cotio_descripcion }}</h5>
                                             </label>
                                         </div>
-
+                                    </div>
+                                    <div class="card-body pt-3">
                                         @if($tarea->instancia && $tarea->instancia->resultado)
                                             <p class="mb-2">
                                                 Resultado: 
@@ -811,14 +799,16 @@
                             </div>
                         @endforeach
                     </div>
-                </div>
             </div>
         @else
-            <div class="alert alert-info">
-                <x-heroicon-o-information-circle style="width: 20px; height: 20px;" />No hay análisis agregados al muestreo.
+            <div class="ucrud-alert ucrud-alert--info mb-3" role="status">
+                <x-heroicon-o-information-circle style="width: 18px; height: 18px;" />
+                <span>No hay análisis agregados al muestreo.</span>
             </div>
         @endif
     @endif
+
+</div>{{-- /.tarea-categoria-page --}}
 
     <div class="modal fade" id="estadoModal" tabindex="-1" aria-labelledby="estadoModalLabel" aria-hidden="true">
         <div class="modal-dialog">

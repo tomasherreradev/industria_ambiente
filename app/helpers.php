@@ -173,3 +173,14 @@ if (! function_exists('userCanEditInformeProtocoloPdf')) {
         ]);
     }
 }
+
+if (! function_exists('fechaActualLargaEs')) {
+    function fechaActualLargaEs(): string
+    {
+        $fecha = \Carbon\Carbon::now()
+            ->locale('es')
+            ->translatedFormat('l, j \d\e F \d\e Y');
+
+        return mb_strtoupper(mb_substr($fecha, 0, 1, 'UTF-8'), 'UTF-8') . mb_substr($fecha, 1, null, 'UTF-8');
+    }
+}

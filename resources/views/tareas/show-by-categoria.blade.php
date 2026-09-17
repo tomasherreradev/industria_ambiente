@@ -48,7 +48,7 @@
                 </span>
             </div>
             @if(Auth::user()->rol != 'laboratorio')
-                <div class="btn-group botones-muestra tarea-detalle-acciones" role="group">
+                <div class="d-flex flex-wrap gap-2 botones-muestra tarea-detalle-acciones">
                     @if(!$esMuestreadoEstado)
                         @if($instancia->cotio_estado != 'suspension')
                             <button type="button" class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#suspenderModal">

@@ -24,6 +24,7 @@
     <span class="badge text-white px-2 py-1 rounded-pill ms-1" 
           style="font-size: 0.65rem; background-color: {{ $canalColor }};"
           data-bs-toggle="tooltip"
+          data-bs-placement="bottom"
           title="Canal Especial: {{ $canalLabel }}">
         {{ strtoupper($canalLabel) }}
     </span>

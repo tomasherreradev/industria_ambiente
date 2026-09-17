@@ -318,8 +318,10 @@ final class CotizacionClienteEtiqueta
         }
 
         // coti_* de la solapa Empresa es facturación; no debe pisar dirección de sucursal / empresa rel.
+        // El CUIT sí hace fallback: sucursal/empresa rel. → coti_cuit → cli_cuit del titular.
+        $dCuit = self::resolverCuitConFallback($dCuit, $coti, $cliente);
+
         if (! $tieneSucursal && ! $tieneEmpresaRelacionada) {
-            $dCuit = self::preferCampoCoti((string) ($coti->coti_cuit ?? ''), $dCuit);
             $dDir = self::preferCampoCoti((string) ($coti->coti_direccioncli ?? ''), $dDir);
             $dLoc = self::preferCampoCoti((string) ($coti->coti_localidad ?? ''), $dLoc);
             $dPart = self::preferCampoCoti((string) ($coti->coti_partido ?? ''), $dPart);
@@ -341,6 +343,24 @@ final class CotizacionClienteEtiqueta
         $cotiVal = trim($cotiVal);
 
         return $cotiVal !== '' ? $cotiVal : trim($resolved);
+    }
+
+    /**
+     * CUIT del bloque Sr.(es): prioriza el de sucursal/empresa rel.; si falta, usa coti_cuit y cli_cuit del titular.
+     */
+    private static function resolverCuitConFallback(string $primary, object $coti, ?object $cliente): string
+    {
+        $primary = trim($primary);
+        if ($primary !== '') {
+            return $primary;
+        }
+
+        $cotiCuit = trim((string) ($coti->coti_cuit ?? ''));
+        if ($cotiCuit !== '') {
+            return $cotiCuit;
+        }
+
+        return trim((string) (optional($cliente)->cli_cuit ?? ''));
     }
 
     /**
@@ -453,6 +473,81 @@ final class CotizacionClienteEtiqueta
             'localidad' => $loc,
             'provincia' => $prov,
             'email' => $email,
+        ];
+    }
+
+    /**
+     * Resumen del cliente para la pantalla de facturación (razón social, CUIT, sucursal, consultor, etc.).
+     *
+     * @return array{
+     *     razon_social: string,
+     *     cuit: string,
+     *     sucursal: string,
+     *     establecimiento: string,
+     *     cliente_linea: string,
+     *     titular: string,
+     *     direccion: string,
+     *     localidad: string,
+     *     codigo_cliente: string,
+     *     codigo_sucursal: string,
+     *     es_consultor: bool,
+     *     empresa_relacionada: string,
+     *     para: string,
+     *     cliente_codigo: string,
+     *     cliente_edit_url: string|null
+     * }
+     */
+    public static function resumenFacturacionCliente(object $coti): array
+    {
+        $coti->loadMissing(['cliente', 'sucursal']);
+        self::precargarEmpresasRelacionadas([$coti]);
+
+        $fiscal = self::datosFacturacionFiscales($coti);
+        $dest = self::destinatarioPdfCamposPrincipales($coti);
+        $cliente = $coti->cliente ?? null;
+        if (! $cliente) {
+            $codCli = trim((string) ($coti->coti_codigocli ?? ''));
+            if ($codCli !== '') {
+                $cliente = \App\Models\Clientes::whereRaw('LTRIM(RTRIM(cli_codigo)) = ?', [$codCli])->first();
+            }
+        }
+        $empresaRel = self::empresaRelacionadaResuelta($coti);
+
+        $localidad = trim((string) ($dest['dLoc'] ?? ''));
+        $partido = trim((string) ($dest['dPart'] ?? ''));
+        if ($partido !== '') {
+            $localidad = $localidad !== '' ? $localidad . ' - ' . $partido : $partido;
+        }
+        if ($localidad === '') {
+            $localidad = trim($fiscal['localidad'] ?? '');
+            if (trim($fiscal['provincia'] ?? '') !== '') {
+                $localidad = $localidad !== ''
+                    ? $localidad . ' - ' . trim($fiscal['provincia'])
+                    : trim($fiscal['provincia']);
+            }
+        }
+
+        $clienteCodigo = $cliente ? trim((string) ($cliente->cli_codigo ?? '')) : '';
+        if ($clienteCodigo === '') {
+            $clienteCodigo = trim((string) ($coti->coti_codigocli ?? ''));
+        }
+
+        return [
+            'razon_social' => $fiscal['razon_social'],
+            'cuit' => $fiscal['cuit'],
+            'sucursal' => self::etiquetaSucursalEstablecimiento($coti),
+            'establecimiento' => trim((string) ($coti->coti_establecimiento ?? '')),
+            'cliente_linea' => self::paraLista($coti),
+            'titular' => self::razonSocialTitular($coti),
+            'direccion' => trim((string) ($dest['dDir'] ?? '')) ?: $fiscal['domicilio'],
+            'localidad' => $localidad,
+            'codigo_cliente' => $clienteCodigo,
+            'codigo_sucursal' => trim((string) ($coti->coti_codigosuc ?? '')),
+            'es_consultor' => (bool) optional($cliente)->es_consultor,
+            'empresa_relacionada' => $empresaRel ? trim((string) ($empresaRel->razon_social ?? '')) : '',
+            'para' => trim((string) ($coti->coti_para ?? '')),
+            'cliente_codigo' => $clienteCodigo,
+            'cliente_edit_url' => $clienteCodigo !== '' ? route('clientes.edit', $clienteCodigo) : null,
         ];
     }
 }

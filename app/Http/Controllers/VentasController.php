@@ -247,6 +247,19 @@ class VentasController extends Controller {
             $cotizacion->coti_cuota_interes = $interes !== null ? $interes : 0.0;
             $cotizacion->coti_cuota_fact_fin_mes = $request->has('coti_cuota_fact_fin_mes') && $request->coti_cuota_fact_fin_mes == '1';
             $cotizacion->coti_cuota_fact_inicio_mes = $request->has('coti_cuota_fact_inicio_mes') && $request->coti_cuota_fact_inicio_mes == '1';
+            $cotizacion->coti_cuota_fecha_inicio = $request->filled('coti_cuota_fecha_inicio')
+                ? $request->input('coti_cuota_fecha_inicio')
+                : null;
+            $cotizacion->coti_cuota_fecha_fin = $request->filled('coti_cuota_fecha_fin')
+                ? $request->input('coti_cuota_fecha_fin')
+                : null;
+
+            if ($cotizacion->coti_cuota_fecha_inicio && $cotizacion->coti_cuota_fecha_fin
+                && $cotizacion->coti_cuota_fecha_fin < $cotizacion->coti_cuota_fecha_inicio) {
+                throw ValidationException::withMessages([
+                    'coti_cuota_fecha_fin' => 'La fecha de fin debe ser posterior o igual al inicio de ejecución.',
+                ]);
+            }
         } else {
             $cotizacion->coti_cuota_desc = null;
             $cotizacion->coti_cuota_cant = null;
@@ -255,6 +268,8 @@ class VentasController extends Controller {
             $cotizacion->coti_cuota_interes = null;
             $cotizacion->coti_cuota_fact_fin_mes = null;
             $cotizacion->coti_cuota_fact_inicio_mes = null;
+            $cotizacion->coti_cuota_fecha_inicio = null;
+            $cotizacion->coti_cuota_fecha_fin = null;
         }
     }
 
@@ -1679,27 +1694,7 @@ class VentasController extends Controller {
             // Si el checkbox está presente, es true; si no, false
             $cotizacion->coti_mostrar_descuento = $request->has('coti_mostrar_descuento');
             $cotizacion->divisa_codigo = $request->filled('divisa_codigo') ? $this->sanitizeNullableString($request->divisa_codigo, 10) : 'PES';
-            $cotizacion->coti_cond_pago = $request->filled('coti_cond_pago') ? $this->sanitizeNullableString($request->coti_cond_pago, 10) : null;
-            $esCuotas = ($cotizacion->coti_cond_pago === 'CUOTAS');
-            $cotizacion->coti_cuotas = $esCuotas;
-            if ($esCuotas) {
-                $cotizacion->coti_cuota_desc = $this->sanitizeNullableString($request->coti_cuota_desc, 100);
-                $cotizacion->coti_cuota_cant = $request->filled('coti_cuota_cant') ? (int) $request->coti_cuota_cant : null;
-                $cotizacion->coti_cuota_monto_total = $request->filled('coti_cuota_monto_total') ? $this->parseDecimalValue($request->coti_cuota_monto_total) : null;
-                $cotizacion->coti_cuota_monto_indiv = $request->filled('coti_cuota_monto_indiv') ? $this->parseDecimalValue($request->coti_cuota_monto_indiv) : null;
-                $interesCrear = $this->parseDecimalValue($request->coti_cuota_interes);
-                $cotizacion->coti_cuota_interes = $interesCrear !== null ? $interesCrear : 0.0;
-                $cotizacion->coti_cuota_fact_fin_mes = $request->has('coti_cuota_fact_fin_mes') && $request->coti_cuota_fact_fin_mes == '1';
-                $cotizacion->coti_cuota_fact_inicio_mes = $request->has('coti_cuota_fact_inicio_mes') && $request->coti_cuota_fact_inicio_mes == '1';
-            } else {
-                $cotizacion->coti_cuota_desc = null;
-                $cotizacion->coti_cuota_cant = null;
-                $cotizacion->coti_cuota_monto_total = null;
-                $cotizacion->coti_cuota_monto_indiv = null;
-                $cotizacion->coti_cuota_interes = null;
-                $cotizacion->coti_cuota_fact_fin_mes = null;
-                $cotizacion->coti_cuota_fact_inicio_mes = null;
-            }
+            $this->aplicarCondicionPagoVentasDesdeRequest($request, $cotizacion);
             $cotizacion->coti_sector_laboratorio_pct = $request->filled('sector_laboratorio_porcentaje') ? floatval($request->sector_laboratorio_porcentaje) : 0.00;
             $cotizacion->coti_sector_higiene_pct = $request->filled('sector_higiene_porcentaje') ? floatval($request->sector_higiene_porcentaje) : 0.00;
             $cotizacion->coti_sector_microbiologia_pct = $request->filled('sector_microbiologia_porcentaje') ? floatval($request->sector_microbiologia_porcentaje) : 0.00;
@@ -2572,27 +2567,7 @@ class VentasController extends Controller {
             $cotizacion->coti_aumentoglobal = $request->filled('aumento') ? floatval($request->aumento) : 0.00;
             $cotizacion->coti_mostrar_descuento = $request->has('coti_mostrar_descuento');
             $cotizacion->divisa_codigo = $request->filled('divisa_codigo') ? $this->sanitizeNullableString($request->divisa_codigo, 10) : ($cotizacion->divisa_codigo ?? 'PES');
-            $cotizacion->coti_cond_pago = $request->filled('coti_cond_pago') ? $this->sanitizeNullableString($request->coti_cond_pago, 10) : null;
-            $esCuotas = ($cotizacion->coti_cond_pago === 'CUOTAS');
-            $cotizacion->coti_cuotas = $esCuotas;
-            if ($esCuotas) {
-                $cotizacion->coti_cuota_desc = $this->sanitizeNullableString($request->coti_cuota_desc, 100);
-                $cotizacion->coti_cuota_cant = $request->filled('coti_cuota_cant') ? (int) $request->coti_cuota_cant : null;
-                $cotizacion->coti_cuota_monto_total = $request->filled('coti_cuota_monto_total') ? $this->parseDecimalValue($request->coti_cuota_monto_total) : null;
-                $cotizacion->coti_cuota_monto_indiv = $request->filled('coti_cuota_monto_indiv') ? $this->parseDecimalValue($request->coti_cuota_monto_indiv) : null;
-                $interesEditar = $this->parseDecimalValue($request->coti_cuota_interes);
-                $cotizacion->coti_cuota_interes = $interesEditar !== null ? $interesEditar : 0.0;
-                $cotizacion->coti_cuota_fact_fin_mes = $request->has('coti_cuota_fact_fin_mes') && $request->coti_cuota_fact_fin_mes == '1';
-                $cotizacion->coti_cuota_fact_inicio_mes = $request->has('coti_cuota_fact_inicio_mes') && $request->coti_cuota_fact_inicio_mes == '1';
-            } else {
-                $cotizacion->coti_cuota_desc = null;
-                $cotizacion->coti_cuota_cant = null;
-                $cotizacion->coti_cuota_monto_total = null;
-                $cotizacion->coti_cuota_monto_indiv = null;
-                $cotizacion->coti_cuota_interes = null;
-                $cotizacion->coti_cuota_fact_fin_mes = null;
-                $cotizacion->coti_cuota_fact_inicio_mes = null;
-            }
+            $this->aplicarCondicionPagoVentasDesdeRequest($request, $cotizacion);
             $cotizacion->coti_sector_laboratorio_pct = $request->filled('sector_laboratorio_porcentaje') ? floatval($request->sector_laboratorio_porcentaje) : 0.00;
             $cotizacion->coti_sector_higiene_pct = $request->filled('sector_higiene_porcentaje') ? floatval($request->sector_higiene_porcentaje) : 0.00;
             $cotizacion->coti_sector_microbiologia_pct = $request->filled('sector_microbiologia_porcentaje') ? floatval($request->sector_microbiologia_porcentaje) : 0.00;

@@ -157,15 +157,13 @@
                                 @endphp
                                 <div class="mb-4">
                                     <div class="card shadow-sm h-100" @if($esPrioriEfectiva) style="border: 3px solid #ffc107; box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.35);" @endif>
-                                        <div class="card-header {{ $headerClass }} text-white p-3 op-ot-card-header">
-                                            <div class="op-ot-card-header__top d-flex align-items-start justify-content-between gap-3 flex-wrap w-100">
-                                            <div class="d-flex align-items-start gap-2 flex-grow-1 min-w-0">
-                                                <!-- Checkbox for Sample -->
+                                        <div class="card-header {{ $headerClass }} text-white op-ot-card-header">
+                                            <div class="op-ot-card-header__top d-flex align-items-start gap-2 w-100">
                                                 @php
                                                     $muestraActiva = $muestra->active_ot;
                                                     $muestraTieneResultado = $muestra->resultado !== null;
                                                 @endphp
-                                                <div class="d-flex flex-column gap-1">
+                                                <div class="d-flex flex-column gap-1 flex-shrink-0 pt-1">
                                                     <input
                                                         type="checkbox"
                                                         class="form-check-input instancia-checkbox"
@@ -182,7 +180,6 @@
                                                         @disabled($muestraActiva || $muestraTieneResultado)
                                                         aria-label="Activar/Desactivar muestra {{ $categoria->cotio_descripcion }} (Instancia {{ $muestra->instance_number }})"
                                                     />
-                                                    <!-- Checkbox auxiliar para seleccionar todos los restantes -->
                                                     <input
                                                         type="checkbox"
                                                         class="form-check-input checkbox-auxiliar"
@@ -196,90 +193,86 @@
                                                         aria-label="Seleccionar todos los análisis restantes de {{ $categoria->cotio_descripcion }}"
                                                     />
                                                 </div>
-                                                <!-- Title and Link -->
-                                                <div class="flex-grow-1">
-                                                    <div class="d-flex align-items-center gap-2">
-                                                        <a 
-                                                            href="{{ route('categoria.verOrden', [
-                                                                'cotizacion' => $cotizacion->coti_num, 
-                                                                'item' => $muestra->cotio_item,
-                                                                'instance' => $muestra->instance_number
-                                                            ]) }}" 
-                                                            class="text-decoration-none text-white"
-                                                        >
-                                                            <div class="d-flex align-items-center gap-2">
-                                                                <h6 class="mb-1 fw-bold">
+
+                                                <div class="op-ot-card-header__main flex-grow-1 min-w-0">
+                                                    <div class="op-ot-card-header__title-row d-flex align-items-center justify-content-between gap-2 flex-wrap">
+                                                        <div class="d-flex align-items-center gap-2 flex-wrap min-w-0">
+                                                            <a
+                                                                href="{{ route('categoria.verOrden', [
+                                                                    'cotizacion' => $cotizacion->coti_num,
+                                                                    'item' => $muestra->cotio_item,
+                                                                    'instance' => $muestra->instance_number
+                                                                ]) }}"
+                                                                class="text-decoration-none text-white min-w-0"
+                                                            >
+                                                                <h6 class="mb-0 fw-bold d-inline">
                                                                     @if($esPrioriEfectiva)
                                                                         <x-heroicon-o-star style="width: 18px; height: 18px; color: #ffc107;" class="me-1" />
                                                                     @endif
                                                                     {{ $categoria->cotio_descripcion }} (#{{ $muestra->otn ? $muestra->otn : $muestra->instance_number ?? 'N/A' }}@include('partials.muestra-precinto-sufijo', ['instancia' => $muestra]))
                                                                     <small class="fw-normal">(muestra {{ $muestra->instance_number }} / {{ $categoria->cotio_cantidad ?? '-' }})</small>
                                                                 </h6>
-                                                                @if($esPrioriEfectiva)
-                                                                    <span class="badge op-header-tag op-header-tag--warning ms-1">Prioridad</span>
-                                                                @endif
-                                                                @if($esInstanciaVirtual)
-                                                                    <span class="badge op-header-tag op-header-tag--info ms-1">Nueva</span>
-                                                                @elseif($muestra->active_ot)
-                                                                    <span class="badge op-header-tag op-header-tag--success ms-1">
-                                                                        {{ str_replace('_', ' ', ucwords($muestra->cotio_estado_analisis)) }}
-                                                                    </span>
-                                                                @endif
-                                                            </div>
-                                                            @if($muestra->active_ot && $muestra->coordinadorLab)
-                                                                <small class="text-light d-block">
-                                                                    Coordinado por {{ trim($muestra->coordinadorLab->usu_descripcion) }}
-                                                                </small>
+                                                            </a>
+                                                            @if($esPrioriEfectiva)
+                                                                <span class="badge op-header-tag op-header-tag--warning">Prioridad</span>
                                                             @endif
-                                                        </a>
+                                                            @if($esInstanciaVirtual)
+                                                                <span class="badge op-header-tag op-header-tag--info">Nueva</span>
+                                                            @elseif($muestra->active_ot)
+                                                                <span class="badge op-header-tag op-header-tag--success">
+                                                                    {{ str_replace('_', ' ', ucwords($muestra->cotio_estado_analisis)) }}
+                                                                </span>
+                                                            @endif
+                                                            @if($tieneNotaInterna)
+                                                                <button
+                                                                    type="button"
+                                                                    class="btn btn-sm btn-outline-light p-1 op-ot-card-header__icon-btn"
+                                                                    data-bs-toggle="modal"
+                                                                    data-bs-target="#notaInternaOrdenModal{{ $muestraId }}"
+                                                                    title="Ver nota interna"
+                                                                    aria-label="Ver nota interna de {{ $categoria->cotio_descripcion }} (muestra {{ $muestra->instance_number }})">
+                                                                    <x-heroicon-o-document-text style="width: 18px; height: 18px;" />
+                                                                </button>
+                                                            @endif
+                                                        </div>
 
-                                                        @if($tieneNotaInterna)
-                                                            <button
-                                                                type="button"
-                                                                class="btn btn-sm btn-outline-light p-1"
-                                                                data-bs-toggle="modal"
-                                                                data-bs-target="#notaInternaOrdenModal{{ $muestraId }}"
-                                                                title="Ver nota interna"
-                                                                aria-label="Ver nota interna de {{ $categoria->cotio_descripcion }} (muestra {{ $muestra->instance_number }})"
-                                                            >
-                                                                <x-heroicon-o-document-text
-                                                                    style="width: 18px; height: 18px;"
-                                                                    class="text-white" />
-                                                            </button>
-                                                        @endif
+                                                        <div class="d-flex align-items-center gap-2 flex-shrink-0 op-ot-card-header__actions">
+                                                            @if(userPuedeGestionarOrdenes() && ($muestra->cotio_estado_analisis === 'suspension' || $muestra->cotio_estado_analisis === 'coordinado analisis'))
+                                                                <button
+                                                                    type="button"
+                                                                    class="btn btn-sm btn-outline-light"
+                                                                    onclick="confirmarRecoordinacion({{ $muestra->id }}, '{{ $cotizacion->coti_num }}')"
+                                                                    title="Recoordinar muestra"
+                                                                    aria-label="Recoordinar muestra {{ $categoria->cotio_descripcion }} (Instancia {{ $muestra->instance_number }})">
+                                                                    <i class="fas fa-sync-alt me-1"></i> Anular
+                                                                </button>
+                                                            @endif
+                                                            <a
+                                                                href="#"
+                                                                class="text-decoration-none text-white op-ot-card-header__qr"
+                                                                title="Generar CT para esta muestra"
+                                                                data-url="{{ route('qr.universal', [
+                                                                    'cotio_numcoti' => $cotizacion->coti_num,
+                                                                    'cotio_item' => $categoria->cotio_item,
+                                                                    'cotio_subitem' => 0,
+                                                                    'instance' => $muestra->instance_number
+                                                                ]) }}"
+                                                                data-coti="{{ $cotizacion->coti_num }}"
+                                                                data-categoria="{{ $categoria->cotio_descripcion }}"
+                                                                data-instance="{{ $muestra->instance_number }}"
+                                                                data-fechaanalisis="{{ $muestra->fecha_ot ?? $muestra->fecha_inicio_ot }}"
+                                                                onclick="generateQr(this)">
+                                                                <x-heroicon-o-qr-code style="width: 22px; height: 22px;" />
+                                                            </a>
+                                                        </div>
                                                     </div>
+
+                                                    @if($muestra->active_ot && $muestra->coordinadorLab)
+                                                        <small class="text-light d-block mt-1 op-ot-card-header__subtitle">
+                                                            Coordinado por {{ trim($muestra->coordinadorLab->usu_descripcion) }}
+                                                        </small>
+                                                    @endif
                                                 </div>
-                                            </div>
-                    
-                                            <div class="d-flex align-items-center gap-2 flex-shrink-0">
-                                                @if(userPuedeGestionarOrdenes() && ($muestra->cotio_estado_analisis === 'suspension' || $muestra->cotio_estado_analisis === 'coordinado analisis'))
-                                                    <button
-                                                        type="button"
-                                                        class="btn btn-sm btn-outline-light"
-                                                        onclick="confirmarRecoordinacion({{ $muestra->id }}, '{{ $cotizacion->coti_num }}')"
-                                                        title="Recoordinar muestra"
-                                                        aria-label="Recoordinar muestra {{ $categoria->cotio_descripcion }} (Instancia {{ $muestra->instance_number }})">
-                                                        <i class="fas fa-sync-alt me-1"></i> Anular
-                                                    </button>
-                                                @endif
-                                                <a
-                                                    href="#"
-                                                    class="text-decoration-none text-white op-ot-card-header__qr"
-                                                    title="Generar CT para esta muestra"
-                                                    data-url="{{ route('qr.universal', [
-                                                        'cotio_numcoti' => $cotizacion->coti_num,
-                                                        'cotio_item' => $categoria->cotio_item,
-                                                        'cotio_subitem' => 0,
-                                                        'instance' => $muestra->instance_number
-                                                    ]) }}"
-                                                    data-coti="{{ $cotizacion->coti_num }}"
-                                                    data-categoria="{{ $categoria->cotio_descripcion }}"
-                                                    data-instance="{{ $muestra->instance_number }}"
-                                                    data-fechaanalisis="{{ $muestra->fecha_ot ?? $muestra->fecha_inicio_ot }}"
-                                                    onclick="generateQr(this)">
-                                                    <x-heroicon-o-qr-code style="width: 22px; height: 22px;" />
-                                                </a>
-                                            </div>
                                             </div>
 
                                             @if($responsables->isNotEmpty())
@@ -1024,7 +1017,9 @@
     if (typeof bootstrap !== 'undefined' && bootstrap.Tooltip) {
         const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
         tooltipTriggerList.map(function (tooltipTriggerEl) {
-            return new bootstrap.Tooltip(tooltipTriggerEl);
+            return new bootstrap.Tooltip(tooltipTriggerEl, {
+                placement: tooltipTriggerEl.getAttribute('data-bs-placement') || 'bottom',
+            });
         });
     }
     

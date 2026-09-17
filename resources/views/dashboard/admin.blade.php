@@ -10,7 +10,7 @@
                     Volumetría / costeos
                 </a>
             @endif
-            <div class="text-muted">{{ now()->format('l, d F Y') }}</div>
+            <div class="text-muted">{{ fechaActualLargaEs() }}</div>
         </div>
     </div>
 

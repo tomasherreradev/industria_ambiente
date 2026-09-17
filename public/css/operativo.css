@@ -620,10 +620,31 @@
     display: flex;
     flex-direction: column;
     gap: .65rem;
+    padding: .85rem 1.15rem !important;
 }
 
 .op-ot-card-header__top {
     align-items: flex-start !important;
+}
+
+.op-ot-card-header__title-row {
+    width: 100%;
+    min-height: 2rem;
+}
+
+.op-ot-card-header__actions {
+    align-self: center;
+}
+
+.op-ot-card-header__icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
+
+.op-ot-card-header__subtitle {
+    padding-left: 0;
 }
 
 .op-ot-card-header__analistas {
@@ -683,6 +704,305 @@
 .op-ot-card-header__qr:hover {
     background: rgba(255, 255, 255, .12);
     opacity: 1;
+}
+
+/* Detalle categoría (ordenes/muestras tareasporcategoria) */
+.tarea-categoria-page .ucrud-panel-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--op-text, #1a2332);
+    margin: 0;
+}
+
+.tarea-categoria-page .op-analisis-card {
+    border: 1px solid var(--op-border, #e2e8f0);
+    border-radius: .5rem;
+    overflow: hidden;
+    background: #fff;
+}
+
+.tarea-categoria-page .op-analisis-card__head {
+    background: linear-gradient(135deg, #d4e4f7 0%, #c5daf3 100%);
+    border-bottom: 1px solid rgba(26, 35, 50, .08);
+    padding: .85rem 1rem;
+}
+
+.tarea-categoria-page .op-analisis-card__head .card-title {
+    font-size: .95rem;
+    font-weight: 700;
+    color: #1a2332;
+}
+
+.tarea-categoria-page .tarea-detalle-hero .op-header-tag {
+    font-size: .72rem;
+}
+
+.tarea-categoria-page .tarea-detalle-personas {
+    padding-top: .75rem;
+    margin-top: .75rem;
+    border-top: 1px solid var(--op-border, #e2e8f0);
+}
+
+.tarea-categoria-page .tarea-detalle-personas__label {
+    display: block;
+    font-size: .68rem;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--op-muted, #64748b);
+    margin-bottom: .4rem;
+}
+
+.tarea-categoria-page .tarea-detalle-personas__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .35rem;
+}
+
+.tarea-categoria-page .op-person-chip--assign {
+    background: rgba(13, 110, 253, .08) !important;
+    color: #0a58ca !important;
+    border: 1px solid rgba(13, 110, 253, .22) !important;
+    font-size: .72rem;
+    font-weight: 600;
+    padding: .28rem .55rem;
+}
+
+.tarea-categoria-page .op-person-chip--more-assign {
+    background: rgba(100, 116, 139, .1) !important;
+    color: #475569 !important;
+    border: 1px dashed rgba(100, 116, 139, .35) !important;
+    cursor: help;
+    font-size: .72rem;
+    font-weight: 700;
+    padding: .28rem .55rem;
+}
+
+/* Panel análisis — padding interno */
+.tarea-categoria-page .ucrud-panel {
+    padding: 1rem 1.15rem 1.15rem;
+}
+
+.tarea-categoria-page .op-analisis-card__body {
+    padding: 1rem 1.15rem 1.15rem;
+}
+
+.tarea-categoria-page .tarea-detalle-personas {
+    margin-bottom: 1.25rem;
+    padding-bottom: .25rem;
+}
+
+/* Botones sobre header de color: hover legible, texto estable */
+.tarea-categoria-page .tarea-detalle-hero .btn-outline-light,
+.ucrud-detalle .card-header.text-white .btn-outline-light,
+.ucrud-detalle .card-header.bg-success .btn-outline-light,
+.ucrud-detalle .card-header.bg-primary .btn-outline-light,
+.ucrud-detalle .card-header.op-header--revision .btn-outline-light,
+.ucrud-detalle .card-header.op-header--analizado .btn-outline-light {
+    color: #fff !important;
+    border-color: rgba(255, 255, 255, .72) !important;
+    background: transparent !important;
+}
+
+.tarea-categoria-page .tarea-detalle-hero .btn-outline-light:hover,
+.tarea-categoria-page .tarea-detalle-hero .btn-outline-light:focus,
+.tarea-categoria-page .tarea-detalle-hero .btn-outline-light:active,
+.ucrud-detalle .card-header.text-white .btn-outline-light:hover,
+.ucrud-detalle .card-header.text-white .btn-outline-light:focus,
+.ucrud-detalle .card-header.bg-success .btn-outline-light:hover,
+.ucrud-detalle .card-header.bg-success .btn-outline-light:focus,
+.ucrud-detalle .card-header.bg-primary .btn-outline-light:hover,
+.ucrud-detalle .card-header.bg-primary .btn-outline-light:focus,
+.ucrud-detalle .card-header.op-header--revision .btn-outline-light:hover,
+.ucrud-detalle .card-header.op-header--revision .btn-outline-light:focus,
+.ucrud-detalle .card-header.op-header--analizado .btn-outline-light:hover,
+.ucrud-detalle .card-header.op-header--analizado .btn-outline-light:focus {
+    color: #fff !important;
+    background: rgba(255, 255, 255, .18) !important;
+    border-color: rgba(255, 255, 255, .9) !important;
+}
+
+/* Chips / badges en header: sin cambio de color en hover */
+.ucrud-detalle .card-header .op-header-tag,
+.ucrud-detalle .card-header .op-header-tag:hover,
+.tarea-categoria-page .op-person-chip--assign,
+.tarea-categoria-page .op-person-chip--assign:hover {
+    color: inherit;
+}
+
+.tarea-categoria-page .op-person-chip--assign:hover {
+    background: rgba(13, 110, 253, .12) !important;
+    color: #0a58ca !important;
+}
+
+/* Acordeón resultados de análisis */
+.tarea-categoria-page .op-analisis-card .accordion-body {
+    padding: 1rem 1.15rem 1.15rem;
+}
+
+.tarea-categoria-page .op-analisis-card .accordion-button {
+    font-weight: 700;
+    color: #1a2332;
+    padding: .85rem 1rem;
+}
+
+.tarea-categoria-page .op-analisis-card .accordion-button:not(.collapsed) {
+    color: #1a2332;
+    background: #f4f7fb;
+}
+
+.tarea-categoria-page .op-analisis-card .accordion-button:hover,
+.tarea-categoria-page .op-analisis-card .accordion-button:focus {
+    color: #1a2332;
+    box-shadow: none;
+}
+
+/* Tarjetas R1 / R2 / R3 / Final */
+.tarea-categoria-page .op-resultado-card {
+    border: 1px solid var(--op-border, #e2e8f0) !important;
+    border-radius: .5rem;
+    overflow: hidden;
+}
+
+.tarea-categoria-page .op-resultado-card__head {
+    padding: .65rem 1rem;
+    border-bottom: 1px solid rgba(26, 35, 50, .08);
+}
+
+.tarea-categoria-page .op-resultado-card__head--primary {
+    background: #dbeafe;
+}
+
+.tarea-categoria-page .op-resultado-card__head--info {
+    background: #cff4fc;
+}
+
+.tarea-categoria-page .op-resultado-card__head--warning {
+    background: #fff3cd;
+}
+
+.tarea-categoria-page .op-resultado-card__head--dark {
+    background: #495057;
+}
+
+.tarea-categoria-page .op-resultado-card__title {
+    font-weight: 700;
+    font-size: .9rem;
+}
+
+.tarea-categoria-page .op-resultado-card__head--primary .op-resultado-card__title {
+    color: #084298;
+}
+
+.tarea-categoria-page .op-resultado-card__head--info .op-resultado-card__title {
+    color: #055160;
+}
+
+.tarea-categoria-page .op-resultado-card__head--warning .op-resultado-card__title {
+    color: #664d03;
+}
+
+.tarea-categoria-page .op-resultado-card__head--dark .op-resultado-card__title {
+    color: #fff;
+}
+
+.tarea-categoria-page .op-resultado-card__pill {
+    font-size: .68rem;
+    font-weight: 700;
+    padding: .25rem .55rem;
+    border-radius: 999px;
+    color: #fff !important;
+}
+
+.tarea-categoria-page .op-resultado-card__pill--primary { background: #0d6efd !important; }
+.tarea-categoria-page .op-resultado-card__pill--info    { background: #0dcaf0 !important; color: #1a2332 !important; }
+.tarea-categoria-page .op-resultado-card__pill--warning  { background: #ffc107 !important; color: #1a2332 !important; }
+.tarea-categoria-page .op-resultado-card__pill--dark     { background: #212529 !important; }
+
+.tarea-categoria-page .op-resultado-card__head .badge.bg-secondary {
+    background: rgba(255, 255, 255, .85) !important;
+    color: #495057 !important;
+    border: 1px solid rgba(26, 35, 50, .12) !important;
+    font-weight: 600;
+}
+
+.tarea-categoria-page .op-resultado-card__head--dark .badge.bg-secondary {
+    background: rgba(255, 255, 255, .18) !important;
+    color: #fff !important;
+    border-color: rgba(255, 255, 255, .25) !important;
+}
+
+.tarea-categoria-page .op-resultado-card__hist-btn {
+    color: #495057 !important;
+    border: 1px solid rgba(26, 35, 50, .18) !important;
+    background: rgba(255, 255, 255, .7) !important;
+}
+
+.tarea-categoria-page .op-resultado-card__hist-btn:hover,
+.tarea-categoria-page .op-resultado-card__hist-btn:focus {
+    color: #1a2332 !important;
+    background: #fff !important;
+    border-color: rgba(26, 35, 50, .22) !important;
+}
+
+.tarea-categoria-page .op-resultado-card__head--dark .op-resultado-card__hist-btn {
+    color: #fff !important;
+    border-color: rgba(255, 255, 255, .35) !important;
+    background: rgba(255, 255, 255, .12) !important;
+}
+
+.tarea-categoria-page .op-resultado-card__head--dark .op-resultado-card__hist-btn:hover,
+.tarea-categoria-page .op-resultado-card__head--dark .op-resultado-card__hist-btn:focus {
+    color: #1a2332 !important;
+    background: #fff !important;
+}
+
+.tarea-categoria-page .op-resultado-card__body {
+    padding: 1rem 1.15rem !important;
+}
+
+.tarea-categoria-page .op-resultados-grid {
+    --bs-gutter-y: .85rem;
+}
+
+/* Secciones internas (datos muestra, herramientas, adjuntos…) */
+.tarea-categoria-page .op-section-card {
+    border: 1px solid var(--op-border, #e2e8f0);
+    border-radius: .5rem;
+    overflow: hidden;
+}
+
+.tarea-categoria-page .op-section-card__header {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: .65rem;
+    padding: .85rem 1.15rem !important;
+    background: #f8f9fc !important;
+    border-bottom: 1px solid var(--op-border, #e2e8f0);
+}
+
+.tarea-categoria-page .op-section-card__title {
+    margin: 0;
+    padding: 0;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #1a2332;
+    line-height: 1.3;
+}
+
+.tarea-categoria-page .op-section-card > .card-body {
+    padding: 1rem 1.15rem !important;
+}
+
+.tarea-categoria-page .card.shadow-sm.mb-4 > .card-body > .op-section-card,
+.tarea-categoria-page .card.shadow-sm.mb-4 > .card-body > .card.shadow-sm {
+    margin-top: 1rem;
+}
+
+.tarea-categoria-page .tarea-detalle-hero {
+    padding: .85rem 1.15rem !important;
 }
 
 /* Estado en celdas tabla cotizaciones */

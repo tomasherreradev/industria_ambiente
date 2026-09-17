@@ -108,12 +108,50 @@ class CotizacionContactosFacturacion
     }
 
     /**
+     * Emails válidos para envío: cotización (envío factura) + contactos del cliente.
+     *
+     * @return Collection<string, string> normalizado => email
+     */
+    public static function emailsPermitidosParaEnvio(Coti $cotizacion, Collection $contactosCliente): Collection
+    {
+        $map = collect();
+
+        foreach (self::contactosEnvioFacturaCoti($cotizacion) as $contacto) {
+            $email = trim((string) ($contacto['correo'] ?? ''));
+            if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $map->put(self::normalizarEmail($email), $email);
+            }
+        }
+
+        foreach ($contactosCliente as $contacto) {
+            $email = trim((string) ($contacto->email ?? ''));
+            if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $map->put(self::normalizarEmail($email), $email);
+            }
+        }
+
+        return $map;
+    }
+
+    /**
      * @param  array<int, string>|null  $seleccionRequest
      * @return array<int, string>
      */
     public static function resolverEmailsDestino(Coti $cotizacion, Collection $contactosCliente, ?array $seleccionRequest = null): array
     {
         $estado = self::estadoEnvioFactura($cotizacion, $contactosCliente);
+        $permitidos = self::emailsPermitidosParaEnvio($cotizacion, $contactosCliente);
+
+        if ($seleccionRequest !== null) {
+            $emails = [];
+            foreach (collect($seleccionRequest)->map(fn ($e) => self::normalizarEmail($e))->filter()->unique() as $norm) {
+                if ($permitidos->has($norm)) {
+                    $emails[] = $permitidos->get($norm);
+                }
+            }
+
+            return array_values(array_unique($emails));
+        }
 
         if ($estado['tiene_envio_configurado']) {
             return collect($estado['contactos_coti'])
@@ -125,18 +163,86 @@ class CotizacionContactosFacturacion
                 ->all();
         }
 
-        $permitidos = $contactosCliente
-            ->mapWithKeys(fn ($c) => [self::normalizarEmail($c->email ?? '') => trim((string) $c->email)])
-            ->filter(fn ($email, $norm) => $norm !== '' && filter_var($email, FILTER_VALIDATE_EMAIL));
+        return [];
+    }
 
-        $emails = [];
-        foreach (collect($seleccionRequest ?? [])->map(fn ($e) => self::normalizarEmail($e))->filter()->unique() as $norm) {
-            if ($permitidos->has($norm)) {
-                $emails[] = $permitidos->get($norm);
+    /**
+     * Actualiza en la cotización los contactos tipo «Envío de factura» según la selección del facturador.
+     *
+     * @param  array<int, string>  $emailsSeleccionados
+     */
+    public static function aplicarSeleccionEnvioFacturaEnCoti(Coti $cotizacion, Collection $contactosCliente, array $emailsSeleccionados): void
+    {
+        $emailsSeleccionados = collect($emailsSeleccionados)
+            ->map(fn ($e) => trim((string) $e))
+            ->filter(fn ($e) => filter_var($e, FILTER_VALIDATE_EMAIL))
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($emailsSeleccionados === []) {
+            return;
+        }
+
+        $slotsDef = [
+            ['contacto' => 'coti_contacto', 'mail' => 'coti_mail1', 'tel' => 'coti_telefono', 'tipo' => 'coti_contacto_tipo1'],
+            ['contacto' => 'coti_contacto2', 'mail' => 'coti_mail2', 'tel' => 'coti_telefono2', 'tipo' => 'coti_contacto_tipo2'],
+            ['contacto' => 'coti_contacto3', 'mail' => 'coti_mail3', 'tel' => 'coti_telefono3', 'tipo' => 'coti_contacto_tipo3'],
+            ['contacto' => 'coti_contacto4', 'mail' => 'coti_mail4', 'tel' => 'coti_telefono4', 'tipo' => 'coti_contacto_tipo4'],
+        ];
+
+        foreach ($slotsDef as $fields) {
+            if (self::esTipoEnvioFactura($cotizacion->{$fields['tipo']} ?? '')) {
+                $cotizacion->{$fields['contacto']} = null;
+                $cotizacion->{$fields['mail']} = null;
+                $cotizacion->{$fields['tel']} = null;
+                $cotizacion->{$fields['tipo']} = null;
             }
         }
 
-        return array_values(array_unique($emails));
+        $mapaCliente = $contactosCliente->keyBy(fn ($c) => self::normalizarEmail($c->email ?? ''));
+        $mapaCoti = collect(self::contactosDesdeCoti($cotizacion))
+            ->keyBy(fn (array $c) => self::normalizarEmail($c['correo'] ?? ''));
+
+        $slotsLibres = [];
+        foreach ($slotsDef as $fields) {
+            $mail = trim((string) ($cotizacion->{$fields['mail']} ?? ''));
+            $nombre = trim((string) ($cotizacion->{$fields['contacto']} ?? ''));
+            if ($mail === '' && $nombre === '') {
+                $slotsLibres[] = $fields;
+            }
+        }
+
+        foreach ($emailsSeleccionados as $email) {
+            if ($slotsLibres === []) {
+                break;
+            }
+
+            $fields = array_shift($slotsLibres);
+            $norm = self::normalizarEmail($email);
+            $contactoCliente = $mapaCliente->get($norm);
+            $contactoCoti = $mapaCoti->get($norm);
+
+            $nombre = $contactoCliente
+                ? trim((string) $contactoCliente->nombre)
+                : trim((string) ($contactoCoti['nombre'] ?? ''));
+            if ($nombre === '') {
+                $nombre = Str::before($email, '@') ?: 'Facturación';
+            }
+
+            $cotizacion->{$fields['mail']} = $email;
+            $cotizacion->{$fields['tipo']} = self::TIPO_ENVIO_FACTURA_COTI;
+            $cotizacion->{$fields['contacto']} = $nombre;
+
+            $telefono = $contactoCliente
+                ? trim((string) ($contactoCliente->telefono ?? ''))
+                : trim((string) ($contactoCoti['telefono'] ?? ''));
+            if ($telefono !== '') {
+                $cotizacion->{$fields['tel']} = $telefono;
+            }
+        }
+
+        $cotizacion->save();
     }
 
     /**

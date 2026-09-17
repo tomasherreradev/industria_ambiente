@@ -1,68 +1,75 @@
 @extends('layouts.app')
 
+@section('title', 'Nuevo cliente')
+
 @section('content')
+@include('partials.operativo-styles')
+<link rel="stylesheet" href="{{ asset('css/clientes-form.css') }}?v={{ filemtime(public_path('css/clientes-form.css')) }}">
 
-<!-- SweetAlert2 CSS -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+@php
+    $estadoActual = old('activo', '1');
+@endphp
 
-<div class="container-fluid">
-    <div class="row">
-        <div class="col-12">
-            <div class="d-flex justify-content-between align-items-center mb-4">
-                <h2 class="h4 mb-0">Crear Nuevo Cliente</h2>
-                <div>
-                    <a href="{{ route('clientes.index') }}" class="btn btn-secondary me-2">
-                        <x-heroicon-o-arrow-left style="width: 16px; height: 16px;" class="me-1" />
-                        Volver
-                    </a>
+<div class="container py-4 ucrud ucrud-operativo clientes-form-page" data-ucrud-root>
+    @include('partials.ucrud-form-header', [
+        'title' => 'Nuevo cliente',
+        'subtitle' => 'Completá los datos para dar de alta un cliente',
+        'backUrl' => route('clientes.index'),
+        'backLabel' => 'Volver al listado',
+    ])
+
+    @if(session('success'))
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            {{ session('success') }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+        </div>
+    @endif
+
+    @if(session('error'))
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            {{ session('error') }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+        </div>
+    @endif
+
+    @if($errors->any())
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            <ul class="mb-0">
+                @foreach($errors->all() as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
+            </ul>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+        </div>
+    @endif
+
+    <div class="ucrud-panel clientes-form-panel">
+        <div class="clientes-form-panel__body">
+            <form method="POST" action="{{ route('clientes.store') }}" id="clienteForm">
+                @csrf
+
+                <div class="clientes-form-meta">
+                    <div class="clientes-form-meta__codigo">
+                        <label for="codigo">Código</label>
+                        <input type="text" class="form-control form-control-sm" id="codigo" name="codigo"
+                               value="{{ old('codigo') }}" placeholder="Autogenerado">
+                    </div>
+                    <div class="clientes-form-meta__chips">
+                        @if($estadoActual === '1')
+                            <span class="ucrud-chip ucrud-chip--green">Activo</span>
+                        @else
+                            <span class="ucrud-chip ucrud-chip--rose">Inactivo</span>
+                        @endif
+                        @if(old('es_consultor'))
+                            <span class="ucrud-chip ucrud-chip--violet">Consultor</span>
+                        @endif
+                        @if(old('cuit_numero'))
+                            <span class="ucrud-chip ucrud-chip--slate">{{ old('cuit_tipo', 'CUIT') }} {{ old('cuit_numero') }}</span>
+                        @endif
+                    </div>
                 </div>
-            </div>
 
-            <!-- Mensajes de éxito y error -->
-            @if(session('success'))
-                <div class="alert alert-success alert-dismissible fade show" role="alert">
-                    {{ session('success') }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                </div>
-            @endif
-
-            @if(session('error'))
-                <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                    {{ session('error') }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                </div>
-            @endif
-
-            @if($errors->any())
-                <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                    <ul class="mb-0">
-                        @foreach($errors->all() as $error)
-                            <li>{{ $error }}</li>
-                        @endforeach
-                    </ul>
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                </div>
-            @endif
-
-            <div class="card shadow-sm">
-                <div class="card-body p-0">
-                    <form method="POST" action="{{ route('clientes.store') }}" id="clienteForm">
-                        @csrf
-                        
-                        <!-- Header con código y estado -->
-                        <div class="border-bottom px-4 py-3 bg-light">
-                            <div class="row align-items-center">
-                                <div class="col-md-2">
-                                    <label for="codigo" class="form-label fw-semibold mb-1">Código:</label>
-                                    <input type="text" class="form-control form-control-sm" id="codigo" name="codigo" 
-                                           value="{{ old('codigo') }}" placeholder="Autogenerado">
-                                </div>
-                                <div class="col-md-6"></div>
-                            </div>
-                        </div>
-
-                        <!-- Navegación de solapas -->
-                        <ul class="nav nav-tabs nav-tabs-custom" id="clienteTabs" role="tablist">
+                <ul class="nav nav-tabs clientes-form-tabs" id="clienteTabs" role="tablist">
                             <li class="nav-item" role="presentation">
                                 <button class="nav-link active" id="general-tab" data-bs-toggle="tab" 
                                         data-bs-target="#general" type="button" role="tab">
@@ -543,30 +550,17 @@
                             </div>
                         </div>
 
-                        <!-- Botones de acción -->
-                        <div class="card-footer bg-light border-top">
-                            <div class="d-flex justify-content-end gap-2">
-                                <button type="button" class="btn btn-secondary" onclick="window.history.back()">
-                                    <x-heroicon-o-x-mark style="width: 16px; height: 16px;" class="me-1" />
-                                    Cancelar
-                                </button>
-                                {{-- <button type="button" class="btn btn-success">
-                                    <x-heroicon-o-plus style="width: 16px; height: 16px;" class="me-1" />
-                                    Agregar
-                                </button>
-                                <button type="button" class="btn btn-warning">
-                                    <x-heroicon-o-pencil style="width: 16px; height: 16px;" class="me-1" />
-                                    Modificar
-                                </button> --}}
-                                <button type="submit" class="btn btn-primary">
-                                    <x-heroicon-o-check style="width: 16px; height: 16px;" class="me-1" />
-                                    Guardar
-                                </button>
-                            </div>
-                        </div>
-                    </form>
+                <div class="clientes-form-footer">
+                    <a href="{{ route('clientes.index') }}" class="ucrud-btn ucrud-btn--ghost">
+                        <x-heroicon-o-x-mark style="width: 16px; height: 16px;" />
+                        Cancelar
+                    </a>
+                    <button type="submit" class="ucrud-btn ucrud-btn--primary">
+                        <x-heroicon-o-check style="width: 16px; height: 16px;" />
+                        Crear cliente
+                    </button>
                 </div>
-            </div>
+            </form>
         </div>
     </div>
 
@@ -697,131 +691,6 @@
     </div>
 </div>
 
-<style>
-    /* Estilos personalizados para las solapas */
-    .nav-tabs-custom {
-        border-bottom: 1px solid #dee2e6;
-        background-color: #f8f9fa;
-        padding: 0;
-        margin: 0;
-    }
-
-    .nav-tabs-custom .nav-link {
-        border: none;
-        border-radius: 0;
-        padding: 12px 20px;
-        color: #495057;
-        background-color: transparent;
-        font-weight: 500;
-        position: relative;
-    }
-
-    .nav-tabs-custom .nav-link:hover {
-        background-color: #e9ecef;
-        border: none;
-    }
-
-    .nav-tabs-custom .nav-link.active {
-        background-color: #fff;
-        color: #0d6efd;
-        border: none;
-        border-bottom: 2px solid #0d6efd;
-    }
-
-    .nav-tabs-custom .nav-link.disabled {
-        color: #6c757d;
-        background-color: transparent;
-        cursor: not-allowed;
-    }
-
-    /* Estilo para los campos de formulario */
-    .form-label {
-        font-weight: 500;
-        color: #495057;
-        margin-bottom: 0.25rem;
-    }
-
-    .form-control, .form-select {
-        border: 1px solid #ced4da;
-        border-radius: 0.25rem;
-        font-size: 0.875rem;
-    }
-
-    .form-control:focus, .form-select:focus {
-        border-color: #86b7fe;
-        box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
-    }
-
-    /* Tabla de sectores */
-    .table-responsive {
-        border: 1px solid #dee2e6;
-        border-radius: 0.25rem;
-    }
-
-    .table th {
-        background-color: #f8f9fa;
-        border-color: #dee2e6;
-        font-weight: 600;
-        font-size: 0.8rem;
-        padding: 0.5rem;
-    }
-
-    .table td {
-        padding: 0.25rem 0.5rem;
-        vertical-align: middle;
-    }
-
-    /* Botones de búsqueda */
-    .btn-outline-secondary {
-        border-color: #ced4da;
-        color: #6c757d;
-    }
-
-    .btn-outline-secondary:hover {
-        background-color: #6c757d;
-        border-color: #6c757d;
-    }
-
-    /* Header del formulario */
-    .bg-light {
-        background-color: #f8f9fa !important;
-    }
-
-    /* Radio buttons en línea */
-    .form-check-inline .form-check-input {
-        margin-right: 0.25rem;
-    }
-
-    .form-check-inline .form-check-label {
-        margin-right: 1rem;
-    }
-
-    /* Espaciado de contenido */
-    .tab-content {
-        min-height: 500px;
-    }
-
-    /* Input groups */
-    .input-group .form-control {
-        border-right: 0;
-    }
-
-    .input-group .form-control:not(:last-child) {
-        border-top-right-radius: 0;
-        border-bottom-right-radius: 0;
-    }
-
-    .input-group .form-control:not(:first-child) {
-        border-top-left-radius: 0;
-        border-bottom-left-radius: 0;
-        border-left: 0;
-    }
-
-    .input-group .btn {
-        border-left: 0;
-    }
-</style>
-
 <script>
     function agregarFilaContacto() {
         const tbody = document.getElementById('tbodyContactos');
@@ -873,7 +742,9 @@
         var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
         if (tooltipTriggerList.length > 0) {
             var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-                return new bootstrap.Tooltip(tooltipTriggerEl);
+                return new bootstrap.Tooltip(tooltipTriggerEl, {
+                    placement: tooltipTriggerEl.getAttribute('data-bs-placement') || 'bottom',
+                });
             });
         }
 

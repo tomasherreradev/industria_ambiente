@@ -9,6 +9,10 @@
     
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="{{ asset('css/sidebar.css') }}?v={{ filemtime(public_path('css/sidebar.css')) }}">
+    <link rel="stylesheet" href="{{ asset('css/topbar.css') }}?v={{ filemtime(public_path('css/topbar.css')) }}">
+    <link rel="stylesheet" href="{{ asset('css/notificaciones.css') }}?v={{ filemtime(public_path('css/notificaciones.css')) }}">
+    <link rel="stylesheet" href="{{ asset('css/mobile-nav.css') }}?v={{ filemtime(public_path('css/mobile-nav.css')) }}">
 
     
     <style>
@@ -23,8 +27,9 @@
             --dark-color: #5a5c69;
             --gray-600: #6c757d;
             --gray-400: #ced4da;
-            --sidebar-width: 250px;
-            --navbar-height: 56px;
+            --sidebar-width: 260px;
+            --navbar-height: 64px;
+            --app-topbar-height: 64px;
         }
 
         body {
@@ -35,72 +40,9 @@
             transition: padding 0.3s ease;
         }
 
-        /* Navbar y Sidebar */
-        .navbar, .sidebar {
+        /* Navbar */
+        .navbar {
             background-color: #ffffff;
-        }
-
-        .sidebar {
-            border-right: 1px solid var(--gray-400);
-        }
-
-        .sidebar .nav-link {
-            color: var(--dark-color);
-            font-weight: 500;
-            padding: 0.75rem 1rem;
-            border-radius: 0.375rem;
-            transition: all 0.2s ease-in-out;
-        }
-
-        .sidebar .nav-link:hover {
-            background-color: rgba(0, 0, 0, 0.05);
-            color: var(--primary-color);
-        }
-
-        .sidebar .nav-group-title {
-            color: var(--gray-600);
-            font-size: 0.75rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            margin-top: 1.5rem;
-            margin-bottom: 0.5rem;
-            padding-left: 1rem;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-
-        /* Estilos para el acordeón del sidebar */
-        .accordion-item {
-            border: none;
-            background: transparent;
-            margin-bottom: 0.5rem;
-        }
-
-        .accordion-button {
-            background: transparent !important;
-            padding: 0.5rem 0;
-            color: #495057;
-            font-weight: 600;
-            box-shadow: none !important;
-        }
-
-        .accordion-button:not(.collapsed) {
-            color: #0d6efd;
-        }
-
-        .accordion-button::after {
-            margin-left: auto;
-            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23212529'%3e%3cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3e%3c/svg%3e");
-        }
-
-        .accordion-button:not(.collapsed)::after {
-            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%230d6efd'%3e%3cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3e%3c/svg%3e");
-        }
-
-        .accordion-body {
-            padding: 0 !important;
         }
 
         /* Layout principal */
@@ -109,17 +51,6 @@
         }
 
         @media (min-width: 768px) {
-            .sidebar {
-                width: var(--sidebar-width);
-                height: 100vh;
-                position: fixed;
-                top: 0;
-                left: 0;
-                padding-top: 2rem;
-                overflow-y: auto;
-                overflow-x: hidden;
-            }
-
             .main-content {
                 margin-left: var(--sidebar-width);
                 padding: 2rem;
@@ -141,11 +72,6 @@
             transform: scale(1.05);
         }
 
-        .sidebar-logo {
-            width: 120px;
-            margin-bottom: 2rem;
-        }
-
         .mobile-logo {
             height: 40px;
         }
@@ -161,20 +87,17 @@
             top: 0;
             left: 0;
             right: 0;
-            z-index: 1030;
+            z-index: 1060;
             background-color: white;
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
         
         #mobileNavbar {
             position: fixed;
-            top: 0;
             left: 0;
             right: 0;
             bottom: 0;
-            padding-top: var(--navbar-height);
-            z-index: 1020;
-            background-color: rgba(255, 255, 255, 0.98);
+            background-color: #fff;
             transform: translateX(-100%);
             transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             overflow-y: auto;
@@ -256,12 +179,10 @@
         /* Efecto overlay */
         .navbar-overlay {
             position: fixed;
-            top: 0;
             left: 0;
             right: 0;
             bottom: 0;
             background-color: rgba(0, 0, 0, 0.5);
-            z-index: 1010;
             opacity: 0;
             visibility: hidden;
             transition: opacity 0.3s ease, visibility 0.3s ease;
@@ -282,25 +203,6 @@
             }
         }
 
-        /* Mejoras visuales para móvil */
-        .mobile-nav-link {
-            padding: 0.75rem 1rem;
-            border-bottom: 1px solid rgba(0, 0, 0, 0.05);
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-        }
-
-        .mobile-nav-link svg {
-            flex-shrink: 0;
-        }
-
-        .mobile-nav-link:hover {
-            background-color: rgba(0, 0, 0, 0.03);
-        }
-
-
-
         .text-truncate {
             white-space: nowrap;
             overflow: hidden;
@@ -313,13 +215,13 @@
             pointer-events: none;
         }
         
-        .dropdown-menu {
+        .dropdown-menu:not(.app-topbar__dropdown) {
             max-height: 400px;
             overflow-y: auto;
         }
 
         @media (max-width: 767.98px) {
-            .dropdown-menu {
+            .dropdown-menu:not(.app-topbar__dropdown) {
                 position: fixed !important;
                 top: auto !important;
                 left: 0 !important;
@@ -337,7 +239,7 @@
             }
 
             /* Asegurar que el dropdown no se corte en la parte inferior */
-            .dropdown-menu.show {
+            .dropdown-menu:not(.app-topbar__dropdown).show {
                 display: block;
                 transform: translateY(0) !important;
             }
@@ -417,79 +319,30 @@
 
             @if(Auth::user())
                 <div class="d-flex align-items-center gap-2 navbar-actions">
-                    <div class="dropdown">
-                        <a href="#" class="d-flex align-items-center text-decoration-none" id="notificationsDropdownDesktop" data-bs-toggle="dropdown" aria-expanded="false">
-                            <div class="position-relative" style="margin-top: -3px;">
-                                <x-heroicon-o-bell style="width: 18px; height: 18px;" class="text-gray-500" id="notificationsBell"/>
-                                @php
-                                    $notificacionesNoLeidas = App\Models\SimpleNotification::where('coordinador_codigo', auth()->user()->usu_codigo)
-                                        ->where('leida', false)
-                                        ->count();
-                                @endphp
-                                @if($notificacionesNoLeidas > 0)
-                                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.6rem;">
-                                    {{ $notificacionesNoLeidas }}
-                                    <span class="visually-hidden">notificaciones no leídas</span>
-                                </span>
-                                @endif
-                            </div>
+                    <div class="dropdown notif-dropdown-wrap">
+                        <a href="#" class="app-topbar__icon-btn position-relative" id="notificationsDropdownDesktop" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Notificaciones">
+                            <x-heroicon-o-bell id="notificationsBell" />
+                            @php
+                                $notificacionesNoLeidas = App\Models\SimpleNotification::where('coordinador_codigo', auth()->user()->usu_codigo)
+                                    ->where('leida', false)
+                                    ->count();
+                            @endphp
+                            @if($notificacionesNoLeidas > 0)
+                            <span class="position-absolute badge rounded-pill bg-danger app-topbar__icon-btn__badge">
+                                {{ $notificacionesNoLeidas }}
+                                <span class="visually-hidden">notificaciones no leídas</span>
+                            </span>
+                            @endif
                         </a>
-                        <ul class="dropdown-menu dropdown-menu-end shadow-sm mt-2" aria-labelledby="notificationsDropdown" style="width: 300px;">
-                            <li class="dropdown-header d-flex justify-content-between align-items-center">
-                                <span class="fw-semibold">Notificaciones</span>
-                                <small>
-                                    <form action="{{ route('notificaciones.leer-todas') }}" method="POST" class="d-inline">
-                                        @csrf
-                                        <button type="submit" class="btn btn-link text-primary p-0">Marcar todas</button>
-                                    </form>
-                                </small>
-                            </li>
-                            <li><hr class="dropdown-divider my-1"></li>
-                            
-                            @forelse(App\Models\SimpleNotification::where('coordinador_codigo', auth()->user()->usu_codigo)
-                                ->orderBy('created_at', 'desc')
-                                ->take(5)
-                                ->get() as $notificacion)
-                            <li>
-
-
-                                <a href="{{ route('notificaciones.show', $notificacion->id) }}" class="dropdown-item py-2 {{ $notificacion->leida ? '' : 'bg-light' }}">
-                                        <div class="d-flex gap-2">
-                                            <div class="flex-shrink-0 text-primary">
-                                                <x-heroicon-o-bell style="width: 16px; height: 16px;" />
-                                            </div>
-                                            <div style="min-width: 0;">
-                                                <p class="mb-0 small text-truncate" style="max-width: 220px;"
-                                                    data-bs-toggle="tooltip"
-                                                    data-bs-placement="bottom"
-                                                    title="{{ $notificacion->mensaje }}">
-                                                    {{ $notificacion->resumenCorto() }}
-                                                </p>
-                                                <small class="text-muted">{{ $notificacion->created_at->diffForHumans() }}</small>
-                                            </div>
-                                        </div>
-                                </a>
-                            </li>
-                            @empty
-                            <li class="text-center py-2 text-muted">
-                                <small>No hay notificaciones</small>
-                            </li>
-                            @endforelse
-                        
-                            
-                            <li><hr class="dropdown-divider my-1"></li>
-                            <li class="text-center">
-                                <a href="{{ route('notificaciones.index') }}" class="dropdown-item small text-primary">Ver todas</a>
-                            </li>
-                        </ul>
+                        @include('layouts.partials.notificaciones-dropdown')
                     </div>
         
                     
                     <div class="dropdown">
-                        <a href="#" class="d-flex align-items-center text-decoration-none" id="settingsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-                            <x-heroicon-o-cog-6-tooth style="width: 18px; height: 18px;" class="text-gray-500" />
+                        <a href="#" class="app-topbar__icon-btn" id="settingsDropdownMobile" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Configuración">
+                            <x-heroicon-o-cog-6-tooth />
                         </a>
-                        <ul class="dropdown-menu dropdown-menu-end shadow-sm mt-2" aria-labelledby="settingsDropdown">
+                        <ul class="dropdown-menu dropdown-menu-end app-topbar__dropdown" aria-labelledby="settingsDropdownMobile">
                             <li class="dropdown-header">
                                 <span class="fw-semibold">Configuración</span>
                             </li>
@@ -514,14 +367,10 @@
                             </li>
                         </ul>
                     </div>
-                    <button class="navbar-toggler" type="button" id="mobileNavbarToggler" aria-label="Toggle navigation">
-                        <span class="navbar-toggler-icon"></span>
-                    </button>
+                    @include('layouts.partials.hamburger-toggle')
                 </div>
             @else
-                <button class="navbar-toggler ms-auto" type="button" id="mobileNavbarToggler" aria-label="Toggle navigation">
-                    <span class="navbar-toggler-icon"></span>
-                </button>
+                @include('layouts.partials.hamburger-toggle', ['class' => 'ms-auto'])
             @endif
 
         </div>
@@ -531,12 +380,29 @@
     <div class="navbar-overlay" id="navbarOverlay"></div>
 
     <div class="mobile-navbar-menu" id="mobileNavbar">
-        <button class="close-menu-btn" id="closeMenuBtn" aria-label="Cerrar menú">
-            &times;
-        </button>
-        
-        <nav class="nav flex-column px-3 py-3">
+        <nav class="nav flex-column app-mobile-nav">
+            @if((userHasRole('muestreador') || userHasRole('laboratorio')) && Auth::user()->usu_nivel < 900)
+                <p class="app-mobile-nav__label">Bandeja de trabajo</p>
+                @if(userHasRole('muestreador'))
+                    <a class="nav-link mobile-nav-link" href="{{ url('/mis-tareas') }}">
+                        <x-heroicon-o-beaker style="width: 18px; height: 18px;" />
+                        Mis muestras
+                    </a>
+                @endif
+                @if(userHasRole('laboratorio'))
+                    <a class="nav-link mobile-nav-link" href="{{ url('/mis-ordenes') }}">
+                        <x-heroicon-o-clipboard-document-list style="width: 18px; height: 18px;" />
+                        Mis análisis
+                    </a>
+                @endif
+            @endif
+
             @if(Auth::user()->usu_nivel >= 900 || userHasAnyRole(['coordinador_lab', 'coordinador_muestreo', 'ventas']))
+                @if((userHasRole('muestreador') || userHasRole('laboratorio')) && Auth::user()->usu_nivel < 900)
+                    <div class="app-mobile-nav__section"></div>
+                @else
+                    <p class="app-mobile-nav__label">Bandeja de trabajo</p>
+                @endif
 
                 @if(Auth::user()->usu_nivel >= 900)
                     <a class="nav-link mobile-nav-link" href="{{ url('/dashboard') }}">
@@ -677,58 +543,67 @@
                 </a>
             @endif
 
-            <a class="nav-link mobile-nav-link" href="{{ url('/auth/' . Auth::user()->usu_codigo) }}">
-                <x-heroicon-o-user style="width: 18px; height: 18px;" />
-                Perfil
-            </a>
-            
+            <div class="app-mobile-nav__section">
+                <p class="app-mobile-nav__label">Cuenta</p>
+                <a class="nav-link mobile-nav-link" href="{{ url('/auth/' . Auth::user()->usu_codigo) }}">
+                    <x-heroicon-o-user style="width: 18px; height: 18px;" />
+                    Perfil
+                </a>
+            </div>
+
             @if (Auth::check())
-                <form method="POST" action="{{ route('logout') }}" class="mt-2">
-                    @csrf
-                    <button type="submit" class="btn btn-outline-danger w-100">
-                        Cerrar Sesión
-                    </button>
-                </form>
+                <div class="app-mobile-nav__logout">
+                    <form method="POST" action="{{ route('logout') }}" class="m-0">
+                        @csrf
+                        <button type="submit" class="app-mobile-nav__logout-btn">
+                            <x-heroicon-o-arrow-left-on-rectangle style="width: 16px; height: 16px;" />
+                            Cerrar sesión
+                        </button>
+                    </form>
+                </div>
             @endif
         </nav>
     </div>
 </div>
 
 
-<div class="sidebar d-none d-md-flex flex-column p-3 shadow-sm">
-    <a class="navbar-brand mb-3" href="
-        @if(Auth::user()->usu_nivel >= 900)
-            {{ url('/dashboard') }}
-        @elseif(userHasRole('laboratorio'))
-            {{ url('/mis-ordenes') }}
-        @elseif(userHasRole('muestreador'))
-            {{ url('/mis-tareas') }}
-        @elseif(userHasRole('coordinador_lab'))
-            {{ userTieneBandejaSoloInformes() ? url('/informes') : url('/dashboard/analisis') }}
-        @elseif(userHasRole('coordinador_muestreo'))
-            {{ url('/dashboard/muestreo') }}
-        @elseif(userHasRole('ventas'))
-            {{ url('/ventas') }}
-        @elseif(userHasRole('coordinador_consul'))
-            {{ route('consultoria.index') }}
-        @elseif(userHasRole('coordinador_mediciones'))
-            {{ route('mediciones.index') }}
-        @elseif(userHasRole('asp'))
-            {{ route('asp.index') }}
-        @elseif(userHasRole('clarke_fire'))
-            {{ route('clarke-fire.index') }}
-        @endif
-    ">
-        <img src="{{ asset('/assets/img/logo.png') }}" alt="Logo" class="sidebar-logo">
-    </a>
-    
-    <nav class="nav flex-column w-100 px-2">
+<aside class="sidebar app-sidebar d-none d-md-flex flex-column">
+    <div class="app-sidebar__brand">
+        <a class="navbar-brand" href="
+            @if(Auth::user()->usu_nivel >= 900)
+                {{ url('/dashboard') }}
+            @elseif(userHasRole('laboratorio'))
+                {{ url('/mis-ordenes') }}
+            @elseif(userHasRole('muestreador'))
+                {{ url('/mis-tareas') }}
+            @elseif(userHasRole('coordinador_lab'))
+                {{ userTieneBandejaSoloInformes() ? url('/informes') : url('/dashboard/analisis') }}
+            @elseif(userHasRole('coordinador_muestreo'))
+                {{ url('/dashboard/muestreo') }}
+            @elseif(userHasRole('ventas'))
+                {{ url('/ventas') }}
+            @elseif(userHasRole('coordinador_consul'))
+                {{ route('consultoria.index') }}
+            @elseif(userHasRole('coordinador_mediciones'))
+                {{ route('mediciones.index') }}
+            @elseif(userHasRole('asp'))
+                {{ route('asp.index') }}
+            @elseif(userHasRole('clarke_fire'))
+                {{ route('clarke-fire.index') }}
+            @endif
+        ">
+            <img src="{{ asset('/assets/img/logo.png') }}" alt="Logo" class="sidebar-logo">
+        </a>
+    </div>
+
+    <div class="app-sidebar__scroll">
+    <nav class="nav flex-column app-sidebar__nav w-100">
 
         @if(Auth::user())
             <div class="accordion-item">
-                <button class="accordion-button nav-group-title" type="button" data-bs-toggle="collapse" data-bs-target="#bandejaTrabajo">
-                    Bandeja de Trabajo
-                    <x-heroicon-o-ticket style="width: 16px; height: 16px;" class="ms-2" />
+                <button class="accordion-button nav-group-title" type="button" data-bs-toggle="collapse" data-bs-target="#bandejaTrabajo" aria-expanded="true">
+                    <x-heroicon-o-ticket style="width: 14px; height: 14px;" />
+                    <span>Bandeja de Trabajo</span>
                 </button>
                 
                 <div id="bandejaTrabajo" class="accordion-collapse collapse show">
@@ -822,9 +697,9 @@
 
         @if($usuarioVeSeccionConfiguracion)
             <div class="accordion-item">
-                <button class="accordion-button nav-group-title" type="button" data-bs-toggle="collapse" data-bs-target="#configuracion">
-                    Configuración
-                    <x-heroicon-o-cog style="width: 16px; height: 16px;" class="ms-2" />
+                <button class="accordion-button nav-group-title" type="button" data-bs-toggle="collapse" data-bs-target="#configuracion" aria-expanded="true">
+                    <x-heroicon-o-cog style="width: 14px; height: 14px;" />
+                    <span>Configuración</span>
                 </button>
                 
                 <div id="configuracion" class="accordion-collapse collapse show">
@@ -884,9 +759,9 @@
 
         @if(userHasRole('admin'))
             <div class="accordion-item">
-                <button class="accordion-button nav-group-title" type="button" data-bs-toggle="collapse" data-bs-target="#administracion">
-                    Administración
-                    <x-heroicon-o-cog-6-tooth style="width: 16px; height: 16px;" class="ms-2" />
+                <button class="accordion-button nav-group-title" type="button" data-bs-toggle="collapse" data-bs-target="#administracion" aria-expanded="true">
+                    <x-heroicon-o-cog-6-tooth style="width: 14px; height: 14px;" />
+                    <span>Administración</span>
                 </button>
                 
                 <div id="administracion" class="accordion-collapse collapse show">
@@ -916,9 +791,9 @@
 
         
         <div class="accordion-item">
-            <button class="accordion-button nav-group-title" type="button" data-bs-toggle="collapse" data-bs-target="#seguridad">
-                Seguridad
-                <x-heroicon-o-lock-closed style="width: 16px; height: 16px;" class="ms-2" />
+            <button class="accordion-button nav-group-title" type="button" data-bs-toggle="collapse" data-bs-target="#seguridad" aria-expanded="true">
+                <x-heroicon-o-lock-closed style="width: 14px; height: 14px;" />
+                <span>Seguridad</span>
             </button>
             
             <div id="seguridad" class="accordion-collapse collapse show">
@@ -936,87 +811,36 @@
             </div>
         </div>
     </nav>
-</div>
+    </div>
+</aside>
 
 @if (Auth::check())
-    <nav class="navbar navbar-expand-md navbar-light bg-white shadow-sm d-none d-md-flex justify-content-end px-4" style="margin-left: var(--sidebar-width); padding: 1rem 0;">
-        <div style="display: flex; align-items: center; justify-content: flex-end; padding-right: 2.5rem;">
-            <div class="dropdown me-3">
-                <a href="#" class="d-flex align-items-center text-decoration-none" id="notificationsDropdownMobile" data-bs-toggle="dropdown" aria-expanded="false">
-                    <div class="position-relative" style="margin-top: -4px;">
-                        <x-heroicon-o-bell style="width: 18px; height: 18px;" class="text-gray-500" />
+    <nav class="navbar navbar-expand-md navbar-light d-none d-md-flex app-desktop-topbar">
+        <div class="app-topbar__actions w-100 justify-content-end">
+            <div class="dropdown notif-dropdown-wrap">
+                <a href="#" class="app-topbar__icon-btn position-relative" id="notificationsDropdownMobile" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Notificaciones">
+                    <x-heroicon-o-bell />
                         @php
                             $notificacionesNoLeidas = App\Models\SimpleNotification::where('coordinador_codigo', auth()->user()->usu_codigo)
                             ->where('leida', false)
                             ->count();
                         @endphp
                         @if($notificacionesNoLeidas > 0)
-                        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.6rem;">
+                        <span class="position-absolute badge rounded-pill bg-danger app-topbar__icon-btn__badge">
                             {{ $notificacionesNoLeidas }}
                             <span class="visually-hidden">notificaciones no leídas</span>
                         </span>
                         @endif
-                    </div>
                 </a>
-                <ul class="dropdown-menu dropdown-menu-end shadow-sm mt-2" aria-labelledby="notificationsDropdown" style="width: 300px;">
-                    <li class="dropdown-header d-flex justify-content-between align-items-center">
-                        <span class="fw-semibold">Notificaciones</span>
-                        <small>
-                            <form action="{{ route('notificaciones.leer-todas') }}" method="POST" class="d-inline">
-                                @csrf
-                                <button type="submit" class="btn btn-link text-primary p-0">Marcar todas</button>
-                            </form>
-                        </small>
-                    </li>
-                    <li><hr class="dropdown-divider my-1"></li>
-                    
-                    @forelse(App\Models\SimpleNotification::where('coordinador_codigo', auth()->user()->usu_codigo)
-                        ->orderBy('created_at', 'desc')
-                        ->take(5)
-                        ->get() as $notificacion)
-                    <li>
-
-
-                        <a href="{{ route('notificaciones.show', $notificacion->id) }}" class="dropdown-item py-2 {{ $notificacion->leida ? '' : 'bg-light' }}">
-
-                            <div class="d-flex gap-2">
-                                <div class="flex-shrink-0 text-primary">
-                                    <x-heroicon-o-bell style="width: 16px; height: 16px;" />
-                                </div>
-                                <div style="min-width: 0;">
-                                    <p class="mb-0 small text-truncate" 
-                                    style="max-width: 220px;"
-                                    data-bs-toggle="tooltip" 
-                                    data-bs-placement="bottom" 
-                                    title="{{ $notificacion->mensaje }}">
-                                        {{ $notificacion->resumenCorto() }}
-                                    </p>
-                                    <small class="text-muted">{{ $notificacion->created_at->diffForHumans() }}</small>
-                                </div>
-                            </div>
-
-                        </a>
-                    </li>
-
-                    @empty
-                    <li class="text-center py-2 text-muted">
-                        <small>No hay notificaciones</small>
-                    </li>
-                    @endforelse
-                    
-                    <li><hr class="dropdown-divider my-1"></li>
-                    <li class="text-center">
-                        <a href="{{ route('notificaciones.index') }}" class="dropdown-item small text-primary">Ver todas</a>
-                    </li>
-                </ul>
+                @include('layouts.partials.notificaciones-dropdown')
             </div>
 
             
-            <div class="dropdown me-3">
-                <a href="#" class="d-flex align-items-center text-decoration-none" id="settingsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-                    <x-heroicon-o-cog-6-tooth style="width: 18px; height: 18px;" class="text-gray-500" />
+            <div class="dropdown">
+                <a href="#" class="app-topbar__icon-btn" id="settingsDropdown" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Configuración">
+                    <x-heroicon-o-cog-6-tooth />
                 </a>
-                <ul class="dropdown-menu dropdown-menu-end shadow-sm mt-2" aria-labelledby="settingsDropdown">
+                <ul class="dropdown-menu dropdown-menu-end app-topbar__dropdown" aria-labelledby="settingsDropdown">
                     <li class="dropdown-header">
                         <span class="fw-semibold">Configuración</span>
                     </li>
@@ -1044,11 +868,11 @@
 
             
             <div class="dropdown">
-                <a href="#" class="d-flex align-items-center text-decoration-none dropdown-toggle" id="userDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-                    <x-heroicon-o-user style="width: 18px; height: 18px;" class="text-gray-500" />
-                    <span class="ms-2 fw-semibold">{{ Auth::user()->usu_descripcion }}</span>
+                <a href="#" class="app-topbar__user-btn dropdown-toggle" id="userDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                    <x-heroicon-o-user />
+                    <span>{{ Auth::user()->usu_descripcion }}</span>
                 </a>
-                <ul class="dropdown-menu dropdown-menu-end shadow-sm mt-2" aria-labelledby="userDropdown">
+                <ul class="dropdown-menu dropdown-menu-end app-topbar__dropdown" aria-labelledby="userDropdown">
                     <li>
                         <a class="dropdown-item d-flex align-items-center gap-2" href="{{ url('/auth/' . Auth::user()->usu_codigo) }}">
                             <x-heroicon-o-user style="width: 16px; height: 16px;" />
@@ -1115,10 +939,9 @@
         const mobileNavbar = document.getElementById('mobileNavbar');
         const navbarOverlay = document.getElementById('navbarOverlay');
         const toggler = document.getElementById('mobileNavbarToggler');
-        const closeBtn = document.getElementById('closeMenuBtn');
         const body = document.body;
 
-        if (!mobileNavbar || !navbarOverlay || !toggler || !closeBtn) {
+        if (!mobileNavbar || !navbarOverlay || !toggler) {
             return;
         }
 
@@ -1128,10 +951,16 @@
                 mobileNavbar.classList.add('show');
                 navbarOverlay.classList.add('show');
                 body.classList.add('navbar-open');
+                toggler.classList.add('is-active');
+                toggler.setAttribute('aria-expanded', 'true');
+                toggler.setAttribute('aria-label', 'Cerrar menú');
             } else {
                 mobileNavbar.classList.remove('show');
                 navbarOverlay.classList.remove('show');
                 body.classList.remove('navbar-open');
+                toggler.classList.remove('is-active');
+                toggler.setAttribute('aria-expanded', 'false');
+                toggler.setAttribute('aria-label', 'Abrir menú');
             }
         }
 
@@ -1139,12 +968,6 @@
         toggler.addEventListener('click', function(e) {
             e.stopPropagation();
             toggleMenu(!mobileNavbar.classList.contains('show'));
-        });
-
-        
-        closeBtn.addEventListener('click', function(e) {
-            e.stopPropagation();
-            toggleMenu(false);
         });
 
         
@@ -1182,10 +1005,21 @@
     });
 
     document.addEventListener('DOMContentLoaded', function() {
-        
+        // Marcar ítem activo del sidebar
+        const currentPath = window.location.pathname.replace(/\/+$/, '') || '/';
+        document.querySelectorAll('.app-sidebar .nav-link[href], #mobileNavbar .nav-link[href]').forEach(function (link) {
+            try {
+                const linkPath = new URL(link.href, window.location.origin).pathname.replace(/\/+$/, '') || '/';
+                if (linkPath === currentPath || (linkPath !== '/' && currentPath.startsWith(linkPath + '/'))) {
+                    link.classList.add('active');
+                }
+            } catch (e) { /* ignore malformed href */ }
+        });
+
         var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
         var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
             return new bootstrap.Tooltip(tooltipTriggerEl, {
+                placement: tooltipTriggerEl.getAttribute('data-bs-placement') || 'bottom',
                 delay: {show: 300, hide: 100}
             });
         });
@@ -1219,8 +1053,11 @@
                         if (data.success) {
                             const badges = el.querySelectorAll('.badge');
                             badges.forEach(badge => badge.remove());
-                            const notificacionesNoLeidas = document.querySelectorAll('.dropdown-item.bg-light');
-                            notificacionesNoLeidas.forEach(notif => notif.classList.remove('bg-light'));
+                            document.querySelectorAll('.notif-dropdown__item--unread').forEach(function (notif) {
+                                notif.classList.remove('notif-dropdown__item--unread');
+                                const dot = notif.querySelector('.notif-dropdown__dot');
+                                if (dot) dot.remove();
+                            });
                         }
                     })
                     .catch(error => console.error('Error:', error));

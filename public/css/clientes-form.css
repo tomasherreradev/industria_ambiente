@@ -1,0 +1,171 @@
+/* =============================================================
+   Clientes — formulario create/edit (ucrud)
+   ============================================================= */
+
+.clientes-form-page .clientes-form-panel {
+    padding: 0;
+    overflow: hidden;
+}
+
+.clientes-form-page .clientes-form-panel__body {
+    padding: 0;
+}
+
+.clientes-form-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem 1.25rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--sidebar-border, #e6e8f0);
+    background: #fafbfe;
+}
+
+.clientes-form-meta__codigo {
+    display: flex;
+    flex-direction: column;
+    gap: .25rem;
+    min-width: 8rem;
+}
+
+.clientes-form-meta__codigo label {
+    margin: 0;
+    font-size: .68rem;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--sidebar-muted, #6b7085);
+}
+
+.clientes-form-meta__codigo .form-control {
+    max-width: 9rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: .875rem;
+    background: #fff;
+}
+
+.clientes-form-meta__chips {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .45rem;
+}
+
+/* Tabs */
+.clientes-form-tabs {
+    border-bottom: 1px solid var(--sidebar-border, #e6e8f0);
+    background: #fff;
+    padding: 0 1rem;
+    margin: 0;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+}
+
+.clientes-form-tabs .nav-link {
+    border: none;
+    border-radius: 0;
+    padding: .85rem 1rem;
+    font-size: .8125rem;
+    font-weight: 600;
+    color: var(--sidebar-muted, #6b7085);
+    background: transparent;
+    white-space: nowrap;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color .15s ease, border-color .15s ease, background .15s ease;
+}
+
+.clientes-form-tabs .nav-link:hover:not(.disabled):not(:disabled) {
+    color: var(--sidebar-ink, #2f3245);
+    background: rgba(78, 115, 223, .05);
+}
+
+.clientes-form-tabs .nav-link.active {
+    color: var(--sidebar-section, #4e73df);
+    background: transparent;
+    border-bottom-color: var(--sidebar-section, #4e73df);
+}
+
+.clientes-form-tabs .nav-link.disabled,
+.clientes-form-tabs .nav-link:disabled {
+    color: #b0b5c3;
+    cursor: not-allowed;
+    opacity: .75;
+}
+
+.clientes-form-page .tab-content {
+    min-height: 28rem;
+}
+
+.clientes-form-page .tab-pane > .p-4 {
+    padding: 1.25rem !important;
+}
+
+.clientes-form-footer {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: .5rem;
+    padding: 1rem 1.25rem;
+    border-top: 1px solid var(--sidebar-border, #e6e8f0);
+    background: #fafbfe;
+}
+
+.clientes-form-page .form-label {
+    font-weight: 600;
+    font-size: .8125rem;
+    color: var(--sidebar-ink, #2f3245);
+    margin-bottom: .35rem;
+}
+
+.clientes-form-page .form-control,
+.clientes-form-page .form-select {
+    border-color: var(--sidebar-border, #e6e8f0);
+    border-radius: .45rem;
+    font-size: .875rem;
+}
+
+.clientes-form-page .form-control:focus,
+.clientes-form-page .form-select:focus {
+    border-color: #9cb4f0;
+    box-shadow: 0 0 0 .2rem rgba(78, 115, 223, .12);
+}
+
+.clientes-form-page .table-responsive {
+    border: 1px solid var(--sidebar-border, #e6e8f0);
+    border-radius: .55rem;
+    overflow: hidden;
+}
+
+.clientes-form-page .table th {
+    background: #fafbfe;
+    border-color: var(--sidebar-border, #e6e8f0);
+    font-size: .75rem;
+    font-weight: 700;
+    letter-spacing: .03em;
+    text-transform: uppercase;
+    color: var(--sidebar-muted, #6b7085);
+}
+
+.clientes-form-page .alert-readonly {
+    margin: 0 0 1rem;
+}
+
+@media (max-width: 767.98px) {
+    .clientes-form-meta {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .clientes-form-footer {
+        flex-direction: column;
+    }
+
+    .clientes-form-footer .ucrud-btn {
+        width: 100%;
+        justify-content: center;
+    }
+}

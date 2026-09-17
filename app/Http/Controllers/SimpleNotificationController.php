@@ -39,16 +39,20 @@ class SimpleNotificationController extends Controller
 
     public function index()
     {
-        $notificaciones = SimpleNotification::where('coordinador_codigo', Auth::user()->usu_codigo)
-            ->where(function($query) {
-                $query->whereNull('sender_codigo') // Notificaciones sin emisor definido
-                      ->orWhere('sender_codigo', '!=', Auth::user()->usu_codigo); // O donde el emisor no es el usuario actual
-            })
+        $baseQuery = SimpleNotification::where('coordinador_codigo', Auth::user()->usu_codigo)
+            ->where(function ($query) {
+                $query->whereNull('sender_codigo')
+                    ->orWhere('sender_codigo', '!=', Auth::user()->usu_codigo);
+            });
+
+        $notificaciones = (clone $baseQuery)
             ->orderBy('created_at', 'desc')
             ->with(['instancia', 'sender'])
             ->paginate(10);
-            
-        return view('notificaciones.index', compact('notificaciones'));
+
+        $totalNoLeidas = (clone $baseQuery)->where('leida', false)->count();
+
+        return view('notificaciones.index', compact('notificaciones', 'totalNoLeidas'));
     }
 
     public function show($id)

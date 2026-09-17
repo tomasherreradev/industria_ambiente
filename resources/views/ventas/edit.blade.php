@@ -351,51 +351,7 @@
                                                 </div>
                                             </div>
 
-                                            <div id="cuotasPanel" class="row mb-3 border rounded p-3 bg-light {{ ($cotizacion->coti_cuotas ?? false) || trim($cotizacion->coti_cond_pago ?? '') === 'CUOTAS' ? '' : 'd-none' }}">
-                                                <h6 class="mb-2">Detalle cuotas</h6>
-                                                <div class="col-md-3">
-                                                    <label for="coti_cuota_desc" class="form-label">Descripción</label>
-                                                    <input type="text" class="form-control form-control-sm" id="coti_cuota_desc" name="coti_cuota_desc" value="{{ old('coti_cuota_desc', $cotizacion->coti_cuota_desc) }}" placeholder="Ej: 6 cuotas sin interés">
-                                                </div>
-                                                <div class="col-md-2">
-                                                    <label for="coti_cuota_cant" class="form-label">Cantidad</label>
-                                                    <input type="number" class="form-control form-control-sm" id="coti_cuota_cant" name="coti_cuota_cant" value="{{ old('coti_cuota_cant', $cotizacion->coti_cuota_cant ?? 1) }}" min="1">
-                                                </div>
-                                                <div class="col-md-2">
-                                                    <label for="coti_cuota_interes" class="form-label">
-                                                        Interés (%)
-                                                        <span class="text-muted" title="Porcentaje de interés total aplicado sobre el monto antes de dividir en cuotas. Ej: 10 = 10%" style="cursor:help;">&#9432;</span>
-                                                    </label>
-                                                    <div class="input-group input-group-sm">
-                                                        <input type="number" step="0.01" min="0" class="form-control form-control-sm" id="coti_cuota_interes" name="coti_cuota_interes" value="{{ old('coti_cuota_interes', $cotizacion->coti_cuota_interes ?? 0) }}" placeholder="0.00">
-                                                        <span class="input-group-text">%</span>
-                                                    </div>
-                                                </div>
-                                                <div class="col-md-2">
-                                                    <label for="coti_cuota_monto_total" class="form-label">
-                                                        Monto total
-                                                        <span class="text-muted" title="Se completa automáticamente con el total de la cotización" style="cursor:help;">&#9432;</span>
-                                                    </label>
-                                                    <input type="number" step="0.01" class="form-control form-control-sm bg-light" id="coti_cuota_monto_total" name="coti_cuota_monto_total" value="{{ old('coti_cuota_monto_total', $cotizacion->coti_cuota_monto_total) }}" placeholder="0.00" readonly title="Se sincroniza automáticamente con el total de la cotización">
-                                                </div>
-                                                <div class="col-md-2">
-                                                    <label for="coti_cuota_monto_indiv" class="form-label">
-                                                        Monto individual
-                                                        <span class="text-muted" title="(Total × (1 + Interés%)) ÷ cantidad de cuotas" style="cursor:help;">&#9432;</span>
-                                                    </label>
-                                                    <input type="number" step="0.01" class="form-control form-control-sm bg-light" id="coti_cuota_monto_indiv" name="coti_cuota_monto_indiv" value="{{ old('coti_cuota_monto_indiv', $cotizacion->coti_cuota_monto_indiv) }}" placeholder="0.00" readonly title="Se calcula: (monto total × (1 + interés%)) ÷ cantidad de cuotas">
-                                                </div>
-                                                <div class="col-md-3 d-flex align-items-end gap-3">
-                                                    <div class="form-check">
-                                                        <input class="form-check-input" type="checkbox" id="coti_cuota_fact_fin_mes" name="coti_cuota_fact_fin_mes" value="1" {{ old('coti_cuota_fact_fin_mes', $cotizacion->coti_cuota_fact_fin_mes) ? 'checked' : '' }}>
-                                                        <label class="form-check-label" for="coti_cuota_fact_fin_mes">Fact. fin de mes</label>
-                                                    </div>
-                                                    <div class="form-check">
-                                                        <input class="form-check-input" type="checkbox" id="coti_cuota_fact_inicio_mes" name="coti_cuota_fact_inicio_mes" value="1" {{ old('coti_cuota_fact_inicio_mes', $cotizacion->coti_cuota_fact_inicio_mes) ? 'checked' : '' }}>
-                                                        <label class="form-check-label" for="coti_cuota_fact_inicio_mes">Fact. inicio de mes</label>
-                                                    </div>
-                                                </div>
-                                            </div>
+                                            @include('ventas.partials.cotizacion-cuotas-panel', ['cotizacion' => $cotizacion])
 
                                         </div>
                                     </div>

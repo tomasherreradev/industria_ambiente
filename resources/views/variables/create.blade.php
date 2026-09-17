@@ -4,7 +4,7 @@
 <div class="container py-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2>Crear Variable</h2>
-        <a href="{{ route('admin.variables.index') }}" class="btn btn-outline-secondary">
+        <a href="{{ route('variables.index') }}" class="btn btn-outline-secondary">
             <x-heroicon-o-arrow-left style="width: 16px; height: 16px;" class="me-1" /> Volver
         </a>
     </div>
@@ -13,7 +13,7 @@
         <div class="col-md-10">
             <div class="card">
                 <div class="card-body">
-                    <form method="POST" action="{{ route('admin.variables.store') }}">
+                    <form method="POST" action="{{ route('variables.store') }}">
                         @csrf
 
                         <div class="row">
@@ -126,7 +126,7 @@
                         </div>
 
                         <div class="d-flex justify-content-end">
-                            <a href="{{ route('admin.variables.index') }}" class="btn btn-secondary me-2">Cancelar</a>
+                            <a href="{{ route('variables.index') }}" class="btn btn-secondary me-2">Cancelar</a>
                             <button type="submit" class="btn btn-primary">Crear Variable</button>
                         </div>
                     </form>

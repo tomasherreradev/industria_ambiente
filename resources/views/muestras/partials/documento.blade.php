@@ -191,7 +191,7 @@
             document.getElementById(iconId)?.classList.add('rotated');
         });
         [].slice.call(document.querySelectorAll('[title]')).forEach(el => {
-            new bootstrap.Tooltip(el, { container: 'body', placement: 'top' });
+            new bootstrap.Tooltip(el, { container: 'body', placement: 'bottom' });
         });
     });
 </script>

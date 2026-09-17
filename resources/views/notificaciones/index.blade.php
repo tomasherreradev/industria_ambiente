@@ -1,67 +1,94 @@
-<!-- resources/views/notificaciones/index.blade.php -->
 @extends('layouts.app')
 
-@section('content')
-<div class="container-fluid px-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="mb-0">Mis Notificaciones</h1>
-        <form action="{{ route('notificaciones.leer-todas') }}" method="POST">
-            @csrf
-            <button type="submit" class="btn btn-sm btn-outline-primary">
-                Marcar todas como leídas
-            </button>
-        </form>
-    </div>
+@section('title', 'Notificaciones')
 
-    <div class="card shadow-sm">
-        <div class="card-body p-0">
-            <div class="table-responsive">
-                <table class="table table-hover mb-0">
-                    <thead class="table-light">
-                        <tr>
-                            <th>Mensaje</th>
-                            <th>Fecha</th>
-                            <th>Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @forelse($notificaciones as $notificacion)
-                        <tr class="{{ $notificacion->leida ? '' : 'table-active' }}">
-                            <td>
-                                <a href="{{ route('notificaciones.show', $notificacion->id) }}" class="text-decoration-none text-dark">
-                                    {{ $notificacion->resumenCorto(120) }}
-                                </a>
-                            </td>
-                            <td>{{ $notificacion->created_at->format('d/m/Y H:i') }}</td>
-                            <td>
-                                <a href="{{ route('notificaciones.show', $notificacion->id) }}" class="btn btn-sm btn-primary">
-                                    Ver detalle
-                                </a>
-                                @if(!$notificacion->leida)
-                                <form action="{{ route('notificaciones.leida', $notificacion->id) }}" method="POST" class="d-inline">
+@section('content')
+@include('partials.operativo-styles')
+<link rel="stylesheet" href="{{ asset('css/notificaciones.css') }}?v={{ filemtime(public_path('css/notificaciones.css')) }}">
+
+<div class="container py-4 ucrud notif-page" data-ucrud-root>
+    <header class="ucrud-header">
+        <div class="ucrud-header__titles">
+            <h1 class="ucrud-title">
+                Notificaciones
+                @if($totalNoLeidas > 0)
+                    <span class="ucrud-count">{{ $totalNoLeidas }} sin leer</span>
+                @endif
+            </h1>
+            <p class="ucrud-subtitle">Historial de avisos y cambios relevantes para tu bandeja.</p>
+        </div>
+
+        @if($totalNoLeidas > 0)
+            <div class="ucrud-header__actions">
+                <form action="{{ route('notificaciones.leer-todas') }}" method="POST" class="m-0">
+                    @csrf
+                    <button type="submit" class="ucrud-btn ucrud-btn--ghost">
+                        <x-heroicon-o-check style="width: 16px; height: 16px;" />
+                        Marcar todas como leídas
+                    </button>
+                </form>
+            </div>
+        @endif
+    </header>
+
+    @if(session('success'))
+        <div class="alert alert-success">{{ session('success') }}</div>
+    @endif
+
+    <div class="ucrud-panel">
+        @if($notificaciones->isEmpty())
+            <div class="ucrud-empty">
+                <div class="ucrud-empty__icon">
+                    <x-heroicon-o-bell style="width: 28px; height: 28px;" />
+                </div>
+                <p class="ucrud-empty__title">No hay notificaciones</p>
+                <p class="ucrud-empty__text">Cuando haya novedades en tu bandeja, las verás acá.</p>
+            </div>
+        @else
+            <div class="notif-list">
+                @foreach($notificaciones as $notificacion)
+                    <div class="notif-card {{ $notificacion->leida ? '' : 'notif-card--unread' }}">
+                        <div class="notif-card__icon">
+                            <x-heroicon-o-bell />
+                        </div>
+
+                        <div class="notif-card__main">
+                            <p class="notif-card__text">{{ $notificacion->resumenCorto(160) }}</p>
+                            <div class="notif-card__meta">
+                                <span>{{ $notificacion->created_at->locale('es')->translatedFormat('d/m/Y H:i') }}</span>
+                                <span>·</span>
+                                <span>{{ $notificacion->created_at->locale('es')->diffForHumans() }}</span>
+                                @if(! $notificacion->leida)
+                                    <span class="notif-card__badge">Sin leer</span>
+                                @endif
+                                @if($notificacion->sender)
+                                    <span>·</span>
+                                    <span>{{ $notificacion->sender->usu_descripcion ?? $notificacion->sender_codigo }}</span>
+                                @endif
+                            </div>
+                        </div>
+
+                        <div class="notif-card__actions">
+                            <a href="{{ route('notificaciones.show', $notificacion->id) }}" class="ucrud-btn ucrud-btn--primary ucrud-btn--sm">
+                                Ver detalle
+                            </a>
+                            @if(! $notificacion->leida)
+                                <form action="{{ route('notificaciones.leida', $notificacion->id) }}" method="POST" class="m-0">
                                     @csrf
-                                    <button type="submit" class="btn btn-sm btn-outline-secondary">
-                                        Marcar como leída
+                                    <button type="submit" class="ucrud-btn ucrud-btn--ghost ucrud-btn--sm">
+                                        Marcar leída
                                     </button>
                                 </form>
-                                @endif
-                            </td>
-                        </tr>
-                        @empty
-                        <tr>
-                            <td colspan="3" class="text-center py-4 text-muted">
-                                No hay notificaciones
-                            </td>
-                        </tr>
-                        @endforelse
-                    </tbody>
-                </table>
+                            @endif
+                        </div>
+                    </div>
+                @endforeach
             </div>
-        </div>
+        @endif
     </div>
 
     @if($notificaciones->hasPages())
-        <div class="mt-3">
+        <div class="ucrud-panel ucrud-pagination mt-3">
             {{ $notificaciones->links() }}
         </div>
     @endif

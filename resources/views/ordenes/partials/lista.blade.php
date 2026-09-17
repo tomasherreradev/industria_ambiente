@@ -519,7 +519,7 @@
         var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
             return new bootstrap.Tooltip(tooltipTriggerEl, {
                 container: 'body',
-                placement: 'top'
+                placement: 'bottom'
             });
         });
 

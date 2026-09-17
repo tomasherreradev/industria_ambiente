@@ -101,7 +101,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             <small>Legislación (categoría): ${info.event.extendedProps.ley_categoria || '—'}</small><br>
                             ${info.event.extendedProps.instancia || 'Sin instancia'}
                         `,
-                        placement: 'top',
+                        placement: 'bottom',
                         html: true,
                         container: 'body'
                     });

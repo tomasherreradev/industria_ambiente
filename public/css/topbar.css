@@ -1,0 +1,174 @@
+/* =============================================================
+   Topbar desktop — acciones + dropdowns animados
+   ============================================================= */
+
+.app-desktop-topbar .app-topbar__actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: .25rem;
+}
+
+/* Botones icono (notificaciones, config) */
+.app-topbar__icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.35rem;
+    height: 2.35rem;
+    border-radius: 50%;
+    color: var(--sidebar-muted, #6b7085);
+    text-decoration: none;
+    transition: background .15s ease, color .15s ease, transform .15s ease;
+}
+
+.app-topbar__icon-btn:hover,
+.app-topbar__icon-btn:focus-visible,
+.app-topbar__icon-btn[aria-expanded="true"] {
+    background: var(--sidebar-hover-bg, rgba(78, 115, 223, .08));
+    color: var(--sidebar-section, #4e73df);
+}
+
+.app-topbar__icon-btn:active {
+    transform: scale(.96);
+}
+
+.app-topbar__icon-btn svg {
+    width: 1.15rem;
+    height: 1.15rem;
+}
+
+.app-topbar__icon-btn__badge {
+    position: absolute;
+    top: 0;
+    right: 0;
+    transform: translate(25%, -25%);
+    font-size: .6rem;
+}
+
+/* Botón usuario */
+.app-topbar__user-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+    margin-left: .35rem;
+    padding: .38rem .75rem .38rem .5rem;
+    border-radius: 999px;
+    border: 1px solid var(--sidebar-border, #e6e8f0);
+    background: #fff;
+    color: var(--sidebar-ink, #2f3245);
+    font-size: .875rem;
+    font-weight: 600;
+    line-height: 1.2;
+    text-decoration: none;
+    transition: background .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+
+.app-topbar__user-btn:hover,
+.app-topbar__user-btn:focus-visible,
+.app-topbar__user-btn[aria-expanded="true"] {
+    background: #f8f9fc;
+    border-color: #d5dae6;
+    color: var(--sidebar-ink, #2f3245);
+    box-shadow: 0 2px 10px rgba(31, 38, 52, .07);
+}
+
+.app-topbar__user-btn svg {
+    width: 1.05rem;
+    height: 1.05rem;
+    color: var(--sidebar-muted, #6b7085);
+}
+
+.app-topbar__user-btn.dropdown-toggle::after {
+    margin-left: .15rem;
+    opacity: .5;
+    transition: transform .22s ease, opacity .15s ease;
+}
+
+.app-topbar__user-btn[aria-expanded="true"]::after {
+    transform: rotate(180deg);
+    opacity: .75;
+}
+
+/* Menús desplegables */
+.app-desktop-topbar .app-topbar__dropdown {
+    border: 1px solid var(--sidebar-border, #e6e8f0);
+    border-radius: .7rem;
+    box-shadow: 0 12px 32px rgba(31, 38, 52, .12) !important;
+    padding: .4rem;
+    margin-top: .5rem !important;
+    min-width: 11.5rem;
+    transform-origin: top right;
+}
+
+.app-desktop-topbar .app-topbar__dropdown.show {
+    animation: appTopbarDropdownIn .24s cubic-bezier(.22, 1, .36, 1) both;
+}
+
+.app-desktop-topbar .app-topbar__dropdown--wide {
+    min-width: 18.75rem;
+    width: 18.75rem;
+}
+
+@keyframes appTopbarDropdownIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px) scale(.97);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.app-desktop-topbar .app-topbar__dropdown .dropdown-header {
+    font-size: .68rem;
+    font-weight: 700;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    color: var(--sidebar-muted, #6b7085);
+    padding: .4rem .65rem .45rem;
+}
+
+.app-desktop-topbar .app-topbar__dropdown .dropdown-item {
+    border-radius: .5rem;
+    padding: .52rem .65rem;
+    font-size: .875rem;
+    transition: background .12s ease, color .12s ease;
+}
+
+.app-desktop-topbar .app-topbar__dropdown .dropdown-item:hover,
+.app-desktop-topbar .app-topbar__dropdown .dropdown-item:focus {
+    background: var(--sidebar-hover-bg, rgba(78, 115, 223, .08));
+}
+
+.app-desktop-topbar .app-topbar__dropdown .dropdown-divider {
+    margin: .35rem 0;
+    border-color: var(--sidebar-border, #e6e8f0);
+    opacity: 1;
+}
+
+/* Entrada escalonada de ítems al abrir */
+.app-desktop-topbar .app-topbar__dropdown:not(.app-topbar__dropdown--notifs).show > li {
+    animation: appTopbarItemIn .2s ease both;
+}
+
+.app-desktop-topbar .app-topbar__dropdown:not(.app-topbar__dropdown--notifs).show > li:nth-child(1) { animation-delay: .04s; }
+.app-desktop-topbar .app-topbar__dropdown:not(.app-topbar__dropdown--notifs).show > li:nth-child(2) { animation-delay: .07s; }
+.app-desktop-topbar .app-topbar__dropdown:not(.app-topbar__dropdown--notifs).show > li:nth-child(3) { animation-delay: .1s; }
+.app-desktop-topbar .app-topbar__dropdown:not(.app-topbar__dropdown--notifs).show > li:nth-child(4) { animation-delay: .13s; }
+.app-desktop-topbar .app-topbar__dropdown:not(.app-topbar__dropdown--notifs).show > li:nth-child(5) { animation-delay: .16s; }
+.app-desktop-topbar .app-topbar__dropdown:not(.app-topbar__dropdown--notifs).show > li:nth-child(6) { animation-delay: .19s; }
+.app-desktop-topbar .app-topbar__dropdown:not(.app-topbar__dropdown--notifs).show > li:nth-child(7) { animation-delay: .22s; }
+.app-desktop-topbar .app-topbar__dropdown:not(.app-topbar__dropdown--notifs).show > li:nth-child(8) { animation-delay: .25s; }
+
+@keyframes appTopbarItemIn {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}

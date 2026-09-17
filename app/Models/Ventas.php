@@ -98,6 +98,8 @@ class Ventas extends Model
         'coti_cuota_interes',
         'coti_cuota_fact_fin_mes',
         'coti_cuota_fact_inicio_mes',
+        'coti_cuota_fecha_inicio',
+        'coti_cuota_fecha_fin',
         'cancelada',
         'razon_cancelada'
     ];
@@ -123,6 +125,8 @@ class Ventas extends Model
         'coti_cuotas' => 'boolean',
         'coti_cuota_fact_fin_mes' => 'boolean',
         'coti_cuota_fact_inicio_mes' => 'boolean',
+        'coti_cuota_fecha_inicio' => 'date',
+        'coti_cuota_fecha_fin' => 'date',
         'cancelada' => 'boolean',
         'razon_cancelada' => 'string',
         'coti_para_empresa_rel' => 'boolean',

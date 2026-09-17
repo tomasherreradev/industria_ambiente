@@ -124,7 +124,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const props = info.event.extendedProps;
             new bootstrap.Tooltip(info.el, {
                 title: `<strong>${props.empresa}</strong><br>Estado: ${props.status}<br>Fecha alta: ${props.fechaAlta}<br>Fecha fin: ${props.fechaFin}<br>Localidad: ${props.localidad}<br>Contacto: ${props.contacto}<br>Importe: $${props.importe}`,
-                placement: 'top',
+                placement: 'bottom',
                 html: true,
                 container: 'body'
             });

@@ -436,7 +436,9 @@
         const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
         tooltipTriggerList.forEach(function (tooltipTriggerEl) {
             if (window.bootstrap && window.bootstrap.Tooltip) {
-                new window.bootstrap.Tooltip(tooltipTriggerEl);
+                new window.bootstrap.Tooltip(tooltipTriggerEl, {
+                    placement: tooltipTriggerEl.getAttribute('data-bs-placement') || 'bottom',
+                });
             }
         });
     }
@@ -1980,6 +1982,34 @@
         const cantInput        = document.getElementById('coti_cuota_cant');
         const montoTotalInput  = document.getElementById('coti_cuota_monto_total');
         const interesInput     = document.getElementById('coti_cuota_interes');
+        const fechaInicioInput = document.getElementById('coti_cuota_fecha_inicio');
+        const fechaFinInput    = document.getElementById('coti_cuota_fecha_fin');
+
+        function mesesEntreFechas(inicioStr, finStr) {
+            if (!inicioStr || !finStr) return null;
+            const inicio = new Date(inicioStr + 'T12:00:00');
+            const fin = new Date(finStr + 'T12:00:00');
+            if (Number.isNaN(inicio.getTime()) || Number.isNaN(fin.getTime()) || fin < inicio) {
+                return null;
+            }
+            return (fin.getFullYear() - inicio.getFullYear()) * 12 + (fin.getMonth() - inicio.getMonth()) + 1;
+        }
+
+        function recalcularCantidadDesdeFechas() {
+            if (!cantInput || !fechaInicioInput || !fechaFinInput) return;
+            const meses = mesesEntreFechas(fechaInicioInput.value, fechaFinInput.value);
+            if (meses && meses >= 1) {
+                cantInput.value = meses;
+                recalcularMontoIndividual();
+            }
+        }
+
+        if (fechaInicioInput) {
+            fechaInicioInput.addEventListener('change', recalcularCantidadDesdeFechas);
+        }
+        if (fechaFinInput) {
+            fechaFinInput.addEventListener('change', recalcularCantidadDesdeFechas);
+        }
 
         if (cantInput) {
             cantInput.addEventListener('input',  recalcularMontoIndividual);

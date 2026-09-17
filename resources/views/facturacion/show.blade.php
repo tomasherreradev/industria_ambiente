@@ -1,164 +1,100 @@
 @extends('layouts.app')
 
-<head>
-    <title>Cotización {{ $cotizacion->coti_num }}</title>
-    <style>
-        body {
-            background-color: #f5f5f5;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        }
-        .container {
-            max-width: 1200px;
-            padding: 1.5rem;
-        }
-        .title {
-            font-size: 1.5rem;
-            font-weight: 600;
-            color: #1a1a1a;
-            margin-bottom: 1.5rem;
-        }
-        .back-btn {
-            display: inline-block;
-            color: #555;
-            text-decoration: none;
-            font-size: 0.9rem;
-            margin-bottom: 1rem;
-        }
-        .back-btn:hover {
-            color: #007bff;
-        }
-        .sample-container {
-            margin-bottom: 1rem;
-        }
-        .sample-header {
-            background: #fff;
-            border: 1px solid #e0e0e0;
-            border-radius: 8px;
-            padding: 0.75rem 1rem;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            transition: border-color 0.2s;
-        }
-        .sample-header:hover {
-            border-color: #007bff;
-        }
-        .sample-content {
-            background: #fff;
-            border: 1px solid #e0e0e0;
-            border-top: none;
-            border-radius: 0 0 8px 8px;
-            padding: 1rem;
-            display: none;
-        }
-        .sample-content.open {
-            display: block;
-        }
-        .checkbox {
-            margin-right: 0.5rem;
-        }
-        .sample-label {
-            font-weight: 500;
-            color: #333;
-        }
-        .analysis-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 0.75rem;
-            margin-top: 0.5rem;
-        }
-        .analysis-card {
-            border: 1px solid #e8ecef;
-            border-radius: 6px;
-            padding: 0.75rem;
-            background: #fafafa;
-        }
-        .badge {
-            font-size: 0.75rem;
-            padding: 0.3rem 0.5rem;
-            border-radius: 4px;
-        }
-        .facturar-btn, .facturar-btn-group {
-            padding: 0.5rem 1rem;
-            font-size: 0.9rem;
-            border-radius: 20px;
-            transition: all 0.2s;
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            z-index: 1000;
-        }
-        .facturar-btn-blocked {
-            padding: 0.5rem 1rem;
-            font-size: 0.9rem;
-            border-radius: 20px;
-            width: 100%;
-        }
-        .facturar-btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-        .alert {
-            border-radius: 6px;
-            padding: 0.75rem;
-            font-size: 0.9rem;
-        }
-        .checkbox-container {
-            display: inline-flex;
-            align-items: center;
-            margin-right: 1rem;
-        }
-        .analysis-checkbox:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        .analysis-checkbox:disabled + h6 {
-            opacity: 0.7;
-            text-decoration: line-through;
-        }
-
-        .resumen-card {
-            border-radius: 12px;
-            border: 1px solid #e5e7eb;
-            box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
-        }
-
-        .resumen-grid {
-            display: grid;
-            gap: 1.25rem;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        }
-
-        .resumen-item .label {
-            display: block;
-            text-transform: uppercase;
-            font-size: 0.75rem;
-            letter-spacing: 0.08em;
-            color: #6c757d;
-            margin-bottom: 0.35rem;
-        }
-
-        .resumen-item h5 {
-            font-weight: 700;
-        }
-    </style>
-</head>
-
 @section('content')
-<div class="container">
-    <a href="{{ url('/facturacion') }}" class="back-btn">← Volver a Facturación</a>
-    <h2 class="title">Cotización <span class="text-primary">{{ $cotizacion->coti_num }}</span></h2>
-    <p class="text-muted mb-3">Divisa: {{ $cotizacion->divisa_codigo ?? 'PES' }}</p>
+@include('partials.operativo-styles')
+<link rel="stylesheet" href="{{ asset('css/facturacion-facturar.css') }}?v={{ filemtime(public_path('css/facturacion-facturar.css')) }}">
+
+@php
+    $subtituloFacturar = collect([
+        $datosCliente['razon_social'] ?? null,
+        'Divisa ' . ($cotizacion->divisa_codigo ?? 'PES'),
+    ])->filter()->implode(' · ');
+@endphp
+
+<div class="container py-4 ucrud ucrud-operativo ucrud-detalle facturacion-facturar-page" data-ucrud-root>
+    @include('partials.ucrud-form-header', [
+        'title' => 'Facturar cotización #' . $cotizacion->coti_num,
+        'subtitle' => $subtituloFacturar,
+        'backUrl' => route('facturacion.index'),
+        'backLabel' => 'Volver a Facturación',
+    ])
 
     @if (session('success'))
-        <div class="alert alert-success">{{ session('success') }}</div>
+        <div class="ucrud-alert ucrud-alert--success mb-3" role="status">
+            <x-heroicon-o-check-circle style="width: 18px; height: 18px;" />
+            <span>{{ session('success') }}</span>
+        </div>
     @endif
 
     @if (session('error'))
-        <div class="alert alert-danger">{{ session('error') }}</div>
+        <div class="ucrud-alert ucrud-alert--danger mb-3" role="alert">
+            <x-heroicon-o-exclamation-circle style="width: 18px; height: 18px;" />
+            <span>{{ session('error') }}</span>
+        </div>
     @endif
+
+    @isset($datosCliente)
+        <div class="ucrud-panel mb-4">
+            <div class="fact-panel-head">
+                <h2 class="ucrud-panel-title">Datos del cliente</h2>
+                @if(!empty($datosCliente['cliente_edit_url']))
+                    <a href="{{ $datosCliente['cliente_edit_url'] }}" class="btn btn-sm btn-outline-secondary" target="_blank" rel="noopener">
+                        <x-heroicon-o-arrow-up-right style="width: 14px; height: 14px;" class="me-1" />
+                        Ficha del cliente
+                    </a>
+                @endif
+            </div>
+            <div class="fact-panel-body fact-dato-grid">
+                <div class="fact-dato">
+                    <span class="fact-dato-label">Razón social (facturación)</span>
+                    <span class="fact-dato-value">{{ $datosCliente['razon_social'] !== '' ? $datosCliente['razon_social'] : '—' }}</span>
+                </div>
+                <div class="fact-dato">
+                    <span class="fact-dato-label">CUIT</span>
+                    <span class="fact-dato-value">{{ $datosCliente['cuit'] !== '' ? $datosCliente['cuit'] : '—' }}</span>
+                </div>
+                <div class="fact-dato">
+                    <span class="fact-dato-label">Cliente / titular</span>
+                    <span class="fact-dato-value">{{ $datosCliente['cliente_linea'] !== '' ? $datosCliente['cliente_linea'] : '—' }}</span>
+                </div>
+                <div class="fact-dato">
+                    <span class="fact-dato-label">Sucursal / establecimiento</span>
+                    <span class="fact-dato-value">{{ $datosCliente['sucursal'] !== '' ? $datosCliente['sucursal'] : '—' }}</span>
+                </div>
+                @if($datosCliente['es_consultor'] && ($datosCliente['empresa_relacionada'] !== '' || $datosCliente['para'] !== ''))
+                    <div class="fact-dato">
+                        <span class="fact-dato-label">Consultora / destinatario</span>
+                        <span class="fact-dato-value">
+                            @if($datosCliente['empresa_relacionada'] !== '')
+                                {{ $datosCliente['empresa_relacionada'] }}
+                            @elseif($datosCliente['para'] !== '')
+                                {{ $datosCliente['para'] }}
+                            @else
+                                —
+                            @endif
+                        </span>
+                    </div>
+                @elseif($datosCliente['para'] !== '')
+                    <div class="fact-dato">
+                        <span class="fact-dato-label">Para</span>
+                        <span class="fact-dato-value">{{ $datosCliente['para'] }}</span>
+                    </div>
+                @endif
+                <div class="fact-dato">
+                    <span class="fact-dato-label">Dirección</span>
+                    <span class="fact-dato-value">{{ $datosCliente['direccion'] !== '' ? $datosCliente['direccion'] : '—' }}</span>
+                </div>
+                <div class="fact-dato">
+                    <span class="fact-dato-label">Localidad</span>
+                    <span class="fact-dato-value">{{ $datosCliente['localidad'] !== '' ? $datosCliente['localidad'] : '—' }}</span>
+                </div>
+                <div class="fact-dato">
+                    <span class="fact-dato-label">Cód. cliente</span>
+                    <span class="fact-dato-value">{{ $datosCliente['codigo_cliente'] !== '' ? $datosCliente['codigo_cliente'] : '—' }}</span>
+                </div>
+            </div>
+        </div>
+    @endisset
 
     @isset($contactosEnvioFactura, $estadoEnvioFactura)
         @php
@@ -166,89 +102,143 @@
             $contactosCotiEnvio = collect($estadoEnvioFactura['contactos_coti'] ?? []);
             $requiereSeleccionEmail = ! empty($estadoEnvioFactura['requiere_seleccion']);
             $tieneEnvioConfigurado = ! empty($estadoEnvioFactura['tiene_envio_configurado']);
+            $permiteSeleccionEnvio = $tieneEnvioConfigurado || $requiereSeleccionEmail || $contactosEnvioFactura->isNotEmpty();
+            $emailsPreseleccionados = $contactosCotiEnvio
+                ->pluck('correo')
+                ->map(fn ($e) => \App\Support\CotizacionContactosFacturacion::normalizarEmail($e))
+                ->filter()
+                ->values()
+                ->all();
         @endphp
-        <div class="card border-primary mb-4 shadow-sm" id="card-emails-envio-factura">
-            <div class="card-header bg-primary text-white py-2 d-flex flex-wrap align-items-center justify-content-between gap-2">
-                <span class="fw-semibold mb-0">Email de envío de factura</span>
-                <small class="opacity-75">Se enviará la factura PDF al confirmar</small>
+        <div class="ucrud-panel mb-4" id="card-emails-envio-factura"
+             data-cli-codigo="{{ $cliCodigo ?? '' }}"
+             data-permite-seleccion="{{ $permiteSeleccionEnvio ? '1' : '0' }}"
+             data-store-url="{{ !empty($cliCodigo) ? route('facturacion.contactos-envio.store', ['codigo' => $cliCodigo]) : '' }}">
+            <div class="fact-panel-head">
+                <div>
+                    <h2 class="ucrud-panel-title">Email de envío de factura</h2>
+                    <small class="text-muted">Se guardan en el cliente · tipo «Envío de factura»</small>
+                </div>
+                @if(!empty($cliCodigo))
+                    <button type="button" class="btn btn-sm btn-primary" id="btnAgregarContactoEnvio">
+                        <x-heroicon-o-plus style="width: 14px; height: 14px;" class="me-1" />
+                        Agregar email
+                    </button>
+                @endif
             </div>
-            <div class="card-body py-3">
+            <div class="fact-panel-body">
                 @if ($tieneEnvioConfigurado)
-                    <div class="alert alert-success py-2 mb-3 small">
-                        La cotización ya tiene contacto(s) de tipo «Envío de factura». Se usarán al facturar.
+                    @php
+                        $contactosCotiSoloCotizacion = $contactosCotiEnvio->filter(function ($contactoCoti) use ($emailsCoincidentes) {
+                            $emailNorm = \App\Support\CotizacionContactosFacturacion::normalizarEmail($contactoCoti['correo'] ?? '');
+
+                            return ! $emailsCoincidentes->contains($emailNorm);
+                        });
+                    @endphp
+                    <div class="alert alert-success small mb-0">
+                        Marque a quién enviar la factura. La selección actual viene de la cotización; puede cambiarla y se guardará al facturar.
                     </div>
-                    <ul class="list-unstyled mb-0">
-                        @foreach ($contactosCotiEnvio as $contactoCoti)
-                            @php
-                                $emailNorm = \App\Support\CotizacionContactosFacturacion::normalizarEmail($contactoCoti['correo'] ?? '');
-                                $coincideCliente = $emailsCoincidentes->contains($emailNorm);
-                            @endphp
-                            <li class="@if(! $loop->last) mb-2 pb-2 border-bottom @endif">
-                                <div class="d-flex flex-wrap align-items-center gap-2">
-                                    <input type="hidden" name="emails_envio_factura[]" value="{{ $contactoCoti['correo'] }}" form="facturarForm">
-                                    @if ($coincideCliente)
-                                        <span class="badge bg-success">En cliente</span>
-                                    @else
-                                        <span class="badge bg-secondary">Solo en cotización</span>
-                                    @endif
-                                    @if (trim((string) ($contactoCoti['nombre'] ?? '')) !== '')
-                                        <span class="fw-semibold">{{ $contactoCoti['nombre'] }}</span>
-                                        <span class="text-muted">·</span>
-                                    @endif
-                                    <span>{{ $contactoCoti['correo'] }}</span>
-                                </div>
-                            </li>
-                        @endforeach
-                    </ul>
-                @elseif ($contactosEnvioFactura->isNotEmpty())
-                    <div class="alert alert-warning py-2 mb-3 small">
-                        La cotización no tiene email de envío de factura. Seleccione uno o más contactos del cliente antes de facturar.
+                    @if ($contactosCotiSoloCotizacion->isNotEmpty())
+                        <ul class="list-unstyled fact-contacto-list mb-3 mt-3">
+                            @foreach ($contactosCotiSoloCotizacion as $contactoCoti)
+                                <li class="contacto-envio-item @if(! $loop->last) border-bottom @endif">
+                                    <div class="contacto-envio-row">
+                                        <input type="checkbox"
+                                               class="form-check-input email-envio-factura-check mt-0"
+                                               name="emails_envio_factura[]"
+                                               value="{{ $contactoCoti['correo'] }}"
+                                               form="facturarForm"
+                                               checked>
+                                        <div class="flex-grow-1 min-w-0">
+                                            <span class="badge bg-secondary me-1">Solo en cotización</span>
+                                            @if (trim((string) ($contactoCoti['nombre'] ?? '')) !== '')
+                                                <span class="fw-semibold">{{ $contactoCoti['nombre'] }}</span>
+                                                <span class="text-muted">·</span>
+                                            @endif
+                                            <span>{{ $contactoCoti['correo'] }}</span>
+                                        </div>
+                                    </div>
+                                </li>
+                            @endforeach
+                        </ul>
+                        <hr class="my-3">
+                    @endif
+                    <p class="small text-muted mb-2">Contactos del cliente:</p>
+                @elseif ($requiereSeleccionEmail)
+                    <div class="alert alert-warning small mb-0">
+                        Seleccione uno o más emails del cliente antes de facturar, o agregue uno nuevo.
                     </div>
-                    <ul class="list-unstyled mb-0">
-                        @foreach ($contactosEnvioFactura as $contacto)
-                            @php $email = trim((string) $contacto->email); @endphp
-                            <li class="@if(! $loop->last) mb-2 pb-2 border-bottom @endif">
-                                <label class="d-flex flex-wrap align-items-center gap-2 mb-0 cursor-pointer">
-                                    <input type="checkbox"
-                                           class="form-check-input email-envio-factura-check mt-0"
-                                           name="emails_envio_factura[]"
-                                           value="{{ $email }}"
-                                           form="facturarForm">
-                                    @if (trim((string) ($contacto->nombre ?? '')) !== '')
-                                        <span class="fw-semibold">{{ trim($contacto->nombre) }}</span>
-                                        <span class="text-muted">·</span>
-                                    @endif
-                                    <span>{{ $email }}</span>
-                                    @if (trim((string) ($contacto->telefono ?? '')) !== '')
-                                        <small class="text-muted">{{ trim($contacto->telefono) }}</small>
-                                    @endif
-                                </label>
-                            </li>
-                        @endforeach
-                    </ul>
                 @else
                     <p class="text-muted mb-0 small">
-                        No hay contactos de tipo «Envío de factura» en el cliente ni en la cotización. La factura se generará sin envío por email.
+                        Agregue emails de envío de factura al cliente. Si no hay ninguno, la factura se generará sin envío por email.
                     </p>
                 @endif
+
+                <ul class="list-unstyled fact-contacto-list mb-0" id="lista-contactos-envio-cliente">
+                    @forelse ($contactosEnvioFactura as $contacto)
+                        @include('facturacion.partials.contacto-envio-row', [
+                            'contacto' => $contacto,
+                            'permiteSeleccionEnvio' => $permiteSeleccionEnvio,
+                            'requiereSeleccionEmail' => $requiereSeleccionEmail,
+                            'emailsPreseleccionados' => $emailsPreseleccionados,
+                        ])
+                    @empty
+                        <li class="text-muted small" id="sin-contactos-envio-msg">No hay contactos de envío de factura en el cliente.</li>
+                    @endforelse
+                </ul>
+            </div>
+        </div>
+
+        <div class="modal fade" id="modalContactoEnvio" tabindex="-1" aria-labelledby="modalContactoEnvioLabel" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="modalContactoEnvioLabel">Agregar email de envío</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div id="contactoEnvioAlert" class="alert d-none" role="alert"></div>
+                        <form id="formContactoEnvio">
+                            @csrf
+                            <input type="hidden" id="contacto_envio_id" value="">
+                            <div class="mb-3">
+                                <label for="contacto_envio_nombre" class="form-label">Nombre</label>
+                                <input type="text" class="form-control" id="contacto_envio_nombre" required maxlength="120">
+                            </div>
+                            <div class="mb-3">
+                                <label for="contacto_envio_email" class="form-label">Email</label>
+                                <input type="email" class="form-control" id="contacto_envio_email" required maxlength="120">
+                            </div>
+                            <div class="mb-0">
+                                <label for="contacto_envio_telefono" class="form-label">Teléfono <span class="text-muted">(opcional)</span></label>
+                                <input type="text" class="form-control" id="contacto_envio_telefono" maxlength="30">
+                            </div>
+                        </form>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="button" class="btn btn-primary" id="btnGuardarContactoEnvio">Guardar</button>
+                    </div>
+                </div>
             </div>
         </div>
     @endisset
 
     @isset($refsFacturacion)
-        <div class="card border-secondary mb-4 shadow-sm">
-            <div class="card-header bg-light py-2 d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <div class="ucrud-panel mb-4">
+            <div class="fact-panel-head">
                 <div>
-                    <span class="fw-semibold mb-0">Referencias para facturación</span>
-                    <small class="text-muted ms-2">Mismos datos que se imprimen en la factura</small>
+                    <h2 class="ucrud-panel-title">Referencias para facturación</h2>
+                    <small class="text-muted">Mismos datos que se imprimen en la factura</small>
                 </div>
                 <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modalEditarRefs">
-                    <i class="fas fa-edit me-1"></i>Editar Referencias
+                    <x-heroicon-o-pencil-square style="width: 14px; height: 14px;" class="me-1" />
+                    Editar referencias
                 </button>
             </div>
-            <div class="card-body py-3">
+            <div class="fact-panel-body">
                 @if (empty($refsFacturacion['puede_facturar']) && !empty($refsFacturacion['mensaje_bloqueo']))
-                    <div class="alert alert-warning py-2 mb-3">{{ $refsFacturacion['mensaje_bloqueo'] }}</div>
+                    <div class="alert alert-warning mb-0">{{ $refsFacturacion['mensaje_bloqueo'] }}</div>
                 @endif
                 <div class="row g-3 small">
                     <div class="col-md-4">
@@ -307,13 +297,16 @@
     @endphp
 
     @if(isset($resumenMontos))
-        <div class="card resumen-card mb-4">
-            <div class="card-body resumen-grid">
-                <div class="resumen-item">
+        <div class="ucrud-panel mb-4">
+            <div class="fact-panel-head">
+                <h2 class="ucrud-panel-title">Resumen económico</h2>
+            </div>
+            <div class="fact-panel-body fact-resumen-grid">
+                <div class="fact-resumen-item">
                     <span class="label">Importe bruto</span>
                     <h5 class="mb-0">{{ $formatCurrency($resumenMontos['total_bruto'] ?? 0) }}</h5>
                 </div>
-                <div class="resumen-item">
+                <div class="fact-resumen-item">
                     <span class="label">Descuento global</span>
                     <h5 class="mb-0">
                         {{ ($resumenMontos['descuento_global_porcentaje'] ?? 0) > 0 ? $formatPercent($resumenMontos['descuento_global_porcentaje']) : 'Sin descuento' }}
@@ -322,7 +315,7 @@
                         <small class="text-muted">Ajuste: -{{ $formatCurrency($resumenMontos['descuento_global_monto']) }}</small>
                     @endif
                 </div>
-                <div class="resumen-item">
+                <div class="fact-resumen-item">
                     <span class="label">
                         Descuento sector
                         @if(!empty($resumenMontos['descuento_sector_etiqueta']))
@@ -336,7 +329,7 @@
                         <small class="text-muted">Ajuste: -{{ $formatCurrency($resumenMontos['descuento_sector_monto']) }}</small>
                     @endif
                 </div>
-                <div class="resumen-item">
+                <div class="fact-resumen-item">
                     <span class="label">Importe neto estimado</span>
                     <h5 class="mb-0 text-success">{{ $formatCurrency($resumenMontos['total_neto'] ?? 0) }}</h5>
                     <small class="text-muted">
@@ -363,16 +356,43 @@
             $fechaBase = $cuotasInfo['fecha_inicio'] instanceof \Carbon\Carbon
                 ? $cuotasInfo['fecha_inicio']
                 : \Carbon\Carbon::parse($cuotasInfo['fecha_inicio']);
+            $fechaFin = ! empty($cuotasInfo['fecha_fin'])
+                ? ($cuotasInfo['fecha_fin'] instanceof \Carbon\Carbon
+                    ? $cuotasInfo['fecha_fin']
+                    : \Carbon\Carbon::parse($cuotasInfo['fecha_fin']))
+                : null;
         @endphp
-        <div class="card mb-4 border-info shadow-sm">
-            <div class="card-header bg-info text-white py-2">
-                <h5 class="mb-0"><i class="fas fa-calendar-alt me-2"></i>Facturación por Cuotas</h5>
+        <div class="ucrud-panel mb-4">
+            <div class="fact-panel-head">
+                <h2 class="ucrud-panel-title">
+                    <x-heroicon-o-calendar-days style="width: 20px; height: 20px;" class="me-1" />
+                    Facturación por cuotas / abono
+                </h2>
             </div>
-            <div class="card-body">
+            <div class="fact-panel-body">
                 @php
                     $tieneInteres = ($cuotasInfo['interes'] ?? 0) > 0;
                 @endphp
+                @if(! empty($cuotasInfo['usa_inicio_custom']) && ! empty($cuotasInfo['fecha_aprobacion']))
+                    <div class="alert alert-light border mb-3 py-2 small">
+                        <i class="fas fa-info-circle me-1 text-info"></i>
+                        Cotización aprobada el <strong>{{ \Carbon\Carbon::parse($cuotasInfo['fecha_aprobacion'])->format('d/m/Y') }}</strong>.
+                        Las cuotas se facturan desde
+                        <strong>{{ $fechaBase->locale('es')->translatedFormat('F Y') }}</strong>
+                        (inicio de ejecución).
+                    </div>
+                @endif
                 <div class="row g-3 mb-3 small">
+                    <div class="col-auto">
+                        <span class="text-muted">Inicio ejecución:</span>
+                        <strong class="ms-1">{{ $fechaBase->format('m/Y') }}</strong>
+                    </div>
+                    @if($fechaFin)
+                    <div class="col-auto">
+                        <span class="text-muted">Fin ejecución:</span>
+                        <strong class="ms-1">{{ $fechaFin->format('m/Y') }}</strong>
+                    </div>
+                    @endif
                     <div class="col-auto">
                         <span class="text-muted">Cuotas:</span>
                         <strong class="ms-1">{{ $cuotasInfo['total'] }}</strong>
@@ -417,11 +437,11 @@
                                     $fechaCuota   = $fechaBase->copy()->addMonths($i - 1);
                                     $nombreMes    = $mesesEs[(int) $fechaCuota->format('n')];
                                     $anio         = $fechaCuota->format('Y');
-                                    // Futura = el mes de la cuota todavía no llegó
                                     $esFutura     = $fechaCuota->startOfMonth()->gt($hoyInicio);
-                                    $deshabilitada = $yaFacturada || $esFutura;
+                                    $fueraPeriodo = $fechaFin && $fechaCuota->startOfMonth()->gt($fechaFin->copy()->startOfMonth());
+                                    $deshabilitada = $yaFacturada || $esFutura || $fueraPeriodo;
                                 @endphp
-                                <tr class="{{ $yaFacturada ? 'table-light text-muted' : ($esFutura ? 'table-light' : '') }}">
+                                <tr class="{{ $yaFacturada ? 'table-light text-muted' : (($esFutura || $fueraPeriodo) ? 'table-light' : '') }}">
                                     <td>
                                         <input 
                                             type="checkbox" 
@@ -445,6 +465,10 @@
                                     <td>
                                         @if($yaFacturada)
                                             <span class="badge bg-success"><i class="fas fa-check me-1"></i>Facturada</span>
+                                        @elseif($fueraPeriodo)
+                                            <span class="badge bg-light text-secondary border" title="Fuera del período de ejecución definido">
+                                                <i class="fas fa-ban me-1"></i>Fuera de período
+                                            </span>
                                         @elseif($esFutura)
                                             <span class="badge bg-light text-secondary border" title="Solo se puede facturar el mes actual o meses anteriores">
                                                 <i class="fas fa-lock me-1"></i>No disponible aún
@@ -649,37 +673,53 @@
                 @endif
             @endforeach
         @endif
-    </div>
 
     <form id="facturarForm" action="{{ route('facturacion.facturar', ['cotizacion' => $cotizacion->coti_num]) }}" method="POST">
         @csrf
         <input type="hidden" name="cotizacion_id" value="{{ $cotizacion->coti_num }}">
-        
-        <div class="mb-3 container">
-            <div class="d-flex justify-content-between align-items-center mb-2">
-                <label for="observaciones" class="form-label fw-bold mb-0">Notas en la Factura:</label>
+
+        <div class="ucrud-panel mb-4">
+            <div class="fact-panel-head">
+                <h2 class="ucrud-panel-title">Notas en la factura</h2>
                 <button type="button" id="btnGuardarNotas" class="btn btn-sm btn-outline-success">
-                    <i class="fas fa-save me-1"></i>Guardar Notas
+                    <x-heroicon-o-document-check style="width: 14px; height: 14px;" class="me-1" />
+                    Guardar notas
                 </button>
             </div>
-            <textarea name="observaciones" id="observaciones" class="form-control" rows="3" placeholder="Escribe aquí las notas que aparecerán en la factura...">{{ $cotizacion->coti_notas_facturacion }}</textarea>
+            <div class="fact-panel-body">
+                <textarea name="observaciones" id="observaciones" class="form-control" rows="3" placeholder="Notas que aparecerán en la factura...">{{ $cotizacion->coti_notas_facturacion }}</textarea>
+            </div>
         </div>
 
-        @if (!empty($refsFacturacion['puede_facturar']))
-            <button id="btnFacturar" type="submit" class="btn btn-primary facturar-btn" disabled>
-                <i class="fas fa-receipt me-1"></i>Facturar
-            </button>
-        @else
-            <div class="d-flex flex-column align-items-end facturar-btn-group">
-                <button type="button" class="btn btn-outline-danger mb-2" data-bs-toggle="modal" data-bs-target="#modalEditarRefs">
-                    <i class="fas fa-plus me-1"></i>Cargar O.C
-                </button>
-                <button id="btnFacturar" type="button" class="btn btn-secondary facturar-btn-blocked" onclick="alert('{{ $refsFacturacion['mensaje_bloqueo'] }}')">
-                    <i class="fas fa-receipt me-1"></i>Facturar (Bloqueado)
-                </button>
+        <div class="fact-footer-bar">
+            <div class="fact-footer-actions">
+                @if (empty($refsFacturacion['puede_facturar']))
+                    <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#modalEditarRefs">
+                        <x-heroicon-o-plus style="width: 16px; height: 16px;" class="me-1" />
+                        Cargar O.C.
+                    </button>
+                    <span id="btnFacturarWrap" class="d-inline-block fact-btn-facturar-wrap" tabindex="0"
+                          data-bs-toggle="tooltip" data-bs-placement="top" data-bs-trigger="hover focus"
+                          title="{{ $refsFacturacion['mensaje_bloqueo'] ?? 'No se puede facturar: complete las referencias obligatorias.' }}">
+                        <button id="btnFacturar" type="button" class="btn btn-secondary" style="pointer-events: none;" aria-disabled="true">
+                            <x-heroicon-o-currency-dollar style="width: 16px; height: 16px;" class="me-1" />
+                            Facturar (bloqueado)
+                        </button>
+                    </span>
+                @else
+                    <span id="btnFacturarWrap" class="d-inline-block fact-btn-facturar-wrap" tabindex="0"
+                          data-bs-toggle="tooltip" data-bs-placement="top" data-bs-trigger="hover focus"
+                          title="Seleccione al menos una cuota, muestra o análisis para facturar.">
+                        <button id="btnFacturar" type="submit" class="btn btn-secondary btn-lg" disabled style="pointer-events: none;">
+                            <x-heroicon-o-currency-dollar style="width: 18px; height: 18px;" class="me-1" />
+                            Facturar
+                        </button>
+                    </span>
+                @endif
             </div>
-        @endif
+        </div>
     </form>
+</div>
     
     <!-- Modal Editar Referencias -->
     <div class="modal fade" id="modalEditarRefs" tabindex="-1" aria-labelledby="modalEditarRefsLabel" aria-hidden="true">
@@ -888,15 +928,61 @@
         return Array.from(checks).some(cb => cb.checked);
     }
 
+    function getFacturarBloqueoMensaje(anyChecked, emailOk) {
+        const esCuotas = document.querySelector('.cuota-checkbox') !== null;
+        if (!anyChecked && !emailOk) {
+            return esCuotas
+                ? 'Seleccione al menos una cuota disponible y un email de envío de factura.'
+                : 'Seleccione al menos una muestra o análisis y un email de envío de factura.';
+        }
+        if (!anyChecked) {
+            return esCuotas
+                ? 'Seleccione al menos una cuota disponible para facturar.'
+                : 'Seleccione al menos una muestra o análisis para facturar.';
+        }
+        if (!emailOk) {
+            return 'Seleccione al menos un email de envío de factura.';
+        }
+        return '';
+    }
+
+    function setFacturarTooltip(mensaje) {
+        const wrap = document.getElementById('btnFacturarWrap');
+        if (!wrap || typeof bootstrap === 'undefined') return;
+
+        const tip = bootstrap.Tooltip.getOrCreateInstance(wrap, {
+            placement: 'top',
+            trigger: 'hover focus',
+        });
+
+        if (mensaje) {
+            wrap.setAttribute('data-bs-title', mensaje);
+            wrap.setAttribute('title', mensaje);
+            tip.setContent({ '.tooltip-inner': mensaje });
+            wrap.classList.add('fact-btn-facturar-wrap--bloqueado');
+        } else {
+            wrap.removeAttribute('data-bs-title');
+            wrap.removeAttribute('title');
+            tip.hide();
+            wrap.classList.remove('fact-btn-facturar-wrap--bloqueado');
+        }
+    }
+
     function updateFacturarButton() {
         const btnFacturar = document.getElementById('btnFacturar');
         if (!btnFacturar || btnFacturar.type === 'button') return; // Bloqueado por backend
 
         const anyChecked = document.querySelectorAll('.sample-checkbox:checked:not(:disabled), .analysis-checkbox:checked:not(:disabled), .cuota-checkbox:checked:not(:disabled)').length > 0;
         const emailOk = emailEnvioFacturaValido();
-        btnFacturar.disabled = !anyChecked || !emailOk;
-        btnFacturar.classList.toggle('btn-primary', anyChecked && emailOk);
-        btnFacturar.classList.toggle('btn-secondary', !anyChecked || !emailOk);
+        const bloqueado = !anyChecked || !emailOk;
+
+        btnFacturar.disabled = bloqueado;
+        btnFacturar.style.pointerEvents = bloqueado ? 'none' : '';
+        btnFacturar.classList.toggle('btn-primary', !bloqueado);
+        btnFacturar.classList.toggle('btn-secondary', bloqueado);
+        btnFacturar.classList.toggle('btn-lg', true);
+
+        setFacturarTooltip(bloqueado ? getFacturarBloqueoMensaje(anyChecked, emailOk) : '');
     }
 
     function updateHiddenInputs() {
@@ -1008,7 +1094,221 @@
             }
         });
         
+        if (typeof bootstrap !== 'undefined') {
+            document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => {
+                bootstrap.Tooltip.getOrCreateInstance(el, { placement: 'top', trigger: 'hover focus' });
+            });
+        }
+
         updateFacturarButton();
+        initContactosEnvioFactura();
     });
+
+    function initContactosEnvioFactura() {
+        const card = document.getElementById('card-emails-envio-factura');
+        if (!card) return;
+
+        const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+        const permiteSeleccion = card.dataset.permiteSeleccion === '1';
+        const emailsPreseleccionados = @json($emailsPreseleccionados ?? []);
+        const storeUrl = card.dataset.storeUrl || '';
+        const modalEl = document.getElementById('modalContactoEnvio');
+        const modal = modalEl && window.bootstrap ? new bootstrap.Modal(modalEl) : null;
+
+        const btnAgregar = document.getElementById('btnAgregarContactoEnvio');
+        const btnGuardar = document.getElementById('btnGuardarContactoEnvio');
+        const alertBox = document.getElementById('contactoEnvioAlert');
+        const inputId = document.getElementById('contacto_envio_id');
+        const inputNombre = document.getElementById('contacto_envio_nombre');
+        const inputEmail = document.getElementById('contacto_envio_email');
+        const inputTelefono = document.getElementById('contacto_envio_telefono');
+        const modalTitle = document.getElementById('modalContactoEnvioLabel');
+
+        function contactoUpdateUrl(id) {
+            return `/facturacion/contactos-envio/${id}`;
+        }
+
+        function mostrarAlerta(msg, tipo) {
+            if (!alertBox) return;
+            alertBox.textContent = msg;
+            alertBox.className = `alert alert-${tipo}`;
+            alertBox.classList.remove('d-none');
+        }
+
+        function limpiarAlerta() {
+            if (!alertBox) return;
+            alertBox.classList.add('d-none');
+            alertBox.textContent = '';
+        }
+
+        function escHtml(str) {
+            return String(str ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        const iconPencilSvg = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" /></svg>';
+        const iconTrashSvg = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>';
+
+        function renderContactoRow(contacto, isLast) {
+            const nombre = escHtml(contacto.nombre || '');
+            const email = escHtml(contacto.email || '');
+            const telefono = escHtml(contacto.telefono || '');
+            const emailNorm = String(contacto.email || '').trim().toLowerCase();
+            const checked = emailsPreseleccionados.includes(emailNorm) ? ' checked' : '';
+            const checkHtml = permiteSeleccion
+                ? `<input type="checkbox" class="form-check-input email-envio-factura-check mt-0" name="emails_envio_factura[]" value="${email}" form="facturarForm"${checked}>`
+                : '';
+            const borderClass = isLast ? '' : ' border-bottom';
+            return `
+                <li class="contacto-envio-item${borderClass}"
+                    data-contacto-id="${contacto.id}"
+                    data-nombre="${nombre}"
+                    data-email="${email}"
+                    data-telefono="${telefono}">
+                    <div class="contacto-envio-row">
+                        ${checkHtml}
+                        <div class="flex-grow-1 min-w-0">
+                            ${nombre ? `<span class="fw-semibold">${nombre}</span><span class="text-muted"> · </span>` : ''}
+                            <span>${email}</span>
+                            ${telefono ? `<small class="text-muted ms-1">${telefono}</small>` : ''}
+                        </div>
+                        <div class="contacto-envio-actions">
+                            <button type="button" class="btn btn-sm btn-outline-secondary btn-editar-contacto-envio" title="Editar" aria-label="Editar">
+                                ${iconPencilSvg}
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-danger btn-eliminar-contacto-envio" title="Eliminar" aria-label="Eliminar">
+                                ${iconTrashSvg}
+                            </button>
+                        </div>
+                    </div>
+                </li>`;
+        }
+
+        function renderListaContactos(contactos) {
+            const lista = document.getElementById('lista-contactos-envio-cliente');
+            if (!lista) return;
+
+            if (!contactos || contactos.length === 0) {
+                lista.innerHTML = '<li class="text-muted small" id="sin-contactos-envio-msg">No hay contactos de envío de factura en el cliente.</li>';
+            } else {
+                lista.innerHTML = contactos.map((c, i) => renderContactoRow(c, i === contactos.length - 1)).join('');
+            }
+
+            lista.querySelectorAll('.email-envio-factura-check').forEach(cb => {
+                cb.addEventListener('change', () => updateFacturarButton());
+            });
+            bindContactoRowActions();
+            updateFacturarButton();
+        }
+
+        function abrirModal(modo, contacto) {
+            limpiarAlerta();
+            inputId.value = contacto?.id || '';
+            inputNombre.value = contacto?.nombre || '';
+            inputEmail.value = contacto?.email || '';
+            inputTelefono.value = contacto?.telefono || '';
+            modalTitle.textContent = modo === 'edit' ? 'Editar email de envío' : 'Agregar email de envío';
+            modal?.show();
+        }
+
+        async function guardarContacto() {
+            limpiarAlerta();
+            const id = inputId.value.trim();
+            const payload = {
+                nombre: inputNombre.value.trim(),
+                email: inputEmail.value.trim(),
+                telefono: inputTelefono.value.trim() || null,
+            };
+
+            if (!payload.nombre || !payload.email) {
+                mostrarAlerta('Complete nombre y email.', 'warning');
+                return;
+            }
+
+            const url = id ? contactoUpdateUrl(id) : storeUrl;
+            const method = id ? 'PUT' : 'POST';
+
+            if (!url) {
+                mostrarAlerta('No se pudo determinar la URL de guardado.', 'danger');
+                return;
+            }
+
+            btnGuardar.disabled = true;
+            try {
+                const res = await fetch(url, {
+                    method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': csrf,
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    body: JSON.stringify(payload),
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) {
+                    throw new Error(data.message || 'Error al guardar el contacto.');
+                }
+                renderListaContactos(data.contactos || []);
+                modal?.hide();
+            } catch (err) {
+                mostrarAlerta(err.message || 'Error al guardar.', 'danger');
+            } finally {
+                btnGuardar.disabled = false;
+            }
+        }
+
+        async function eliminarContacto(id) {
+            if (!confirm('¿Eliminar este email de envío de factura del cliente?')) return;
+
+            try {
+                const res = await fetch(contactoUpdateUrl(id), {
+                    method: 'DELETE',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': csrf,
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) {
+                    throw new Error(data.message || 'Error al eliminar.');
+                }
+                renderListaContactos(data.contactos || []);
+            } catch (err) {
+                alert(err.message || 'Error al eliminar el contacto.');
+            }
+        }
+
+        function bindContactoRowActions() {
+            document.querySelectorAll('.btn-editar-contacto-envio').forEach(btn => {
+                btn.addEventListener('click', function () {
+                    const li = this.closest('.contacto-envio-item');
+                    if (!li) return;
+                    abrirModal('edit', {
+                        id: li.dataset.contactoId,
+                        nombre: li.dataset.nombre || '',
+                        email: li.dataset.email || '',
+                        telefono: li.dataset.telefono || '',
+                    });
+                });
+            });
+
+            document.querySelectorAll('.btn-eliminar-contacto-envio').forEach(btn => {
+                btn.addEventListener('click', function () {
+                    const li = this.closest('.contacto-envio-item');
+                    if (!li?.dataset.contactoId) return;
+                    eliminarContacto(li.dataset.contactoId);
+                });
+            });
+        }
+
+        btnAgregar?.addEventListener('click', () => abrirModal('create', null));
+        btnGuardar?.addEventListener('click', guardarContacto);
+        bindContactoRowActions();
+    }
 </script>
 @endsection

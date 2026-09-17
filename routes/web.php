@@ -329,6 +329,9 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
     Route::get('/facturacion/{factura}/descargar', [App\Http\Controllers\FacturacionController::class, 'descargar'])->name('facturacion.descargar');
     Route::get('/facturacion/facturar/{cotizacion}', [App\Http\Controllers\FacturacionController::class, 'facturar'])->name('facturacion.show');
     Route::post('/facturacion/facturar/{cotizacion}', [App\Http\Controllers\FacturacionController::class, 'generarFacturaArca'])->name('facturacion.facturar');
+    Route::post('/facturacion/clientes/{codigo}/contactos-envio', [App\Http\Controllers\FacturacionController::class, 'storeContactoEnvioFactura'])->name('facturacion.contactos-envio.store');
+    Route::put('/facturacion/contactos-envio/{contacto}', [App\Http\Controllers\FacturacionController::class, 'updateContactoEnvioFactura'])->name('facturacion.contactos-envio.update');
+    Route::delete('/facturacion/contactos-envio/{contacto}', [App\Http\Controllers\FacturacionController::class, 'destroyContactoEnvioFactura'])->name('facturacion.contactos-envio.destroy');
 
     //Auditoria
     Route::get('/auditoria', [AuditoriaController::class, 'index'])->name('auditoria.index');
@@ -647,6 +650,9 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
     Route::post('/facturacion/referencias/{cotizacion}', [App\Http\Controllers\FacturacionController::class, 'updateReferencias'])->name('facturacion.update-referencias');
     Route::post('/facturacion/detalle/{factura}/notas', [App\Http\Controllers\FacturacionController::class, 'updateNotasFactura'])->name('facturacion.update-notas');
     Route::get('/facturacion/exportar-iva', [App\Http\Controllers\FacturacionController::class, 'exportarIvaVentas'])->name('facturacion.exportar-iva');
+    Route::post('/facturacion/clientes/{codigo}/contactos-envio', [App\Http\Controllers\FacturacionController::class, 'storeContactoEnvioFactura'])->name('facturacion.contactos-envio.store');
+    Route::put('/facturacion/contactos-envio/{contacto}', [App\Http\Controllers\FacturacionController::class, 'updateContactoEnvioFactura'])->name('facturacion.contactos-envio.update');
+    Route::delete('/facturacion/contactos-envio/{contacto}', [App\Http\Controllers\FacturacionController::class, 'destroyContactoEnvioFactura'])->name('facturacion.contactos-envio.destroy');
 });
 
 // ventas

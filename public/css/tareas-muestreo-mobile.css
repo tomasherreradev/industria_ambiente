@@ -643,7 +643,7 @@
         bottom: 0;
         left: 0;
         right: 0;
-        z-index: 1030;
+        z-index: 1020;
         background: #fff;
         border-top: 1px solid #dee2e6;
         padding: 0.75rem 1rem;
@@ -801,7 +801,7 @@
         left: 0;
         right: 0;
         bottom: 0;
-        z-index: 1030;
+        z-index: 1020;
         padding: 0.75rem 1rem;
         background: rgba(255, 255, 255, 0.97);
         border-top: 1px solid #dee2e6;

@@ -4,7 +4,7 @@
 <div class="container py-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2>Variables</h2>
-        <a href="{{ route('admin.variables.create') }}" class="btn btn-primary">
+        <a href="{{ route('variables.create') }}" class="btn btn-primary">
             <i class="fas fa-plus"></i> Nueva Variable
         </a>
     </div>
@@ -26,7 +26,7 @@
     <!-- Filtros -->
     <div class="card mb-4">
         <div class="card-body">
-            <form method="GET" action="{{ route('admin.variables.index') }}">
+            <form method="GET" action="{{ route('variables.index') }}">
                 <div class="row">
                     <div class="col-md-3">
                         <label for="search" class="form-label">Buscar</label>
@@ -54,7 +54,7 @@
                     </div>
                     <div class="col-md-2 d-flex align-items-end">
                         <button type="submit" class="btn btn-outline-primary me-2">Filtrar</button>
-                        <a href="{{ route('admin.variables.index') }}" class="btn btn-outline-secondary">Limpiar</a>
+                        <a href="{{ route('variables.index') }}" class="btn btn-outline-secondary">Limpiar</a>
                     </div>
                 </div>
             </form>
@@ -118,15 +118,15 @@
                                     </td>
                                     <td>
                                         <div class="btn-group" role="group">
-                                            <a href="{{ route('admin.variables.show', $variable) }}" 
+                                            <a href="{{ route('variables.show', $variable) }}" 
                                                class="btn btn-sm btn-outline-info" title="Ver">
                                                 <x-heroicon-o-eye style="width: 16px; height: 16px;" />
                                             </a>
-                                            <a href="{{ route('admin.variables.edit', $variable) }}" 
+                                            <a href="{{ route('variables.edit', $variable) }}" 
                                                class="btn btn-sm btn-outline-primary" title="Editar">
                                                 <x-heroicon-o-pencil style="width: 16px; height: 16px;" />
                                             </a>
-                                            <a href="{{ route('admin.variables.delete', $variable) }}" 
+                                            <a href="{{ route('variables.delete', $variable) }}" 
                                                class="btn btn-sm btn-outline-danger" title="Eliminar">
                                                 <x-heroicon-o-trash style="width: 16px; height: 16px;" />
                                             </a>
@@ -146,7 +146,7 @@
                 <div class="text-center py-4">
                     <i class="fas fa-vial fa-3x text-muted mb-3"></i>
                     <p class="text-muted">No se encontraron variables.</p>
-                    <a href="{{ route('admin.variables.create') }}" class="btn btn-primary">
+                    <a href="{{ route('variables.create') }}" class="btn btn-primary">
                         Crear la primera variable
                     </a>
                 </div>

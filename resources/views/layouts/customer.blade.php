@@ -9,6 +9,9 @@
     
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="{{ asset('css/sidebar.css') }}?v={{ filemtime(public_path('css/sidebar.css')) }}">
+    <link rel="stylesheet" href="{{ asset('css/topbar.css') }}?v={{ filemtime(public_path('css/topbar.css')) }}">
+    <link rel="stylesheet" href="{{ asset('css/mobile-nav.css') }}?v={{ filemtime(public_path('css/mobile-nav.css')) }}">
 
     
     <style>
@@ -23,8 +26,9 @@
             --dark-color: #5a5c69;
             --gray-600: #6c757d;
             --gray-400: #ced4da;
-            --sidebar-width: 250px;
-            --navbar-height: 56px;
+            --sidebar-width: 260px;
+            --navbar-height: 64px;
+            --app-topbar-height: 64px;
         }
 
         body {
@@ -35,71 +39,9 @@
             transition: padding 0.3s ease;
         }
 
-        /* Navbar y Sidebar */
-        .navbar, .sidebar {
+        /* Navbar */
+        .navbar {
             background-color: #ffffff;
-        }
-
-        .sidebar {
-            border-right: 1px solid var(--gray-400);
-        }
-
-        .sidebar .nav-link {
-            color: var(--dark-color);
-            font-weight: 500;
-            padding: 0.75rem 1rem;
-            border-radius: 0.375rem;
-            transition: all 0.2s ease-in-out;
-        }
-
-        .sidebar .nav-link:hover {
-            background-color: rgba(0, 0, 0, 0.05);
-            color: var(--primary-color);
-        }
-
-        .sidebar .nav-group-title {
-            color: var(--gray-600);
-            font-size: 0.75rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            margin-top: 1.5rem;
-            margin-bottom: 0.5rem;
-            padding-left: 1rem;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        /* Estilos para el acordeón del sidebar */
-        .accordion-item {
-            border: none;
-            background: transparent;
-            margin-bottom: 0.5rem;
-        }
-
-        .accordion-button {
-            background: transparent !important;
-            padding: 0.5rem 0;
-            color: #495057;
-            font-weight: 600;
-            box-shadow: none !important;
-        }
-
-        .accordion-button:not(.collapsed) {
-            color: #0d6efd;
-        }
-
-        .accordion-button::after {
-            margin-left: auto;
-            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23212529'%3e%3cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3e%3c/svg%3e");
-        }
-
-        .accordion-button:not(.collapsed)::after {
-            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%230d6efd'%3e%3cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3e%3c/svg%3e");
-        }
-
-        .accordion-body {
-            padding: 0 !important;
         }
 
         /* Layout principal */
@@ -108,15 +50,6 @@
         }
 
         @media (min-width: 768px) {
-            .sidebar {
-                width: var(--sidebar-width);
-                height: 100vh;
-                position: fixed;
-                top: 0;
-                left: 0;
-                padding-top: 2rem;
-            }
-
             .main-content {
                 margin-left: var(--sidebar-width);
                 padding: 2rem;
@@ -138,11 +71,6 @@
             transform: scale(1.05);
         }
 
-        .sidebar-logo {
-            width: 120px;
-            margin-bottom: 2rem;
-        }
-
         .mobile-logo {
             height: 40px;
         }
@@ -158,20 +86,16 @@
             top: 0;
             left: 0;
             right: 0;
-            z-index: 1030;
             background-color: white;
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
         
         #mobileNavbar {
             position: fixed;
-            top: 0;
             left: 0;
             right: 0;
             bottom: 0;
-            padding-top: var(--navbar-height);
-            z-index: 1020;
-            background-color: rgba(255, 255, 255, 0.98);
+            background-color: #fff;
             transform: translateX(-100%);
             transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             overflow-y: auto;
@@ -212,12 +136,10 @@
         /* Efecto overlay */
         .navbar-overlay {
             position: fixed;
-            top: 0;
             left: 0;
             right: 0;
             bottom: 0;
             background-color: rgba(0, 0, 0, 0.5);
-            z-index: 1010;
             opacity: 0;
             visibility: hidden;
             transition: opacity 0.3s ease, visibility 0.3s ease;
@@ -285,9 +207,7 @@
                         </ul>
                     </div>
                 @endif
-                    <button class="navbar-toggler" type="button" id="mobileNavbarToggler" aria-label="Toggle navigation">
-                        <span class="navbar-toggler-icon"></span>
-                    </button>
+                    @include('layouts.partials.hamburger-toggle')
             </div>
 
         </div>
@@ -297,10 +217,6 @@
     <div class="navbar-overlay" id="navbarOverlay"></div>
 
     <div class="mobile-navbar-menu" id="mobileNavbar">
-        <button class="close-menu-btn" id="closeMenuBtn" aria-label="Cerrar menú">
-            &times;
-        </button>
-        
         <nav class="nav flex-column px-3 py-3">
             <div class="accordion-item">
                 <button class="accordion-button nav-group-title" type="button" data-bs-toggle="collapse" data-bs-target="#seguridad">
@@ -331,40 +247,43 @@
 </div>
 
 
-<div class="sidebar d-none d-md-flex flex-column p-3 shadow-sm">
-    <a class="navbar-brand mb-3" href="{{ url('/customers') }}">
-        <img src="{{ asset('/assets/img/logo.png') }}" alt="Logo" class="sidebar-logo">
-    </a>
-    
-    <nav class="nav flex-column w-100 px-2">
-        
-        @if(Auth::user())
-            <div class="accordion-item">
-                <button class="accordion-button nav-group-title" type="button" data-bs-toggle="collapse" data-bs-target="#seguridad">
-                    Seguridad
-                    <x-heroicon-o-lock-closed style="width: 16px; height: 16px;" class="ms-2" />
-                </button>
-                
-                <div id="seguridad" class="accordion-collapse collapse show">
-                    <div class="accordion-body p-0">
-                        <a class="nav-link" href="{{ url('/auth/' . Auth::user()->usu_codigo) }}">
-                            Perfil
-                        </a>
+<aside class="sidebar app-sidebar d-none d-md-flex flex-column">
+    <div class="app-sidebar__brand">
+        <a class="navbar-brand" href="{{ url('/customers') }}">
+            <img src="{{ asset('/assets/img/logo.png') }}" alt="Logo" class="sidebar-logo">
+        </a>
+    </div>
+
+    <div class="app-sidebar__scroll">
+        <nav class="nav flex-column app-sidebar__nav w-100">
+            @if(Auth::user())
+                <div class="accordion-item">
+                    <button class="accordion-button nav-group-title" type="button" data-bs-toggle="collapse" data-bs-target="#seguridadDesktop" aria-expanded="true">
+                        <x-heroicon-o-lock-closed style="width: 14px; height: 14px;" />
+                        <span>Seguridad</span>
+                    </button>
+
+                    <div id="seguridadDesktop" class="accordion-collapse collapse show">
+                        <div class="accordion-body p-0">
+                            <a class="nav-link" href="{{ url('/auth/' . Auth::user()->usu_codigo) }}">
+                                Perfil
+                            </a>
+                        </div>
                     </div>
                 </div>
-            </div>
-        @endif
-    </nav>
-</div>
+            @endif
+        </nav>
+    </div>
+</aside>
 
 @if (Auth::check())
-    <nav class="navbar navbar-expand-md navbar-light bg-white shadow-sm d-none d-md-flex justify-content-end px-4" style="margin-left: var(--sidebar-width); padding: 1rem 0;">
-        
-        <div class="dropdown me-3">
-            <a href="#" class="d-flex align-items-center text-decoration-none" id="settingsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-                <x-heroicon-o-cog-6-tooth style="width: 18px; height: 18px;" class="text-gray-500" />
+    <nav class="navbar navbar-expand-md navbar-light d-none d-md-flex app-desktop-topbar">
+        <div class="app-topbar__actions w-100 justify-content-end">
+        <div class="dropdown">
+            <a href="#" class="app-topbar__icon-btn" id="settingsDropdown" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Configuración">
+                <x-heroicon-o-cog-6-tooth />
             </a>
-            <ul class="dropdown-menu dropdown-menu-end shadow-sm mt-2" aria-labelledby="settingsDropdown">
+            <ul class="dropdown-menu dropdown-menu-end app-topbar__dropdown" aria-labelledby="settingsDropdown">
                 <li class="dropdown-header">
                     <span class="fw-semibold">Configuración</span>
                 </li>
@@ -379,11 +298,11 @@
 
         
         <div class="dropdown">
-            <a href="#" class="d-flex align-items-center text-decoration-none dropdown-toggle" id="userDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-                <x-heroicon-o-user style="width: 18px; height: 18px;" class="text-gray-500" />
-                <span class="ms-2 fw-semibold">{{ Auth::user()->usu_descripcion }}</span>
+            <a href="#" class="app-topbar__user-btn dropdown-toggle" id="userDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                <x-heroicon-o-user />
+                <span>{{ Auth::user()->usu_descripcion }}</span>
             </a>
-            <ul class="dropdown-menu dropdown-menu-end shadow-sm mt-2" aria-labelledby="userDropdown">
+            <ul class="dropdown-menu dropdown-menu-end app-topbar__dropdown" aria-labelledby="userDropdown">
                 <li>
                     <a class="dropdown-item d-flex align-items-center gap-2" href="{{ url('/auth/' . Auth::user()->usu_codigo) }}">
                         <x-heroicon-o-user style="width: 16px; height: 16px;" />
@@ -401,6 +320,7 @@
                     </form>
                 </li>
             </ul>
+        </div>
         </div>
     </nav>
 @endif
@@ -420,8 +340,11 @@
         const mobileNavbar = document.getElementById('mobileNavbar');
         const navbarOverlay = document.getElementById('navbarOverlay');
         const toggler = document.getElementById('mobileNavbarToggler');
-        const closeBtn = document.getElementById('closeMenuBtn');
         const body = document.body;
+
+        if (!mobileNavbar || !navbarOverlay || !toggler) {
+            return;
+        }
 
         
         function toggleMenu(show) {
@@ -429,10 +352,16 @@
                 mobileNavbar.classList.add('show');
                 navbarOverlay.classList.add('show');
                 body.classList.add('navbar-open');
+                toggler.classList.add('is-active');
+                toggler.setAttribute('aria-expanded', 'true');
+                toggler.setAttribute('aria-label', 'Cerrar menú');
             } else {
                 mobileNavbar.classList.remove('show');
                 navbarOverlay.classList.remove('show');
                 body.classList.remove('navbar-open');
+                toggler.classList.remove('is-active');
+                toggler.setAttribute('aria-expanded', 'false');
+                toggler.setAttribute('aria-label', 'Abrir menú');
             }
         }
 
@@ -440,12 +369,6 @@
         toggler.addEventListener('click', function(e) {
             e.stopPropagation();
             toggleMenu(!mobileNavbar.classList.contains('show'));
-        });
-
-        
-        closeBtn.addEventListener('click', function(e) {
-            e.stopPropagation();
-            toggleMenu(false);
         });
 
         
@@ -479,6 +402,18 @@
             if (e.key === 'Escape' && mobileNavbar.classList.contains('show')) {
                 toggleMenu(false);
             }
+        });
+    });
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const currentPath = window.location.pathname.replace(/\/+$/, '') || '/';
+        document.querySelectorAll('.app-sidebar .nav-link[href]').forEach(function (link) {
+            try {
+                const linkPath = new URL(link.href, window.location.origin).pathname.replace(/\/+$/, '') || '/';
+                if (linkPath === currentPath || (linkPath !== '/' && currentPath.startsWith(linkPath + '/'))) {
+                    link.classList.add('active');
+                }
+            } catch (e) { /* ignore malformed href */ }
         });
     });
 

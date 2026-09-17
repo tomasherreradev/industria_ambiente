@@ -55,7 +55,7 @@
 <div class="container-fluid px-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1 class="mb-0">Panel de Análisis</h1>
-        <div class="text-muted">{{ now()->format('l, d F Y') }}</div>
+        <div class="text-muted">{{ fechaActualLargaEs() }}</div>
     </div>
 
     {{-- Resumen General --}}
@@ -364,7 +364,7 @@
                                                                 @if($item->responsablesAnalisis && $item->responsablesAnalisis->count() > 0)
                                                                     <div class="avatar-group">
                                                                         @foreach($item->responsablesAnalisis as $responsable)
-                                                                        <span class="avatar avatar-xs" data-bs-toggle="tooltip" title="{{ $responsable->usu_descripcion }}">
+                                                                        <span class="avatar avatar-xs" data-bs-toggle="tooltip" data-bs-placement="bottom" title="{{ $responsable->usu_descripcion }}">
                                                                             {{ $responsable->usu_codigo }}
                                                                         </span>
                                                                         @endforeach
@@ -613,7 +613,9 @@
     document.addEventListener('DOMContentLoaded', function() {
         var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
         var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-            return new bootstrap.Tooltip(tooltipTriggerEl);
+            return new bootstrap.Tooltip(tooltipTriggerEl, {
+                placement: tooltipTriggerEl.getAttribute('data-bs-placement') || 'bottom',
+            });
         });
 
         // Gráfico de estados de análisis

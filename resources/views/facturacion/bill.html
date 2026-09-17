@@ -16,7 +16,7 @@
             max-width: 7.4in;
             margin: 0 auto;
             border: 1px solid #000;
-            padding: 0.12in 0.16in;
+            padding: 0.1in 0.16in 0.12in;
             position: relative;
         }
         .watermark {
@@ -32,11 +32,18 @@
         .watermark img { width: 100%; height: auto; display: block; }
         .z1 { position: relative; z-index: 1; }
         table.layout { width: 100%; border-collapse: collapse; }
-        .hdr-main td { vertical-align: top; padding: 0.07in 0.05in; }
-        .logo-cell { width: 38%; border-right: 1px solid #000; }
-        .tipo-cell { width: 18%; text-align: center; border-right: 1px solid #000; }
-        .fact-cell { width: 44%; }
-        .logo-cell img { max-height: 0.72in; max-width: 1.05in; display: block; margin-bottom: 0.05in; }
+        .hdr-main { border-bottom: 1px solid #000; }
+        .hdr-main td { vertical-align: top; padding: 0.06in 0.06in 0.07in; }
+        .logo-cell { width: 38%; border-right: 1px solid #000; padding-top: 0.08in !important; }
+        .tipo-cell {
+            width: 16%;
+            text-align: center;
+            border-right: 1px solid #000;
+            padding: 0 0.04in 0.05in !important;
+            vertical-align: top;
+        }
+        .fact-cell { width: 46%; padding-top: 0.08in !important; }
+        .logo-cell img { max-height: 0.68in; max-width: 1.05in; display: block; margin-bottom: 0.04in; }
         .empresa-nombre { font-size: 14px; font-weight: bold; margin: 0 0 0.03in 0; }
         .empresa-sub { font-size: 8.5px; line-height: 1.25; margin: 0 0 0.05in 0; }
         .empresa-datos { font-size: 8.5px; line-height: 1.35; }
@@ -45,12 +52,12 @@
             width: 0.52in;
             height: 0.5in;
             line-height: 0.46in;
-            margin: 0.06in auto 0.03in;
+            margin: 0 auto 0.03in;
             font-size: 34px;
             font-weight: bold;
             text-align: center;
         }
-        .cod-uno { font-size: 8.5px; text-align: center; margin-top: 0.02in; }
+        .cod-uno { font-size: 8px; text-align: center; margin-top: 0.02in; line-height: 1.2; }
         .tit-factura { font-size: 16px; font-weight: bold; margin: 0 0 0.06in 0; }
         .fact-datos { font-size: 9.5px; line-height: 1.45; }
         .fact-datos strong { font-weight: bold; }
@@ -84,7 +91,7 @@
             vertical-align: middle;
         }
         .bar-venta td:last-child { border-right: none; }
-        .items-wrap { position: relative; padding: 0.05in 0; }
+        .items-wrap { position: relative; padding: 0.04in 0 0; }
         .items { width: 100%; border-collapse: collapse; font-size: 9.5px; margin-top: 0.04in; }
         .items th {
             border: 1px solid #000;
@@ -103,16 +110,28 @@
         .items .c-desc { text-align: left; width: 52%; }
         .items .c-pu, .items .c-pt { text-align: right; width: 19%; }
         .meta-trabajo {
-            margin-top: 0.1in;
+            margin-top: 0;
             font-size: 9.5px;
-            border-top: 2px solid #000;
-            padding-top: 0.08in;
+            border-top: none;
+            padding-top: 0;
         }
-        .meta-trabajo td { padding: 0.02in 0.12in 0.02in 0; vertical-align: top; }
-        .meta-izq { line-height: 1.5; }
+        .meta-trabajo td { padding: 0; vertical-align: top; }
+        .meta-izq {
+            line-height: 1.45;
+            width: 52%;
+            border-top: 2px solid #000;
+            padding: 0.08in 0.14in 0.04in 0;
+        }
+        .meta-der { width: 48%; padding: 0; vertical-align: top; }
         .totales-wrap { width: 100%; }
-        .totales { float: right; width: 44%; border-collapse: collapse; font-size: 9.5px; border: 1px solid #000; }
-        .totales td { padding: 0.04in 0.07in; border-bottom: 1px solid #000; }
+        .totales {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 9.5px;
+            border: 1px solid #000;
+            border-top: 2px solid #000;
+        }
+        .totales td { padding: 0.032in 0.06in; border-bottom: 1px solid #000; }
         .totales tr:nth-child(even) td:first-child { background: #ececec; }
         .totales tr:nth-child(even) td:last-child { background: #f5f5f5; }
         .totales td:first-child { text-align: left; background: #f0f0f0; font-weight: normal; }
@@ -122,9 +141,9 @@
         .clear { clear: both; }
         .leyenda-cambio { font-size: 8.5px; margin-top: 0.1in; font-style: italic; text-align: center; }
         .pie-afip {
-            margin-top: 0.12in;
+            margin-top: 0.1in;
             border: 1px solid #000;
-            padding: 0.08in 0.1in;
+            padding: 0.07in 0.1in;
             font-size: 8.5px;
         }
         .pie-afip table { width: 100%; border-collapse: collapse; }
@@ -223,12 +242,12 @@
 
         <table class="meta-trabajo layout">
             <tr>
-                <td style="width:52%;" class="meta-izq">
+                <td class="meta-izq">
                     {{linea_cotiz_ot}}<br>
                     <span class="lbl">Fecha de Trabajo:</span> {{fecha_trabajo}}<br>
                     {{linea_oc_solic}}{{linea_refs_cotizacion}}
                 </td>
-                <td style="width:48%; vertical-align:top;">
+                <td class="meta-der">
                     <table class="totales">
                         <tr><td>Subtotal 1</td><td>{{neto}}</td></tr>
                         <tr><td>Global</td><td>0,00</td></tr>
