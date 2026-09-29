@@ -21,7 +21,7 @@ Documentación de uso para usuarios finales: `docs/MANUAL_USUARIO.md`.
 
 Resumen generalizado de lo incorporado en cada commit reciente. **Convención:** al hacer un push relevante, agregar una entrada nueva arriba de esta lista (fecha, hash corto, qué cambió para el negocio o la UX).
 
-### Pendiente de publicar (working tree)
+### `f6665e9` — Ampliación operativa (2026-09-29)
 
 - **Facturación:** flujo de revisión previa a facturar, permiso `puede_autorizar_facturacion`, referencias editables en pantalla y migraciones (`facturacion_aprobada`, `listo_para_firmar`, condiciones de pago normalizadas).
 - **Dashboards:** vistas admin / análisis / muestreo con estilos y gráficos de segmentos (`dashboard-home`, `dashboard-sub`, Chart.js).
