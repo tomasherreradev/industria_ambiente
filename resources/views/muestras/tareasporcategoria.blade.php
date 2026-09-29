@@ -46,6 +46,10 @@
             $categoria,
             optional($cotizacion->matriz)->matriz_descripcion
         );
+    $esClarkeFireEnsayo = \App\Support\CotizacionCanalEnsayo::esEnsayoClarkeFire(
+        $categoria,
+        optional($cotizacion->matriz)->matriz_descripcion
+    );
     $mostrarBotonDeshabilitarOt = ! \App\Support\CotizacionCanalEnsayo::esCanalFacturacionDirecta($canalDetalleMuestra);
     $esTrabajoTecnicoCampo = \App\Support\TrabajoTecnicoCampo::esDescripcion(
         $categoria->cotio_descripcion ?? ($instanciaActual->cotio_descripcion ?? null)
@@ -628,8 +632,8 @@
                     $tieneInformePdfFd = $informePdfFd !== '';
                 @endphp
                 <div class="card border-success mt-3">
-                    <div class="card-header bg-success text-white">
-                        <strong>Informe de consultoría</strong>
+                    <div class="card-header bg-success text-white" style="padding: 5px 10px;">
+                        <strong>Informe </strong>
                     </div>
                     <div class="card-body">
                         @if($tieneInformePdfFd)
@@ -714,7 +718,12 @@
                                                     data-fecha-inicio="{{ $tarea->fecha_inicio_muestreo ? date('Y-m-d\TH:i', strtotime($tarea->fecha_inicio_muestreo)) : '' }}"
                                                     data-fecha-fin="{{ $tarea->fecha_fin_muestreo ? date('Y-m-d\TH:i', strtotime($tarea->fecha_fin_muestreo)) : '' }}">
                                             <label class="form-check-label" for="tarea_{{ $tarea->cotio_item }}_{{ $tarea->cotio_subitem }}">
-                                                <h5 class="card-title mb-0">{{ $tarea->cotio_descripcion }}</h5>
+                                                <h5 class="card-title mb-0">
+                                                    {{ $tarea->cotio_descripcion }}
+                                                    @if($esClarkeFireEnsayo && (float) ($tarea->cotio_cantidad ?? 1) > 1)
+                                                        <span class="badge bg-light text-dark border ms-1" title="Cantidad cotizada">× {{ (int) $tarea->cotio_cantidad }}</span>
+                                                    @endif
+                                                </h5>
                                             </label>
                                         </div>
                                     </div>

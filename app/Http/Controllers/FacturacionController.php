@@ -21,6 +21,9 @@ use App\Support\CotizacionPrecioEnsayo;
 use App\Support\CotizacionReferenciasFacturacion;
 use App\Support\CotizacionCuotasPeriodo;
 use App\Support\CotizacionResumenEconomico;
+use App\Support\FacturacionSeleccionPendientes;
+use App\Support\ResumenFacturacionFacturarTodo;
+use App\Support\FacturaOtNumeros;
 use App\Services\Afip\AfipDirectWsfeClient;
 use App\Mail\FacturaEnviadaMail;
 use Illuminate\Http\Request;
@@ -72,7 +75,14 @@ public function index(Request $request)
     // Estadísticas (siempre independientes — no se mezclan al cambiar de vista)
     $totalFacturas = Factura::count();
     $montoTotalFacturas = Factura::sum('monto_total');
-    $facturasPendientes = CotioInstancia::where('facturado', false)->where('enable_inform', true)->where('cotio_subitem', 0)->count();
+    $facturasPendientes = CotioInstancia::where('facturado', false)
+        ->where('enable_inform', true)
+        ->where('facturacion_aprobada', true)
+        ->where('cotio_subitem', 0)
+        ->count();
+    $cotizacionesPendientes = count(FacturacionSeleccionPendientes::numerosCotizacionConPendientes(null, true));
+    $cotizacionesCuotas = count(FacturacionSeleccionPendientes::numerosCotizacionModalidadCuotas(null));
+    $cotizacionesCuotasFacturables = FacturacionSeleccionPendientes::contarCotizacionesConCuotaFacturable(null);
     $facturasFacturadas = CotioInstancia::where('facturado', true)->where('enable_inform', true)->where('cotio_subitem', 0)->count();
     $montoPendientes = $this->calcularMontoPendientes();
 
@@ -81,11 +91,14 @@ public function index(Request $request)
     if (!$vista && $request->get('tipo_filtro') === 'pendientes') {
         $vista = 'pendientes';
     }
-    $vista = in_array($vista, ['pendientes', 'facturas'], true) ? $vista : 'pendientes';
+    $vista = in_array($vista, ['pendientes', 'cuotas', 'facturas'], true) ? $vista : 'pendientes';
 
     $estadisticas = [
         'total_facturas' => $totalFacturas,
         'facturas_pendientes' => $facturasPendientes,
+        'cotizaciones_pendientes' => $cotizacionesPendientes,
+        'cotizaciones_cuotas' => $cotizacionesCuotas,
+        'cotizaciones_cuotas_facturables' => $cotizacionesCuotasFacturables,
         'facturas_facturadas' => $facturasFacturadas,
         'monto_facturado' => $montoTotalFacturas,
         'monto_por_facturar' => $montoPendientes,
@@ -101,8 +114,17 @@ public function index(Request $request)
         'cotizacion.instancias'
     ])
     ->where('enable_inform', true)
+    ->where('facturacion_aprobada', true)
     ->where('facturado', false)
-    ->where('cotio_subitem', 0);
+    ->where('cotio_subitem', 0)
+    ->whereHas('cotizacion', function ($q) {
+        $q->where(function ($inner) {
+            $inner->where('coti_cuotas', false)->orWhereNull('coti_cuotas');
+        })->where(function ($inner) {
+            $inner->whereNull('coti_cond_pago')
+                ->orWhereRaw('UPPER(TRIM(coti_cond_pago)) <> ?', ['CUOTAS']);
+        });
+    });
 
     if ($request->filled('cotizacion')) {
         $baseQuery->where('cotio_numcoti', $request->cotizacion);
@@ -133,13 +155,61 @@ public function index(Request $request)
 
 
 
+    $filtroCotizacionPendientes = $request->filled('cotizacion') ? (int) $request->cotizacion : null;
+
+    $evaluarMuestras = fn (Coti $cotizacion) => $this->evaluarFacturacionAutomaticaCotizacion($cotizacion, false);
+    $evaluarCuotas = fn (Coti $cotizacion) => $this->evaluarFacturacionAutomaticaCotizacion($cotizacion, true);
+
+    $resumenFacturarTodo = ResumenFacturacionFacturarTodo::construir(
+        $filtroCotizacionPendientes,
+        $evaluarMuestras,
+        'muestras'
+    );
+    $resumenFacturarTodoCuotas = ResumenFacturacionFacturarTodo::construir(
+        $filtroCotizacionPendientes,
+        $evaluarCuotas,
+        'cuotas'
+    );
+    $totalCotizacionesPendientesFacturarTodo = $resumenFacturarTodo['total_cotizaciones'];
+    $totalCotizacionesCuotasFacturarTodo = $resumenFacturarTodoCuotas['total_cotizaciones'];
+
+    $cuotasQuery = Coti::query()
+        ->with(['cliente', 'matriz'])
+        ->where(function ($q) {
+            $q->where('coti_cuotas', true)
+                ->orWhereRaw('UPPER(TRIM(coti_cond_pago)) = ?', ['CUOTAS']);
+        });
+
+    if ($request->filled('cotizacion')) {
+        $cuotasQuery->where('coti_num', (int) $request->cotizacion);
+    }
+
+    $cuotasPagination = $cuotasQuery
+        ->orderBy('coti_num', $request->get('orden_cotizacion', 'desc'))
+        ->paginate(20, ['*'], 'page_cuotas');
+
+    CotizacionClienteEtiqueta::precargarEmpresasRelacionadas($cuotasPagination->getCollection());
+
+    $cotizacionesCuotasListado = $cuotasPagination->getCollection()->map(function (Coti $cotizacion) {
+        return [
+            'cotizacion' => $cotizacion,
+            'cuotas' => FacturacionSeleccionPendientes::resumenCuotasEnListado($cotizacion),
+        ];
+    });
+
     return view('facturacion.index', compact(
         'facturas',
         'estadisticas',
         'request',
         'informesPorCotizacion',
         'muestrasPagination',
-        'vista'
+        'vista',
+        'totalCotizacionesPendientesFacturarTodo',
+        'totalCotizacionesCuotasFacturarTodo',
+        'resumenFacturarTodo',
+        'resumenFacturarTodoCuotas',
+        'cuotasPagination',
+        'cotizacionesCuotasListado'
     ));
 }
 
@@ -168,6 +238,7 @@ public function facturar($coti_num)
     $muestrasParaFacturar = CotioInstancia::where('cotio_numcoti', $coti_num)
                         ->where('enable_inform', true)
                         ->where('aprobado_informe', true)
+                        ->where('facturacion_aprobada', true)
                         ->where('cotio_subitem', 0)
                         ->with(['responsablesMuestreo', 'responsablesAnalisis'])
                         ->get()
@@ -279,15 +350,7 @@ public function facturar($coti_num)
         }
     }
 
-    $refsFacturacionBloqueo = CotizacionReferenciasFacturacion::mensajeSiNoPuedeFacturar($cotizacion);
-    $refsFacturacion = [
-        'remito' => CotizacionReferenciasFacturacion::textoPrimerRemitoParaFactura($cotizacion),
-        'oc' => trim((string) ($cotizacion->coti_oc_referencia ?? '')),
-        'oc_obligatorio' => (bool) ($cotizacion->coti_oc_requerido_factura ?? false),
-        'filas' => CotizacionReferenciasFacturacion::rowsFromModel($cotizacion),
-        'puede_facturar' => $refsFacturacionBloqueo === null,
-        'mensaje_bloqueo' => $refsFacturacionBloqueo,
-    ];
+    $refsFacturacion = CotizacionReferenciasFacturacion::datosParaVista($cotizacion);
 
     $cuotasInfo = null;
     if ($cotizacion->coti_cuotas) {
@@ -350,6 +413,40 @@ public function facturar($coti_num)
     $datosCliente = CotizacionClienteEtiqueta::resumenFacturacionCliente($cotizacion);
     $cliCodigo = trim((string) ($cotizacion->coti_codigocli ?? ''));
 
+    $mensajeTooltipSinItemsFacturables = null;
+    if ($agrupadas === [] && ! $cotizacion->coti_cuotas) {
+        $sinInforme = CotioInstancia::where('cotio_numcoti', $coti_num)
+            ->where('cotio_subitem', 0)
+            ->where('enable_inform', true)
+            ->where('facturacion_aprobada', true)
+            ->where('facturado', false)
+            ->where(function ($q) {
+                $q->where('aprobado_informe', false)->orWhereNull('aprobado_informe');
+            })
+            ->count();
+
+        if ($sinInforme > 0) {
+            $mensajeTooltipSinItemsFacturables = $sinInforme === 1
+                ? 'No se puede facturar: la muestra está aprobada en revisión pero el informe aún no está aprobado.'
+                : 'No se puede facturar: ' . $sinInforme . ' muestras aprobadas en revisión aún no tienen informe aprobado.';
+        } elseif (CotioInstancia::where('cotio_numcoti', $coti_num)
+            ->where('cotio_subitem', 0)
+            ->where('enable_inform', true)
+            ->where('facturado', false)
+            ->where('facturacion_aprobada', false)
+            ->exists()) {
+            $mensajeTooltipSinItemsFacturables = 'No hay muestras listas: apruebe la facturación en Revisión de facturación.';
+        } elseif (! CotioInstancia::where('cotio_numcoti', $coti_num)
+            ->where('cotio_subitem', 0)
+            ->where('enable_inform', true)
+            ->where('facturado', false)
+            ->exists()) {
+            $mensajeTooltipSinItemsFacturables = 'Todas las muestras habilitadas de esta cotización ya fueron facturadas.';
+        } else {
+            $mensajeTooltipSinItemsFacturables = 'No hay muestras disponibles para facturar en esta cotización.';
+        }
+    }
+
     return view('facturacion.show', compact(
         'cotizacion',
         'tareas',
@@ -361,7 +458,8 @@ public function facturar($coti_num)
         'contactosEnvioFactura',
         'estadoEnvioFactura',
         'datosCliente',
-        'cliCodigo'
+        'cliCodigo',
+        'mensajeTooltipSinItemsFacturables'
     ));
 }
 
@@ -588,14 +686,58 @@ public function generarFacturaArca(Request $request, $coti_num)
 
         // Si se seleccionaron cuotas, priorizar esa lógica
         if (!empty($cuotasSeleccionadas)) {
-            return $this->generarFacturaCuotas($request, $cotizacion, $cuotasSeleccionadas, $observaciones, $emailsResueltos);
+            $resultadoCuotas = $this->generarFacturaCuotasResult($cotizacion, $cuotasSeleccionadas, $observaciones, $emailsResueltos);
+            if (! ($resultadoCuotas['success'] ?? false)) {
+                return redirect()->back()->with('error', $resultadoCuotas['error'] ?? 'No se pudo generar la factura de cuotas.');
+            }
+
+            return redirect()->back()->with('success', $resultadoCuotas['message'] ?? 'Factura de cuotas generada.');
         }
 
+        $resultado = $this->procesarGeneracionFacturaMuestrasAnalisis(
+            $cotizacion,
+            $muestrasSeleccionadas,
+            $analisisSeleccionados,
+            $observaciones,
+            $emailsResueltos
+        );
+
+        if (! ($resultado['success'] ?? false)) {
+            return redirect()->back()->with('error', $resultado['error'] ?? 'No se pudo generar la factura.');
+        }
+
+        return redirect()->back()->with('success', $resultado['message'] ?? 'Factura generada.');
+
+    } catch (\Illuminate\Validation\ValidationException $e) {
+        Log::error('Errores de validación: ' . json_encode($e->errors()));
+        return redirect()->back()->with('error', 'Errores en los datos enviados: ' . implode(', ', $e->errors()['analisis.0'] ?? $e->errors()));
+    } catch (\Exception $e) {
+        Log::error('Error al generar factura ARCA: ' . $e->getMessage());
+        return redirect()->back()->with('error', 'Error interno al generar la factura: ' . $e->getMessage());
+    }
+}
+
+    /**
+     * @param  array{emails: array<int, string>, contactos_cliente: \Illuminate\Support\Collection, estado: array}  $emailsResueltos
+     * @return array{success: bool, error?: string, message?: string, numero_factura?: string}
+     */
+    protected function procesarGeneracionFacturaMuestrasAnalisis(
+        Coti $cotizacion,
+        array $muestrasSeleccionadas,
+        array $analisisSeleccionados,
+        ?string $observaciones,
+        array $emailsResueltos
+    ): array {
+        try {
         // Cargar instancias de muestras (solo las que NO están facturadas)
         $muestras = CotioInstancia::whereIn('id', $muestrasSeleccionadas)
                     ->where('facturado', false) // Solo muestras no facturadas
                     ->with(['cotizacion', 'responsablesAnalisis'])
                     ->get();
+
+        if ($muestras->contains(fn ($muestra) => ! $muestra->facturacion_aprobada)) {
+            return ['success' => false, 'error' => 'Hay muestras seleccionadas que aún no fueron aprobadas en revisión de facturación.'];
+        }
 
         // Cargar instancias de análisis (solo los que NO están facturados)
         $analisis = CotioInstancia::whereIn('id', $analisisSeleccionados)
@@ -605,7 +747,7 @@ public function generarFacturaArca(Request $request, $coti_num)
 
         // Verificar que los datos existan
         if ($muestras->isEmpty() && $analisis->isEmpty()) {
-            return redirect()->back()->with('error', 'No se seleccionaron muestras ni análisis válidos.');
+            return ['success' => false, 'error' => 'No se seleccionaron muestras ni análisis válidos.'];
         }
 
         $tareasParaResumen = $cotizacion->tareas()
@@ -768,24 +910,29 @@ public function generarFacturaArca(Request $request, $coti_num)
                 continue;
             }
 
-            $precioBase = $analisisTarifario[$analisis_item->cotio_item][$analisis_item->cotio_subitem]['precio'] ?? 0.0;
+            $tarifAnalisis = $analisisTarifario[$analisis_item->cotio_item][$analisis_item->cotio_subitem] ?? [];
+            $precioBase = (float) ($tarifAnalisis['precio'] ?? 0.0);
+            $cantidadLinea = max(1.0, (float) ($tarifAnalisis['cantidad'] ?? 1));
             $precio = $this->aplicarAjustes($precioBase, $aumentoFactor, $descuentoFactor);
+            $precioUnitarioNeto = $cantidadLinea > 0 ? ($precio / $cantidadLinea) : $precio;
+            $precioUnitarioBruto = $cantidadLinea > 0 ? ($precioBase / $cantidadLinea) : $precioBase;
 
             Log::info('Facturando análisis individual', [
                 'analisis_id' => $analisis_item->id,
                 'precio_base' => $precioBase,
                 'precio_con_descuento' => $precio,
+                'cantidad_linea' => $cantidadLinea,
             ]);
 
             $items[] = [
                 'tipo' => 'analisis',
                 'descripcion' => "Análisis - {$analisis_item->cotio_descripcion}",
                 'resultado' => $analisis_item->resultado_final ?? 'N/A',
-                'cantidad' => 1,
-                'precio_unitario' => $precio,
+                'cantidad' => $cantidadLinea,
+                'precio_unitario' => $precioUnitarioNeto,
                 'subtotal' => $precio,
                 'instancia_id' => $analisis_item->id,
-                'precio_unitario_bruto' => $precioBase,
+                'precio_unitario_bruto' => $precioUnitarioBruto,
                 'subtotal_bruto' => $precioBase,
                 'descuento_porcentaje' => $descuentoPorcentaje,
                 'descuento_global_porcentaje' => $descuentoGlobalPorcentaje,
@@ -831,7 +978,7 @@ public function generarFacturaArca(Request $request, $coti_num)
 
         // Generar factura con ARCA/AFIP
         Log::info('Generando factura con precios reales en entorno de prueba', [
-            'cotizacion_id' => $coti_num,
+            'cotizacion_id' => $cotizacion->coti_num,
             'monto_total' => $montoTotal,
             'cantidad_items' => count($items),
             'total_bruto' => $resumenDescuento['total_bruto'],
@@ -846,7 +993,7 @@ public function generarFacturaArca(Request $request, $coti_num)
                 $err .= ' ' . (string) $resultadoFactura['detalle'];
             }
 
-            return redirect()->back()->with('error', $err);
+            return ['success' => false, 'error' => $err];
         }
 
         try {
@@ -854,7 +1001,7 @@ public function generarFacturaArca(Request $request, $coti_num)
             $muestraPrincipal = $muestras->first();
             
             $factura = $this->guardarFacturacion([
-                'cotizacion_id' => $coti_num,
+                'cotizacion_id' => $cotizacion->coti_num,
                 'cotio_descripcion' => $muestraPrincipal ? $muestraPrincipal->cotio_descripcion : 'Muestra no especificada',
                 'instance_number' => $muestraPrincipal ? $muestraPrincipal->instance_number : 0,
                 'numero_factura' => $resultadoFactura['numero_factura'],
@@ -884,21 +1031,223 @@ public function generarFacturaArca(Request $request, $coti_num)
                 $mensajeExito .= '. Enviada a: ' . implode(', ', $emailsResueltos['emails']);
             }
 
-            return redirect()->back()->with('success', $mensajeExito);
+            return ['success' => true, 'message' => $mensajeExito, 'numero_factura' => $resultadoFactura['numero_factura']];
         } catch (\Exception $e) {
             Log::error('Error al guardar factura después de generarla en AFIP: ' . $e->getMessage());
-            return redirect()->back()->with('success', 'Factura generada en AFIP: ' . $resultadoFactura['numero_factura'] . ' (Error al guardar en BD: ' . $e->getMessage() . ')');
+            return ['success' => true, 'message' => 'Factura generada en AFIP: ' . $resultadoFactura['numero_factura'] . ' (Error al guardar en BD: ' . $e->getMessage() . ')', 'numero_factura' => $resultadoFactura['numero_factura']];
         }
-    } catch (\Illuminate\Validation\ValidationException $e) {
-        Log::error('Errores de validación: ' . json_encode($e->errors()));
-        return redirect()->back()->with('error', 'Errores en los datos enviados: ' . implode(', ', $e->errors()['analisis.0'] ?? $e->errors()));
-    } catch (\Exception $e) {
-        Log::error('Error al generar factura ARCA: ' . $e->getMessage());
-        return redirect()->back()->with('error', 'Error interno al generar la factura: ' . $e->getMessage());
+        } catch (\Exception $e) {
+            Log::error('Error al procesar generación factura muestras/análisis: ' . $e->getMessage());
+            return ['success' => false, 'error' => 'Error interno al generar la factura: ' . $e->getMessage()];
+        }
     }
+
+/**
+ * @return array{
+ *     puede_facturar: bool,
+ *     motivo: ?string,
+ *     seleccion: array{muestras: list<int>, analisis: list<int>, cuotas: list<int>, vacio: bool},
+ *     emails_resueltos: array{emails: array<int, string>, contactos_cliente: \Illuminate\Support\Collection, estado: array}
+ * }
+ */
+private function evaluarFacturacionAutomaticaCotizacion(Coti $cotizacion, bool $soloCuotaCorriente = false): array
+{
+    $contactosCliente = $this->contactosEnvioFacturaParaCotizacion($cotizacion);
+    $estadoEnvio = CotizacionContactosFacturacion::estadoEnvioFactura($cotizacion, $contactosCliente);
+    $emails = CotizacionContactosFacturacion::resolverEmailsDestino($cotizacion, $contactosCliente, null);
+    $seleccion = FacturacionSeleccionPendientes::paraCotizacion($cotizacion, $soloCuotaCorriente);
+
+    $motivo = CotizacionReferenciasFacturacion::mensajeSiNoPuedeFacturar($cotizacion);
+    if ($motivo === null && $emails === [] && $estadoEnvio['requiere_seleccion'] && $contactosCliente->isNotEmpty()) {
+        $motivo = 'Debe elegir email de envío en la pantalla de facturación.';
+    }
+    if ($motivo === null && $seleccion['vacio']) {
+        $motivo = 'Sin ítems pendientes para facturar automáticamente.';
+    }
+
+    return [
+        'puede_facturar' => $motivo === null,
+        'motivo' => $motivo,
+        'seleccion' => $seleccion,
+        'emails_resueltos' => [
+            'emails' => $emails,
+            'contactos_cliente' => $contactosCliente,
+            'estado' => $estadoEnvio,
+        ],
+    ];
 }
 
-protected function generarFacturaCuotas(Request $request, $cotizacion, $cuotasSeleccionadas, $observaciones = null, ?array $emailsResueltos = null)
+/**
+ * Factura una sola cotización (petición AJAX en lote). Libera memoria entre iteraciones del cliente.
+ *
+ * @return \Illuminate\Http\JsonResponse
+ */
+public function facturarTodoCotizacion(Request $request)
+{
+    $validated = $request->validate([
+        'cotizacion_id' => 'required|integer|min:1',
+        'sincronizar_trabajo_campo' => 'sometimes|boolean',
+        'solo_cuota_corriente' => 'sometimes|boolean',
+    ]);
+
+    $cotiNum = (int) $validated['cotizacion_id'];
+
+    if ($request->boolean('sincronizar_trabajo_campo')) {
+        \App\Support\TrabajoTecnicoCampo::sincronizarInstanciasMuestreadasPendientes($cotiNum);
+    }
+
+    $resultado = $this->ejecutarFacturacionAutomaticaUnaCotizacion(
+        $cotiNum,
+        $request->boolean('solo_cuota_corriente')
+    );
+
+    return response()->json($resultado);
+}
+
+/**
+ * @return array{
+ *     success: bool,
+ *     cotizacion_id: int,
+ *     cliente?: string,
+ *     numero_factura?: string,
+ *     message?: string,
+ *     error?: string
+ * }
+ */
+private function ejecutarFacturacionAutomaticaUnaCotizacion(int $cotiNum, bool $soloCuotaCorriente = false): array
+{
+    $cotizacion = Coti::with(['cliente'])->find($cotiNum);
+    if (! $cotizacion) {
+        return [
+            'success' => false,
+            'cotizacion_id' => $cotiNum,
+            'error' => 'Cotización no encontrada.',
+        ];
+    }
+
+    $eval = $this->evaluarFacturacionAutomaticaCotizacion($cotizacion, $soloCuotaCorriente);
+    if (! $eval['puede_facturar']) {
+        return [
+            'success' => false,
+            'cotizacion_id' => $cotiNum,
+            'cliente' => CotizacionClienteEtiqueta::paraLista($cotizacion),
+            'error' => $eval['motivo'] ?? 'No se puede facturar automáticamente.',
+        ];
+    }
+
+    $emailsResueltos = $eval['emails_resueltos'];
+    $seleccion = $eval['seleccion'];
+    unset($eval);
+
+    if ($seleccion['cuotas'] !== []) {
+        $resultado = $this->generarFacturaCuotasResult($cotizacion, $seleccion['cuotas'], null, $emailsResueltos);
+    } else {
+        $resultado = $this->procesarGeneracionFacturaMuestrasAnalisis(
+            $cotizacion,
+            $seleccion['muestras'],
+            $seleccion['analisis'],
+            null,
+            $emailsResueltos
+        );
+    }
+
+    unset($seleccion, $emailsResueltos);
+
+    $etiqueta = CotizacionClienteEtiqueta::paraLista($cotizacion);
+
+    if ($resultado['success'] ?? false) {
+        $payload = [
+            'success' => true,
+            'cotizacion_id' => $cotiNum,
+            'cliente' => $etiqueta,
+            'numero_factura' => (string) ($resultado['numero_factura'] ?? ''),
+            'message' => (string) ($resultado['message'] ?? 'Factura generada.'),
+        ];
+        unset($cotizacion, $resultado);
+
+        return $payload;
+    }
+
+    $payload = [
+        'success' => false,
+        'cotizacion_id' => $cotiNum,
+        'cliente' => $etiqueta,
+        'error' => (string) ($resultado['error'] ?? 'Error desconocido'),
+    ];
+    unset($cotizacion, $resultado);
+
+    return $payload;
+}
+
+public function facturarTodo(Request $request)
+{
+    \App\Support\TrabajoTecnicoCampo::sincronizarInstanciasMuestreadasPendientes();
+
+    $filtroCotizacion = $request->filled('cotizacion') ? (int) $request->cotizacion : null;
+    $alcance = $request->input('alcance', 'muestras');
+    $soloCuotaCorriente = $alcance === 'cuotas';
+    $vistaRetorno = $soloCuotaCorriente ? 'cuotas' : 'pendientes';
+
+    $numerosCotizacion = $soloCuotaCorriente
+        ? FacturacionSeleccionPendientes::numerosCotizacionModalidadCuotas($filtroCotizacion)
+        : FacturacionSeleccionPendientes::numerosCotizacionConPendientes($filtroCotizacion, true);
+
+    if ($numerosCotizacion === []) {
+        return redirect()
+            ->route('facturacion.index', array_filter(['vista' => $vistaRetorno, 'cotizacion' => $filtroCotizacion]))
+            ->with('error', $soloCuotaCorriente
+                ? 'No hay cotizaciones en cuotas para facturar.'
+                : 'No hay cotizaciones pendientes para facturar.');
+    }
+
+    $exitos = [];
+    $errores = [];
+
+    foreach ($numerosCotizacion as $cotiNum) {
+        $resultado = $this->ejecutarFacturacionAutomaticaUnaCotizacion((int) $cotiNum, $soloCuotaCorriente);
+
+        if ($resultado['success'] ?? false) {
+            $numero = $resultado['numero_factura'] ?? '';
+            $cliente = $resultado['cliente'] ?? '';
+            $exitos[] = "#{$cotiNum} ({$cliente}): factura {$numero}";
+        } else {
+            $errores[] = "Cotización #{$cotiNum}: " . ($resultado['error'] ?? 'error desconocido');
+        }
+
+        unset($resultado);
+        if (function_exists('gc_collect_cycles')) {
+            gc_collect_cycles();
+        }
+    }
+
+    $params = ['vista' => $vistaRetorno];
+    if ($filtroCotizacion) {
+        $params['cotizacion'] = $filtroCotizacion;
+    }
+
+    if ($exitos !== [] && $errores === []) {
+        return redirect()->route('facturacion.index', $params)->with(
+            'success',
+            'Se generaron ' . count($exitos) . ' factura(s): ' . implode(' · ', $exitos)
+        );
+    }
+
+    if ($exitos !== []) {
+        session()->flash('success', 'Facturas generadas (' . count($exitos) . '): ' . implode(' · ', $exitos));
+    }
+
+    $mensajeError = $errores === []
+        ? 'No se pudo generar ninguna factura.'
+        : implode(' | ', $errores);
+
+    return redirect()->route('facturacion.index', $params)->with('error', $mensajeError);
+}
+
+/**
+ * @param  array{emails: array<int, string>, contactos_cliente: \Illuminate\Support\Collection, estado: array}|null  $emailsResueltos
+ * @return array{success: bool, error?: string, message?: string, numero_factura?: string}
+ */
+protected function generarFacturaCuotasResult($cotizacion, $cuotasSeleccionadas, $observaciones = null, ?array $emailsResueltos = null): array
 {
     // Verificar si alguna de las cuotas ya fue facturada (evitar duplicados)
     $facturas = Factura::where('cotizacion_id', $cotizacion->coti_num)->get();
@@ -920,7 +1269,7 @@ protected function generarFacturaCuotas(Request $request, $cotizacion, $cuotasSe
 
     foreach ($cuotasSeleccionadas as $numCuota) {
         if (in_array((int) $numCuota, $cuotasFacturadas)) {
-            return redirect()->back()->with('error', "La cuota {$numCuota} ya ha sido facturada.");
+            return ['success' => false, 'error' => "La cuota {$numCuota} ya ha sido facturada."];
         }
     }
 
@@ -957,20 +1306,20 @@ protected function generarFacturaCuotas(Request $request, $cotizacion, $cuotasSe
     $hoyInicio = Carbon::now()->startOfMonth();
     foreach ($cuotasSeleccionadas as $numCuota) {
         if (! CotizacionCuotasPeriodo::cuotaDentroDePeriodo($cotizacion, (int) $numCuota)) {
-            return redirect()->back()->with(
-                'error',
-                "La cuota {$numCuota} está fuera del período de ejecución definido en la cotización."
-            );
+            return [
+                'success' => false,
+                'error' => "La cuota {$numCuota} está fuera del período de ejecución definido en la cotización.",
+            ];
         }
 
         $fechaCuota = CotizacionCuotasPeriodo::fechaCuota($cotizacion, (int) $numCuota)->startOfMonth();
         if (CotizacionCuotasPeriodo::cuotaEsFutura($cotizacion, (int) $numCuota, $hoyInicio)) {
             $nombreMes = $mesesEs[(int) $fechaCuota->format('n')];
             $anio      = $fechaCuota->format('Y');
-            return redirect()->back()->with(
-                'error',
-                "La cuota {$numCuota} ({$nombreMes} {$anio}) corresponde a un período futuro y no puede facturarse todavía."
-            );
+            return [
+                'success' => false,
+                'error' => "La cuota {$numCuota} ({$nombreMes} {$anio}) corresponde a un período futuro y no puede facturarse todavía.",
+            ];
         }
     }
 
@@ -1019,7 +1368,7 @@ protected function generarFacturaCuotas(Request $request, $cotizacion, $cuotasSe
         if (! empty($resultadoFactura['detalle'])) {
             $err .= ' ' . (string) $resultadoFactura['detalle'];
         }
-        return redirect()->back()->with('error', $err);
+        return ['success' => false, 'error' => $err];
     }
 
     try {
@@ -1055,10 +1404,19 @@ protected function generarFacturaCuotas(Request $request, $cotizacion, $cuotasSe
             $mensajeExito .= '. Enviada a: ' . implode(', ', $emailsResueltos['emails']);
         }
 
-        return redirect()->back()->with('success', $mensajeExito);
+        return [
+            'success' => true,
+            'message' => $mensajeExito,
+            'numero_factura' => $resultadoFactura['numero_factura'],
+        ];
     } catch (\Exception $e) {
         Log::error('Error al guardar factura de cuotas: ' . $e->getMessage());
-        return redirect()->back()->with('success', 'Factura de cuotas generada en AFIP: ' . $resultadoFactura['numero_factura'] . ' (Error al guardar en BD: ' . $e->getMessage() . ')');
+
+        return [
+            'success' => true,
+            'message' => 'Factura de cuotas generada en AFIP: ' . $resultadoFactura['numero_factura'] . ' (Error al guardar en BD: ' . $e->getMessage() . ')',
+            'numero_factura' => $resultadoFactura['numero_factura'],
+        ];
     }
 }
 
@@ -1095,17 +1453,29 @@ protected function guardarFacturacion(array $data)
             }
         }
 
-        // Procesar items
-        $items = $data['items'];
-        if (is_array($items)) {
-            $items = json_encode($items, JSON_UNESCAPED_UNICODE);
-        } elseif (is_string($items)) {
-            json_decode($items);
-            if (json_last_error() !== JSON_ERROR_NONE) {
-                Log::warning('Items no es JSON válido, convirtiendo a JSON:', ['items_original' => $items]);
-                $items = json_encode(['descripcion' => $items], JSON_UNESCAPED_UNICODE);
+        // Procesar items (persistir ids facturados para OT en PDF)
+        $itemsRaw = $data['items'];
+        if (is_string($itemsRaw)) {
+            $itemsDecoded = json_decode($itemsRaw, true);
+            if (! is_array($itemsDecoded)) {
+                Log::warning('Items no es JSON válido, convirtiendo a JSON:', ['items_original' => $itemsRaw]);
+                $itemsDecoded = ['descripcion' => $itemsRaw];
+            }
+        } elseif (is_array($itemsRaw)) {
+            $itemsDecoded = $itemsRaw;
+        } else {
+            $itemsDecoded = [];
+        }
+
+        if (isset($itemsDecoded['items']) || array_key_exists('resumen', $itemsDecoded)) {
+            $itemsDecoded['muestras_ids'] = array_values(array_map('intval', $data['muestras_ids'] ?? []));
+            $itemsDecoded['analisis_ids'] = array_values(array_map('intval', $data['analisis_ids'] ?? []));
+            if (! empty($data['cuotas_nums'])) {
+                $itemsDecoded['cuotas_nums'] = $data['cuotas_nums'];
             }
         }
+
+        $items = json_encode($itemsDecoded, JSON_UNESCAPED_UNICODE);
 
         // Preparar datos para crear la factura (incluyendo los nuevos campos)
         $facturaData = [
@@ -1579,9 +1949,19 @@ private function construirResumenFinanciero(Coti $cotizacion, $tareas = null): a
             if ($componente->de_agrupador) {
                 $precioComp = 0.0;
             }
+            $cantidadComp = (float) ($componente->cotio_cantidad ?? 1);
+            if ($cantidadComp <= 0) {
+                $cantidadComp = 1.0;
+            }
+            $precioUnitComp = (float) ($componente->cotio_precio ?? 0);
+            if ($componente->de_agrupador) {
+                $precioUnitComp = 0.0;
+            }
             $analisisInfo[$componente->cotio_item][$componente->cotio_subitem] = [
                 'descripcion' => $componente->cotio_descripcion,
                 'precio' => $precioComp,
+                'precio_unitario' => $precioUnitComp,
+                'cantidad' => $cantidadComp,
                 'de_agrupador' => $componente->de_agrupador,
             ];
         }
@@ -2429,16 +2809,7 @@ protected function resolverRutaPdfFactura(Factura $factura): string
         }
 
         $cotizDisplay = $cot?->coti_num !== null ? (string) $cot->coti_num : (string) ($factura->cotizacion_id ?? '—');
-        $otNumerosRaw = trim((string) env('FACTURA_OT_NUMEROS', ''));
-        if ($otNumerosRaw !== '') {
-            $otNumerosFmt = preg_replace('/\s*,\s*/', ' ', $otNumerosRaw);
-            $lineaCotizOt = 'Cotiz.: ' . htmlspecialchars($cotizDisplay, ENT_QUOTES, 'UTF-8')
-                . ' OTs: ' . htmlspecialchars($otNumerosFmt, ENT_QUOTES, 'UTF-8');
-        } else {
-            $otSingle = trim((string) env('FACTURA_OT_NUMERO', ''));
-            $lineaCotizOt = 'Cotiz.: ' . htmlspecialchars($cotizDisplay, ENT_QUOTES, 'UTF-8')
-                . ' OT: ' . htmlspecialchars($otSingle !== '' ? $otSingle : '—', ENT_QUOTES, 'UTF-8');
-        }
+        $lineaCotizOt = FacturaOtNumeros::lineaCotizOtHtml($factura, $cotizDisplay);
 
         $fechaTrabajo = $fechaEmisionFmt;
         if ($cot?->coti_fechaaprobado) {
@@ -2823,6 +3194,7 @@ private function calcularMontoPendientes(): float
         $muestrasPendientes = CotioInstancia::with(['cotizacion'])
             ->where('facturado', false)
             ->where('enable_inform', true)
+            ->where('facturacion_aprobada', true)
             ->where('cotio_subitem', 0)
             ->get()
             ->groupBy('cotio_numcoti');
@@ -2909,28 +3281,26 @@ private function calcularMontoPendientes(): float
     public function updateReferencias(Request $request, $coti_num)
     {
         try {
-            $cotizacion = Coti::findOrFail($coti_num);
-            
-            $updateData = [];
+            $input = [];
             if ($request->has('coti_oc_referencia')) {
-                $updateData['coti_oc_referencia'] = $request->input('coti_oc_referencia');
+                $input['coti_oc_referencia'] = $request->input('coti_oc_referencia');
             }
             if ($request->has('coti_refs_facturacion_json')) {
-                $updateData['coti_refs_facturacion_json'] = $request->input('coti_refs_facturacion_json');
+                $input['coti_refs_facturacion_json'] = $request->input('coti_refs_facturacion_json');
             }
 
-            if (!empty($updateData)) {
-                $cotizacion->update($updateData);
+            if ($input !== []) {
+                CotizacionReferenciasFacturacion::guardarReferenciasDesdeFacturacion((int) $coti_num, $input);
             }
 
             return response()->json([
                 'success' => true,
-                'message' => 'Referencias actualizadas correctamente'
+                'message' => 'Referencias actualizadas correctamente',
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error al actualizar referencias: ' . $e->getMessage()
+                'message' => 'Error al actualizar referencias: ' . $e->getMessage(),
             ], 500);
         }
     }

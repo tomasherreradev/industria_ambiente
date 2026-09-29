@@ -20,9 +20,14 @@
         return trim($str);
     };
 
-    $medicionesMapa = $instanciaActual->valoresVariables->mapWithKeys(function($v) use ($normalizeStr) {
-        return [$normalizeStr($v->variable) => $v->valor];
-    });
+    $variablesMuestra = $variablesMuestra ?? collect();
+    $medicionesMapa = collect();
+    if ($instanciaActual && $instanciaActual->valoresVariables) {
+        $medicionesMapa = $instanciaActual->valoresVariables->mapWithKeys(function ($v) use ($normalizeStr) {
+            return [$normalizeStr($v->variable) => $v->valor];
+        });
+    }
+    $mostrarUnidadMedicion = $variablesMuestra->contains(fn ($v) => ! empty($v->unidad_medicion));
 
     $analisisNormSet = $tareas->map(function($a) use ($normalizeStr) {
         return $normalizeStr($a->cotio_descripcion);
@@ -53,6 +58,8 @@
 @endphp
 @include('partials.operativo-styles')
 <link rel="stylesheet" href="{{ asset('css/tareas-muestreo-mobile.css') }}?v={{ filemtime(public_path('css/tareas-muestreo-mobile.css')) }}">
+<link rel="stylesheet" href="{{ asset('css/modal-analisis-ot.css') }}?v={{ filemtime(public_path('css/modal-analisis-ot.css')) }}">
+<link rel="stylesheet" href="{{ asset('css/ordenes-resultados-compact.css') }}?v={{ filemtime(public_path('css/ordenes-resultados-compact.css')) }}">
 
 <div class="container py-4 ucrud ucrud-operativo ucrud-detalle tarea-detalle-page tarea-categoria-page" data-ucrud-root>
     @include('partials.ucrud-form-header', [
@@ -394,21 +401,29 @@
             @endif
 
 
-            @if($instanciaActual && $variablesMuestra->isNotEmpty())
+            @if($instanciaActual)
             <div class="card shadow-sm my-5">
-                <div class="card-header">
-                    <h5 style="cursor: pointer; color: black; padding: 10px;" data-bs-toggle="collapse" data-bs-target="#variablesCollapse" aria-expanded="false" aria-controls="variablesCollapse">
-                        Variables de Medición y Observaciones
+                <div class="card-header bg-secondary text-white">
+                    <h5 class="mb-0" style="cursor: pointer; padding: 10px;" data-bs-toggle="collapse" data-bs-target="#variablesCollapse" aria-expanded="true" aria-controls="variablesCollapse">
+                        Mediciones de Campo y Observaciones
                     </h5>
                 </div>
             
                 <div id="variablesCollapse" class="collapse show">
                     <div class="card-body">
+                        @if($variablesMuestra->isEmpty())
+                            <div class="alert alert-info mb-0">
+                                No se registraron mediciones de campo para esta muestra.
+                            </div>
+                        @else
                         <div class="table-responsive">
                             <table class="table table-bordered table-hover">
                                 <thead class="table-light">
                                     <tr>
                                         <th>Variable</th>
+                                        @if($mostrarUnidadMedicion)
+                                            <th>Unidad</th>
+                                        @endif
                                         <th>Valor</th>
                                     </tr>
                                 </thead>
@@ -420,10 +435,16 @@
                                         <tr @if($isUsed) class="table-info" title="Este valor se utiliza en los resultados de análisis" @endif>
                                             <td @if($isUsed) class="fw-bold" @endif>
                                                 {{ $variable->variable }}
+                                                @if(!empty($variable->obligatorio))
+                                                    <span class="text-danger" title="Variable obligatoria">*</span>
+                                                @endif
                                                 @if($isUsed)
                                                     <i class="fas fa-check-circle text-info ms-1" style="font-size: 0.8rem;"></i>
                                                 @endif
                                             </td>
+                                            @if($mostrarUnidadMedicion)
+                                                <td>{{ $variable->unidad_medicion ?? '—' }}</td>
+                                            @endif
                                             <td>
                                                 <input type="text" class="form-control variable-value @if($isUsed) fw-bold text-info @endif" 
                                                        value="{{ $variable->valor }}" 
@@ -435,6 +456,7 @@
                                 </tbody>
                             </table>
                         </div>
+                        @endif
                         
                         @if($instanciaActual->observaciones_medicion_coord_muestreo)
                             <div class="mt-4">
@@ -591,9 +613,9 @@
                                                 data-fecha-fin="{{ $tarea->instancia && $tarea->instancia->fecha_fin_ot ? $tarea->instancia->fecha_fin_ot->format('Y-m-d\TH:i') : '' }}"
                                                 @disabled($analisisYaFinalizado)>
                                             <label class="form-check-label" for="tarea_{{ $tarea->cotio_item }}_{{ $tarea->cotio_subitem }}">
-                                                <h5 class="card-title mb-0 d-flex align-items-center">
+                                                <h5 class="card-title mb-0 d-flex align-items-center flex-wrap">
                                                     <x-heroicon-o-clipboard-document-list class="me-2" style="width: 1.25rem; height: 1.25rem;" />
-                                                    {{ $tarea->cotio_descripcion }}
+                                                    <span>{{ $tarea->cotio_descripcion }}@include('ordenes.partials.metodo-analisis-etiqueta', ['tarea' => $tarea, 'instancia' => $tarea->instancia])</span>
                                                     @if($tarea->instancia->request_review)
                                                         <div 
                                                             class="bg-warning rounded-pill ms-2 d-flex align-items-center justify-content-center" 
@@ -718,41 +740,31 @@
                                             </div>
                                         </div>
                     
-                                        <!-- Fechas: informe (analista) con respaldo a fechas OT -->
+                                        <!-- Fecha informe (analista) con respaldo a fechas OT -->
                                         <div>
                                             @php
                                                 $insF = $tarea->instancia;
-                                                $iniTxt = null;
-                                                $finTxt = null;
+                                                $fechaInformeTxt = null;
                                                 if ($insF) {
-                                                    if ($insF->analista_fecha_inicio) {
-                                                        $iniTxt = $insF->analista_fecha_inicio->format('d/m/Y');
-                                                    } elseif ($insF->fecha_inicio_ot) {
-                                                        $iniTxt = $insF->fecha_inicio_ot->format('d/m/Y H:i');
-                                                    }
-                                                    if ($insF->analista_fecha_fin) {
-                                                        $finTxt = $insF->analista_fecha_fin->format('d/m/Y');
+                                                    $fechaManual = \App\Support\FechaAnalisisInformePdf::fechaManualInforme($insF);
+                                                    if ($fechaManual) {
+                                                        $fechaInformeTxt = $fechaManual->format('d/m/Y');
                                                     } elseif ($insF->fecha_fin_ot) {
-                                                        $finTxt = $insF->fecha_fin_ot->format('d/m/Y H:i');
+                                                        $fechaInformeTxt = $insF->fecha_fin_ot->format('d/m/Y H:i');
+                                                    } elseif ($insF->fecha_inicio_ot) {
+                                                        $fechaInformeTxt = $insF->fecha_inicio_ot->format('d/m/Y H:i');
                                                     }
                                                 }
                                             @endphp
                                             <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-3 gap-2 fecha-wrapper" data-fecha-fin="{{ $tarea->instancia && $tarea->instancia->fecha_fin_ot ? $tarea->instancia->fecha_fin_ot->format('Y-m-d\TH:i') : '' }}">
-                                                <div class="d-flex flex-column flex-sm-row flex-wrap gap-3 flex-grow-1">
-                                                    <div class="d-flex align-items-center">
-                                                        <x-heroicon-o-calendar class="me-2 text-secondary flex-shrink-0" style="width: 1rem; height: 1rem;" />
-                                                        <span class="me-2"><strong>Inicio:</strong></span>
-                                                        <span class="{{ $iniTxt ? 'bg-light text-dark px-2 py-1 rounded' : 'text-muted' }}">{{ $iniTxt ?? 'Faltante' }}</span>
-                                                    </div>
-                                                    <div class="d-flex align-items-center">
-                                                        <x-heroicon-o-clock class="me-2 text-secondary flex-shrink-0" style="width: 1rem; height: 1rem;" />
-                                                        <span class="me-2"><strong>Fin:</strong></span>
-                                                        <span class="fecha-fin {{ $finTxt ? 'bg-light text-dark px-2 py-1 rounded' : 'text-muted' }}">{{ $finTxt ?? 'Faltante' }}</span>
-                                                    </div>
+                                                <div class="d-flex align-items-center flex-grow-1">
+                                                    <x-heroicon-o-calendar class="me-2 text-secondary flex-shrink-0" style="width: 1rem; height: 1rem;" />
+                                                    <span class="me-2"><strong>Fecha informe:</strong></span>
+                                                    <span class="fecha-fin {{ $fechaInformeTxt ? 'bg-light text-dark px-2 py-1 rounded' : 'text-muted' }}">{{ $fechaInformeTxt ?? 'Faltante' }}</span>
                                                 </div>
                                                 @if($tarea->instancia && ($tarea->instancia->puede_editar_fechas_informe ?? false))
                                                     <button type="button" class="btn btn-sm btn-outline-primary flex-shrink-0" data-bs-toggle="modal" data-bs-target="#fechasInformeCategoriaModal{{ $tarea->instancia->id }}">
-                                                        <i class="fas fa-calendar-alt me-1"></i> Fechas informe
+                                                        <i class="fas fa-calendar-alt me-1"></i> Fecha informe
                                                     </button>
                                                 @endif
                                             </div>
@@ -768,8 +780,14 @@
                                                         $esSincronizado = !is_null($valorSincronizado);
                                                         $resultadoAMostrar = $esSincronizado ? $valorSincronizado : ($tarea->instancia && $tarea->instancia->resultado_final ? $tarea->instancia->resultado_final : 'Faltante');
                                                     @endphp
+                                                    @php
+                                                        $unidadResumen = trim((string) ($tarea->instancia->cotio_codigoum ?? ''));
+                                                        if ($unidadResumen === '') {
+                                                            $unidadResumen = trim((string) ($tarea->itemCatalogo->unidad_medida ?? $tarea->cotio_codigoum ?? ''));
+                                                        }
+                                                    @endphp
                                                     <p style="text-align: center; color: #0d6efd; background-color: #f8f9fa; padding: 5px; border-radius: 5px; margin-bottom: 0;">
-                                                        Resultado Final: <span style="font-weight: bold; color: #0d6efd;">{{ $resultadoAMostrar }}</span>
+                                                        Resultado Final: <span style="font-weight: bold; color: #0d6efd;">{{ $resultadoAMostrar }}</span>@if($unidadResumen !== '') <span class="text-muted fw-normal">{{ $unidadResumen }}</span>@endif
                                                         @if($esSincronizado)
                                                             <br><span class="text-info" style="font-size: 0.75rem;">(Medición de Campo)</span>
                                                         @endif
@@ -829,149 +847,16 @@
                                                             data-instance="{{ $tarea->instancia->instance_number }}">
                                                             @csrf
                                                             @method('PUT')
-                                                            
-                                                            @php
-                                                                $resultados = [
-                                                                    [
-                                                                        'titulo' => 'Resultado Primario',
-                                                                        'valor' => $tarea->instancia->resultado ?? '',
-                                                                        'obs' => $tarea->instancia->observacion_resultado ?? '',
-                                                                        'badge' => 'primary',
-                                                                        'label' => 'R1',
-                                                                        'field' => 'resultado',
-                                                                        'fecha_carga' => $tarea->instancia->fecha_carga_resultado_1 ?? '',
-                                                                        'obs_field' => 'observacion_resultado',
-                                                                        'cotio_codigoum' => $tarea->instancia->cotio_codigoum ?? 'N/A'
-                                                                    ],
-                                                                    [
-                                                                        'titulo' => 'Resultado Secundario',
-                                                                        'valor' => $tarea->instancia->resultado_2 ?? '',
-                                                                        'obs' => $tarea->instancia->observacion_resultado_2 ?? '',
-                                                                        'badge' => 'info',
-                                                                        'label' => 'R2',
-                                                                        'field' => 'resultado_2',
-                                                                        'fecha_carga' => $tarea->instancia->fecha_carga_resultado_2 ?? '',
-                                                                        'obs_field' => 'observacion_resultado_2',
-                                                                        'cotio_codigoum' => $tarea->instancia->cotio_codigoum ?? 'N/A'
-                                                                    ],
-                                                                    [
-                                                                        'titulo' => 'Resultado Terciario',
-                                                                        'valor' => $tarea->instancia->resultado_3 ?? '',
-                                                                        'obs' => $tarea->instancia->observacion_resultado_3 ?? '',
-                                                                        'badge' => 'warning',
-                                                                        'label' => 'R3',
-                                                                        'field' => 'resultado_3',
-                                                                        'fecha_carga' => $tarea->instancia->fecha_carga_resultado_3 ?? '',
-                                                                        'obs_field' => 'observacion_resultado_3',
-                                                                        'cotio_codigoum' => $tarea->instancia->cotio_codigoum ?? 'N/A'
-                                                                    ],
-                                                                    [
-                                                                        'titulo' => 'Resultado Final',
-                                                                        'valor' => $tarea->instancia->resultado_final ?? '',
-                                                                        'obs' => $tarea->instancia->observacion_resultado_final ?? '',
-                                                                        'badge' => 'dark',
-                                                                        'label' => 'Final',
-                                                                        'field' => 'resultado_final',
-                                                                        'fecha_carga' => $tarea->instancia->fecha_carga_ot ?? '',
-                                                                        'obs_field' => 'observacion_resultado_final',
-                                                                        'cotio_codigoum' => $tarea->instancia->cotio_codigoum ?? 'N/A'
-                                                                    ]
-                                                                ];
-                                                            @endphp
-                                                            
 
-                                                            <div class="row g-3 op-resultados-grid">
-                                                                @foreach ($resultados as $r)
-                                                                    <div class="col-12">
-                                                                        <div class="card border-0 shadow-sm op-resultado-card">
-                                                                            <div class="op-resultado-card__head op-resultado-card__head--{{ $r['badge'] }}">
-                                                                                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                                                                                    <div class="d-flex align-items-center flex-wrap gap-2">
-                                                                                         <span class="badge op-resultado-card__pill op-resultado-card__pill--{{ $r['badge'] }}">{{ $r['label'] }}</span>
-                                                                                         <h6 class="mb-0 op-resultado-card__title">{{ $r['titulo'] }}</h6>
-                                                                                         @if($r['fecha_carga'])
-                                                                                             <span class="badge bg-secondary rounded-pill ms-2" title="Fecha de carga">
-                                                                                                 <small>
-                                                                                                 Fecha de carga: {{ $r['fecha_carga'] }}
-                                                                                                 </small>
-                                                                                             </span>
-                                                                                         @endif
-                                                                                         @if($r['obs'])
-                                                                                             <span class="badge bg-success rounded-pill ms-2" title="Tiene observaciones">
-                                                                                                 <x-heroicon-o-chat-bubble-left-ellipsis style="width: 12px; height: 12px;" />
-                                                                                             </span>
-                                                                                         @endif
-                                                                                     </div>
-                                                                                    @if(isset($historialCambios[$tarea->instancia->id]) && $historialCambios[$tarea->instancia->id]->where('campo_modificado', $r['field'])->isNotEmpty())
-                                                                                        <button class="btn btn-sm op-resultado-card__hist-btn btn-historial-resultado" 
-                                                                                                data-instancia-id="{{ $tarea->instancia->id }}"
-                                                                                                data-campo="{{ $r['field'] }}"
-                                                                                                data-bs-toggle="modal" 
-                                                                                                data-bs-target="#historialResultadoModal"
-                                                                                                title="Ver historial de cambios">
-                                                                                            <x-heroicon-o-clock style="width: 16px; height: 16px;" />
-                                                                                        </button>
-                                                                                    @endif
-                                                                                </div>
-                                                                            </div>
-                                                                            <div class="card-body op-resultado-card__body">
-                                                                                <div class="row g-2">
-                                                                                    <div class="col-md-6">
-                                                                                        <label class="form-label text-muted small mb-1">
-                                                                                            <x-heroicon-o-beaker class="me-1" style="width: 14px; height: 14px;" />
-                                                                                            Resultado
-                                                                                        </label>
-                                                                                        @php
-                                                                                            $descNorm = $normalizeStr($tarea->cotio_descripcion);
-                                                                                            $valorSincronizado = $medicionesMapa->get($descNorm);
-                                                                                            $esSincronizado = !is_null($valorSincronizado);
-                                                                                            $valorFinalInput = $esSincronizado ? $valorSincronizado : $r['valor'];
-                                                                                        @endphp
-                                                                                        <input 
-                                                                                            class="form-control resultado-input @if($esSincronizado) bg-light fw-bold text-info @endif" 
-                                                                                            type="text"
-                                                                                            id="{{ $r['field'] }}_{{ $tarea->cotio_item }}_{{ $tarea->cotio_subitem }}"
-                                                                                            name="{{ $r['field'] }}"
-                                                                                            value="{{ $valorFinalInput }}"
-                                                                                            placeholder="Ingrese el resultado..."
-                                                                                            @if($instanciaActual->cotio_estado_analisis == 'analizado')
-                                                                                                readonly
-                                                                                            @endif
-                                                                                            @if($esSincronizado)
-                                                                                                title="Este valor se toma por defecto de las Mediciones de Campo."
-                                                                                            @endif
-                                                                                        >
-                                                                                    </div>
-                                                                                    <div class="col-md-6">
-                                                                                        <label class="form-label text-muted small mb-1">
-                                                                                            <x-heroicon-o-chat-bubble-left-ellipsis class="me-1" style="width: 14px; height: 14px;" />
-                                                                                            Observaciones
-                                                                                        </label>
-                                                                                        <textarea 
-                                                                                            class="form-control observacion-input" 
-                                                                                            name="{{ $r['obs_field'] }}"
-                                                                                            id="{{ $r['obs_field'] }}_{{ $tarea->cotio_item }}_{{ $tarea->cotio_subitem }}"
-                                                                                            rows="2"
-                                                                                            placeholder="Observaciones del resultado..."
-                                                                                            @if($instanciaActual->cotio_estado_analisis == 'analizado')
-                                                                                                readonly
-                                                                                            @endif
-                                                                                        >{{ $r['obs'] }}</textarea>
-                                                                                    </div>
-                                                                                    @if($r['titulo'] == 'Resultado Final')
-                                                                                        <div>
-                                                                                            <input type="text" class="form-control" name="u_med_resultado" value="{{ $r['cotio_codigoum'] }}"
-                                                                                            readonly>
-                                                                                        </div>
-                                                                                    @endif
-                                                                                 </div>
-                                                                             </div>
-                                                                        </div>
-                                                                    </div>
-                                                                @endforeach
-                                                            </div>
-                    
-                                                            <div class="mt-3 text-end">
+                                                            @include('ordenes.partials.resultados-analisis-form-compact', [
+                                                                'tarea' => $tarea,
+                                                                'instanciaActual' => $instanciaActual,
+                                                                'normalizeStr' => $normalizeStr,
+                                                                'medicionesMapa' => $medicionesMapa,
+                                                                'historialCambios' => $historialCambios ?? collect(),
+                                                            ])
+
+                                                            <div class="mt-2 text-end">
                                                                 @if(! $analisisYaFinalizado && $instanciaActual->active_ot == true && $instanciaActual->enable_inform == false)
                                                                     <button type="submit" 
                                                                             class="btn btn-success guardar-todos-resultados"
@@ -1001,6 +886,21 @@
     @endif
 
 </div>{{-- /.tarea-categoria-page --}}
+
+@if($instanciaActual && ($tareas ?? collect())->isNotEmpty())
+    @foreach($tareas as $tareaModal)
+        @if($tareaModal->instancia)
+            @php
+                $tareaModal->instancia->setRelation('tarea', $tareaModal);
+            @endphp
+            @include('mis-ordenes.partials.modal-editar-analisis', [
+                'item' => $tareaModal->instancia,
+                'instancia' => $instanciaActual,
+                'instanceNumber' => $instance,
+            ])
+        @endif
+    @endforeach
+@endif
 
 <div class="modal fade" id="historialResultadoModal" tabindex="-1" aria-labelledby="historialResultadoModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg">
@@ -1260,20 +1160,18 @@
                             @csrf
                             @method('PUT')
                             <div class="modal-header">
-                                <h5 class="modal-title" id="fechasInformeCategoriaLabel{{ $tModal->instancia->id }}">Fechas informe · {{ $tModal->cotio_descripcion }}</h5>
+                                <h5 class="modal-title" id="fechasInformeCategoriaLabel{{ $tModal->instancia->id }}">Fecha informe · {{ $tModal->cotio_descripcion }}</h5>
                                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
                             </div>
                             <div class="modal-body">
-                                <p class="text-muted small">Opcional. Se muestran en esta pantalla y en el informe PDF; si quedan vacías se usan las fechas OT / carga de resultado.</p>
-                                <div class="mb-3">
-                                    <label class="form-label" for="analista_fecha_inicio_cat{{ $tModal->instancia->id }}">Inicio del análisis</label>
-                                    <input type="date" class="form-control" id="analista_fecha_inicio_cat{{ $tModal->instancia->id }}" name="analista_fecha_inicio"
-                                        value="{{ $tModal->instancia->analista_fecha_inicio ? $tModal->instancia->analista_fecha_inicio->format('Y-m-d') : '' }}">
-                                </div>
+                                <p class="text-muted small">Opcional. Se muestra en esta pantalla y en el informe PDF; si queda vacía se usa la fecha OT / carga de resultado.</p>
+                                @php
+                                    $fechaInformeModal = \App\Support\FechaAnalisisInformePdf::fechaManualInforme($tModal->instancia);
+                                @endphp
                                 <div class="mb-0">
-                                    <label class="form-label" for="analista_fecha_fin_cat{{ $tModal->instancia->id }}">Finalización del análisis</label>
+                                    <label class="form-label" for="analista_fecha_fin_cat{{ $tModal->instancia->id }}">Fecha de análisis (informe)</label>
                                     <input type="date" class="form-control" id="analista_fecha_fin_cat{{ $tModal->instancia->id }}" name="analista_fecha_fin"
-                                        value="{{ $tModal->instancia->analista_fecha_fin ? $tModal->instancia->analista_fecha_fin->format('Y-m-d') : '' }}">
+                                        value="{{ $fechaInformeModal ? $fechaInformeModal->format('Y-m-d') : '' }}">
                                 </div>
                             </div>
                             <div class="modal-footer">

@@ -1,0 +1,266 @@
+/* =============================================================
+   Ventas — listado y shell de cotizaciones
+   Alineado con facturación / ucrud
+   ============================================================= */
+
+.ventas-page {
+    --vent-radius: 12px;
+    --vent-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+    --vent-ink: #2f3245;
+    --vent-muted: #7b7f95;
+    --vent-border: #eef0f3;
+    width: 100%;
+    max-width: 100%;
+}
+
+.ventas-page.ucrud-layout--fluid .ventas-stats-strip .ventas-stats-metric {
+    max-width: none;
+}
+
+.ventas-page .badge-estado {
+    padding: 0.35rem 0.65rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+.ventas-page .estado-E { background: #fff3cd; color: #856404; }
+.ventas-page .estado-A { background: #d1e7dd; color: #0f5132; }
+.ventas-page .estado-R { background: #f8d7da; color: #842029; }
+.ventas-page .estado-P { background: #cff4fc; color: #055160; }
+.ventas-page .estado-C { background: #e2e3e5; color: #41464b; }
+.ventas-page .estado-S { background: #e2d9f3; color: #432874; }
+.ventas-page .estado-CERR { background: #badbcc; color: #0a3622; }
+.ventas-page .estado-PROC { background: #cfe2ff; color: #084298; }
+
+/* KPI strip */
+.ventas-stats-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+}
+
+.ventas-stats-strip .ventas-stats-metric {
+    flex: 1 1 9rem;
+    min-width: 8.5rem;
+    max-width: 13rem;
+}
+
+.ventas-stats-strip .ventas-stats-monto-wrap {
+    flex: 1 1 16rem;
+    min-width: 14rem;
+}
+
+.stats-card-ventas {
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    border: 1px solid var(--vent-border);
+    border-radius: var(--vent-radius);
+    box-shadow: var(--vent-shadow);
+    background: #fff;
+    height: 100%;
+}
+
+.stats-card-ventas:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.08);
+}
+
+.stats-card-ventas.active {
+    border-color: var(--primary-color, #4e73df);
+    box-shadow: 0 0 0 3px rgba(78, 115, 223, 0.15);
+}
+
+.stats-card-ventas--static {
+    cursor: default;
+    background: linear-gradient(135deg, #f8f9fb 0%, #eef2ff 100%);
+}
+
+.stats-card-ventas--static:hover {
+    transform: none;
+}
+
+.stats-card-ventas__label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--vent-muted);
+    margin-bottom: 0.25rem;
+}
+
+.stats-card-ventas__value {
+    font-size: 1.35rem;
+    font-weight: 700;
+    line-height: 1.2;
+    margin: 0;
+}
+
+.stats-card-ventas__icon {
+    opacity: 0.45;
+    flex-shrink: 0;
+}
+
+.stats-card-ventas--total .stats-card-ventas__value { color: var(--primary-color, #4e73df); }
+.stats-card-ventas--espera .stats-card-ventas__value { color: #b58105; }
+.stats-card-ventas--aprobada .stats-card-ventas__value { color: #198754; }
+.stats-card-ventas--rechazada .stats-card-ventas__value { color: #dc3545; }
+.stats-card-ventas--proceso .stats-card-ventas__value { color: #0dcaf0; }
+.stats-card-ventas--suspendida .stats-card-ventas__value { color: #6f42c1; }
+.stats-card-ventas--cerrada .stats-card-ventas__value { color: #146c43; }
+.stats-card-ventas--monto .stats-card-ventas__value { color: #0d6efd; font-size: 1.15rem; }
+
+/* Filtros */
+.ventas-page .ucrud-filters .form-label {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--vent-muted);
+    margin-bottom: 0.35rem;
+    min-height: 1.1rem;
+    line-height: 1.1rem;
+}
+
+.ventas-filter-label-hint {
+    font-weight: 500;
+    font-size: 0.68rem;
+    color: #a0a4b8;
+}
+
+.ventas-filter-field {
+    display: flex;
+    flex-direction: column;
+}
+
+.ventas-filters-row--primary {
+    margin-bottom: 0.25rem;
+}
+
+.ventas-filters-row--secondary {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--vent-border);
+}
+
+.ventas-filters-row .form-control,
+.ventas-filters-row .form-select {
+    border-radius: 0.75rem;
+    border-color: var(--vent-border);
+    min-height: calc(2.25rem + 2px);
+    height: calc(2.25rem + 2px);
+    padding-top: 0.375rem;
+    padding-bottom: 0.375rem;
+}
+
+.ventas-filters-row .form-select:disabled {
+    background-color: #f8f9fb;
+    color: #8b90a5;
+    cursor: not-allowed;
+}
+
+.ventas-filters-row .select2-container {
+    width: 100% !important;
+    display: block;
+}
+
+.ventas-filters-row .select2-container .select2-selection--single {
+    height: calc(2.25rem + 2px) !important;
+}
+
+.ventas-filters-row .select2-container--default .select2-selection--single,
+.ventas-filters-row .select2-container--bootstrap-5 .select2-selection {
+    height: calc(2.25rem + 2px);
+    min-height: calc(2.25rem + 2px);
+    border-radius: 0.75rem;
+    border-color: var(--vent-border);
+    display: flex;
+    align-items: center;
+    background-color: #fff;
+}
+
+.ventas-filters-row .select2-container--default .select2-selection--single .select2-selection__rendered,
+.ventas-filters-row .select2-container--default .select2-selection--single .select2-selection__arrow {
+    height: calc(2.25rem + 2px);
+    line-height: calc(2.25rem + 2px);
+}
+
+.ventas-filters-row .select2-container--disabled .select2-selection--single {
+    background-color: #f8f9fb !important;
+    color: #8b90a5;
+    cursor: not-allowed;
+}
+
+/* Tabla — ucrud-panel aporta borde/sombra; acá solo detalles internos */
+.ventas-table-panel.ucrud-panel {
+    overflow: hidden;
+}
+
+.ventas-table-panel__head {
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--vent-border);
+    background: #fff;
+}
+
+.ventas-table-panel__title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--vent-ink);
+}
+
+.ventas-table-panel .ucrud-table thead th {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--vent-muted);
+    font-weight: 600;
+    background: #f8f9fb;
+    border-bottom: 1px solid var(--vent-border);
+}
+
+.ventas-table-panel .ucrud-table tbody td {
+    vertical-align: middle;
+    font-size: 0.875rem;
+}
+
+.ventas-table-panel .action-buttons {
+    white-space: nowrap;
+}
+
+.ventas-table-panel .action-buttons .btn,
+.ventas-table-panel .action-buttons .ucrud-btn {
+    padding: 0.25rem 0.45rem;
+}
+
+.ventas-det-icon {
+    transition: transform 0.2s ease;
+    font-size: 0.75rem;
+}
+
+.ventas-det-toggle[aria-expanded="true"] .ventas-det-icon {
+    transform: rotate(180deg);
+}
+
+.ventas-row-clickable {
+    cursor: pointer;
+}
+
+.ventas-row-clickable:hover {
+    background: rgba(78, 115, 223, 0.04);
+}
+
+.ventas-detalle-nested {
+    background: #f8f9fb;
+    border-top: 1px solid var(--vent-border);
+}
+
+@media (max-width: 768px) {
+    .ventas-stats-strip .ventas-stats-metric,
+    .ventas-stats-strip .ventas-stats-monto-wrap {
+        flex: 1 1 calc(50% - 0.75rem);
+        max-width: none;
+    }
+}

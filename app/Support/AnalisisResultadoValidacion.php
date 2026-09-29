@@ -58,11 +58,11 @@ final class AnalisisResultadoValidacion
     }
 
     /**
-     * Análisis en OT activa de la misma muestra/instancia sin resultados.
+     * Análisis (subitem > 0) con OT activa en la misma muestra/instancia.
      *
      * @return Collection<int, CotioInstancia>
      */
-    public static function analisisEnOtSinResultado(
+    public static function analisisActivosEnOt(
         string|int $cotioNumcoti,
         string|int $cotioItem,
         string|int $instanceNumber
@@ -73,7 +73,20 @@ final class AnalisisResultadoValidacion
             ->where('instance_number', $instanceNumber)
             ->where('cotio_subitem', '>', 0)
             ->where('active_ot', true)
-            ->get()
+            ->get();
+    }
+
+    /**
+     * Análisis en OT activa de la misma muestra/instancia sin resultados.
+     *
+     * @return Collection<int, CotioInstancia>
+     */
+    public static function analisisEnOtSinResultado(
+        string|int $cotioNumcoti,
+        string|int $cotioItem,
+        string|int $instanceNumber
+    ): Collection {
+        return self::analisisActivosEnOt($cotioNumcoti, $cotioItem, $instanceNumber)
             ->filter(fn (CotioInstancia $instancia) => ! self::instanciaTieneResultado($instancia))
             ->values();
     }
@@ -93,25 +106,26 @@ final class AnalisisResultadoValidacion
         string|int $cotioItem,
         string|int $instanceNumber
     ): Collection {
-        return CotioInstancia::query()
-            ->where('cotio_numcoti', $cotioNumcoti)
-            ->where('cotio_item', $cotioItem)
-            ->where('instance_number', $instanceNumber)
-            ->where('cotio_subitem', '>', 0)
-            ->where('active_ot', true)
-            ->get()
+        return self::analisisActivosEnOt($cotioNumcoti, $cotioItem, $instanceNumber)
             ->filter(fn (CotioInstancia $instancia) => ! self::instanciaEstaAnalizada($instancia))
             ->values();
     }
 
     /**
      * Todos los análisis activos en OT de la muestra están en estado «analizado».
+     * Si no hay análisis con OT activa, devuelve false (evita marcar la muestra sin lab iniciado).
      */
     public static function muestraTodosAnalisisOtAnalizados(
         string|int $cotioNumcoti,
         string|int $cotioItem,
         string|int $instanceNumber
     ): bool {
+        $activos = self::analisisActivosEnOt($cotioNumcoti, $cotioItem, $instanceNumber);
+
+        if ($activos->isEmpty()) {
+            return false;
+        }
+
         return self::analisisEnOtNoAnalizados($cotioNumcoti, $cotioItem, $instanceNumber)->isEmpty();
     }
 
@@ -200,6 +214,12 @@ final class AnalisisResultadoValidacion
         string|int $cotioItem,
         string|int $instanceNumber
     ): bool {
+        $activos = self::analisisActivosEnOt($cotioNumcoti, $cotioItem, $instanceNumber);
+
+        if ($activos->isEmpty()) {
+            return false;
+        }
+
         return self::analisisEnOtSinResultado($cotioNumcoti, $cotioItem, $instanceNumber)->isEmpty();
     }
 

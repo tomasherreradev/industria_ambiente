@@ -2544,8 +2544,13 @@
         componente.descripcion = option.dataset.descripcion || option.textContent.replace(/\s*\(ID: \d+\)$/, '') || componente.descripcion;
         componente.codigo = option.dataset.codigo || componente.codigo;
         componente.precio = precio;
-        // Mantener la cantidad actual del componente (no se edita)
-        componente.total = precio * componente.cantidad;
+        const ensayoPadre = state.ensayos.find(e => e.item === Number(componente.ensayo_asociado));
+        const wrapCantidad = document.getElementById('edit_componente_cantidad_wrap');
+        const inputCantidad = document.getElementById('edit_componente_cantidad');
+        if (cantidadComponenteEditable(ensayoPadre) && inputCantidad) {
+            componente.cantidad = toPositiveInt(inputCantidad.value, 1);
+        }
+        componente.total = precio * (parseFloat(componente.cantidad) || 1);
         componente.unidad_medida = unidadMedida || option.dataset.unidadMedida || componente.unidad_medida;
         componente.metodo_analisis_id = metodoId;
         componente.metodo_codigo = option.dataset.metodoCodigo || componente.metodo_codigo;
@@ -2723,6 +2728,11 @@
                 const valor = toPositiveInt(event.target.value, 1);
                 event.target.value = valor;
                 actualizarCantidadEnsayo(itemId, valor);
+            } else if (event.target.classList.contains('input-cantidad-componente')) {
+                const itemId = Number(event.target.dataset.item);
+                const valor = toPositiveInt(event.target.value, 1);
+                event.target.value = valor;
+                actualizarCantidadComponente(itemId, valor);
             } else if (event.target.classList.contains('input-precio-componente')) {
                 const itemId = Number(event.target.dataset.item);
                 const componente = state.componentes.find(c => c.item === itemId);
@@ -2796,6 +2806,25 @@
         ensayo.cantidad = toPositiveInt(cantidad, 1);
         recalcularPreciosEnsayo(itemId);
         actualizarTotalesEnsayoEnDOM(itemId);
+        actualizarTotalGeneral();
+    }
+
+    function actualizarCantidadComponente(itemId, cantidad) {
+        const componente = state.componentes.find(c => c.item === itemId);
+        if (!componente) {
+            return;
+        }
+
+        const ensayo = state.ensayos.find(e => e.item === Number(componente.ensayo_asociado));
+        if (!cantidadComponenteEditable(ensayo)) {
+            return;
+        }
+
+        componente.cantidad = toPositiveInt(cantidad, 1);
+        componente.total = (parseFloat(componente.precio) || 0) * componente.cantidad;
+        actualizarTotalComponenteEnDOM(itemId);
+        recalcularPreciosEnsayo(componente.ensayo_asociado);
+        actualizarTotalesEnsayoEnDOM(componente.ensayo_asociado);
         actualizarTotalGeneral();
     }
 
@@ -3874,6 +3903,22 @@
         return ['consultoria', 'clarke_fire', 'asp'].includes(canal);
     }
 
+    function ensayoEsClarkeFire(ensayo) {
+        if (!ensayo) {
+            return false;
+        }
+        if ((ensayo.canal_especial || '').toString().trim() === 'clarke_fire') {
+            return true;
+        }
+        const matriz = ensayo.matriz_descripcion || '';
+        const desc = ensayo.descripcion || '';
+        return canalEspecialDesdeMatrizYDescripcion(matriz, desc) === 'clarke_fire';
+    }
+
+    function cantidadComponenteEditable(ensayo) {
+        return ensayoEsClarkeFire(ensayo);
+    }
+
     function resolverLlevaMuestreoEnsayo(chkNoLlevaMuestreo, canalDetectado) {
         if (canalDetectado === 'mediciones') {
             return true;
@@ -4849,7 +4894,10 @@
     function renderFilaComponente(componente, ensayo, subindice, numeroEnsayoSecuencial) {
         const itemLabel = `${numeroEnsayoSecuencial}-${subindice}`;
 
-        const cantidadCampo = `<span>${formatInt(componente.cantidad)}</span>`;
+        const cantidadEditable = state.puedeEditar && cantidadComponenteEditable(ensayo);
+        const cantidadCampo = cantidadEditable
+            ? `<input type="number" class="form-control form-control-sm input-cantidad-componente" data-item="${componente.item}" value="${formatInt(componente.cantidad)}" min="1" step="1" title="Cantidad del componente (Clarke Fire)">`
+            : `<span>${formatInt(componente.cantidad)}</span>`;
 
         const aumentoPercent = clampPercent(getAumentoGlobal());
         const factorAumento = 1 + (aumentoPercent / 100);
@@ -5018,6 +5066,17 @@
         // Llenar campos
         document.getElementById('edit_componente_precio').value = formatNumber(componente.precio);
         document.getElementById('edit_componente_unidad').value = componente.unidad_medida || '';
+
+        const ensayoPadre = state.ensayos.find(e => e.item === Number(componente.ensayo_asociado));
+        const wrapCantidad = document.getElementById('edit_componente_cantidad_wrap');
+        const inputCantidad = document.getElementById('edit_componente_cantidad');
+        if (wrapCantidad && inputCantidad) {
+            const mostrarCantidad = cantidadComponenteEditable(ensayoPadre);
+            wrapCantidad.style.display = mostrarCantidad ? '' : 'none';
+            if (mostrarCantidad) {
+                inputCantidad.value = formatInt(componente.cantidad);
+            }
+        }
 
         // Checkboxes de requerimientos
         const chkReqCadena = document.getElementById('edit_comp_req_cadena_custodia');

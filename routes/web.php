@@ -54,6 +54,9 @@ Route::middleware(CheckAuth::class)->group(function () {
     Route::get('/auth/{id}', [AuthController::class, 'show'])->name('auth.show');
     Route::get('/auth/{id}/edit', [AuthController::class, 'edit'])->name('auth.edit');
     Route::put('/auth/{id}', [AuthController::class, 'update'])->name('auth.update');
+    Route::get('/auth/{id}/seguridad', [AuthController::class, 'showSecurity'])->name('auth.security');
+    Route::put('/auth/{id}/seguridad/contrasena', [AuthController::class, 'updateSecurityPassword'])->name('auth.security.password');
+    Route::get('/auth/{id}/ayuda', [AuthController::class, 'showHelp'])->name('auth.help');
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
     
     // Rutas de tareas
@@ -78,9 +81,6 @@ Route::middleware(CheckAuth::class)->group(function () {
     // Rutas de ordenes
     Route::get('/mis-ordenes', [OrdenController::class, 'showOrdenes'])->name('mis-ordenes');
     Route::get('/ordenes-all/{cotio_numcoti}/{cotio_item}/{cotio_subitem}/{instance}', [OrdenController::class, 'showOrdenesAll'])->name('ordenes.all.show');
-
-    Route::get('auth/{id}/seguridad', [AuthController::class, 'showSecurity'])->name('auth.security');
-    Route::get('auth/{id}/ayuda', [AuthController::class, 'showHelp'])->name('auth.help');
 
     Route::put('/instancias/{instancia}/herramientas', [OrdenController::class, 'updateHerramientas'])->name('instancias.update-herramientas');
     Route::put('/instancias/{instancia}/analista-fechas-analisis', [OrdenController::class, 'updateAnalistaFechasAnalisis'])->name('instancias.update-analista-fechas-analisis');
@@ -329,6 +329,8 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
     Route::get('/facturacion/{factura}/descargar', [App\Http\Controllers\FacturacionController::class, 'descargar'])->name('facturacion.descargar');
     Route::get('/facturacion/facturar/{cotizacion}', [App\Http\Controllers\FacturacionController::class, 'facturar'])->name('facturacion.show');
     Route::post('/facturacion/facturar/{cotizacion}', [App\Http\Controllers\FacturacionController::class, 'generarFacturaArca'])->name('facturacion.facturar');
+    Route::post('/facturacion/facturar-todo', [App\Http\Controllers\FacturacionController::class, 'facturarTodo'])->name('facturacion.facturar-todo');
+    Route::post('/facturacion/facturar-todo/cotizacion', [App\Http\Controllers\FacturacionController::class, 'facturarTodoCotizacion'])->name('facturacion.facturar-todo.cotizacion');
     Route::post('/facturacion/clientes/{codigo}/contactos-envio', [App\Http\Controllers\FacturacionController::class, 'storeContactoEnvioFactura'])->name('facturacion.contactos-envio.store');
     Route::put('/facturacion/contactos-envio/{contacto}', [App\Http\Controllers\FacturacionController::class, 'updateContactoEnvioFactura'])->name('facturacion.contactos-envio.update');
     Route::delete('/facturacion/contactos-envio/{contacto}', [App\Http\Controllers\FacturacionController::class, 'destroyContactoEnvioFactura'])->name('facturacion.contactos-envio.destroy');
@@ -638,6 +640,15 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
 });
 
 
+// Revisión de facturación (administradores o usuarios autorizados)
+Route::middleware([CheckAdminOrRole::class, 'puede.autorizar.facturacion'])->group(function () {
+    Route::get('/facturacion-revision', [App\Http\Controllers\FacturacionRevisionController::class, 'index'])->name('facturacion-revision.index');
+    Route::get('/facturacion-revision/{instancia}/resumen', [App\Http\Controllers\FacturacionRevisionController::class, 'resumen'])->name('facturacion-revision.resumen');
+    Route::post('/facturacion-revision/{instancia}/aprobar', [App\Http\Controllers\FacturacionRevisionController::class, 'aprobar'])->name('facturacion-revision.aprobar');
+    Route::post('/facturacion-revision/cotizacion/{cotio_numcoti}/aprobar', [App\Http\Controllers\FacturacionRevisionController::class, 'aprobarCotizacion'])->name('facturacion-revision.aprobar-cotizacion');
+    Route::post('/facturacion-revision/cotizacion/{cotio_numcoti}/referencias', [App\Http\Controllers\FacturacionRevisionController::class, 'updateReferencias'])->name('facturacion-revision.update-referencias');
+});
+
 // facturacion
 Route::middleware([CheckAdminOrRole::class])->group(function () {
     Route::get('/facturacion', [App\Http\Controllers\FacturacionController::class, 'index'])->name('facturacion.index');
@@ -646,6 +657,8 @@ Route::middleware([CheckAdminOrRole::class])->group(function () {
     Route::get('/facturacion/{factura}/descargar', [App\Http\Controllers\FacturacionController::class, 'descargar'])->name('facturacion.descargar');
     Route::get('/facturacion/facturar/{cotizacion}', [App\Http\Controllers\FacturacionController::class, 'facturar'])->name('facturacion.show');
     Route::post('/facturacion/facturar/{cotizacion}', [App\Http\Controllers\FacturacionController::class, 'generarFacturaArca'])->name('facturacion.facturar');
+    Route::post('/facturacion/facturar-todo', [App\Http\Controllers\FacturacionController::class, 'facturarTodo'])->name('facturacion.facturar-todo');
+    Route::post('/facturacion/facturar-todo/cotizacion', [App\Http\Controllers\FacturacionController::class, 'facturarTodoCotizacion'])->name('facturacion.facturar-todo.cotizacion');
     Route::post('/facturacion/notas/{cotizacion}', [App\Http\Controllers\FacturacionController::class, 'guardarNotas'])->name('facturacion.guardar-notas');
     Route::post('/facturacion/referencias/{cotizacion}', [App\Http\Controllers\FacturacionController::class, 'updateReferencias'])->name('facturacion.update-referencias');
     Route::post('/facturacion/detalle/{factura}/notas', [App\Http\Controllers\FacturacionController::class, 'updateNotasFactura'])->name('facturacion.update-notas');

@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use App\Models\User;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
+use App\Support\PerfilUsuarioResumen;
 
 
 class AuthController extends Controller
@@ -123,21 +124,36 @@ class AuthController extends Controller
         return redirect('/login');
     }
 
-    public function show($id)
+    public function show(Request $request, $id)
     {
-        $user = User::findOrFail($id);
-        return view('auth.show', compact('user'));
+        $user = $this->findUserByCodigo($id);
+        $this->authorizeOwnProfile($user);
+
+        $codigoCanonico = trim((string) $user->usu_codigo);
+        if (trim((string) $id) !== $codigoCanonico) {
+            return redirect()->route('auth.show', ['id' => $codigoCanonico]);
+        }
+
+        $authUser = Auth::user();
+        $esPropioPerfil = $authUser && trim((string) $authUser->usu_codigo) === $codigoCanonico;
+        $sessionId = (string) $request->session()->getId();
+        $expectedSession = (string) ($user->current_session_id ?? '');
+        $sesionEsActual = $expectedSession !== '' && hash_equals($expectedSession, $sessionId);
+
+        $perfil = PerfilUsuarioResumen::construir($user);
+
+        return view('auth.show', compact('user', 'perfil', 'esPropioPerfil', 'sesionEsActual', 'codigoCanonico'));
     }
 
     public function edit($id)
     {
-        $user = User::findOrFail($id);
+        $user = $this->findUserByCodigo($id);
         return view('auth.edit', compact('user'));
     }
 
     public function update(Request $request, $id)
     {
-        $user = User::findOrFail($id);
+        $user = $this->findUserByCodigo($id);
         $editor = Auth::user();
         $isAdmin = (int) ($editor->usu_nivel ?? 0) >= 900;
         $rolesValidos = [
@@ -194,16 +210,142 @@ class AuthController extends Controller
         return redirect()->route('auth.show', $user->usu_codigo)->with('success', 'Perfil actualizado correctamente.');
     }
     
-    public function showSecurity($id)
+    public function showSecurity(Request $request, $id)
     {
-        $user = User::findOrFail($id);
-        return view('auth.security', compact('user'));
+        $user = $this->findUserByCodigo($id);
+        $this->authorizeOwnProfile($user);
+
+        $codigoCanonico = trim((string) $user->usu_codigo);
+        if (trim((string) $id) !== $codigoCanonico) {
+            return redirect()->route('auth.security', ['id' => $codigoCanonico]);
+        }
+
+        $authUser = Auth::user();
+        $esPropioPerfil = trim((string) $authUser->usu_codigo) === $codigoCanonico;
+        $sessionId = (string) $request->session()->getId();
+        $expectedSession = (string) ($user->current_session_id ?? '');
+        $sesionEsActual = $expectedSession !== '' && hash_equals($expectedSession, $sessionId);
+        $dispositivo = $this->describeUserAgent($request->userAgent());
+
+        return view('auth.security', [
+            'user' => $user,
+            'esPropioPerfil' => $esPropioPerfil,
+            'sesionEsActual' => $sesionEsActual,
+            'dispositivo' => $dispositivo,
+            'ipActual' => $request->ip(),
+        ]);
     }
-    
+
+    public function updateSecurityPassword(Request $request, $id)
+    {
+        $user = $this->findUserByCodigo($id);
+        $this->authorizeOwnProfile($user);
+
+        if (trim((string) Auth::user()->usu_codigo) !== trim((string) $user->usu_codigo)) {
+            abort(403, 'Solo podés cambiar tu propia contraseña desde esta pantalla.');
+        }
+
+        $validated = $request->validate([
+            'usu_clave_actual' => 'required|string',
+            'usu_clave' => 'required|string|min:4|confirmed',
+        ], [
+            'usu_clave.min' => 'La nueva contraseña debe tener al menos 4 caracteres.',
+            'usu_clave.confirmed' => 'La confirmación no coincide con la nueva contraseña.',
+        ]);
+
+        if (md5($validated['usu_clave_actual']) !== $user->usu_clave) {
+            return back()
+                ->withErrors(['usu_clave_actual' => 'La contraseña actual no es correcta.'])
+                ->withInput($request->except('usu_clave_actual', 'usu_clave', 'usu_clave_confirmation'));
+        }
+
+        $user->usu_clave = md5($validated['usu_clave']);
+        $user->save();
+
+        return redirect()
+            ->route('auth.security', ['id' => trim((string) $user->usu_codigo)])
+            ->with('success', 'Contraseña actualizada correctamente.');
+    }
+
     public function showHelp($id)
     {
-        $user = User::findOrFail($id);
-        return view('auth.help', compact('user'));
+        $user = $this->findUserByCodigo($id);
+        $this->authorizeOwnProfile($user);
+
+        $codigoCanonico = trim((string) $user->usu_codigo);
+        if (trim((string) $id) !== $codigoCanonico) {
+            return redirect()->route('auth.help', ['id' => $codigoCanonico]);
+        }
+
+        return view('auth.help', [
+            'user' => $user,
+            'soporteEmail' => 'app@initsoluciones.com.ar',
+        ]);
+    }
+
+    protected function findUserByCodigo(string $id): User
+    {
+        $user = User::whereRaw('TRIM(usu_codigo) = ?', [trim($id)])->first();
+        if (! $user) {
+            abort(404);
+        }
+
+        return $user;
+    }
+
+    protected function authorizeOwnProfile(User $user): void
+    {
+        $authUser = Auth::user();
+        if (! $authUser) {
+            abort(403);
+        }
+
+        $isAdmin = (int) ($authUser->usu_nivel ?? 0) >= 900;
+        if ($isAdmin) {
+            return;
+        }
+
+        if (trim((string) $authUser->usu_codigo) !== trim((string) $user->usu_codigo)) {
+            abort(403, 'No tenés permiso para ver la seguridad de este usuario.');
+        }
+    }
+
+    /**
+     * @return array{browser: string, platform: string, label: string}
+     */
+    protected function describeUserAgent(?string $userAgent): array
+    {
+        $ua = (string) $userAgent;
+
+        $platform = 'Desconocido';
+        if (str_contains($ua, 'Windows')) {
+            $platform = 'Windows';
+        } elseif (str_contains($ua, 'Mac OS X') || str_contains($ua, 'Macintosh')) {
+            $platform = 'macOS';
+        } elseif (str_contains($ua, 'iPhone') || str_contains($ua, 'iPad')) {
+            $platform = 'iOS';
+        } elseif (str_contains($ua, 'Android')) {
+            $platform = 'Android';
+        } elseif (str_contains($ua, 'Linux')) {
+            $platform = 'Linux';
+        }
+
+        $browser = 'Navegador';
+        if (preg_match('/Edg\//', $ua)) {
+            $browser = 'Edge';
+        } elseif (str_contains($ua, 'Chrome/')) {
+            $browser = 'Chrome';
+        } elseif (str_contains($ua, 'Firefox/')) {
+            $browser = 'Firefox';
+        } elseif (str_contains($ua, 'Safari/') && ! str_contains($ua, 'Chrome/')) {
+            $browser = 'Safari';
+        }
+
+        return [
+            'browser' => $browser,
+            'platform' => $platform,
+            'label' => $browser.' · '.$platform,
+        ];
     }
 
     /**

@@ -7,10 +7,21 @@ use Carbon\Carbon;
 
 /**
  * Fecha de análisis mostrada en el informe PDF y vistas de OT.
- * Prioridad: fechas informe (finalización) → fechas informe (inicio) → fecha de carga de resultado.
+ * Prioridad: fecha informe manual → fecha informe legacy (inicio) → fecha de carga de resultado.
  */
 class FechaAnalisisInformePdf
 {
+    public static function fechaManualInforme(CotioInstancia $item): ?Carbon
+    {
+        $fin = $item->analista_fecha_fin ?? null;
+        if ($fin) {
+            return Carbon::parse($fin);
+        }
+
+        $inicio = $item->analista_fecha_inicio ?? null;
+
+        return $inicio ? Carbon::parse($inicio) : null;
+    }
     /**
      * Resuelve la fecha de carga de resultado (último resultado cargado disponible).
      */
@@ -29,19 +40,9 @@ class FechaAnalisisInformePdf
      */
     public static function textoColumnaPdf(CotioInstancia $item): string
     {
-        $inicio = $item->analista_fecha_inicio ?? null;
-        $fin = $item->analista_fecha_fin ?? null;
-
-        if ($fin && $inicio) {
-            return Carbon::parse($inicio)->format('d/m/Y') . ' – ' . Carbon::parse($fin)->format('d/m/Y');
-        }
-
-        if ($fin) {
-            return Carbon::parse($fin)->format('d/m/Y');
-        }
-
-        if ($inicio) {
-            return Carbon::parse($inicio)->format('d/m/Y');
+        $manual = self::fechaManualInforme($item);
+        if ($manual) {
+            return $manual->format('d/m/Y');
         }
 
         $carga = self::fechaCargaResultado($item);
@@ -54,19 +55,9 @@ class FechaAnalisisInformePdf
      */
     public static function textoDescriptivoOt(CotioInstancia $item): string
     {
-        $inicio = $item->analista_fecha_inicio ?? null;
-        $fin = $item->analista_fecha_fin ?? null;
-
-        if ($fin && $inicio) {
-            return Carbon::parse($inicio)->format('d/m/Y') . ' – ' . Carbon::parse($fin)->format('d/m/Y');
-        }
-
-        if ($fin) {
-            return Carbon::parse($fin)->format('d/m/Y');
-        }
-
-        if ($inicio) {
-            return 'Desde ' . Carbon::parse($inicio)->format('d/m/Y');
+        $manual = self::fechaManualInforme($item);
+        if ($manual) {
+            return $manual->format('d/m/Y');
         }
 
         $carga = self::fechaCargaResultado($item);

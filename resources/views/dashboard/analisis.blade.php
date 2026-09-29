@@ -1,6 +1,10 @@
 @extends('layouts.app')
 
 @section('content')
+@include('partials.ucrud-styles')
+<link rel="stylesheet" href="{{ asset('css/dashboard-home.css') }}?v={{ filemtime(public_path('css/dashboard-home.css')) }}">
+<link rel="stylesheet" href="{{ asset('css/dashboard-sub.css') }}?v={{ filemtime(public_path('css/dashboard-sub.css')) }}">
+
 @php
     $estadoFiltroActual = $estadoFiltro ?? request('estado', 'all');
     if ($estadoFiltroActual === null || $estadoFiltroActual === '') {
@@ -40,7 +44,7 @@
     };
     $urlFiltroEstado = fn (string $estado): string => $urlFiltroQuery($estado, null);
     $urlFiltroMetodo = fn (?string $metodo): string => $urlFiltroQuery(null, $metodo);
-    $cardEstadoActivo = fn (string $estado) => $estadoFiltroActual === $estado ? ' dashboard-estado-card--active' : '';
+    $cardEstadoActivo = fn (string $estado) => $estadoFiltroActual === $estado ? ' dash-kpi--active' : '';
     $estadosFiltroOpciones = [
         ['key' => 'all', 'label' => 'Todos', 'dot' => 'bg-secondary'],
         ['key' => 'pendientes_coordinar', 'label' => 'Pendientes por coordinar', 'dot' => 'bg-primary'],
@@ -52,109 +56,67 @@
     $estadoFiltroActivoMeta = collect($estadosFiltroOpciones)->firstWhere('key', $estadoFiltroActual)
         ?? ($estadoFiltroActual === 'proximos' ? $estadoFiltroProximos : ['key' => 'all', 'label' => 'Todos', 'dot' => 'bg-secondary']);
 @endphp
-<div class="container-fluid px-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="mb-0">Panel de Análisis</h1>
-        <div class="text-muted">{{ fechaActualLargaEs() }}</div>
-    </div>
+<div class="container-fluid px-3 px-lg-4 py-4 ucrud dash-home dash-sub">
+    @include('dashboard.partials.sub-hero', [
+        'title' => 'Dashboard de análisis',
+        'subtitle' => 'Seguimiento de OT, responsables y estados del laboratorio.',
+        'backUrl' => route('dashboard'),
+    ])
 
-    {{-- Resumen General --}}
-    <div class="row mb-4 g-4">
-        <div class="col-xl-3 col-md-6">
-            <a href="{{ $urlFiltroEstado('pendientes_coordinar') }}" class="text-decoration-none">
-                <div class="card bg-primary bg-gradient text-white h-100{{ $cardEstadoActivo('pendientes_coordinar') }}">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <h5 class="card-title text-uppercase small">Pendientes por coordinar</h5>
-                                <p class="card-text display-6 fw-bold">{{ $pendientesPorCoordinar }}</p>
-                            </div>
-                            <div class="bg-white bg-opacity-25 p-3 rounded-circle" style="width: 50px; height: 50px; display: flex; align-items: center; justify-content: center;">
-                                <x-heroicon-o-magnifying-glass style="width: 20px; height: 20px;"/>
-                            </div>
-                        </div>
-                        <div class="mt-2">
-                            <span class="small">Pendientes por coordinar</span>
-                        </div>
-                    </div>
-                </div>
-            </a>
-        </div>
-        <div class="col-xl-3 col-md-6">
-            <a href="{{ $urlFiltroEstado('coordinado analisis') }}" class="text-decoration-none">
-                <div class="card bg-warning bg-gradient text-dark h-100{{ $cardEstadoActivo('coordinado analisis') }}">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <h5 class="card-title text-uppercase small">Pendientes de análisis</h5>
-                                <p class="card-text display-6 fw-bold">{{ $pendientesDeAnalisis }}</p>
-                            </div>
-                            <div class="bg-dark bg-opacity-25 p-3 rounded-circle" style="width: 50px; height: 50px; display: flex; align-items: center; justify-content: center;">
-                                <x-heroicon-o-clock style="width: 20px; height: 20px;"/>
-                            </div>
-                        </div>
-                        <div class="mt-2">
-                            <span class="small">Pendientes de análisis</span>
-                        </div>
-                    </div>
-                </div>
-            </a>
-        </div>
-        <div class="col-xl-3 col-md-6">
-            <a href="{{ $urlFiltroEstado('en revision analisis') }}" class="text-decoration-none">
-                <div class="card bg-info bg-gradient text-white h-100{{ $cardEstadoActivo('en revision analisis') }}">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <h5 class="card-title text-uppercase small">Pendientes de revisión</h5>
-                                <p class="card-text display-6 fw-bold">{{ $pendientesDeRevision }}</p>
-                            </div>
-                            <div class="bg-white bg-opacity-25 p-3 rounded-circle" style="width: 50px; height: 50px; display: flex; align-items: center; justify-content: center;">
-                                <x-heroicon-o-arrow-path style="width: 20px; height: 20px;"/>
-                            </div>
-                        </div>
-                        <div class="mt-2">
-                            <span class="small">Pendientes de revisión</span>
-                        </div>
-                    </div>
-                </div>
-            </a>
-        </div>
-        <div class="col-xl-3 col-md-6">
-            <a href="{{ $urlFiltroEstado('analizado') }}" class="text-decoration-none">
-                <div class="card bg-success bg-gradient text-white h-100{{ $cardEstadoActivo('analizado') }}">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <h5 class="card-title text-uppercase small">Finalizados</h5>
-                                <p class="card-text display-6 fw-bold">{{ $finalizados }}</p>
-                            </div>
-                            <div class="bg-white bg-opacity-25 p-3 rounded-circle" style="width: 50px; height: 50px; display: flex; align-items: center; justify-content: center;">
-                                <x-heroicon-o-check-circle style="width: 20px; height: 20px;"/>
-                            </div>
-                        </div>
-                        <div class="mt-2">
-                            <span class="small">Completados</span>
-                        </div>
-                    </div>
-                </div>
-            </a>
-        </div>
-
+    <div class="dash-home__kpi-grid mb-3">
+        <a href="{{ $urlFiltroEstado('pendientes_coordinar') }}" class="dash-kpi dash-kpi--primary{{ $cardEstadoActivo('pendientes_coordinar') }}">
+            <span class="dash-kpi__icon"><x-heroicon-o-magnifying-glass /></span>
+            <span>
+                <span class="dash-kpi__label">Por coordinar</span>
+                <span class="dash-kpi__value">{{ number_format($pendientesPorCoordinar, 0, ',', '.') }}</span>
+                <span class="dash-kpi__hint">Pendientes de coordinación</span>
+            </span>
+        </a>
+        <a href="{{ $urlFiltroEstado('coordinado analisis') }}" class="dash-kpi dash-kpi--informes{{ $cardEstadoActivo('coordinado analisis') }}">
+            <span class="dash-kpi__icon"><x-heroicon-o-clock /></span>
+            <span>
+                <span class="dash-kpi__label">De análisis</span>
+                <span class="dash-kpi__value">{{ number_format($pendientesDeAnalisis, 0, ',', '.') }}</span>
+                <span class="dash-kpi__hint">En cola de análisis</span>
+            </span>
+        </a>
+        <a href="{{ $urlFiltroEstado('en revision analisis') }}" class="dash-kpi dash-kpi--muestreo{{ $cardEstadoActivo('en revision analisis') }}">
+            <span class="dash-kpi__icon"><x-heroicon-o-arrow-path /></span>
+            <span>
+                <span class="dash-kpi__label">En revisión</span>
+                <span class="dash-kpi__value">{{ number_format($pendientesDeRevision, 0, ',', '.') }}</span>
+                <span class="dash-kpi__hint">Pendientes de revisión</span>
+            </span>
+        </a>
+        <a href="{{ $urlFiltroEstado('analizado') }}" class="dash-kpi dash-kpi--analisis{{ $cardEstadoActivo('analizado') }}">
+            <span class="dash-kpi__icon"><x-heroicon-o-check-circle /></span>
+            <span>
+                <span class="dash-kpi__label">Finalizados</span>
+                <span class="dash-kpi__value">{{ number_format($finalizados, 0, ',', '.') }}</span>
+                <span class="dash-kpi__hint">Análisis completados</span>
+            </span>
+        </a>
     </div>
 
     {{-- Contenido principal --}}
     <div class="row g-4">
         {{-- Análisis asignados --}}
         <div class="col-lg-8">
-            <div class="card shadow-sm h-100">
-                <div class="card-header bg-white">
-                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                        <h5 class="mb-0">Análisis Asignados</h5>
-                        <div class="d-flex gap-2 flex-wrap">
+            <div class="dash-panel h-100">
+                <div class="dash-panel__head">
+                    <div>
+                        <h2 class="dash-panel__title">Análisis asignados</h2>
+                        <p class="dash-panel__subtitle mb-0">
+                            Análisis asignados a mi o a mi equipo
+                            @if(isset($esDiaUno) && $esDiaUno)
+                                <span class="ucrud-chip ucrud-chip--cyan ms-1">Mes actual (día 1)</span>
+                            @endif
+                        </p>
+                    </div>
+                    <div class="dash-filter-bar">
                             <!-- Filtro de Estado -->
                             <div class="dropdown">
-                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle d-inline-flex align-items-center gap-2" type="button" id="filterDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                                <button class="ucrud-btn ucrud-btn--ghost ucrud-btn--sm dropdown-toggle d-inline-flex align-items-center gap-2" type="button" id="filterDropdown" data-bs-toggle="dropdown" aria-expanded="false">
                                     <span class="rounded-circle flex-shrink-0 {{ $estadoFiltroActivoMeta['dot'] }}" style="width:10px;height:10px;"></span>
                                     <span id="filterDropdownLabel">{{ $estadoFiltroActivoMeta['label'] }}</span>
                                 </button>
@@ -187,7 +149,7 @@
 
                             <!-- Filtro de Método de Análisis -->
                             <div class="dropdown">
-                                <button class="btn btn-sm btn-outline-primary dropdown-toggle" type="button" id="metodoFilterDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                                <button class="ucrud-btn ucrud-btn--outline-primary ucrud-btn--sm dropdown-toggle" type="button" id="metodoFilterDropdown" data-bs-toggle="dropdown" aria-expanded="false">
                                     <i class="fas fa-flask me-1"></i> 
                                     @if(request()->get('metodo'))
                                         Método: {{ $metodosDisponibles->firstWhere('metodo_codigo', request()->get('metodo'))->metodo_descripcion ?? 'Seleccionado' }}
@@ -212,19 +174,13 @@
                             </div>
                             
                             <!-- Botón para exportar -->
-                            <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#modalExportar">
-                                <i class="fas fa-file-excel me-1"></i> Exportar
+                            <button type="button" class="ucrud-btn ucrud-btn--success ucrud-btn--sm" data-bs-toggle="modal" data-bs-target="#modalExportar">
+                                <x-heroicon-o-arrow-down-tray style="width: 14px; height: 14px;" />
+                                Exportar
                             </button>
-                        </div>
                     </div>
-                    <p class="text-muted small mb-0">
-                        Análisis asignados a mi o a mi equipo
-                        @if(isset($esDiaUno) && $esDiaUno)
-                            <span class="badge bg-info ms-2">Filtrado por mes actual (día 1)</span>
-                        @endif
-                    </p>
                 </div>
-                <div class="card-body p-0">
+                <div class="p-0">
                     <div class="accordion p-2" id="analisisAccordion">
                         @forelse($analisisAgrupados as $grupo => $analisisGrupo)
                             @php
@@ -260,6 +216,22 @@
                                                                     <span class="badge bg-[#0dcaf0] text-white px-1 py-0 rounded-pill ms-1" style="font-size: 0.6rem; background-color: #0dcaf0;">CUOTAS</span>
                                                         @endif
                                                         </span>
+                                                        @if($muestra->enable_inform ?? false)
+                                                            <a href="{{ route('informes.show', [
+                                                                'cotio_numcoti' => $muestra->cotio_numcoti,
+                                                                'cotio_item' => $muestra->cotio_item,
+                                                                'instance_number' => $muestra->instance_number,
+                                                            ]) }}"
+                                                               class="badge bg-success rounded-pill text-decoration-none ms-1"
+                                                               style="font-size: 0.7em;"
+                                                               title="Ver informe">
+                                                                En informes
+                                                            </a>
+                                                        @else
+                                                            <span class="badge bg-secondary rounded-pill ms-1" style="font-size: 0.7em;" title="La muestra aún no fue enviada a informes">
+                                                                Sin informe
+                                                            </span>
+                                                        @endif
                                                 @else
                                                     'N/A'
                                                 @endif
@@ -409,11 +381,9 @@
                         </div>
                         @endforelse
                     </div>
-                    <div class="card-footer bg-white border-top-0">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div class="text-muted small">
-                                Mostrando {{ count($analisisAgrupados) }} muestras con sus análisis
-                            </div>
+                    <div class="dash-panel__foot">
+                        <div class="text-muted small">
+                            Mostrando {{ count($analisisAgrupados) }} muestras con sus análisis
                         </div>
                     </div>
                 </div>
@@ -422,14 +392,14 @@
 
         {{-- Sidebar con información complementaria --}}
         <div class="col-lg-4">
-            {{-- Análisis próximos --}}
-            <div class="card shadow-sm mb-4">
-                <div class="card-header bg-white">
-                    <h5 class="mb-0">Próximos a Vencer</h5>
-                    <p class="text-muted small mb-0">Próximos 3 días</p>
+            <div class="dash-panel mb-3">
+                <div class="dash-panel__head">
+                    <div>
+                        <h2 class="dash-panel__title">Próximos a vencer</h2>
+                        <p class="dash-panel__subtitle">Próximos 3 días</p>
+                    </div>
                 </div>
-                <div class="card-body">
-                    <div class="list-group list-group-flush">
+                <div class="dash-sidebar-list">
                         @forelse($analisisProximosAgrupados as $grupo => $analisisGrupo)
                             @php
                                 $primerAnalisis = $analisisGrupo->first();
@@ -437,7 +407,7 @@
                                 $fechaMasProxima = $primerAnalisis->fecha_fin_ot
                                     ?? ($muestra ? $muestra->fecha_fin_ot : null);
                             @endphp
-                            <div class="list-group-item border-0 px-0 py-2">
+                            <div class="dash-sidebar-list__item">
                                 <div class="d-flex justify-content-between align-items-start mb-1">
                                     <div>
                                         <strong>Muestra: </strong>
@@ -449,13 +419,18 @@
                                             ]) }}" class="text-primary">
                                                 {{ $muestra->cotio_descripcion ?? 'N/A' }}
                                             </a>
+                                            @if($muestra->enable_inform ?? false)
+                                                <span class="badge bg-success rounded-pill ms-1" style="font-size: 0.65em;">En informes</span>
+                                            @else
+                                                <span class="badge bg-secondary rounded-pill ms-1" style="font-size: 0.65em;">Sin informe</span>
+                                            @endif
                                         @else
                                             'N/A'
                                         @endif
                                     </div>
                                     <small class="text-muted">{{ $fechaMasProxima ? $fechaMasProxima->format('d/m H:i') : 'Sin fecha' }}</small>
                                 </div>
-                                <div class="d-flex justify-content-between align-items-center">
+                                <div class="d-flex justify-content-between align-items-center flex-wrap gap-1">
                                     <span class="badge bg-primary rounded-pill">{{ count($analisisGrupo) }} análisis</span>
                                     @php
                                         $estadoClase = '';
@@ -473,76 +448,45 @@
                                 </div>
                             </div>
                         @empty
-                        <div class="text-center py-3 text-muted">
-                            <i class="fas fa-calendar-check fa-2x mb-2"></i>
-                            <p class="mb-0 small">No hay análisis próximos a vencer</p>
+                        <div class="ucrud-empty py-4">
+                            <p class="ucrud-empty__text mb-0">No hay análisis próximos a vencer</p>
                         </div>
                         @endforelse
-                    </div>
                 </div>
             </div>
 
-            {{-- Distribución por estado --}}
-            <div class="card shadow-sm mb-4">
-                <div class="card-header bg-white">
-                    <h5 class="mb-0">Estados de Análisis</h5>
-                    <p class="text-muted small mb-0">Distribución por estado</p>
-                </div>
-                <div class="card-body">
-                    <div class="chart-container" style="position: relative; height: 200px;">
-                        <canvas id="estadoAnalisisChart"></canvas>
-                    </div>
-                    <div class="mt-3">
-                        <ul class="list-unstyled mb-0">
-                            <li class="d-flex justify-content-between align-items-center py-1">
-                                <span>Pendientes por coordinar</span>
-                                <span class="badge bg-primary text-white rounded-pill">{{ $pendientesPorCoordinar }}</span>
-                            </li>
-                            <li class="d-flex justify-content-between align-items-center py-1">
-                                <span>Pendientes de análisis</span>
-                                <span class="badge bg-warning text-dark rounded-pill">{{ $pendientesDeAnalisis }}</span>
-                            </li>
-                            <li class="d-flex justify-content-between align-items-center py-1">
-                                <span>Finalizados</span>
-                                <span class="badge bg-success rounded-pill">{{ $finalizados }}</span>
-                            </li>
-                            <li class="d-flex justify-content-between align-items-center py-1">
-                                <span>Pendientes de revisión</span>
-                                <span class="badge bg-info rounded-pill">{{ $pendientesDeRevision }}</span>
-                            </li>
-                            <li class="d-flex justify-content-between align-items-center py-1">
-                                <span>Anulaciones</span>
-                                <span class="badge bg-danger rounded-pill">{{ $anulados }}</span>
-                            </li>
-                        </ul>
-                    </div>
+            <div class="mb-3">
+                @include('dashboard.partials.sub-segment-chart', [
+                    'chartId' => 'subAnalisis',
+                    'title' => 'Estados de análisis',
+                    'subtitle' => 'Clic en segmento o leyenda para filtrar el listado',
+                ])
+                <div class="dash-stat-extra mx-3 mb-2">
+                    <span>Anulaciones / suspensiones</span>
+                    <strong>{{ number_format($anulados, 0, ',', '.') }}</strong>
                 </div>
             </div>
 
-            {{-- Herramientas en uso --}}
-            <div class="card shadow-sm">
-                <div class="card-header bg-white">
-                    <h5 class="mb-0">Herramientas en Uso</h5>
-                    <p class="text-muted small mb-0">Equipamiento asignado</p>
+            <div class="dash-panel">
+                <div class="dash-panel__head">
+                    <div>
+                        <h2 class="dash-panel__title">Herramientas en uso</h2>
+                        <p class="dash-panel__subtitle">Equipamiento asignado</p>
+                    </div>
                 </div>
-                <div class="card-body">
+                <div class="p-0">
                     @forelse($herramientasEnUso as $herramienta)
-                    <div class="d-flex align-items-center mb-3">
-                        <div class="flex-shrink-0 bg-light rounded p-2 me-3">
-                            <x-heroicon-o-beaker style="width: 20px; height: 20px;"/>
+                    <div class="dash-resource">
+                        <div class="dash-resource__icon"><x-heroicon-o-wrench-screwdriver /></div>
+                        <div class="dash-resource__body">
+                            <p class="dash-resource__title">{{ $herramienta->equipamiento }}</p>
+                            <p class="dash-resource__meta mb-0">Serial: {{ $herramienta->serial }}</p>
                         </div>
-                        <div class="flex-grow-1">
-                            <h6 class="mb-0">{{ $herramienta->equipamiento }}</h6>
-                            <small class="text-muted">Serial: {{ $herramienta->serial }}</small>
-                        </div>
-                        <span class="badge bg-light text-dark">
-                            {{ $herramienta->cotio_instancias_count }} uso(s)
-                        </span>
+                        <span class="ucrud-chip ucrud-chip--slate">{{ $herramienta->cotio_instancias_count }} uso(s)</span>
                     </div>
                     @empty
-                    <div class="text-center py-3 text-muted">
-                        <i class="fas fa-box-open fa-2x mb-2"></i>
-                        <p class="mb-0 small">No hay herramientas en uso actualmente</p>
+                    <div class="ucrud-empty py-4">
+                        <p class="ucrud-empty__text mb-0">No hay herramientas en uso actualmente</p>
                     </div>
                     @endforelse
                 </div>
@@ -550,22 +494,6 @@
         </div>
     </div>
 </div>
-
-<style>
-    .dashboard-estado-card--active {
-        box-shadow: 0 0 0 3px #fff, 0 0 0 6px rgba(13, 110, 253, 0.55);
-        transform: translateY(-2px);
-    }
-    .card.bg-warning.dashboard-estado-card--active {
-        box-shadow: 0 0 0 3px #fff, 0 0 0 6px rgba(255, 193, 7, 0.75);
-    }
-    .card.bg-info.dashboard-estado-card--active {
-        box-shadow: 0 0 0 3px #fff, 0 0 0 6px rgba(13, 202, 240, 0.65);
-    }
-    .card.bg-success.dashboard-estado-card--active {
-        box-shadow: 0 0 0 3px #fff, 0 0 0 6px rgba(25, 135, 84, 0.65);
-    }
-</style>
 
 {{-- Modal para Exportar --}}
 <div class="modal fade" id="modalExportar" tabindex="-1" aria-labelledby="modalExportarLabel" aria-hidden="true">
@@ -608,50 +536,45 @@
     </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+@php
+    $dashboardSegmentChartsConfig = [
+        'subAnalisis' => [
+            'labels' => ['Por coordinar', 'De análisis', 'Finalizados', 'En revisión'],
+            'data' => [
+                (int) $pendientesPorCoordinar,
+                (int) $pendientesDeAnalisis,
+                (int) $finalizados,
+                (int) $pendientesDeRevision,
+            ],
+            'colors' => [
+                ['base' => '#4e73df', 'hover' => '#6789e3'],
+                ['base' => '#f0ad4e', 'hover' => '#f7c774'],
+                ['base' => '#1cc88a', 'hover' => '#3dd9a4'],
+                ['base' => '#36b9cc', 'hover' => '#5ccfe0'],
+            ],
+            'segmentLinks' => [
+                $urlFiltroEstado('pendientes_coordinar'),
+                $urlFiltroEstado('coordinado analisis'),
+                $urlFiltroEstado('analizado'),
+                $urlFiltroEstado('en revision analisis'),
+            ],
+        ],
+    ];
+@endphp
+
+@push('scripts')
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+    window.dashboardSegmentCharts = @json($dashboardSegmentChartsConfig);
+</script>
+<script src="{{ asset('js/dashboard-home-charts.js') }}?v={{ filemtime(public_path('js/dashboard-home-charts.js')) }}"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        tooltipTriggerList.map(function (tooltipTriggerEl) {
             return new bootstrap.Tooltip(tooltipTriggerEl, {
                 placement: tooltipTriggerEl.getAttribute('data-bs-placement') || 'bottom',
             });
-        });
-
-        // Gráfico de estados de análisis
-        const estadoAnalisisCtx = document.getElementById('estadoAnalisisChart').getContext('2d');
-        new Chart(estadoAnalisisCtx, {
-            type: 'doughnut',
-            data: {
-                labels: ['Pendientes por coordinar', 'Pendientes de análisis', 'Finalizados', 'Pendientes de revisión'],
-                datasets: [{
-                    data: [@json($pendientesPorCoordinar), @json($pendientesDeAnalisis), @json($finalizados), @json($pendientesDeRevision)],
-                    backgroundColor: [
-                        '#007bff', // Azul para pendientes por coordinar
-                        '#ffc107', // Amarillo para pendientes de análisis
-                        '#28a745', // Verde para finalizados
-                        '#11cbf0'  // Rojo para pendientes de revisión
-                    ],
-                    borderWidth: 0
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        display: false
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                return `${context.label}: ${context.raw} (${Math.round(context.parsed)}%)`;
-                            }
-                        }
-                    }
-                },
-                cutout: '70%'
-            }
         });
 
         const currentEstado = @json($estadoFiltroActual);
@@ -712,4 +635,5 @@
         }
     });
 </script>
+@endpush
 @endsection

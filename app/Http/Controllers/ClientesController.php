@@ -373,7 +373,7 @@ class ClientesController extends Controller {
             
             Log::info('Asignando condición de pago');
             if ($request->condicion_pago) {
-                $cliente->cli_codigopag = str_pad($request->condicion_pago, 5, ' ', STR_PAD_RIGHT);
+                $cliente->cli_codigopag = substr(trim((string) $request->condicion_pago), 0, 20);
                 Log::info('Condición de pago asignada:', ['codigo' => trim($cliente->cli_codigopag)]);
             } else {
                 Log::info('No se proporcionó condición de pago');
@@ -772,7 +772,7 @@ class ClientesController extends Controller {
             }
             
             if ($request->condicion_pago) {
-                $cliente->cli_codigopag = str_pad($request->condicion_pago, 5, ' ', STR_PAD_RIGHT);
+                $cliente->cli_codigopag = substr(trim((string) $request->condicion_pago), 0, 20);
             }
             
             // Tipo de cliente (campo eliminado, mantener null)

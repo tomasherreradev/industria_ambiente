@@ -21,7 +21,7 @@
             <div class="ucrud-subpanel__header">Determinaciones</div>
             <div class="ucrud-subpanel__body">
                 <div class="mb-3">
-                    <label for="cotio_descripciones" class="form-label">Cotio Descripciones (Múltiple)</label>
+                    <label for="cotio_descripciones" class="form-label">Agrupadores</label>
                     <select name="cotio_descripciones[]" id="cotio_descripciones" class="form-select select2" multiple required>
                         @foreach($cotioDescripciones as $descripcion)
                             <option value="{{ $descripcion }}" {{ in_array($descripcion, old('cotio_descripciones', [])) ? 'selected' : '' }}>

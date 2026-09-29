@@ -1,128 +1,82 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="container-fluid px-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="mb-0">Panel de Muestreo</h1>
-        <div class="text-muted">{{ fechaActualLargaEs() }}</div>
+@include('partials.ucrud-styles')
+<link rel="stylesheet" href="{{ asset('css/dashboard-home.css') }}?v={{ filemtime(public_path('css/dashboard-home.css')) }}">
+<link rel="stylesheet" href="{{ asset('css/dashboard-sub.css') }}?v={{ filemtime(public_path('css/dashboard-sub.css')) }}">
+
+@php
+    $estadoFiltro = $estadoFiltro ?? request('estado', 'all');
+    $kpiActivo = fn (string $estado) => $estadoFiltro === $estado ? ' dash-kpi--active' : '';
+@endphp
+
+<div class="container-fluid px-3 px-lg-4 py-4 ucrud dash-home dash-sub">
+    @include('dashboard.partials.sub-hero', [
+        'title' => 'Dashboard de muestreo',
+        'subtitle' => 'Planificación de campo, responsables, vehículos y estados.',
+        'backUrl' => route('dashboard'),
+    ])
+
+    <div class="dash-home__kpi-grid dash-home__kpi-grid--5 mb-3">
+        <a href="{{ route('cotizaciones.index', ['estado' => 'A']) }}" class="dash-kpi dash-kpi--primary">
+            <span class="dash-kpi__icon"><x-heroicon-o-document-check /></span>
+            <span>
+                <span class="dash-kpi__label">Cotiz. aprobadas</span>
+                <span class="dash-kpi__value">{{ number_format($cotizacionesAprobadas ?? 0, 0, ',', '.') }}</span>
+                <span class="dash-kpi__hint">Total aprobadas</span>
+            </span>
+        </a>
+        <a href="{{ request()->fullUrlWithQuery(['estado' => 'coordinado muestreo']) }}" class="dash-kpi dash-kpi--informes{{ $kpiActivo('coordinado muestreo') }}">
+            <span class="dash-kpi__icon"><x-heroicon-o-clock /></span>
+            <span>
+                <span class="dash-kpi__label">Coordinados</span>
+                <span class="dash-kpi__value">{{ number_format($pendientes, 0, ',', '.') }}</span>
+                <span class="dash-kpi__hint">Por muestrear</span>
+            </span>
+        </a>
+        <a href="{{ request()->fullUrlWithQuery(['estado' => 'en revision muestreo']) }}" class="dash-kpi dash-kpi--muestreo{{ $kpiActivo('en revision muestreo') }}">
+            <span class="dash-kpi__icon"><x-heroicon-o-arrow-path /></span>
+            <span>
+                <span class="dash-kpi__label">En revisión</span>
+                <span class="dash-kpi__value">{{ number_format($enProceso, 0, ',', '.') }}</span>
+                <span class="dash-kpi__hint">Muestreado en revisión</span>
+            </span>
+        </a>
+        <a href="{{ request()->fullUrlWithQuery(['estado' => 'muestreado']) }}" class="dash-kpi dash-kpi--analisis{{ $kpiActivo('muestreado') }}">
+            <span class="dash-kpi__icon"><x-heroicon-o-check-circle /></span>
+            <span>
+                <span class="dash-kpi__label">Finalizadas</span>
+                <span class="dash-kpi__value">{{ number_format($finalizadas, 0, ',', '.') }}</span>
+                <span class="dash-kpi__hint">Completadas</span>
+            </span>
+        </a>
+        <a href="{{ request()->fullUrlWithQuery(['estado' => 'suspension']) }}" class="dash-kpi dash-kpi--danger{{ $kpiActivo('suspension') }}">
+            <span class="dash-kpi__icon"><x-heroicon-o-x-circle /></span>
+            <span>
+                <span class="dash-kpi__label">Suspendidas</span>
+                <span class="dash-kpi__value">{{ number_format($suspendidas ?? 0, 0, ',', '.') }}</span>
+                <span class="dash-kpi__hint">Fuera de operación</span>
+            </span>
+        </a>
     </div>
 
-    {{-- Resumen General --}}
-    <div class="row mb-4 g-4">
-        <div class="col-xl-3 col-md-6">
-            <a href="{{ route('cotizaciones.index', ['estado' => 'A']) }}" class="text-decoration-none">
-                <div class="card bg-primary bg-gradient text-white h-100">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <h5 class="card-title text-uppercase small">Cotizaciones Aprobadas</h5>
-                                <p class="card-text display-6 fw-bold">{{ $cotizacionesAprobadas ?? 0 }}</p>
-                            </div>
-                            <div class="bg-white bg-opacity-25 p-3 rounded-circle" style="width: 50px; height: 50px; display: flex; align-items: center; justify-content: center;">
-                                <x-heroicon-o-document-check style="width: 20px; height: 20px;"/>
-                            </div>
-                        </div>
-                        <div class="mt-2">
-                            <span class="small">Total aprobadas</span>
-                        </div>
+    {{-- Tabla + gráfico en la misma fila --}}
+    <div class="row g-3 align-items-start dash-sub-table-chart">
+        <div class="col-12 col-xl-8 dash-sub-table-chart__main">
+            <div class="dash-panel h-100">
+                <div class="dash-panel__head">
+                    <div>
+                        <h2 class="dash-panel__title">Muestras asignadas</h2>
+                        <p class="dash-panel__subtitle mb-0">
+                            Muestras asignadas a mi o a mi equipo
+                            @if(isset($esDiaUno) && $esDiaUno)
+                                <span class="ucrud-chip ucrud-chip--cyan ms-1">Mes actual (día 1)</span>
+                            @endif
+                        </p>
                     </div>
-                </div>
-            </a>
-        </div>
-        <div class="col-xl-3 col-md-6">
-            <a href="{{ request()->fullUrlWithQuery(['estado' => 'coordinado muestreo']) }}" class="text-decoration-none">
-                <div class="card bg-warning bg-gradient text-dark h-100">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <h5 class="card-title text-uppercase small">Coordinados para Muestrear</h5>
-                                <p class="card-text display-6 fw-bold">{{ $pendientes }}</p>
-                            </div>
-                            <div class="bg-dark bg-opacity-25 p-3 rounded-circle" style="width: 50px; height: 50px; display: flex; align-items: center; justify-content: center;">
-                                <x-heroicon-o-clock style="width: 20px; height: 20px;"/>
-                            </div>
-                        </div>
-                        <div class="mt-2">
-                            <span class="small">Por muestrear</span>
-                        </div>
-                    </div>
-                </div>
-            </a>
-        </div>
-        <div class="col-xl-3 col-md-6">
-            <a href="{{ request()->fullUrlWithQuery(['estado' => 'en revision muestreo']) }}" class="text-decoration-none">
-                <div class="card bg-info bg-gradient text-white h-100">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <h5 class="card-title text-uppercase small">Muestreado en Revisión</h5>
-                                <p class="card-text display-6 fw-bold">{{ $enProceso }}</p>
-                            </div>
-                            <div class="bg-white bg-opacity-25 p-3 rounded-circle" style="width: 50px; height: 50px; display: flex; align-items: center; justify-content: center;">
-                                <x-heroicon-o-arrow-path style="width: 20px; height: 20px;"/>
-                            </div>
-                        </div>
-                        <div class="mt-2">
-                            <span class="small">Pendiente de revisión</span>
-                        </div>
-                    </div>
-                </div>
-            </a>
-        </div>
-        <div class="col-xl-3 col-md-6">
-            <a href="{{ request()->fullUrlWithQuery(['estado' => 'muestreado']) }}" class="text-decoration-none">
-                <div class="card bg-success bg-gradient text-white h-100">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <h5 class="card-title text-uppercase small">Finalizadas</h5>
-                                <p class="card-text display-6 fw-bold">{{ $finalizadas }}</p>
-                            </div>
-                            <div class="bg-white bg-opacity-25 p-3 rounded-circle" style="width: 50px; height: 50px; display: flex; align-items: center; justify-content: center;">
-                                <x-heroicon-o-check-circle style="width: 20px; height: 20px;"/>
-                            </div>
-                        </div>
-                        <div class="mt-2">
-                            <span class="small">Completadas</span>
-                        </div>
-                    </div>
-                </div>
-            </a>
-        </div>
-        <div class="col-xl-3 col-md-6">
-            <a href="{{ request()->fullUrlWithQuery(['estado' => 'suspension']) }}" class="text-decoration-none">
-                <div class="card bg-danger bg-gradient text-white h-100">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <h5 class="card-title text-uppercase small">Suspendidas</h5>
-                                <p class="card-text display-6 fw-bold">{{ $suspendidas ?? 0 }}</p>
-                            </div>
-                            <div class="bg-white bg-opacity-25 p-3 rounded-circle" style="width: 50px; height: 50px; display: flex; align-items: center; justify-content: center;">
-                                <x-heroicon-o-x-circle style="width: 20px; height: 20px;"/>
-                            </div>
-                        </div>
-                        <div class="mt-2">
-                            <span class="small">Muestras suspendidas</span>
-                        </div>
-                    </div>
-                </div>
-            </a>
-        </div>
-    </div>
-
-    {{-- Contenido principal --}}
-    <div class="row g-4">
-        {{-- Muestras asignadas --}}
-        <div class="col-lg-8">
-            <div class="card shadow-sm h-100">
-                <div class="card-header bg-white">
-                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                        <h5 class="mb-0">Muestras Asignadas</h5>
-                        <div class="d-flex gap-2 flex-wrap">
-                            <!-- Filtro de Estado -->
+                    <div class="dash-filter-bar">
                             <div class="dropdown">
-                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="filterEstadoDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                                <button class="ucrud-btn ucrud-btn--ghost ucrud-btn--sm dropdown-toggle" type="button" id="filterEstadoDropdown" data-bs-toggle="dropdown" aria-expanded="false">
                                     <i class="fas fa-filter me-1"></i> Estado
                                 </button>
                                 <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="filterEstadoDropdown">
@@ -138,7 +92,7 @@
                             
                             <!-- Filtro de Muestreador -->
                             <div class="dropdown">
-                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="filterMuestreadorDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                                <button class="ucrud-btn ucrud-btn--ghost ucrud-btn--sm dropdown-toggle" type="button" id="filterMuestreadorDropdown" data-bs-toggle="dropdown" aria-expanded="false">
                                     <i class="fas fa-user me-1"></i> Muestreador
                                 </button>
                                 <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="filterMuestreadorDropdown">
@@ -151,7 +105,7 @@
                             
                             <!-- Filtro de Vehículo -->
                             <div class="dropdown">
-                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="filterVehiculoDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                                <button class="ucrud-btn ucrud-btn--ghost ucrud-btn--sm dropdown-toggle" type="button" id="filterVehiculoDropdown" data-bs-toggle="dropdown" aria-expanded="false">
                                     <i class="fas fa-car me-1"></i> Vehículo
                                 </button>
                                 <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="filterVehiculoDropdown">
@@ -164,7 +118,7 @@
                             
                             <!-- Filtro de Zona -->
                             <div class="dropdown">
-                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="filterZonaDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                                <button class="ucrud-btn ucrud-btn--ghost ucrud-btn--sm dropdown-toggle" type="button" id="filterZonaDropdown" data-bs-toggle="dropdown" aria-expanded="false">
                                     <i class="fas fa-map-marker-alt me-1"></i> Zona
                                 </button>
                                 <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="filterZonaDropdown">
@@ -177,7 +131,7 @@
                             
                             <!-- Filtro de Cuotas -->
                             <div class="dropdown">
-                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="filterCuotasDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                                <button class="ucrud-btn ucrud-btn--ghost ucrud-btn--sm dropdown-toggle" type="button" id="filterCuotasDropdown" data-bs-toggle="dropdown" aria-expanded="false">
                                     <i class="fas fa-money-bill-wave me-1"></i> Cuotas
                                 </button>
                                 <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="filterCuotasDropdown">
@@ -189,55 +143,55 @@
                             
                             <!-- Botón para limpiar filtros -->
                             @if(request('estado') != 'all' || request('muestreador') != 'all' || request('vehiculo') != 'all' || request('zona') != 'all' || request('cuotas') != 'all')
-                            <a href="{{ route('dashboard.muestreo') }}" class="btn btn-sm btn-outline-danger">
-                                <i class="fas fa-times me-1"></i> Limpiar
+                            <a href="{{ route('dashboard.muestreo') }}" class="ucrud-btn ucrud-btn--ghost ucrud-btn--sm text-danger">
+                                Limpiar filtros
                             </a>
                             @endif
-                            
-                            <!-- Botón para exportar -->
-                            <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#modalExportar">
-                                <i class="fas fa-file-excel me-1"></i> Exportar
+                            <button type="button" class="ucrud-btn ucrud-btn--success ucrud-btn--sm" data-bs-toggle="modal" data-bs-target="#modalExportar">
+                                <x-heroicon-o-arrow-down-tray style="width: 14px; height: 14px;" />
+                                Exportar
                             </button>
-                        </div>
                     </div>
-                    <p class="text-muted small mb-0">
-                        Muestras asignadas a mi o a mi equipo
-                        @if(isset($esDiaUno) && $esDiaUno)
-                            <span class="badge bg-info ms-2">Filtrado por mes actual (día 1)</span>
-                        @endif
-                    </p>
                 </div>
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table table-hover mb-0">
-                            <thead class="table-light">
+                <div class="ucrud-tablewrap dash-muestreo-tablewrap">
+                        <table class="ucrud-table ucrud-table--dash-muestreo mb-0">
+                            <colgroup>
+                                <col class="dash-muestreo-col dash-muestreo-col--coti">
+                                <col class="dash-muestreo-col dash-muestreo-col--cliente">
+                                <col class="dash-muestreo-col dash-muestreo-col--desc">
+                                <col class="dash-muestreo-col dash-muestreo-col--fecha">
+                                <col class="dash-muestreo-col dash-muestreo-col--resp">
+                                <col class="dash-muestreo-col dash-muestreo-col--lab">
+                                <col class="dash-muestreo-col dash-muestreo-col--estado">
+                            </colgroup>
+                            <thead>
                                 <tr>
-                                    <th class="ps-4">Cotización</th>
+                                    <th>Cotiz.</th>
                                     <th>Cliente</th>
-                                    <th>Descripción</th>
-                                    <th>Fecha Muestreo</th>
-                                    <th>Responsables</th>
-                                    <th class="text-center" style="min-width: 7rem;" title="Pasada a laboratorio (OT) o documentación (mediciones)">Pasada a Laboratorio</th>
-                                    <th class="pe-4 text-center">Estado</th>
+                                    <th>Muestra</th>
+                                    <th>Fecha</th>
+                                    <th>Resp.</th>
+                                    <th class="text-center" title="Pasada a laboratorio (OT) o documentación (mediciones)">Lab.</th>
+                                    <th class="text-center">Estado</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 @forelse($muestras as $muestra)
                                 <tr>
-                                    <td class="ps-4 fw-bold">
-                                        <div class="d-flex align-items-center gap-2">
-                                            <a href="/show/{{ $muestra->cotizacion->coti_num }}" class="text-primary">
+                                    <td class="fw-semibold">
+                                        <div class="dash-muestreo-table__coti">
+                                            <a href="/show/{{ $muestra->cotizacion->coti_num }}" class="text-primary text-nowrap">
                                                 {{ $muestra->cotizacion->coti_num ?? 'N/A' }}
                                             </a>
                                             @if($muestra->cotizacion && $muestra->cotizacion->coti_cuotas)
-                                                <span class="badge bg-[#0dcaf0] text-white px-2 py-1 rounded-pill" style="font-size: 0.65rem; background-color: #0dcaf0;">CUOTAS</span>
+                                                <span class="badge dash-muestreo-table__badge bg-[#0dcaf0] text-white rounded-pill" style="background-color: #0dcaf0;" title="Cuotas">C</span>
                                             @endif
                                             @if($muestra->cotizacion)
                                                 @include('muestras.partials.canal-especial-badge', ['coti' => $muestra->cotizacion])
                                             @endif
                                         </div>
                                     </td>
-                                    <td style="max-width: 180px;">
+                                    <td>
                                         @php
                                             $cliM = $muestra->cotizacion->cliente ?? null;
                                             $nombreClienteM = trim((string) (optional($cliM)->cli_razonsocial ?? ''));
@@ -251,36 +205,38 @@
                                                 }
                                             }
                                         @endphp
-                                        <span class="d-block text-truncate" title="{{ $nombreClienteM }}">{{ $nombreClienteM !== '' ? $nombreClienteM : '—' }}</span>
+                                        <span class="dash-muestreo-table__clip" title="{{ $nombreClienteM }}">{{ $nombreClienteM !== '' ? $nombreClienteM : '—' }}</span>
                                     </td>
-                                    <td style="max-width: 200px;" title="{{ $muestra->cotio_descripcion }}">
+                                    <td title="{{ $muestra->cotio_descripcion }}">
                                         <a href="{{ route('muestras.ver', [
                                             'cotizacion' => $muestra->cotizacion->coti_num,
                                             'item' => $muestra->cotio_item,
                                             'instance' => $muestra->instance_number
-                                        ]) }}" class="text-primary">
+                                        ]) }}" class="text-primary dash-muestreo-table__clip">
                                             {{ $muestra->cotio_descripcion }}
                                         </a>
                                     </td>
-                                    <td>
+                                    <td class="text-nowrap">
                                         @if($muestra->fecha_muestreo)
-                                            <span class="d-block">{{ $muestra->fecha_muestreo->format('d/m/Y') }}</span>
-                                            <small class="text-muted">{{ $muestra->fecha_muestreo->format('H:i') }}</small>
+                                            <span>{{ $muestra->fecha_muestreo->format('d/m/y H:i') }}</span>
                                         @else
-                                            <span class="text-muted">Sin fecha</span>
+                                            <span class="text-muted">—</span>
                                         @endif
                                     </td>
                                     <td>
                                         @if($muestra->responsablesMuestreo->count() > 0)
-                                            <div class="avatar-group">
-                                                @foreach($muestra->responsablesMuestreo as $responsable)
+                                            <div class="avatar-group dash-muestreo-table__avatars">
+                                                @foreach($muestra->responsablesMuestreo->take(3) as $responsable)
                                                 <span class="avatar avatar-xs" data-bs-toggle="tooltip" data-bs-placement="bottom" title="{{ $responsable->usu_descripcion }}">
                                                     {{ substr($responsable->usu_descripcion, 0, 1) }}{{ substr(strstr($responsable->usu_descripcion, ' '), 1, 1) }}
                                                 </span>
                                                 @endforeach
+                                                @if($muestra->responsablesMuestreo->count() > 3)
+                                                    <span class="dash-muestreo-table__more">+{{ $muestra->responsablesMuestreo->count() - 3 }}</span>
+                                                @endif
                                             </div>
                                         @else
-                                            <span class="text-muted">Sin asignar</span>
+                                            <span class="text-muted">—</span>
                                         @endif
                                     </td>
                                     <td class="text-center align-middle">
@@ -292,14 +248,14 @@
                                         @endphp
                                         @if($pasadaLab)
                                             <span class="d-inline-flex align-items-center justify-content-center rounded-circle bg-success text-white fw-bold"
-                                                  style="width: 1.5rem; height: 1.5rem; font-size: 0.85rem;"
+                                                  style="width: 1.25rem; height: 1.25rem; font-size: 0.72rem;"
                                                   title="Pasada a laboratorio"
                                                   aria-label="Pasada a laboratorio">✓</span>
                                         @elseif($enDocumentacion)
                                             <span class="text-muted small" title="En documentación (mediciones; no aplica laboratorio)">—</span>
                                         @elseif($pendientePasarLab)
                                             <span class="d-inline-flex align-items-center justify-content-center rounded-circle bg-danger text-white fw-bold"
-                                                  style="width: 1.5rem; height: 1.5rem; font-size: 0.85rem;"
+                                                  style="width: 1.25rem; height: 1.25rem; font-size: 0.72rem;"
                                                   title="Muestreada, pendiente de pasar a laboratorio"
                                                   aria-label="Pendiente de pasar a laboratorio">✕</span>
                                         @else
@@ -309,21 +265,30 @@
                                                   aria-label="No aplica"></span>
                                         @endif
                                     </td>
-                                    <td class="pe-4">
+                                    <td class="text-center">
                                         @php
-                                            $badgeColor = match($muestra->cotio_estado) {
-                                                'coordinado muestreo' => 'warning text-dark',
-                                                'en revision muestreo' => 'info text-dark',
-                                                'suspension' => 'danger text-white',
-                                                'muestreado' => 'success',
-                                                default => 'secondary',
+                                            $estadoM = (string) $muestra->cotio_estado;
+                                            $pillClass = match($estadoM) {
+                                                'coordinado muestreo' => 'warn',
+                                                'en revision muestreo' => 'info',
+                                                'muestreado' => 'ok',
+                                                default => 'warn',
                                             };
                                         @endphp
-                                        <div class="d-flex flex-column justify-content-center align-items-center gap-1">
-                                            <span class="badge rounded-pill bg-{{ $badgeColor }} text-capitalize">
-                                                {{ str_replace('_', ' ', $muestra->cotio_estado) }}
-                                            </span>
-                                        </div>
+                                        @php
+                                            $estadoMuestreoCorto = match ($estadoM) {
+                                                'coordinado muestreo' => 'Coord.',
+                                                'en revision muestreo' => 'Revisión',
+                                                'muestreado' => 'Listo',
+                                                'suspension' => 'Susp.',
+                                                default => Str::limit(str_replace('_', ' ', $estadoM), 10, '…'),
+                                            };
+                                        @endphp
+                                        @if($estadoM === 'suspension')
+                                            <span class="dash-estado-pill dash-estado-pill--compact" style="background:#fdeef2;color:#bc3a5c;border:1px solid #f8d3dd;" title="Suspendida">{{ $estadoMuestreoCorto }}</span>
+                                        @else
+                                            <span class="dash-estado-pill dash-estado-pill--compact dash-estado-pill--{{ $pillClass }}" title="{{ str_replace('_', ' ', $estadoM) }}">{{ $estadoMuestreoCorto }}</span>
+                                        @endif
                                     </td>
                                 </tr>
                                 @empty
@@ -337,65 +302,41 @@
                             </tbody>
                         </table>
                     </div>
-                    <div class="card-footer bg-white border-top-0">
-                        <div class="d-flex justify-content-between align-items-center">
+                    <div class="dash-panel__foot">
+                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                             <div class="text-muted small">
                                 Mostrando {{ $muestras->firstItem() ?? 0 }} a {{ $muestras->lastItem() ?? 0 }} de {{ $muestras->total() }} muestras
                             </div>
-                            <div>
-                                {{ $muestras->links() }}
-                            </div>
+                            <div class="ucrud-pagination">{{ $muestras->links() }}</div>
                         </div>
                     </div>
-                </div>
             </div>
         </div>
 
-        {{-- Sidebar con información complementaria --}}
-        <div class="col-lg-4">
-            {{-- Muestras próximas --}}
-            <div class="card shadow-sm mb-4">
-                <div class="card-header bg-white">
-                    <h5 class="mb-0">Estados de Muestras</h5>
-                    <p class="text-muted small mb-0">Distribución por estado</p>
-                </div>
-                <div class="card-body">
-                    <div class="chart-container" style="position: relative; height: 200px;">
-                        <canvas id="estadoMuestrasChart"></canvas>
-                    </div>
-                    <div class="mt-3">
-                        <ul class="list-unstyled mb-0">
-                            <li class="d-flex justify-content-between align-items-center py-1">
-                                <span>Coordinados</span>
-                                <span class="badge bg-warning text-dark rounded-pill">{{ $pendientes }}</span>
-                            </li>
-                            <li class="d-flex justify-content-between align-items-center py-1">
-                                <span>En Revisión</span>
-                                <span class="badge bg-info text-dark rounded-pill">{{ $enProceso }}</span>
-                            </li>
-                            <li class="d-flex justify-content-between align-items-center py-1">
-                                <span>Finalizadas</span>
-                                <span class="badge bg-success rounded-pill">{{ $finalizadas }}</span>
-                            </li>
-                            <li class="d-flex justify-content-between align-items-center py-1">
-                                <span>Suspendidas</span>
-                                <span class="badge bg-danger rounded-pill">{{ $suspendidas ?? 0 }}</span>
-                            </li>
-                        </ul>
-                    </div>
-                </div>
+        <div class="col-12 col-xl-4 dash-sub-table-chart__aside">
+            <div class="dash-sub-table-chart__sticky">
+                @include('dashboard.partials.sub-segment-chart', [
+                    'chartId' => 'subMuestreo',
+                    'title' => 'Estados de muestras',
+                    'subtitle' => 'Clic en segmento o leyenda para filtrar la tabla',
+                ])
             </div>
+        </div>
+    </div>
 
-            {{-- Muestras próximas --}}
-            <div class="card shadow-sm mb-4">
-                <div class="card-header bg-white">
-                    <h5 class="mb-0">Muestras Próximas</h5>
-                    <p class="text-muted small mb-0">Próximos 3 días</p>
+    <div class="row g-3 align-items-start dash-sub-sidebar-row">
+        <div class="col-12 col-xl-8"></div>
+        <div class="col-12 col-xl-4 dash-sub-table-chart__aside">
+            <div class="dash-panel mb-3">
+                <div class="dash-panel__head">
+                    <div>
+                        <h2 class="dash-panel__title">Muestras próximas</h2>
+                        <p class="dash-panel__subtitle">Próximos 3 días</p>
+                    </div>
                 </div>
-                <div class="card-body">
-                    <div class="list-group list-group-flush">
+                <div class="dash-sidebar-list">
                         @forelse($muestrasProximas as $muestra)
-                        <div class="list-group-item border-0 px-0 py-2">
+                        <div class="dash-sidebar-list__item">
                             <div class="d-flex justify-content-between align-items-start mb-1">
                                 <span class="fw-bold">#{{ $muestra->cotizacion->coti_num ?? 'N/A' }}</span>
                                 @if($muestra->cotizacion && $muestra->cotizacion->coti_cuotas)
@@ -419,68 +360,57 @@
                             </div>
                         </div>
                         @empty
-                        <div class="text-center py-3 text-muted">
-                            <i class="fas fa-calendar-check fa-2x mb-2"></i>
-                            <p class="mb-0 small">No hay muestras programadas para los próximos 3 días</p>
+                        <div class="ucrud-empty py-4">
+                            <p class="ucrud-empty__text mb-0">No hay muestras programadas para los próximos 3 días</p>
                         </div>
                         @endforelse
-                    </div>
                 </div>
             </div>
 
-            {{-- Vehículos asignados --}}
-            <div class="card shadow-sm mb-4">
-                <div class="card-header bg-white">
-                    <h5 class="mb-0">Vehículos Asignados</h5>
-                    <p class="text-muted small mb-0">En uso por tu equipo</p>
+            <div class="dash-panel mb-3">
+                <div class="dash-panel__head">
+                    <div>
+                        <h2 class="dash-panel__title">Vehículos asignados</h2>
+                        <p class="dash-panel__subtitle">En uso por tu equipo</p>
+                    </div>
                 </div>
-                <div class="card-body">
+                <div class="p-0">
                     @forelse($vehiculosAsignados as $vehiculo)
-                    <div class="d-flex align-items-center mb-3">
-                        <div class="flex-shrink-0 bg-light rounded p-2 me-3">
-                            <i class="fas fa-car text-primary fa-lg"></i>
+                    <div class="dash-resource">
+                        <div class="dash-resource__icon"><x-heroicon-o-truck /></div>
+                        <div class="dash-resource__body">
+                            <p class="dash-resource__title">{{ $vehiculo->marca }} {{ $vehiculo->modelo }}</p>
+                            <p class="dash-resource__meta mb-0">Patente: {{ $vehiculo->patente }}</p>
                         </div>
-                        <div class="flex-grow-1">
-                            <h6 class="mb-0">{{ $vehiculo->marca }} {{ $vehiculo->modelo }}</h6>
-                            <small class="text-muted">Patente: {{ $vehiculo->patente }}</small>
-                        </div>
-                        {{-- <span class="badge bg-info text-dark">
-                            {{ $vehiculo->cotioInstancias->where('cotio_estado', '!=', 'finalizado')->count() }} muestras
-                        </span> --}}
                     </div>
                     @empty
-                    <div class="text-center py-3 text-muted">
-                        <i class="fas fa-car-side fa-2x mb-2"></i>
-                        <p class="mb-0 small">No hay vehículos asignados actualmente</p>
+                    <div class="ucrud-empty py-4">
+                        <p class="ucrud-empty__text mb-0">No hay vehículos asignados actualmente</p>
                     </div>
                     @endforelse
                 </div>
             </div>
 
-            {{-- Herramientas en uso --}}
-            <div class="card shadow-sm">
-                <div class="card-header bg-white">
-                    <h5 class="mb-0">Herramientas en Uso</h5>
-                    <p class="text-muted small mb-0">Equipamiento asignado</p>
+            <div class="dash-panel">
+                <div class="dash-panel__head">
+                    <div>
+                        <h2 class="dash-panel__title">Herramientas en uso</h2>
+                        <p class="dash-panel__subtitle">Equipamiento asignado</p>
+                    </div>
                 </div>
-                <div class="card-body">
+                <div class="p-0">
                     @forelse($herramientasEnUso as $herramienta)
-                    <div class="d-flex align-items-center mb-3">
-                        <div class="flex-shrink-0 bg-light rounded p-2 me-3">
-                            <i class="fas fa-tools text-primary"></i>
+                    <div class="dash-resource">
+                        <div class="dash-resource__icon"><x-heroicon-o-wrench-screwdriver /></div>
+                        <div class="dash-resource__body">
+                            <p class="dash-resource__title">{{ $herramienta->nombre }}</p>
+                            <p class="dash-resource__meta mb-0">Serial: {{ $herramienta->serial }}</p>
                         </div>
-                        <div class="flex-grow-1">
-                            <h6 class="mb-0">{{ $herramienta->nombre }}</h6>
-                            <small class="text-muted">Serial: {{ $herramienta->serial }}</small>
-                        </div>
-                        <span class="badge bg-light text-dark">
-                            {{ $herramienta->cotio_instancias_count }} uso(s)
-                        </span>
+                        <span class="ucrud-chip ucrud-chip--slate">{{ $herramienta->cotio_instancias_count }} uso(s)</span>
                     </div>
                     @empty
-                    <div class="text-center py-3 text-muted">
-                        <i class="fas fa-box-open fa-2x mb-2"></i>
-                        <p class="mb-0 small">No hay herramientas en uso actualmente</p>
+                    <div class="ucrud-empty py-4">
+                        <p class="ucrud-empty__text mb-0">No hay herramientas en uso actualmente</p>
                     </div>
                     @endforelse
                 </div>
@@ -530,18 +460,47 @@
     </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+@php
+    $dashboardSegmentChartsConfig = [
+        'subMuestreo' => [
+            'labels' => ['Coordinados', 'En revisión', 'Finalizadas', 'Suspendidas'],
+            'data' => [
+                (int) $pendientes,
+                (int) $enProceso,
+                (int) $finalizadas,
+                (int) ($suspendidas ?? 0),
+            ],
+            'colors' => [
+                ['base' => '#f0ad4e', 'hover' => '#f7c774'],
+                ['base' => '#36b9cc', 'hover' => '#5ccfe0'],
+                ['base' => '#1cc88a', 'hover' => '#3dd9a4'],
+                ['base' => '#e74a3b', 'hover' => '#ef6f63'],
+            ],
+            'segmentLinks' => [
+                request()->fullUrlWithQuery(['estado' => 'coordinado muestreo']),
+                request()->fullUrlWithQuery(['estado' => 'en revision muestreo']),
+                request()->fullUrlWithQuery(['estado' => 'muestreado']),
+                request()->fullUrlWithQuery(['estado' => 'suspension']),
+            ],
+        ],
+    ];
+@endphp
+
+@push('scripts')
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+    window.dashboardSegmentCharts = @json($dashboardSegmentChartsConfig);
+</script>
+<script src="{{ asset('js/dashboard-home-charts.js') }}?v={{ filemtime(public_path('js/dashboard-home-charts.js')) }}"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        // Inicializar tooltips
         var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        tooltipTriggerList.map(function (tooltipTriggerEl) {
             return new bootstrap.Tooltip(tooltipTriggerEl, {
                 placement: tooltipTriggerEl.getAttribute('data-bs-placement') || 'bottom',
             });
         });
-    
-        // Actualizar el texto de los botones dropdown según los filtros actuales
+
         const currentEstado = '{{ $estadoFiltro }}';
         const currentMuestreador = '{{ $muestreadorFiltro }}';
         const currentVehiculo = '{{ $vehiculoFiltro }}';
@@ -603,82 +562,6 @@
             });
         }
 
-        // Verificar si el canvas existe
-        const canvas = document.getElementById('estadoMuestrasChart');
-        if (!canvas) {
-            console.error('No se encontró el elemento canvas para el gráfico');
-            return;
-        }
-
-        // Verificar los datos
-        const datosGrafico = {
-            pendientes: {{ $pendientes }},
-            enProceso: {{ $enProceso }},
-            finalizadas: {{ $finalizadas }},
-            suspendidas: {{ $suspendidas ?? 0 }}
-        };
-        // console.log('Datos del gráfico:', datosGrafico);
-
-        // Gráfico de estados
-        try {
-            const ctx = canvas.getContext('2d');
-            new Chart(ctx, {
-                type: 'doughnut',
-                data: {
-                    labels: ['Coordinados', 'En Revisión', 'Finalizadas', 'Suspendidas'],
-                    datasets: [{
-                        data: [
-                            datosGrafico.pendientes,
-                            datosGrafico.enProceso,
-                            datosGrafico.finalizadas,
-                            datosGrafico.suspendidas
-                        ],
-                        backgroundColor: [
-                            'rgba(255, 193, 7, 0.7)',
-                            'rgba(13, 202, 240, 0.7)',
-                            'rgba(25, 135, 84, 0.7)',
-                            'rgba(220, 53, 69, 0.7)'
-                        ],
-                        borderColor: [
-                            'rgba(255, 193, 7, 1)',
-                            'rgba(13, 202, 240, 1)',
-                            'rgba(25, 135, 84, 1)',
-                            'rgba(220, 53, 69, 1)'
-                        ],
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: 'bottom',
-                            labels: {
-                                padding: 20,
-                                usePointStyle: true,
-                                pointStyle: 'circle'
-                            }
-                        },
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    const label = context.label || '';
-                                    const value = context.raw || 0;
-                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                                    const percentage = Math.round((value / total) * 100);
-                                    return `${label}: ${value} (${percentage}%)`;
-                                }
-                            }
-                        }
-                    },
-                    cutout: '70%'
-                }
-            });
-        } catch (error) {
-            console.error('Error al crear el gráfico:', error);
-        }
-
         // Validación del formulario de exportación
         const formExportar = document.getElementById('formExportar');
         if (formExportar) {
@@ -714,5 +597,6 @@
         }
     });
 </script>
+@endpush
 
 @endsection

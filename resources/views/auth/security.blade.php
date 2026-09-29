@@ -1,326 +1,266 @@
 @extends('layouts.app')
 
+@section('title', 'Seguridad y contraseña')
+
+@php
+    $codigoUsuario = trim((string) $user->usu_codigo);
+@endphp
+
 @section('content')
-<div class="container py-4">
-    <div class="row justify-content-center">
-        <div class="col-lg-10">
-            <div class="card border-0 shadow-lg">
-                <div class="card-header bg-gradient-primary text-white">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <h3 class="mb-0"><i class="fas fa-shield-alt me-2"></i> Seguridad y Contraseña</h3>
-                        <span class="badge bg-white text-primary rounded-pill fs-6">Usuario: {{ $user->usu_codigo }}</span>
+@include('partials.ucrud-styles')
+
+<div class="container py-4 ucrud ucrud-perfil" data-ucrud-root>
+    @if(session('success'))
+        <div class="ucrud-alert ucrud-alert--success mb-3" role="status">
+            <x-heroicon-o-check-circle style="width: 18px; height: 18px;" />
+            <span>{{ session('success') }}</span>
+        </div>
+    @endif
+
+    @if($errors->any())
+        <div class="ucrud-alert ucrud-alert--danger mb-3" role="alert">
+            <x-heroicon-o-exclamation-circle style="width: 18px; height: 18px;" />
+            <ul class="mb-0 ps-3">
+                @foreach($errors->all() as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+
+    <header class="ucrud-header">
+        <div class="ucrud-header__titles">
+            <h1 class="ucrud-title">Seguridad y contraseña</h1>
+            <p class="ucrud-subtitle">
+                {{ $user->usu_descripcion }}
+                <span class="text-muted">·</span>
+                <span class="ucrud-role-chip ucrud-role-chip--extra">{{ $codigoUsuario }}</span>
+            </p>
+        </div>
+        <div class="ucrud-header__actions d-flex flex-wrap gap-2">
+            <a href="{{ route('auth.show', $codigoUsuario) }}" class="ucrud-btn ucrud-btn--ghost">
+                <x-heroicon-o-arrow-left style="width: 16px; height: 16px;" />
+                Volver al perfil
+            </a>
+            @if($esPropioPerfil)
+                <form method="POST" action="{{ route('logout') }}" class="d-inline">
+                    @csrf
+                    <button type="submit" class="ucrud-btn ucrud-btn--ghost">
+                        <x-heroicon-o-arrow-right-on-rectangle style="width: 16px; height: 16px;" />
+                        Cerrar sesión
+                    </button>
+                </form>
+            @endif
+        </div>
+    </header>
+
+    <div class="row g-3">
+        @if($esPropioPerfil)
+            <div class="col-lg-7">
+                <div class="ucrud-panel h-100">
+                    <div class="ucrud-form">
+                        <p class="ucrud-form__section-title d-flex align-items-center gap-2 mb-3">
+                            <x-heroicon-o-lock-closed style="width: 18px; height: 18px;" />
+                            Cambiar contraseña
+                        </p>
+
+                        <form method="POST" action="{{ route('auth.security.password', ['id' => $codigoUsuario]) }}">
+                            @csrf
+                            @method('PUT')
+
+                            <div class="row g-3">
+                                <div class="col-12">
+                                    <label for="usu_clave_actual" class="form-label">Contraseña actual</label>
+                                    <div class="input-group">
+                                        <input type="password"
+                                               class="form-control @error('usu_clave_actual') is-invalid @enderror"
+                                               id="usu_clave_actual"
+                                               name="usu_clave_actual"
+                                               placeholder="Ingresá tu contraseña actual"
+                                               required
+                                               autocomplete="current-password">
+                                        <button type="button" class="btn btn-outline-secondary js-toggle-password" aria-label="Mostrar contraseña">
+                                            <x-heroicon-o-eye class="js-icon-show" style="width: 18px; height: 18px;" />
+                                            <x-heroicon-o-eye-slash class="js-icon-hide d-none" style="width: 18px; height: 18px;" />
+                                        </button>
+                                    </div>
+                                    @error('usu_clave_actual')
+                                        <div class="invalid-feedback d-block">{{ $message }}</div>
+                                    @enderror
+                                </div>
+
+                                <div class="col-md-6">
+                                    <label for="usu_clave" class="form-label">Nueva contraseña</label>
+                                    <div class="input-group">
+                                        <input type="password"
+                                               class="form-control @error('usu_clave') is-invalid @enderror"
+                                               id="usu_clave"
+                                               name="usu_clave"
+                                               placeholder="Mínimo 4 caracteres"
+                                               required
+                                               minlength="4"
+                                               autocomplete="new-password">
+                                        <button type="button" class="btn btn-outline-secondary js-toggle-password" aria-label="Mostrar contraseña">
+                                            <x-heroicon-o-eye class="js-icon-show" style="width: 18px; height: 18px;" />
+                                            <x-heroicon-o-eye-slash class="js-icon-hide d-none" style="width: 18px; height: 18px;" />
+                                        </button>
+                                    </div>
+                                    <div class="mt-2">
+                                        <div class="progress" style="height: 4px;">
+                                            <div class="progress-bar" id="passwordStrengthBar" role="progressbar" style="width: 0%"></div>
+                                        </div>
+                                        <small class="text-muted" id="passwordStrengthText"></small>
+                                    </div>
+                                    @error('usu_clave')
+                                        <div class="invalid-feedback d-block">{{ $message }}</div>
+                                    @enderror
+                                </div>
+
+                                <div class="col-md-6">
+                                    <label for="usu_clave_confirmation" class="form-label">Confirmar contraseña</label>
+                                    <div class="input-group">
+                                        <input type="password"
+                                               class="form-control"
+                                               id="usu_clave_confirmation"
+                                               name="usu_clave_confirmation"
+                                               placeholder="Repetí la nueva contraseña"
+                                               required
+                                               minlength="4"
+                                               autocomplete="new-password">
+                                        <button type="button" class="btn btn-outline-secondary js-toggle-password" aria-label="Mostrar contraseña">
+                                            <x-heroicon-o-eye class="js-icon-show" style="width: 18px; height: 18px;" />
+                                            <x-heroicon-o-eye-slash class="js-icon-hide d-none" style="width: 18px; height: 18px;" />
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="d-flex flex-wrap gap-2 mt-4">
+                                <button type="submit" class="ucrud-btn ucrud-btn--primary">
+                                    <x-heroicon-o-check style="width: 16px; height: 16px;" />
+                                    Actualizar contraseña
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
-                
-                <div class="card-body p-4">
-                    <div class="stepper-wrapper mb-5">
-                        <div class="stepper-item completed">
-                            <div class="step-counter bg-primary text-white">1</div>
-                            <div class="step-name">Autenticación</div>
-                        </div>
-                        <div class="stepper-item active">
-                            <div class="step-counter bg-primary text-white">2</div>
-                            <div class="step-name">Seguridad</div>
-                        </div>
-                        <div class="stepper-item">
-                            <div class="step-counter">3</div>
-                            <div class="step-name">Privacidad</div>
-                        </div>
-                    </div>
+            </div>
+        @else
+            <div class="col-12">
+                <div class="ucrud-alert ucrud-alert--warning">
+                    <x-heroicon-o-information-circle style="width: 18px; height: 18px;" />
+                    <span>
+                        Estás viendo la seguridad de otro usuario. El cambio de contraseña solo puede hacerlo el titular o un administrador desde
+                        <a href="{{ route('auth.edit', $codigoUsuario) }}" class="alert-link">editar perfil</a>.
+                    </span>
+                </div>
+            </div>
+        @endif
 
-                    <div class="row g-4">
-                        <!-- Cambio de Contraseña -->
-                        <div class="col-md-6">
-                            <div class="card h-100 border-0 shadow-sm">
-                                <div class="card-header bg-light">
-                                    <h5 class="mb-0"><i class="fas fa-key me-2 text-primary"></i> Cambiar Contraseña</h5>
-                                </div>
-                                <div class="card-body">
-                                    <form class="needs-validation" novalidate>
-                                        <div class="mb-3">
-                                            <label class="form-label">Contraseña Actual</label>
-                                            <div class="input-group">
-                                                <input type="password" class="form-control" placeholder="Ingrese su contraseña actual" required>
-                                                <button class="btn btn-outline-secondary toggle-password" type="button">
-                                                    <i class="fas fa-eye"></i>
-                                                </button>
-                                            </div>
-                                        </div>
-                                        <div class="mb-3">
-                                            <label class="form-label">Nueva Contraseña</label>
-                                            <div class="input-group">
-                                                <input type="password" class="form-control" placeholder="Cree una nueva contraseña" required>
-                                                <button class="btn btn-outline-secondary toggle-password" type="button">
-                                                    <i class="fas fa-eye"></i>
-                                                </button>
-                                            </div>
-                                            <div class="password-strength mt-2">
-                                                <div class="progress" style="height: 5px;">
-                                                    <div class="progress-bar bg-danger" role="progressbar" style="width: 25%"></div>
-                                                </div>
-                                                <small class="text-muted">Seguridad: Débil</small>
-                                            </div>
-                                        </div>
-                                        <div class="mb-3">
-                                            <label class="form-label">Confirmar Contraseña</label>
-                                            <input type="password" class="form-control" placeholder="Repita la nueva contraseña" required>
-                                        </div>
-                                        <button type="submit" class="btn btn-primary w-100 py-2">
-                                            <i class="fas fa-save me-2"></i> Actualizar Contraseña
-                                        </button>
-                                    </form>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Autenticación de Dos Factores -->
-                        <div class="col-md-6">
-                            <div class="card h-100 border-0 shadow-sm">
-                                <div class="card-header bg-light">
-                                    <h5 class="mb-0"><i class="fas fa-mobile-alt me-2 text-primary"></i> Autenticación 2FA</h5>
-                                </div>
-                                <div class="card-body">
-                                    <div class="d-flex align-items-center mb-4">
-                                        <div class="flex-shrink-0">
-                                            <div class="bg-primary bg-opacity-10 p-3 rounded-circle">
-                                                <i class="fas fa-lock text-primary fs-4"></i>
-                                            </div>
-                                        </div>
-                                        <div class="flex-grow-1 ms-3">
-                                            <h6 class="mb-1">Protección adicional</h6>
-                                            <p class="small text-muted mb-0">Añade una capa extra de seguridad a tu cuenta</p>
-                                        </div>
-                                        <div class="form-check form-switch">
-                                            <input class="form-check-input" type="checkbox" id="enable2FA" style="width: 3em; height: 1.5em;">
-                                        </div>
-                                    </div>
-
-                                    <div id="2faSetup" class="bg-light p-4 rounded text-center" style="display: none;">
-                                        <h6 class="mb-3">Configuración 2FA</h6>
-                                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=otpauth://totp/Example:user@example.com?secret=JBSWY3DPEHPK3PXP&issuer=Example" 
-                                             class="img-fluid mb-3 border p-2 bg-white" alt="QR Code">
-                                        <p class="small text-muted mb-3">Escanee este código con Google Authenticator o similar</p>
-                                        
-                                        <div class="mb-3">
-                                            <label class="form-label">Código de Verificación</label>
-                                            <input type="text" class="form-control text-center" placeholder="000000" maxlength="6">
-                                        </div>
-                                        <button class="btn btn-sm btn-outline-primary w-100">Verificar Código</button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Sesiones Activas -->
-                        <div class="col-12">
-                            <div class="card border-0 shadow-sm">
-                                <div class="card-header bg-light">
-                                    <h5 class="mb-0"><i class="fas fa-laptop me-2 text-primary"></i> Sesiones Activas</h5>
-                                </div>
-                                <div class="card-body p-0">
-                                    <div class="table-responsive">
-                                        <table class="table table-hover align-middle mb-0">
-                                            <thead class="table-light">
-                                                <tr>
-                                                    <th class="ps-4">Dispositivo</th>
-                                                    <th>Ubicación</th>
-                                                    <th>IP</th>
-                                                    <th>Última Actividad</th>
-                                                    <th class="pe-4">Acciones</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                <tr>
-                                                    <td class="ps-4">
-                                                        <div class="d-flex align-items-center">
-                                                            <i class="fab fa-windows text-primary me-2 fs-5"></i>
-                                                            <div>
-                                                                <p class="mb-0 fw-bold">Chrome - Windows</p>
-                                                                <small class="text-muted">Dispositivo principal</small>
-                                                            </div>
-                                                        </div>
-                                                    </td>
-                                                    <td>Lima, Perú</td>
-                                                    <td>192.168.1.1</td>
-                                                    <td>
-                                                        <span class="badge bg-success bg-opacity-10 text-success">Activo ahora</span>
-                                                        <small class="d-block text-muted">Hace 2 minutos</small>
-                                                    </td>
-                                                    <td class="pe-4">
-                                                        <button class="btn btn-sm btn-outline-danger">
-                                                            <i class="fas fa-sign-out-alt"></i> Cerrar
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                                <tr>
-                                                    <td class="ps-4">
-                                                        <div class="d-flex align-items-center">
-                                                            <i class="fab fa-apple text-muted me-2 fs-5"></i>
-                                                            <div>
-                                                                <p class="mb-0 fw-bold">Safari - iPhone</p>
-                                                                <small class="text-muted">Dispositivo móvil</small>
-                                                            </div>
-                                                        </div>
-                                                    </td>
-                                                    <td>Lima, Perú</td>
-                                                    <td>192.168.1.2</td>
-                                                    <td>
-                                                        <span class="badge bg-warning bg-opacity-10 text-warning">Inactivo</span>
-                                                        <small class="d-block text-muted">Hace 3 horas</small>
-                                                    </td>
-                                                    <td class="pe-4">
-                                                        <button class="btn btn-sm btn-outline-danger">
-                                                            <i class="fas fa-sign-out-alt"></i> Cerrar
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+        <div class="{{ $esPropioPerfil ? 'col-lg-5' : 'col-12' }}">
+            <div class="ucrud-panel h-100">
+                <div class="ucrud-detail-block mb-0">
+                    <h2 class="ucrud-detail-block__title d-flex align-items-center gap-2">
+                        <x-heroicon-o-shield-check style="width: 18px; height: 18px;" />
+                        Política de sesión
+                    </h2>
+                    <p class="text-muted mb-0 mt-2" style="font-size: 0.9375rem; line-height: 1.5;">
+                        Solo puede haber <strong>una sesión activa</strong> por usuario. Si iniciás sesión en otro dispositivo o navegador,
+                        la sesión anterior se cierra automáticamente.
+                    </p>
                 </div>
             </div>
         </div>
     </div>
+
+    <div class="ucrud-panel mt-3">
+        <div class="ucrud-detail-block mb-3">
+            <h2 class="ucrud-detail-block__title d-flex align-items-center gap-2">
+                <x-heroicon-o-clock style="width: 18px; height: 18px;" />
+                Sesión en este dispositivo
+            </h2>
+        </div>
+
+        <div class="ucrud-tablewrap">
+            <table class="ucrud-table">
+                <thead>
+                    <tr>
+                        <th>Dispositivo</th>
+                        <th>IP</th>
+                        <th>Estado</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>
+                            <div class="fw-semibold">{{ $dispositivo['label'] }}</div>
+                            <small class="text-muted">Navegador detectado en esta visita</small>
+                        </td>
+                        <td>
+                            <span class="ucrud-detail-item__value">{{ $ipActual ?? '—' }}</span>
+                        </td>
+                        <td>
+                            @if($sesionEsActual)
+                                <span class="ucrud-role-chip">Sesión activa</span>
+                            @else
+                                <span class="ucrud-role-chip ucrud-role-chip--extra">No registrada</span>
+                                <small class="d-block text-muted mt-1">Volvé a iniciar sesión si tenés problemas.</small>
+                            @endif
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
 </div>
+@endsection
 
-<style>
-    .stepper-wrapper {
-        display: flex;
-        justify-content: space-between;
-        margin-bottom: 20px;
-    }
-    .stepper-item {
-        position: relative;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        flex: 1;
-    }
-    .stepper-item::before {
-        position: absolute;
-        content: "";
-        border-bottom: 2px solid #dee2e6;
-        width: 100%;
-        top: 20px;
-        left: -50%;
-        z-index: 2;
-    }
-    .stepper-item::after {
-        position: absolute;
-        content: "";
-        border-bottom: 2px solid #dee2e6;
-        width: 100%;
-        top: 20px;
-        left: 50%;
-        z-index: 2;
-    }
-    .stepper-item .step-counter {
-        position: relative;
-        z-index: 5;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        width: 40px;
-        height: 40px;
-        border-radius: 50%;
-        background: #dee2e6;
-        color: #495057;
-        margin-bottom: 6px;
-    }
-    .stepper-item.completed .step-counter {
-        background-color: #0d6efd;
-        color: white;
-    }
-    .stepper-item.active .step-counter {
-        background-color: #0d6efd;
-        color: white;
-    }
-    .stepper-item.completed::after,
-    .stepper-item.active::after {
-        border-bottom: 2px solid #0d6efd;
-    }
-    .stepper-item:first-child::before {
-        content: none;
-    }
-    .stepper-item:last-child::after {
-        content: none;
-    }
-    .step-name {
-        color: #6c757d;
-        font-size: 0.875rem;
-    }
-    .completed .step-name,
-    .active .step-name {
-        color: #0d6efd;
-        font-weight: 500;
-    }
-</style>
-
-@section('scripts')
+@push('scripts')
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        // Toggle password visibility
-        document.querySelectorAll('.toggle-password').forEach(button => {
-            button.addEventListener('click', function() {
-                const input = this.previousElementSibling;
-                const icon = this.querySelector('i');
-                if (input.type === 'password') {
-                    input.type = 'text';
-                    icon.classList.replace('fa-eye', 'fa-eye-slash');
-                } else {
-                    input.type = 'password';
-                    icon.classList.replace('fa-eye-slash', 'fa-eye');
-                }
+    document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('.js-toggle-password').forEach(function (button) {
+            button.addEventListener('click', function () {
+                const group = this.closest('.input-group');
+                const input = group ? group.querySelector('input') : null;
+                if (!input) return;
+
+                const showIcon = this.querySelector('.js-icon-show');
+                const hideIcon = this.querySelector('.js-icon-hide');
+                const isPassword = input.type === 'password';
+                input.type = isPassword ? 'text' : 'password';
+
+                if (showIcon) showIcon.classList.toggle('d-none', isPassword);
+                if (hideIcon) hideIcon.classList.toggle('d-none', !isPassword);
             });
         });
 
-        // 2FA toggle
-        document.getElementById('enable2FA').addEventListener('change', function() {
-            const setupDiv = document.getElementById('2faSetup');
-            if (this.checked) {
-                setupDiv.style.display = 'block';
-            } else {
-                setupDiv.style.display = 'none';
-            }
-        });
+        const passwordInput = document.getElementById('usu_clave');
+        const progressBar = document.getElementById('passwordStrengthBar');
+        const strengthText = document.getElementById('passwordStrengthText');
+        if (!passwordInput || !progressBar || !strengthText) return;
 
-        // Password strength indicator
-        const passwordInput = document.querySelector('input[type="password"][placeholder*="nueva contraseña"]');
-        passwordInput.addEventListener('input', function() {
-            const strengthDiv = this.closest('.mb-3').querySelector('.password-strength');
-            const progressBar = strengthDiv.querySelector('.progress-bar');
-            const strengthText = strengthDiv.querySelector('small');
-            
-            if (this.value.length === 0) {
+        passwordInput.addEventListener('input', function () {
+            const value = this.value;
+            if (value.length === 0) {
                 progressBar.style.width = '0%';
                 progressBar.className = 'progress-bar';
                 strengthText.textContent = '';
-                strengthText.className = 'text-muted';
                 return;
             }
-            
-            if (this.value.length < 6) {
+            if (value.length < 6) {
                 progressBar.style.width = '25%';
                 progressBar.className = 'progress-bar bg-danger';
-                strengthText.textContent = 'Débil';
-                strengthText.className = 'text-danger';
-            } else if (this.value.length < 10) {
+                strengthText.textContent = 'Seguridad: débil';
+            } else if (value.length < 10) {
                 progressBar.style.width = '50%';
                 progressBar.className = 'progress-bar bg-warning';
-                strengthText.textContent = 'Moderada';
-                strengthText.className = 'text-warning';
+                strengthText.textContent = 'Seguridad: moderada';
             } else {
                 progressBar.style.width = '100%';
                 progressBar.className = 'progress-bar bg-success';
-                strengthText.textContent = 'Fuerte';
-                strengthText.className = 'text-success';
+                strengthText.textContent = 'Seguridad: fuerte';
             }
         });
     });
 </script>
-@endsection
-@endsection
+@endpush

@@ -288,15 +288,20 @@
                     </div>
 
                     <div class="row mb-3">
-                        <div class="col-md-4">
+                        <div class="col-md-3" id="edit_componente_cantidad_wrap" style="display: none;">
+                            <label for="edit_componente_cantidad" class="form-label">Cantidad:</label>
+                            <input type="number" class="form-control" id="edit_componente_cantidad" name="edit_componente_cantidad" value="1" min="1" step="1">
+                            <small class="text-muted">Solo Clarke Fire</small>
+                        </div>
+                        <div class="col-md-3">
                             <label for="edit_componente_precio" class="form-label">Precio:</label>
                             <input type="number" step="0.01" class="form-control" id="edit_componente_precio" name="edit_componente_precio" value="0.00" min="0">
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-3">
                             <label for="edit_componente_unidad" class="form-label">Unidad de Medida:</label>
                             <input type="text" class="form-control" id="edit_componente_unidad" name="edit_componente_unidad" placeholder="U.M.">
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-3">
                             <label for="edit_componente_metodo" class="form-label">Método de Análisis:</label>
                             <select class="form-select" id="edit_componente_metodo" name="edit_componente_metodo">
                                 <option value="">Seleccionar método...</option>

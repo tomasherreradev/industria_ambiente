@@ -1,0 +1,91 @@
+/* =============================================================
+   Ventas — formulario crear / editar cotización
+   ============================================================= */
+
+.ventas-cotizacion-page {
+    --cot-radius: 12px;
+    --cot-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+    --cot-ink: #2f3245;
+    --cot-muted: #7b7f95;
+    --cot-border: #eef0f3;
+    width: 100%;
+    max-width: 100%;
+}
+
+.ventas-cotizacion-page__title {
+    font-size: 1.35rem;
+    font-weight: 700;
+    letter-spacing: -.02em;
+    color: var(--cot-ink);
+    margin-bottom: 0.15rem;
+}
+
+.ventas-cotizacion-page__subtitle {
+    font-size: 0.875rem;
+    color: var(--cot-muted);
+    margin-bottom: 0;
+}
+
+.ventas-cotizacion-card {
+    border-radius: var(--cot-radius);
+    overflow: hidden;
+}
+
+.cotizacion-form-header {
+    background: #fff;
+    border-bottom: 1px solid var(--cot-border);
+    padding: 1rem 1.25rem;
+}
+
+.cotizacion-form-header .form-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--cot-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin-bottom: 0.25rem;
+}
+
+.ventas-cotizacion-card .nav-tabs-custom {
+    background: #f8f9fb;
+    border-bottom: 1px solid var(--cot-border);
+    padding: 0 0.5rem;
+}
+
+.ventas-cotizacion-card .nav-tabs-custom .nav-link {
+    border: none;
+    border-radius: 8px 8px 0 0;
+    padding: 0.75rem 1.1rem;
+    color: var(--cot-muted);
+    font-weight: 600;
+    font-size: 0.875rem;
+    margin-bottom: -1px;
+}
+
+.ventas-cotizacion-card .nav-tabs-custom .nav-link:hover {
+    color: var(--cot-ink);
+    background: rgba(255, 255, 255, 0.7);
+}
+
+.ventas-cotizacion-card .nav-tabs-custom .nav-link.active {
+    background: #fff;
+    color: var(--primary-color, #4e73df);
+    border-bottom: 2px solid var(--primary-color, #4e73df);
+}
+
+.ventas-cotizacion-card__footer {
+    background: #f8f9fb;
+    border-top: 1px solid var(--cot-border);
+    padding: 1rem 1.25rem;
+}
+
+.ventas-cotizacion-card .tab-content {
+    background: #fff;
+}
+
+.ventas-cotizacion-card .table thead th {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--cot-muted);
+}

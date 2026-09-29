@@ -17,16 +17,23 @@
         return trim($str);
     };
 
-    $medicionesMapa = $instancia->valoresVariables->mapWithKeys(function($v) use ($normalizeStr) {
-        return [$normalizeStr($v->variable) => $v->valor];
-    });
+    $variablesMuestra = $variablesMuestra ?? collect();
+    $medicionesMapa = collect();
+    if ($instancia && $instancia->valoresVariables) {
+        $medicionesMapa = $instancia->valoresVariables->mapWithKeys(function ($v) use ($normalizeStr) {
+            return [$normalizeStr($v->variable) => $v->valor];
+        });
+    }
 
-    $analisisNormSet = $analisis->map(function($a) use ($normalizeStr) {
+    $analisisNormSet = ($analisis ?? collect())->map(function ($a) use ($normalizeStr) {
         return $normalizeStr($a->cotio_descripcion);
     })->filter()->unique()->values()->toArray();
+
+    $mostrarUnidadMedicion = $variablesMuestra->contains(fn ($v) => ! empty($v->unidad_medicion));
 @endphp
 @include('partials.operativo-styles')
 <link rel="stylesheet" href="{{ asset('css/tareas-muestreo-mobile.css') }}?v={{ filemtime(public_path('css/tareas-muestreo-mobile.css')) }}">
+<link rel="stylesheet" href="{{ asset('css/modal-analisis-ot.css') }}?v={{ filemtime(public_path('css/modal-analisis-ot.css')) }}">
 @php
     $detalleRouteBase = [
         'cotio_numcoti' => optional($instancia)->cotio_numcoti ?? request()->route('cotio_numcoti'),
@@ -317,52 +324,76 @@
 
 
 
+    @if($instancia)
     <div class="card shadow-sm my-5">
         <div class="card-header bg-secondary text-white">
-            <h5 style="cursor: pointer;" data-bs-toggle="collapse" data-bs-target="#medicionesCollapse" aria-expanded="false" aria-controls="medicionesCollapse">
+            <h5 class="mb-0" style="cursor: pointer;" data-bs-toggle="collapse" data-bs-target="#medicionesCollapse" aria-expanded="true" aria-controls="medicionesCollapse">
                 Mediciones de Campo
             </h5>
         </div>
       
-        <div id="medicionesCollapse" class="collapse">
+        <div id="medicionesCollapse" class="collapse show">
             <div class="card-body">
-                <div class="mt-3">
-                    @if($instancia->valoresVariables->isEmpty())
-                        <div class="alert alert-info">
-                            No se registraron mediciones para esta muestra.
-                        </div>
-                    @else
-                        <div class="table-responsive">
-                            <table class="table table-bordered table-hover">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th>Variable</th>
-                                        <th>Valor</th>
+                @if($variablesMuestra->isEmpty())
+                    <div class="alert alert-info mb-0">
+                        No se registraron mediciones de campo para esta muestra.
+                    </div>
+                @else
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-hover">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Variable</th>
+                                    @if($mostrarUnidadMedicion)
+                                        <th>Unidad</th>
+                                    @endif
+                                    <th>Valor</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($variablesMuestra as $valorVariable)
+                                    @php
+                                        $isUsed = in_array($normalizeStr($valorVariable->variable), $analisisNormSet);
+                                    @endphp
+                                    <tr @if($isUsed) class="table-info" title="Este valor se utiliza en los resultados de análisis" @endif>
+                                        <td @if($isUsed) class="fw-bold" @endif>
+                                            {{ $valorVariable->variable }}
+                                            @if(!empty($valorVariable->obligatorio))
+                                                <span class="text-danger" title="Variable obligatoria">*</span>
+                                            @endif
+                                            @if($isUsed)
+                                                <i class="fas fa-check-circle text-info ms-1" style="font-size: 0.8rem;"></i>
+                                            @endif
+                                        </td>
+                                        @if($mostrarUnidadMedicion)
+                                            <td>{{ $valorVariable->unidad_medicion ?? '—' }}</td>
+                                        @endif
+                                        <td @if($isUsed) class="fw-bold text-info" @endif>{{ $valorVariable->valor }}</td>
                                     </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach($instancia->valoresVariables as $valorVariable)
-                                        @php
-                                            $isUsed = in_array($normalizeStr($valorVariable->variable), $analisisNormSet);
-                                        @endphp
-                                        <tr @if($isUsed) class="table-info" title="Este valor se utiliza en los resultados de análisis" @endif>
-                                            <td>
-                                                {{ $valorVariable->variable }}
-                                                @if($isUsed)
-                                                    <i class="fas fa-check-circle text-info ms-1" style="font-size: 0.8rem;"></i>
-                                                @endif
-                                            </td>
-                                            <td @if($isUsed) class="fw-bold text-info" @endif>{{ $valorVariable->valor }}</td>
-                                        </tr>
-                                    @endforeach
-                                </tbody>
-                            </table>
-                        </div>
-                    @endif
-                </div>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @endif
+
+                @if($instancia->observaciones_medicion_coord_muestreo)
+                    <div class="mt-4">
+                        <label class="form-label"><strong>Observaciones del Coordinador de Muestreo:</strong></label>
+                        <textarea class="form-control" rows="3" readonly>{{ trim($instancia->observaciones_medicion_coord_muestreo) }}</textarea>
+                    </div>
+                @endif
+
+                @if($instancia->observaciones_medicion_muestreador)
+                    <div class="mt-4">
+                        <label class="form-label"><strong>Observaciones del Muestreador:</strong></label>
+                        <textarea class="form-control" rows="3" readonly
+                                  style="background-color: #fff8e1; border-left: 4px solid #ffc107; padding-left: 12px;">{{ trim($instancia->observaciones_medicion_muestreador) }}</textarea>
+                    </div>
+                @endif
             </div>  
         </div>
     </div>
+    @endif
 
 
 
@@ -390,7 +421,7 @@
                                     <div class="d-flex flex-column flex-md-row justify-content-between w-100 pe-md-3 align-items-start align-items-md-center">
                                         <div class="d-flex align-items-center mb-2 mb-md-0">
                                             <span class="badge bg-primary me-2">#{{ $item->cotio_subitem }}</span>
-                                            <span class="fw-bold">{{ $item->cotio_descripcion }}@include('ordenes.partials.metodo-analisis-etiqueta', ['tarea' => $item])</span>
+                                            <span class="fw-bold">{{ $item->cotio_descripcion }}@include('ordenes.partials.metodo-analisis-etiqueta', ['tarea' => $item->tarea ?? $item, 'instancia' => $item])</span>
                                             @if($item->request_review)
                                                 <div class="bg-warning rounded-pill ms-2 d-flex align-items-center justify-content-center" style="width: 1.8rem; height: 1.8rem;"
                                                 data-bs-toggle="tooltip" 
@@ -429,7 +460,13 @@
                                                     $esSincronizado = !is_null($valorSincronizado);
                                                     $resultadoAMostrar = $esSincronizado ? $valorSincronizado : ($item->resultado_final ?? 'N/A');
                                                 @endphp
-                                                <span>Res: <span class="fw-bold text-dark">{{ $resultadoAMostrar }}</span></span>
+                                                @php
+                                                    $unidadRes = trim((string) ($item->cotio_codigoum ?? ''));
+                                                    if ($unidadRes === '' && $item->tarea?->itemCatalogo) {
+                                                        $unidadRes = trim((string) ($item->tarea->itemCatalogo->unidad_medida ?? ''));
+                                                    }
+                                                @endphp
+                                                <span>Res: <span class="fw-bold text-dark">{{ $resultadoAMostrar }}</span>@if($unidadRes !== '') <span class="text-muted">{{ $unidadRes }}</span>@endif</span>
                                                 @if($esSincronizado)
                                                     <span class="text-info d-block" style="font-size: 0.7rem;">(Campo)</span>
                                                 @endif
@@ -442,16 +479,8 @@
                                 aria-labelledby="heading{{ $item->cotio_subitem }}" data-bs-parent="#analisisAccordion">
                                 <div class="accordion-body pt-3">
                                     @php
-                                        $fiItem = $item->analista_fecha_inicio;
-                                        $ffItem = $item->analista_fecha_fin;
-                                        $txtItemFechas = null;
-                                        if ($fiItem && $ffItem) {
-                                            $txtItemFechas = $fiItem->format('d/m/Y') . ' – ' . $ffItem->format('d/m/Y');
-                                        } elseif ($fiItem) {
-                                            $txtItemFechas = 'Desde ' . $fiItem->format('d/m/Y');
-                                        } elseif ($ffItem) {
-                                            $txtItemFechas = 'Hasta ' . $ffItem->format('d/m/Y');
-                                        }
+                                        $fechaInformeItem = \App\Support\FechaAnalisisInformePdf::fechaManualInforme($item);
+                                        $txtItemFechas = $fechaInformeItem?->format('d/m/Y');
 
                                         $variableLey = $variablesLey->first(function($v) use ($item) {
                                             $itemProdCode = trim((string)($item->tarea->cotio_codigoprod ?? ''));
@@ -477,10 +506,10 @@
                                                 @endif
                                             </div>
                                         @endif
-                                        <small class="text-muted d-block"><strong>Fechas análisis (informe PDF):</strong> {{ $txtItemFechas ?? 'Sin cargar; en el informe se usará la fecha de carga de resultado si existe.' }}</small>
+                                        <small class="text-muted d-block"><strong>Fecha análisis (informe PDF):</strong> {{ $txtItemFechas ?? 'Sin cargar; en el informe se usará la fecha de carga de resultado si existe.' }}</small>
                                         @if($item->puede_editar_fechas_informe ?? false)
                                             <button type="button" class="btn btn-sm btn-outline-secondary mt-2" data-bs-toggle="modal" data-bs-target="#fechasInformeAnalisisModal{{ $item->cotio_subitem }}">
-                                                <i class="fas fa-calendar-alt me-1"></i> Cargar / editar fechas
+                                                <i class="fas fa-calendar-alt me-1"></i> Cargar / editar fecha
                                             </button>
                                         @endif
                                     </div>
@@ -501,232 +530,51 @@
             </div>
         @endif
     </div>
+</div>
 
-   
-
-   <!-- Modales para editar análisis -->
+@if($instancia && ($analisis ?? collect())->isNotEmpty())
     @foreach($analisis as $item)
-    <div class="modal fade" id="editAnalisisModal{{ $item->cotio_subitem }}" tabindex="-1" aria-hidden="true" data-subitem="{{ $item->cotio_subitem }}">
-        <div class="modal-dialog modal-lg">
+        @include('mis-ordenes.partials.modal-editar-analisis', [
+            'item' => $item,
+            'instancia' => $instancia,
+            'instanceNumber' => $instanceNumber,
+        ])
+    @endforeach
+@endif
+
+@foreach($analisis ?? [] as $item)
+    @if($item->puede_editar_fechas_informe ?? false)
+    <div class="modal fade" id="fechasInformeAnalisisModal{{ $item->cotio_subitem }}" tabindex="-1" aria-labelledby="fechasInformeAnalisisLabel{{ $item->cotio_subitem }}" aria-hidden="true" data-subitem="{{ $item->cotio_subitem }}">
+        <div class="modal-dialog modal-dialog-scrollable">
             <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Editar Análisis #{{ $item->cotio_descripcion }}</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-
-
-
-                <div class="modal-body">
-                    <form method="POST" enctype="multipart/form-data" action="{{ route('tareas.onlyUpdateResultado', [
-                        'cotio_numcoti' => $instancia->cotio_numcoti,
-                        'cotio_item' => $instancia->cotio_item,
-                        'cotio_subitem' => $item->cotio_subitem,
-                        'instance' => $instanceNumber
-                    ]) }}"
-                    data-update-url="{{ route('tareas.updateResultado', [
-                        'cotio_numcoti' => $instancia->cotio_numcoti,
-                        'cotio_item' => $instancia->cotio_item,
-                        'cotio_subitem' => $item->cotio_subitem,
-                        'instance' => $instanceNumber
-                    ]) }}"
-                    data-only-url="{{ route('tareas.onlyUpdateResultado', [
-                        'cotio_numcoti' => $instancia->cotio_numcoti,
-                        'cotio_item' => $instancia->cotio_item,
-                        'cotio_subitem' => $item->cotio_subitem,
-                        'instance' => $instanceNumber
-                    ]) }}">
-                        @csrf
-                        @method('PUT')
-                        
+                <form method="post" action="{{ route('instancias.update-analista-fechas-analisis', $item) }}">
+                    @csrf
+                    @method('PUT')
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="fechasInformeAnalisisLabel{{ $item->cotio_subitem }}">Fecha informe · {{ $item->cotio_descripcion }}</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="text-muted small">Opcional. Si queda vacía, el PDF usa la fecha de carga de resultado (comportamiento actual).</p>
                         @php
-                            $variableLeyModal = $variablesLey->first(function($v) use ($item) {
-                                $itemProdCode = trim((string)($item->tarea->cotio_codigoprod ?? ''));
-                                $varCatalogId = trim((string)($v->cotio_item_id ?? ''));
-                                return $itemProdCode !== '' && (int)$itemProdCode === (int)$varCatalogId;
-                            });
-                            
-                            // Fallback por descripción
-                            if (!$variableLeyModal) {
-                                $variableLeyModal = $mapVariablePorDescripcion->get(trim(strtolower($item->cotio_descripcion)));
-                            }
+                            $fechaInformeModalItem = \App\Support\FechaAnalisisInformePdf::fechaManualInforme($item);
                         @endphp
-
-                        @if($variableLeyModal)
-                            <div class="alert alert-info mb-3">
-                                <div class="d-flex align-items-center">
-                                    <i class="fas fa-info-circle me-2"></i>
-                                    <div>
-                                        <strong>Referencia Ley ({{ $leyNormativa->codigo }}):</strong> 
-                                        Valor Límite: <span class="fw-bold">{{ $variableLeyModal->pivot->valor_limite ?? 'N/A' }}</span> 
-                                        {{ $variableLeyModal->pivot->unidad_medida ?? '' }}
-                                    </div>
-                                </div>
-                            </div>
-                        @endif
-
-                        <div class="d-flex justify-content-between flex-md-row flex-column">
-                            <div class="mb-3">
-                                <div>
-                                    <label for="resultado" class="form-label">Resultado</label>
-                                    <input type="text" class="form-control" name="resultado" rows="4" value="{{ $item->resultado }}"
-                                        placeholder="Ingrese los resultados del análisis"></input>
-                                </div>
-
-                                <div>
-                                    <input type="text" class="form-control" name="observacion_resultado" rows="4" value="{{ $item->observacion_resultado }}"
-                                        placeholder="Observación"></input>
-                                </div>
-                            </div>
-
-                            <div class="mb-3">
-                                <div>
-                                    <label for="resultado_2" class="form-label">Resultado 2</label>
-                                    <input type="text" class="form-control" name="resultado_2" rows="4" value="{{ $item->resultado_2 }}"
-                                        placeholder="Ingrese los resultados del análisis"></input>
-                                </div>
-
-                                <div>
-                                    <input type="text" class="form-control" name="observacion_resultado_2" rows="4" value="{{ $item->observacion_resultado_2 }}"
-                                        placeholder="Observación"></input>
-                                </div>
-                            </div>
-
-
-                            <div class="mb-3">
-                                <div>
-                                    <label for="resultado_3" class="form-label">Resultado 3</label>
-                                    <input type="text" class="form-control" name="resultado_3" rows="4" value="{{ $item->resultado_3 }}"
-                                        placeholder="Ingrese los resultados del análisis"></input>
-                                </div>
-
-                                <div>
-                                    <input type="text" class="form-control" name="observacion_resultado_3" rows="4" value="{{ $item->observacion_resultado_3 }}"
-                                        placeholder="Observación"></input>
-                                </div>
-                            </div>
+                        <div class="mb-0">
+                            <label class="form-label" for="analista_fecha_fin_{{ $item->cotio_subitem }}">Fecha de análisis (informe)</label>
+                            <input type="date" class="form-control" id="analista_fecha_fin_{{ $item->cotio_subitem }}" name="analista_fecha_fin"
+                                value="{{ $fechaInformeModalItem ? $fechaInformeModalItem->format('Y-m-d') : '' }}">
                         </div>
-          
-                        
-                        @php
-                            $descNormModal = $normalizeStr($item->cotio_descripcion);
-                            $valorSincronizadoModal = $medicionesMapa->get($descNormModal);
-                            $esSincronizadoModal = !is_null($valorSincronizadoModal);
-                            $resultadoFinalModal = $esSincronizadoModal ? $valorSincronizadoModal : ($item->resultado_final ?? '');
-                        @endphp
-                        
-                        <div class="mb-3">
-                            <label for="resultado_final" class="form-label">
-                                Resultado Final
-                                @if($esSincronizadoModal)
-                                    <span class="badge bg-info ms-2"><i class="fas fa-sync-alt me-1"></i> Sincronizado con Campo</span>
-                                @endif
-                            </label>
-                            <textarea class="form-control" name="resultado_final" rows="4" 
-                                @if($esSincronizadoModal) readonly @endif
-                                placeholder="{{ $esSincronizadoModal ? 'Valor sincronizado con medición de campo' : 'Ingrese los resultados del análisis' }}">{{ $resultadoFinalModal }}</textarea>
-                            @if($esSincronizadoModal)
-                                <div class="form-text text-info">Este valor proviene de las mediciones de campo y no puede ser modificado por el analista.</div>
-                            @endif
-                        </div>
-                        <div style="display: flex; gap: 1rem; align-items: center;">
-                            <label for="u_med_resultado" class="form-label">Unidad de medición</label>
-                            <input type="text" class="form-control" name="u_med_resultado" value="{{ $item->cotio_codigoum }}"
-                                placeholder="No disponible" readonly>
-                        </div>
-                    
-                        {{-- linea separadora --}}
-                        <div style="margin: 1.5rem 0;">
-                            <hr style="border: 1px solid #52ABDA;">
-                        </div>
-
-                        <div style="margin: 2rem 0;">
-                            <div>
-                                <label for="image_resultado_final" class="form-label">Imagen Resultado (Opcional)</label>
-                                <input type="file" class="form-control" name="image_resultado_final" accept="image/*">
-                                    @if ($item->image_resultado_final)
-                                        <div class="mt-2">
-                                            <p>Imagen actual:</p>
-                                            <img src="{{ asset('storage/' . $item->image_resultado_final) }}" alt="Resultado Imagen" style="max-width: 100px;">
-                                            <p><a class="btn btn-primary mt-1" href="{{ asset('storage/' . $item->image_resultado_final) }}" target="_blank">Ver imagen</a></p>
-                                        </div>
-                                    @endif
-                            </div>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label for="observacion_resultado_final" class="form-label">Observación</label>
-                            <textarea class="form-control" name="observacion_resultado_final" rows="4"
-                                placeholder="Observación">{{ $item->observacion_resultado_final ?? '' }}</textarea>
-                        </div>
-
-                        <div class="mb-3 p-3 bg-warning bg-opacity-25 rounded border border-warning">
-                            <label for="observaciones_ot" class="form-label fw-bold text-dark">
-                                Observaciones del Coordinador
-                            </label>
-                            <textarea 
-                                class="form-control" 
-                                name="observaciones_ot" 
-                                id="observaciones_ot" 
-                                rows="3"
-                                placeholder="Observaciones del coordinador sobre este análisis..." 
-                                readonly
-                            >{{ $item->observaciones_ot ?? '' }}</textarea>
-                        </div>
-                        
-
-                        <div class="mb-3">
-                            <x-heroicon-o-calendar style="width: 1rem; height: 1rem;" />
-                            <small class="form-text text-muted">El sistema asignará la fecha actual automáticamente</small>
-                        </div>
-                        
-                        <div class="d-flex justify-content-end">
-                            <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="modal">Cancelar</button>
-                            <button type="button" class="btn btn-primary me-2 btn-only-save">Guardar</button>
-                            <button type="button" class="btn btn-primary btn-save-send">Guardar y Enviar</button>
-                        </div>
-                    </form>
-                </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-primary">Guardar</button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
-    @endforeach
-
-    @foreach($analisis as $item)
-        @if($item->puede_editar_fechas_informe ?? false)
-        <div class="modal fade" id="fechasInformeAnalisisModal{{ $item->cotio_subitem }}" tabindex="-1" aria-labelledby="fechasInformeAnalisisLabel{{ $item->cotio_subitem }}" aria-hidden="true" data-subitem="{{ $item->cotio_subitem }}">
-            <div class="modal-dialog">
-                <div class="modal-content">
-                    <form method="post" action="{{ route('instancias.update-analista-fechas-analisis', $item) }}">
-                        @csrf
-                        @method('PUT')
-                        <div class="modal-header">
-                            <h5 class="modal-title" id="fechasInformeAnalisisLabel{{ $item->cotio_subitem }}">Fechas informe · {{ $item->cotio_descripcion }}</h5>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                        </div>
-                        <div class="modal-body">
-                            <p class="text-muted small">Opcional. Si quedan vacías, el PDF usa la fecha de carga de resultado (comportamiento actual).</p>
-                            <div class="mb-3">
-                                <label class="form-label" for="analista_fecha_inicio_{{ $item->cotio_subitem }}">Inicio del análisis</label>
-                                <input type="date" class="form-control" id="analista_fecha_inicio_{{ $item->cotio_subitem }}" name="analista_fecha_inicio"
-                                    value="{{ $item->analista_fecha_inicio ? $item->analista_fecha_inicio->format('Y-m-d') : '' }}">
-                            </div>
-                            <div class="mb-0">
-                                <label class="form-label" for="analista_fecha_fin_{{ $item->cotio_subitem }}">Finalización del análisis</label>
-                                <input type="date" class="form-control" id="analista_fecha_fin_{{ $item->cotio_subitem }}" name="analista_fecha_fin"
-                                    value="{{ $item->analista_fecha_fin ? $item->analista_fecha_fin->format('Y-m-d') : '' }}">
-                            </div>
-                        </div>
-                        <div class="modal-footer">
-                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                            <button type="submit" class="btn btn-primary">Guardar</button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        </div>
-        @endif
-    @endforeach
-</div>
+    @endif
+@endforeach
 
 <style>
     .empty-state {
@@ -1210,7 +1058,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     // Opcional: Scroll al análisis cuando se abre el modal
-    document.querySelectorAll('.modal').forEach(modal => {
+    document.querySelectorAll('.modal:not(.analisis-ot-modal)').forEach(modal => {
         modal.addEventListener('shown.bs.modal', function () {
             const subitem = this.getAttribute('data-subitem');
             const accordionHeader = document.getElementById(`heading${subitem}`);

@@ -1,23 +1,27 @@
 @extends('layouts.app')
 
+@section('title', 'Nueva cotización')
+
 @section('content')
+@include('ventas.partials.cotizacion-styles')
 <div id="cotizacionLoadingOverlay" class="cotizacion-loading-overlay">
     <div class="spinner-border text-primary" role="status">
         <span class="visually-hidden">Cargando...</span>
     </div>
 </div>
-<div class="container-fluid">
-    <div class="row">
-        <div class="col-12">
-            <div class="d-flex justify-content-between align-items-center mb-4">
-                <h2 class="h4 mb-0">Crear Nueva Cotización</h2>
-                <div>
-                    <a href="{{ route('ventas.index') }}" class="btn btn-secondary me-2">
-                        <x-heroicon-o-arrow-left style="width: 16px; height: 16px;" class="me-1" />
-                        Volver
-                    </a>
-                </div>
-            </div>
+<div class="container-fluid px-3 px-lg-4 py-4 ucrud ucrud-layout--fluid ventas-cotizacion-page" data-ucrud-root>
+    <header class="ucrud-header">
+        <div class="ucrud-header__titles">
+            <h1 class="ucrud-title">Nueva cotización</h1>
+            <p class="ucrud-subtitle">Complete los datos del cliente, ensayos y condiciones comerciales</p>
+        </div>
+        <div class="ucrud-header__actions">
+            <a href="{{ route('ventas.index') }}" class="ucrud-btn ucrud-btn--ghost">
+                <x-heroicon-o-arrow-left style="width: 16px; height: 16px;" />
+                Volver al listado
+            </a>
+        </div>
+    </header>
 
             <!-- Mensajes de éxito y error -->
             @if(session('success'))
@@ -46,22 +50,22 @@
                 </div>
             @endif
 
-            <div class="card shadow-sm">
-                <div class="card-body p-0">
+            <div class="ucrud-panel ventas-cotizacion-card">
+                <div class="p-0">
                     <form method="POST" action="{{ route('ventas.store') }}" id="cotizacionForm" enctype="multipart/form-data">
                         @csrf
                         
                         <!-- Header con información básica -->
-                        <div class="border-bottom px-4 py-3 bg-info">
+                        <div class="cotizacion-form-header">
                             <div class="row align-items-center">
                                 <div class="col-md-2">
-                                    <label for="cliente_codigo" class="form-label fw-semibold mb-1 text-dark">Cliente:</label>
+                                    <label for="cliente_codigo" class="form-label">Cliente</label>
                                     <div class="position-relative" id="clienteBuscadorWrapper">
                                         <div class="input-group">
                                         <input type="text" class="form-control form-control-sm" id="cliente_codigo" name="coti_codigocli" 
                                                    value="{{ old('coti_codigocli') }}" placeholder="Escribe nombre o código..." autocomplete="off" required>
-                                            <button class="btn btn-outline-secondary btn-sm" style="border-color: #fff;" type="button" id="btnBuscarCliente">
-                                                <x-heroicon-o-magnifying-glass style="width: 14px; height: 14px; color: #fff;" />
+                                            <button class="btn btn-outline-secondary btn-sm" type="button" id="btnBuscarCliente">
+                                                <x-heroicon-o-magnifying-glass style="width: 14px; height: 14px;" />
                                             </button>
                                         </div>
                                         <div class="dropdown-menu w-100 shadow-sm p-0" id="clienteResultados"></div>
@@ -91,7 +95,7 @@
                                            placeholder="Seleccione un cliente" readonly>
                                 </div>
                                 <div class="col-md-3">
-                                    <label for="sucursal" class="form-label fw-semibold mb-1 text-dark">Sucursal:</label>
+                                    <label for="sucursal" class="form-label">Sucursal</label>
                                     <div id="sucursalWrapper">
                                         <input type="text" class="form-control form-control-sm" id="sucursal" name="coti_codigosuc"
                                                value="{{ old('coti_codigosuc') }}" placeholder="Código sucursal">
@@ -101,13 +105,13 @@
                                     </div>
                                 </div>
                                 <div class="col-md-2">
-                                    <label for="numero" class="form-label fw-semibold mb-1 text-dark">Nro:</label>
+                                    <label for="numero" class="form-label">Nro.</label>
                                     <input type="text" class="form-control form-control-sm" id="numero" name="coti_num" 
                                            value="NUEVO" readonly>
                                 </div>
 
                                 <div class="col-md-2">
-                                    <label for="Para" class="form-label fw-semibold mb-1 text-dark">Para:</label>
+                                    <label for="Para" class="form-label">Para</label>
                                     <div id="coti_para_wrapper">
                                         <input type="text" class="form-control form-control-sm" id="coti_para" name="coti_para" 
                                                value="{{ old('coti_para') }}" placeholder="Empresa relacionada...">
@@ -457,30 +461,20 @@
                         </div>
 
                         <!-- Botones de acción -->
-                        <div class="card-footer bg-light border-top">
-                            <div class="d-flex justify-content-between">
-                                
-                                <div class="d-flex gap-2">
-                                    <a href="{{ route('ventas.index') }}" class="btn btn-secondary">
-                                        <x-heroicon-o-x-mark style="width: 16px; height: 16px;" class="me-1" />
-                                        Cancelar
-                                    </a>
-                                    <button type="button" class="btn btn-info">
-                                        <x-heroicon-o-arrow-path style="width: 16px; height: 16px;" class="me-1" />
-                                        Salir
-                                    </button>
-                                    <button type="submit" class="btn btn-primary">
-                                        <x-heroicon-o-check style="width: 16px; height: 16px;" class="me-1" />
-                                        Guardar
-                                    </button>
-                                </div>
+                        <div class="ventas-cotizacion-card__footer">
+                            <div class="d-flex flex-wrap gap-2 justify-content-end">
+                                <a href="{{ route('ventas.index') }}" class="ucrud-btn ucrud-btn--secondary">
+                                    Cancelar
+                                </a>
+                                <button type="submit" class="ucrud-btn ucrud-btn--primary">
+                                    <x-heroicon-o-check style="width: 16px; height: 16px;" />
+                                    Guardar cotización
+                                </button>
                             </div>
                         </div>
                     </form>
                 </div>
             </div>
-        </div>
-    </div>
 </div>
 
 <!-- Modal Agregar Ensayo -->
@@ -618,7 +612,7 @@
 <div class="modal fade" id="modalAgregarComponente" tabindex="-1" aria-labelledby="modalAgregarComponenteLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
-            <div class="modal-header bg-info text-white">
+            <div class="modal-header bg-primary text-white">
                 <h5 class="modal-title" id="modalAgregarComponenteLabel">Componente</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
@@ -984,8 +978,6 @@
         </div>
     </div>
 </div>
-
-@include('ventas.partials.cotizacion-styles')
 
 <!-- Modal Clonar Cotización -->
 <div class="modal fade" id="modalClonarCotizacion" tabindex="-1" aria-labelledby="modalClonarCotizacionLabel" aria-hidden="true">

@@ -74,7 +74,8 @@
                                 </label>
                             </div>
                             <small class="form-text text-muted">
-                                Si está marcado, las determinaciones con la misma descripción se actualizarán. Si no, se crearán nuevas.
+                                Marcado (recomendado): reutiliza parámetros existentes con el mismo nombre, matriz (Tipo) y metodologías, y actualiza unidad, límites y precio sin duplicar.
+                                Desmarcado: crea ítems nuevos aunque ya exista uno parecido (solo formato antiguo por descripción; en plantilla Tipo/Agrupador/Parámetro siempre crea filas nuevas).
                             </small>
                         </div>
 
@@ -216,11 +217,12 @@
             });
         }
 
-        document.getElementById('formImportar').addEventListener('submit', function(e) {
+        document.getElementById('formImportar').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const form = this;
             const archivo = document.getElementById('archivo').files[0];
-            
+
             if (!archivo) {
-                e.preventDefault();
                 Swal.fire({
                     icon: 'error',
                     title: 'Error',
@@ -229,9 +231,7 @@
                 return;
             }
 
-            // Validar tamaño (10MB)
             if (archivo.size > 10 * 1024 * 1024) {
-                e.preventDefault();
                 Swal.fire({
                     icon: 'error',
                     title: 'Error',
@@ -240,14 +240,51 @@
                 return;
             }
 
+            const actualizarExistentes = document.getElementById('actualizar_existentes').checked;
+            const confirmHtml = actualizarExistentes
+                ? '<p class="mb-2 text-start">Vas a <strong>actualizar el catálogo</strong> reutilizando parámetros que ya existan cuando coincidan nombre, matriz (Tipo) y metodologías.</p>'
+                    + '<ul class="text-start small mb-0 ps-3">'
+                    + '<li>Se pueden modificar <strong>unidades</strong>, <strong>límites</strong>, <strong>precios</strong> y métodos en los ítems encontrados.</li>'
+                    + '<li>Se crearán agrupadores o parámetros <strong>solo si no hay coincidencia</strong>.</li>'
+                    + '<li>No se eliminan ítems viejos del catálogo.</li>'
+                    + '<li>Solo se procesa la <strong>primera hoja</strong> del Excel.</li>'
+                    + '</ul>'
+                : '<p class="mb-2 text-start">Vas a importar en modo <strong>solo altas</strong>: no se actualizarán determinaciones existentes.</p>'
+                    + '<ul class="text-start small mb-0 ps-3">'
+                    + '<li>Cada fila puede generar <strong>nuevos ítems</strong>, aunque ya exista uno similar (riesgo de duplicados).</li>'
+                    + '<li>Los vínculos agrupador ↔ parámetro se crearán según el archivo.</li>'
+                    + '<li>No se eliminan ítems del catálogo.</li>'
+                    + '<li>Solo se procesa la <strong>primera hoja</strong> del Excel.</li>'
+                    + '</ul>';
+
+            const confirmacion = await Swal.fire({
+                icon: 'warning',
+                title: '¿Confirmar importación?',
+                html: confirmHtml,
+                showCancelButton: true,
+                confirmButtonText: 'Sí, importar',
+                cancelButtonText: 'Cancelar',
+                confirmButtonColor: '#198754',
+                cancelButtonColor: '#6c757d',
+                reverseButtons: true,
+                focusCancel: true,
+            });
+
+            if (!confirmacion.isConfirmed) {
+                return;
+            }
+
             Swal.fire({
                 title: 'Importando...',
                 text: 'Por favor espera mientras se procesa el archivo.',
                 allowOutsideClick: false,
+                allowEscapeKey: false,
                 didOpen: () => {
                     Swal.showLoading();
                 }
             });
+
+            form.submit();
         });
 
         // Manejar descarga de plantilla con checkbox

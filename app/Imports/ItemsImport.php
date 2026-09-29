@@ -25,11 +25,46 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
     protected $cacheAgrupadores = [];
     protected $cacheComponentes = [];
 
+    /** @var Collection<int, Metodo>|null */
+    protected ?Collection $metodosCatalogo = null;
+
     // Seguimiento de matrices asociadas en esta importación para cada item
     protected $matricesPorItem = [];
 
+    /** Si true, reutiliza componentes existentes (parámetro + matriz + métodos) y actualiza unidad/límites/precio. */
+    protected bool $actualizarExistentes = true;
+
     /** @var Collection<string, Matriz>|null Índice matriz_codigo (TRIM) → fila para resolver códigos con/sin padding */
     protected ?Collection $matrizLookupByTrim = null;
+
+    /** @var array<string, list<CotioItems>> Parámetro normalizado → componentes (match por clave técnica, no por ID) */
+    protected ?array $indiceComponentesPorNombreClave = null;
+
+    /** @var list<array<string, mixed>> */
+    protected array $debugActualizados = [];
+
+    /** @var list<array<string, mixed>> */
+    protected array $debugCreados = [];
+
+    /** @var array<int, int> id → índice en debugActualizados */
+    protected array $debugIdsActualizados = [];
+
+    /** @var array<int, true> */
+    protected array $debugIdsCreados = [];
+
+    protected ?string $debugLogPath = null;
+
+    public function setActualizarExistentes(bool $actualizar): self
+    {
+        $this->actualizarExistentes = $actualizar;
+
+        return $this;
+    }
+
+    public function getActualizarExistentes(): bool
+    {
+        return $this->actualizarExistentes;
+    }
 
     /**
      * Normaliza un texto para comparaciones (trim, lowercase, remover espacios dobles, etc.)
@@ -46,6 +81,31 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
         $text = preg_replace('/\s*\(\s*/', '(', $text);
         $text = preg_replace('/\s*\)\s*/', ')', $text);
         return $text;
+    }
+
+    /**
+     * Clave de equivalencia para nombres de parámetros (1,1,1 vs 1.1.1, guiones, etc.).
+     */
+    protected function normalizeNombreComponente($text): string
+    {
+        $text = $this->normalizeText($text);
+        $text = preg_replace('/(?<=\d)[,\.](?=\d)/', '', $text);
+        $text = str_replace(['-', '–', '—', '/'], ' ', $text);
+        $text = preg_replace('/\s+/', ' ', $text);
+
+        return trim($text);
+    }
+
+    protected function fragmentoBusquedaNombreComponente(string $nombre): string
+    {
+        $normalizado = $this->normalizeNombreComponente($nombre);
+        $cola = preg_replace('/^[\d\s]+/', '', $normalizado);
+        $cola = trim((string) $cola);
+        if (mb_strlen($cola) >= 4) {
+            return mb_substr($cola, 0, 48);
+        }
+
+        return mb_substr($normalizado, 0, 48);
     }
 
     /**
@@ -84,6 +144,8 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
             'is_new_format' => $isNewFormat
         ]);
         
+        $this->resetDebugAuditoria();
+
         if ($isNewFormat) {
             Log::info('ItemsImport: Detectado formato nuevo (Tipo, Agrupador, Parámetro)');
             $this->processNewFormat($rows);
@@ -91,6 +153,8 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
             Log::info('ItemsImport: Detectado formato antiguo, procesando con lógica legacy');
             $this->processOldFormat($rows);
         }
+
+        $this->flushDebugLogImportacion();
     }
 
     /**
@@ -102,6 +166,10 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
         $ultimoItem = CotioItems::orderBy('id', 'desc')->first();
         $this->nextId = $ultimoItem ? $ultimoItem->id + 1 : 1;
         Log::info('ItemsImport: Siguiente ID a usar', ['next_id' => $this->nextId]);
+
+        if ($this->actualizarExistentes) {
+            $this->buildIndiceComponentesPorNombreClave();
+        }
 
         $filasProcesadas = 0;
         $filasSaltadas = 0;
@@ -124,7 +192,7 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
                 
                 if (empty($parametroCheck)) {
                     if ($rowHasData) {
-                        Log::debug('ItemsImport: Saltando fila - no tiene parámetro pero tiene otros datos', [
+                        $this->logItemsImportVerbose('debug', 'ItemsImport: Saltando fila - no tiene parámetro pero tiene otros datos', [
                             'fila' => $rowNumber,
                             'columnas' => array_keys($rowArray),
                             'valores' => $rowArray
@@ -135,8 +203,6 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
                 }
                 
                 $filasProcesadas++;
-                
-                Log::debug('ItemsImport: Procesando fila', ['fila' => $rowNumber, 'datos' => $row->toArray()]);
                 
                 try {
                     // Leer datos del nuevo formato (manejar espacios y guiones bajos)
@@ -267,20 +333,12 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
                             continue;
                         }
                         $this->ensurePivotAgrupadorComponente($agrupadorId, (int) $componente->id);
-                        Log::debug('ItemsImport: Vínculo agrupador-componente asegurado', [
-                            'componente_id' => $componente->id,
-                            'agrupador_id' => $agrupadorId,
-                        ]);
                         if ($matrizCodigo) {
                             $this->asociarMatrizAItem($agrupadorId, $matrizCodigo);
                         }
                     }
                     
                     $this->successCount++;
-                    Log::debug('ItemsImport: Fila procesada exitosamente', [
-                        'fila' => $rowNumber,
-                        'componente_id' => $componente->id
-                    ]);
                 } catch (\Throwable $e) {
                     $this->errors[] = "Fila {$rowNumber}: " . $e->getMessage();
                     $this->errorCount++;
@@ -563,30 +621,46 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
                         }
                     }
                     
-                    if ($item) {
-                        // Tomamos el método que no sea nulo/vacío (el que tenga los métodos)
-                        $finalMetodo = !empty($metodoCodigo) ? $metodoCodigo : $item->metodo;
-                        $finalMetodoMuestreo = !empty($metodoMuestreoCodigo) ? $metodoMuestreoCodigo : $item->metodo_muestreo;
+                    if ($item && $this->actualizarExistentes) {
+                        $finalMetodo = ! empty($metodoCodigo) ? $metodoCodigo : $item->metodo;
+                        $finalMetodoMuestreo = ! empty($metodoMuestreoCodigo) ? $metodoMuestreoCodigo : $item->metodo_muestreo;
+                        $despues = [
+                            'metodo' => $finalMetodo,
+                            'metodo_muestreo' => $finalMetodoMuestreo,
+                            'unidad_medida' => $unidadMedida,
+                            'limites_establecidos' => $limitesEstablecidos,
+                            'limite_cuantificacion' => $limiteCuantificacion,
+                        ];
+                        $cambios = $this->diffCamposImportacion($item, $despues);
 
-                        // Actualizar el item existente (sin matriz_codigo)
                         $item->update([
                             'es_muestra' => $esMuestra,
                             'limites_establecidos' => $limitesEstablecidos,
                             'limite_cuantificacion' => $limiteCuantificacion,
                             'metodo' => $finalMetodo,
                             'metodo_muestreo' => $finalMetodoMuestreo,
-                            'matriz_codigo' => null, // Ya no se guarda aquí
+                            'matriz_codigo' => null,
                             'unidad_medida' => $unidadMedida,
-                            'precio' => !empty($row['precio']) ? (float) $row['precio'] : null,
+                            'precio' => ! empty($row['precio']) ? (float) $row['precio'] : null,
                         ]);
-                        
-                        // Sincronizar matrices en tabla pivote
+
                         if ($matrizCodigo) {
                             $this->asociarMatrizAItem($item->id, $matrizCodigo);
                         }
-                        
-                        Log::debug('ItemsImport: Item actualizado', ['item_id' => $item->id, 'descripcion' => $descripcion]);
-                    } else {
+
+                        $this->auditarItemImportacion(
+                            true,
+                            $item->fresh(),
+                            $rowNumber,
+                            $esMuestra ? 'agrupador' : 'componente',
+                            null,
+                            $cambios
+                        );
+                    } elseif ($item && ! $this->actualizarExistentes) {
+                        $item = null;
+                    }
+
+                    if (! $item) {
                         // Crear nuevo item con ID secuencial usando insert para poder especificar el ID
                         $itemData = [
                             'id' => $this->nextId,
@@ -611,8 +685,13 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
                             $this->asociarMatrizAItem($item->id, $matrizCodigo);
                         }
                         
-                        Log::debug('ItemsImport: Nuevo item creado', ['item_id' => $this->nextId, 'descripcion' => $descripcion]);
-                        
+                        $this->auditarItemImportacion(
+                            false,
+                            $item,
+                            $rowNumber,
+                            $esMuestra ? 'agrupador' : 'componente'
+                        );
+
                         // Incrementar el siguiente ID
                         $this->nextId++;
                     }
@@ -642,7 +721,6 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
                     }
 
                     $this->successCount++;
-                    Log::debug('ItemsImport: Fila procesada exitosamente', ['fila' => $rowNumber, 'item_id' => $item->id]);
                 } catch (\Throwable $e) {
                     $this->errors[] = "Fila {$rowNumber}: " . $e->getMessage();
                     $this->errorCount++;
@@ -752,6 +830,414 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
     public function getErrorCount()
     {
         return $this->errorCount;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function getDebugReport(): array
+    {
+        $componentesCreados = [];
+        $agrupadoresCreados = [];
+        foreach ($this->debugCreados as $entry) {
+            if (($entry['tipo'] ?? '') === 'agrupador') {
+                $agrupadoresCreados[] = $entry;
+            } else {
+                $componentesCreados[] = $entry;
+            }
+        }
+
+        return [
+            'generado_en' => now()->toIso8601String(),
+            'componentes_actualizados' => $this->debugActualizados,
+            'componentes_actualizados_total' => count($this->debugActualizados),
+            'componentes_creados' => $componentesCreados,
+            'componentes_creados_total' => count($componentesCreados),
+            'agrupadores_creados' => $agrupadoresCreados,
+            'agrupadores_creados_total' => count($agrupadoresCreados),
+            'archivo_log' => $this->debugLogPath,
+            'archivo_log_texto' => $this->debugLogPath
+                ? preg_replace('/\.json$/', '.txt', $this->debugLogPath)
+                : null,
+        ];
+    }
+
+    public function getDebugLogPath(): ?string
+    {
+        return $this->debugLogPath;
+    }
+
+    protected function resetDebugAuditoria(): void
+    {
+        if (! config('app.debug')) {
+            return;
+        }
+
+        $this->debugActualizados = [];
+        $this->debugCreados = [];
+        $this->debugIdsActualizados = [];
+        $this->debugIdsCreados = [];
+        $this->debugLogPath = null;
+        $this->indiceComponentesPorNombreClave = null;
+    }
+
+    protected function auditarItemImportacion(
+        bool $actualizado,
+        CotioItems $item,
+        int $filaExcel,
+        string $tipo = 'componente',
+        ?string $textoFila = null,
+        ?array $cambios = null,
+        ?array $claveImportacion = null
+    ): void {
+        if (! config('app.debug')) {
+            return;
+        }
+
+        $id = (int) $item->id;
+
+        if ($actualizado) {
+            if ($cambios === null || $cambios === []) {
+                return;
+            }
+
+            if (isset($this->debugIdsActualizados[$id])) {
+                $idx = $this->debugIdsActualizados[$id];
+                $prev = $this->debugActualizados[$idx]['cambios'] ?? [];
+                $this->debugActualizados[$idx]['cambios'] = array_replace($prev, $cambios);
+
+                return;
+            }
+
+            $entry = [
+                'id' => $id,
+                'descripcion' => $item->cotio_descripcion,
+                'fila_excel' => $filaExcel,
+                'cambios' => $cambios,
+                'clave' => $claveImportacion,
+            ];
+            $this->debugIdsActualizados[$id] = count($this->debugActualizados);
+            $this->debugActualizados[] = $entry;
+        } else {
+            if (isset($this->debugIdsCreados[$id])) {
+                return;
+            }
+            $this->debugIdsCreados[$id] = true;
+            $this->debugCreados[] = [
+                'id' => $id,
+                'tipo' => $tipo,
+                'descripcion' => $item->cotio_descripcion,
+                'fila_excel' => $filaExcel,
+                'clave' => $claveImportacion,
+            ];
+        }
+    }
+
+    /**
+     * Clave de negocio para emparejar filas del Excel con componentes existentes (no usa ID).
+     *
+     * @return array{parametro: string, metodo_analisis: string, metodo_muestreo: string, matriz: string}
+     */
+    protected function claveComponenteImportacion(
+        string $parametro,
+        ?string $metodoAnalisisCodigo,
+        ?string $metodoMuestreoCodigo,
+        ?string $matrizCodigo
+    ): array {
+        return [
+            'parametro' => trim($parametro),
+            'metodo_analisis' => $this->metodoEtiquetaParaLog($metodoAnalisisCodigo),
+            'metodo_muestreo' => $this->metodoEtiquetaParaLog($metodoMuestreoCodigo),
+            'matriz' => $this->matrizEtiquetaParaLog($matrizCodigo),
+        ];
+    }
+
+    protected function matrizEtiquetaParaLog(?string $matrizCodigo): string
+    {
+        $matrizCodigo = trim((string) ($matrizCodigo ?? ''));
+        if ($matrizCodigo === '') {
+            return '';
+        }
+
+        $matriz = $this->resolveMatrizFromCodigoOrDescripcion($matrizCodigo);
+
+        return $matriz
+            ? trim((string) ($matriz->matriz_descripcion ?? $matriz->matriz_codigo))
+            : $matrizCodigo;
+    }
+
+    /**
+     * @param  array{parametro?: string, metodo_analisis?: string, metodo_muestreo?: string, matriz?: string, nombre?: string}|null  $clave
+     */
+    protected function formatearClaveImportacionLog(?array $clave): string
+    {
+        if ($clave === null || $clave === []) {
+            return '';
+        }
+
+        if (isset($clave['nombre'])) {
+            return 'nombre: '.$clave['nombre'];
+        }
+
+        $partes = [];
+        if (($clave['parametro'] ?? '') !== '') {
+            $partes[] = 'parámetro: '.$clave['parametro'];
+        }
+        if (($clave['metodo_analisis'] ?? '') !== '') {
+            $partes[] = 'análisis: '.$clave['metodo_analisis'];
+        }
+        if (($clave['metodo_muestreo'] ?? '') !== '') {
+            $partes[] = 'muestreo: '.$clave['metodo_muestreo'];
+        }
+        if (($clave['matriz'] ?? '') !== '') {
+            $partes[] = 'matriz: '.$clave['matriz'];
+        }
+
+        return implode(' | ', $partes);
+    }
+
+    protected function buildIndiceComponentesPorNombreClave(): void
+    {
+        if ($this->indiceComponentesPorNombreClave !== null) {
+            return;
+        }
+
+        $this->indiceComponentesPorNombreClave = [];
+
+        CotioItems::query()
+            ->where(function ($q) {
+                $q->where('es_muestra', false)
+                    ->orWhereNull('es_muestra');
+            })
+            ->orderBy('id')
+            ->chunk(400, function ($items) {
+                foreach ($items as $c) {
+                    $k = $this->normalizeNombreComponente($c->cotio_descripcion);
+                    if ($k === '') {
+                        continue;
+                    }
+                    $this->indiceComponentesPorNombreClave[$k][] = $c;
+                }
+            });
+    }
+
+    protected function agregarComponenteAlIndice(CotioItems $componente): void
+    {
+        if ($this->indiceComponentesPorNombreClave === null) {
+            return;
+        }
+
+        $k = $this->normalizeNombreComponente($componente->cotio_descripcion);
+        if ($k === '') {
+            return;
+        }
+
+        $this->indiceComponentesPorNombreClave[$k][] = $componente;
+    }
+
+    /**
+     * @param  array{metodo?: ?string, metodo_muestreo?: ?string, unidad_medida?: ?string, limites_establecidos?: ?string, limite_cuantificacion?: mixed}  $despues
+     * @return array<string, array{antes: ?string, despues: ?string}>
+     */
+    protected function diffCamposImportacion(CotioItems $antes, array $despues): array
+    {
+        $cambios = [];
+
+        $pares = [
+            'metodo_analisis' => [
+                'antes' => $antes->metodo,
+                'despues' => $despues['metodo'] ?? $antes->metodo,
+                'metodo' => true,
+            ],
+            'metodo_muestreo' => [
+                'antes' => $antes->metodo_muestreo,
+                'despues' => $despues['metodo_muestreo'] ?? $antes->metodo_muestreo,
+                'metodo' => true,
+            ],
+            'unidades_de_medicion' => [
+                'antes' => $antes->unidad_medida,
+                'despues' => $despues['unidad_medida'] ?? $antes->unidad_medida,
+                'metodo' => false,
+            ],
+            'limite_de_deteccion' => [
+                'antes' => $antes->limites_establecidos,
+                'despues' => $despues['limites_establecidos'] ?? $antes->limites_establecidos,
+                'metodo' => false,
+            ],
+            'limite_de_cuantificacion' => [
+                'antes' => $antes->limite_cuantificacion,
+                'despues' => $despues['limite_cuantificacion'] ?? $antes->limite_cuantificacion,
+                'metodo' => false,
+            ],
+        ];
+
+        foreach ($pares as $campo => $par) {
+            $a = $par['metodo']
+                ? $this->metodoEtiquetaParaLog($par['antes'])
+                : $this->valorLogImportacion($par['antes']);
+            $d = $par['metodo']
+                ? $this->metodoEtiquetaParaLog($par['despues'])
+                : $this->valorLogImportacion($par['despues']);
+
+            if ($this->valorLogImportacion($a) === $this->valorLogImportacion($d)) {
+                continue;
+            }
+
+            $cambios[$campo] = [
+                'antes' => $a === '' ? null : $a,
+                'despues' => $d === '' ? null : $d,
+            ];
+        }
+
+        return $cambios;
+    }
+
+    protected function valorLogImportacion(mixed $value): string
+    {
+        if ($value === null) {
+            return '';
+        }
+
+        if (is_float($value) || is_int($value)) {
+            $s = rtrim(rtrim(sprintf('%.10F', (float) $value), '0'), '.');
+
+            return $s === '' ? '0' : $s;
+        }
+
+        return trim((string) $value);
+    }
+
+    protected function metodoEtiquetaParaLog(mixed $codigo): string
+    {
+        $codigo = trim((string) ($codigo ?? ''));
+        if ($codigo === '') {
+            return '';
+        }
+
+        $metodo = Metodo::query()
+            ->whereRaw('TRIM(metodo_codigo) = ?', [$codigo])
+            ->first(['metodo_codigo', 'metodo_descripcion']);
+
+        if (! $metodo) {
+            return $codigo;
+        }
+
+        $desc = trim((string) ($metodo->metodo_descripcion ?? ''));
+
+        return $desc !== '' ? $desc : $codigo;
+    }
+
+    protected function flushDebugLogImportacion(): void
+    {
+        if (! config('app.debug')) {
+            return;
+        }
+
+        $report = $this->getDebugReport();
+
+        $dir = storage_path('logs/items-import');
+        if (! is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
+
+        $base = 'import-'.now()->format('Y-m-d_H-i-s');
+        $this->debugLogPath = $dir.'/'.$base.'.json';
+        file_put_contents(
+            $this->debugLogPath,
+            json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
+        );
+
+        $txtPath = $dir.'/'.$base.'.txt';
+        file_put_contents($txtPath, $this->formatDebugLogTexto($report));
+
+        Log::info('ItemsImport [DEBUG] Resumen importación', [
+            'componentes_con_cambios' => $report['componentes_actualizados_total'],
+            'componentes_creados' => $report['componentes_creados_total'],
+            'agrupadores_creados' => $report['agrupadores_creados_total'],
+            'detalle' => 'storage/logs/items-import/'.$base.'.txt',
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $report
+     */
+    protected function formatDebugLogTexto(array $report): string
+    {
+        $lines = [];
+        $lines[] = 'ItemsImport — '.($report['generado_en'] ?? now()->toIso8601String());
+        $lines[] = 'Coincidencia: parámetro + métodos + matriz (no por ID de BD).';
+        $lines[] = str_repeat('=', 60);
+        $lines[] = '';
+
+        $lines[] = 'COMPONENTES ACTUALIZADOS (coincidencia por clave técnica; cambios en unidad/límite/método)';
+        $lines[] = str_repeat('-', 60);
+        $actualizados = $report['componentes_actualizados'] ?? [];
+        if ($actualizados === []) {
+            $lines[] = '(ninguno)';
+        } else {
+            foreach ($actualizados as $row) {
+                $claveTxt = $this->formatearClaveImportacionLog($row['clave'] ?? null);
+                $lines[] = $claveTxt !== '' ? $claveTxt : (string) ($row['descripcion'] ?? '');
+                $lines[] = sprintf(
+                    '  fila Excel %s — registro existente #%s',
+                    $row['fila_excel'] ?? '?',
+                    $row['id'] ?? '?'
+                );
+                foreach ($row['cambios'] ?? [] as $campo => $par) {
+                    $antes = $par['antes'] ?? '(vacío)';
+                    $despues = $par['despues'] ?? '(vacío)';
+                    $lines[] = "  · {$campo}: {$antes} → {$despues}";
+                }
+                $lines[] = '';
+            }
+        }
+
+        $lines[] = 'COMPONENTES CREADOS (no hubo coincidencia con la clave técnica)';
+        $lines[] = str_repeat('-', 60);
+        $compCreados = $report['componentes_creados'] ?? [];
+        if ($compCreados === []) {
+            $lines[] = '(ninguno)';
+        } else {
+            foreach ($compCreados as $row) {
+                $claveTxt = $this->formatearClaveImportacionLog($row['clave'] ?? null);
+                $lines[] = $claveTxt !== '' ? $claveTxt : (string) ($row['descripcion'] ?? '');
+                $lines[] = sprintf(
+                    '  fila Excel %s — nuevo registro #%s',
+                    $row['fila_excel'] ?? '?',
+                    $row['id'] ?? '?'
+                );
+                $lines[] = '';
+            }
+        }
+
+        $lines[] = 'AGRUPADORES CREADOS (coincidencia por nombre)';
+        $lines[] = str_repeat('-', 60);
+        $agrCreados = $report['agrupadores_creados'] ?? [];
+        if ($agrCreados === []) {
+            $lines[] = '(ninguno)';
+        } else {
+            foreach ($agrCreados as $row) {
+                $claveTxt = $this->formatearClaveImportacionLog($row['clave'] ?? null);
+                $lines[] = $claveTxt !== '' ? $claveTxt : (string) ($row['descripcion'] ?? '');
+                $lines[] = sprintf(
+                    '  fila Excel %s — nuevo registro #%s',
+                    $row['fila_excel'] ?? '?',
+                    $row['id'] ?? '?'
+                );
+                $lines[] = '';
+            }
+        }
+
+        return implode("\n", $lines)."\n";
+    }
+
+    protected function logItemsImportVerbose(string $level, string $message, array $context = []): void
+    {
+        if (config('app.debug')) {
+            return;
+        }
+
+        Log::log($level, $message, $context);
     }
 
     /**
@@ -900,31 +1386,141 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
      */
     protected function findOrCreateMetodo($nombre, $rowNumber)
     {
-        $nombre = $this->normalizeText($nombre);
-        if ($nombre === '') {
+        $nombreOriginal = trim((string) $nombre);
+        $nombreNorm = $this->normalizeText($nombreOriginal);
+        if ($nombreNorm === '') {
             return null;
         }
 
-        // Usar cache
-        if (isset($this->cacheMetodos[$nombre])) {
-            return $this->cacheMetodos[$nombre];
+        if (isset($this->cacheMetodos[$nombreNorm])) {
+            return $this->cacheMetodos[$nombreNorm];
         }
 
-        // Buscar por descripción (case-insensitive)
-        $metodo = Metodo::where('metodo_descripcion', 'ILIKE', $nombre)->first();
+        $metodo = $this->buscarMetodoPorDescripcionNormalizada($nombreOriginal);
 
-        if (!$metodo) {
-            // Crear nuevo método
+        if (! $metodo) {
             $codigo = $this->nextPaddedCode('metodo', 'metodo_codigo', 5);
             $metodo = Metodo::create([
                 'metodo_codigo' => $codigo,
-                'metodo_descripcion' => $nombre
+                'metodo_descripcion' => $nombreOriginal,
             ]);
-            Log::info("ItemsImport: Método creado: {$codigo} - {$nombre}");
+            if ($this->metodosCatalogo !== null) {
+                $this->metodosCatalogo->push($metodo);
+            }
+            Log::info("ItemsImport: Método creado: {$codigo} - {$nombreOriginal}");
         }
 
-        $this->cacheMetodos[$nombre] = $metodo->metodo_codigo;
+        $this->cacheMetodos[$nombreNorm] = $metodo->metodo_codigo;
+
         return $metodo->metodo_codigo;
+    }
+
+    protected function buscarMetodoPorDescripcionNormalizada(string $nombreOriginal): ?Metodo
+    {
+        $nombreNorm = $this->normalizeText($nombreOriginal);
+        if ($nombreNorm === '') {
+            return null;
+        }
+
+        if ($this->metodosCatalogo === null) {
+            $this->metodosCatalogo = Metodo::query()->get();
+        }
+
+        return $this->metodosCatalogo->first(
+            fn (Metodo $m) => $this->normalizeText($m->metodo_descripcion) === $nombreNorm
+        );
+    }
+
+    protected function codigosMetodoEquivalentes(?string $codigoA, ?string $codigoB): bool
+    {
+        $a = trim((string) $codigoA);
+        $b = trim((string) $codigoB);
+        if ($a === '' || $b === '') {
+            return true;
+        }
+        if ($a === $b) {
+            return true;
+        }
+
+        if ($this->metodosCatalogo === null) {
+            $this->metodosCatalogo = Metodo::query()->get();
+        }
+
+        $resolver = function (string $code): ?Metodo {
+            $found = $this->metodosCatalogo->first(
+                fn (Metodo $m) => trim((string) $m->metodo_codigo) === $code
+            );
+            if ($found) {
+                return $found;
+            }
+
+            return Metodo::query()
+                ->whereRaw('TRIM(metodo_codigo) = ?', [$code])
+                ->first(['metodo_codigo', 'metodo_descripcion']);
+        };
+
+        $ma = $resolver($a);
+        $mb = $resolver($b);
+        if (! $ma || ! $mb) {
+            return false;
+        }
+
+        return $this->normalizeText($ma->metodo_descripcion) === $this->normalizeText($mb->metodo_descripcion);
+    }
+
+    protected function itemMatrizCoincide(int $itemId, string $matrizCodigo): bool
+    {
+        $want = $this->resolveMatrizFromCodigoOrDescripcion(trim($matrizCodigo));
+        if (! $want) {
+            return false;
+        }
+
+        $wantKey = $this->normalizeText($want->matriz_descripcion);
+        $wantCode = trim((string) $want->matriz_codigo);
+
+        $pivotCodes = DB::table('cotio_items_matriz')
+            ->where('cotio_item_id', $itemId)
+            ->pluck('matriz_codigo');
+
+        foreach ($pivotCodes as $code) {
+            $resolved = $this->resolveMatrizFromCodigoOrDescripcion(trim((string) $code));
+            if (! $resolved) {
+                continue;
+            }
+            if (trim((string) $resolved->matriz_codigo) === $wantCode) {
+                return true;
+            }
+            if ($this->normalizeText($resolved->matriz_descripcion) === $wantKey) {
+                return true;
+            }
+        }
+
+        $item = CotioItems::query()->find($itemId);
+        if ($item && trim((string) ($item->matriz_codigo ?? '')) !== '') {
+            $resolved = $this->resolveMatrizFromCodigoOrDescripcion(trim((string) $item->matriz_codigo));
+            if ($resolved) {
+                if (trim((string) $resolved->matriz_codigo) === $wantCode) {
+                    return true;
+                }
+                if ($this->normalizeText($resolved->matriz_descripcion) === $wantKey) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    protected function itemSinMatrizAsociada(int $itemId): bool
+    {
+        $tienePivot = DB::table('cotio_items_matriz')->where('cotio_item_id', $itemId)->exists();
+        if ($tienePivot) {
+            return false;
+        }
+
+        $legacy = CotioItems::query()->whereKey($itemId)->value('matriz_codigo');
+
+        return trim((string) ($legacy ?? '')) === '';
     }
 
     /**
@@ -954,7 +1550,15 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
                 'es_muestra' => true,
                 'precio' => null
             ]);
-            Log::info("ItemsImport: Agrupador creado: ID {$agrupador->id} - {$nombre}");
+            $this->auditarItemImportacion(
+                false,
+                $agrupador,
+                $rowNumber,
+                'agrupador',
+                null,
+                null,
+                ['nombre' => $nombre]
+            );
         }
 
         $this->cacheAgrupadores[$nombre] = $agrupador->id;
@@ -1038,7 +1642,7 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
             'created_at' => now(),
             'updated_at' => now(),
         ]);
-        Log::debug('ItemsImport: Matriz asociada a item', [
+        $this->logItemsImportVerbose('debug', 'ItemsImport: Matriz asociada a item', [
             'item_id' => $itemId,
             'matriz_codigo' => $codigoCanon,
         ]);
@@ -1066,7 +1670,7 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
                 }
             }
 
-            Log::debug('ItemsImport: Matrices sincronizadas para item', [
+            $this->logItemsImportVerbose('debug', 'ItemsImport: Matrices sincronizadas para item', [
                 'item_id' => $itemId,
                 'matrices_actuales' => $matrices,
             ]);
@@ -1077,19 +1681,20 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
 
     /**
      * Busca un componente ya importado que coincida con la fila de la plantilla:
-     * parámetro + metodología muestreo + metodología análisis + tipo (matriz en pivote) + vínculo a cada agrupador de la fila.
+     * parámetro + metodología muestreo + metodología análisis + tipo (matriz). Los agrupadores no forman parte de la clave.
      */
     protected function findExistingComponenteForImportMatch(
         string $nombre,
         ?string $metodoCodigo,
         ?string $metodoMuestreoCodigo,
         ?string $matrizCodigo,
-        array $agrupadorIds,
         $unidadMedida = null,
         $limitesEstablecidos = null,
         $limiteCuantificacion = null
     ): ?CotioItems {
-        $nombreN = $this->normalizeText($nombre);
+        $this->buildIndiceComponentesPorNombreClave();
+
+        $nombreClave = $this->normalizeNombreComponente($nombre);
         $normCod = static function (?string $v): string {
             if ($v === null) {
                 return '';
@@ -1103,112 +1708,59 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
             ? trim((string) $matrizCodigo)
             : null;
 
-        // Estrategia de búsqueda robusta:
-        // En lugar de confiar en que la normalización de SQL coincida con la de PHP,
-        // buscamos por los criterios técnicos más específicos y luego
-        // filtramos por nombre normalizado en PHP.
-        
-        $query = CotioItems::query()
-            ->where(function($q) {
-                $q->where('es_muestra', false)
-                  ->orWhereNull('es_muestra');
-            });
-
-        // Filtrar por la primera palabra de la descripción para optimizar la consulta
-        $words = array_filter(explode(' ', $nombreN));
-        $firstWord = reset($words);
-        if ($firstWord !== false && strlen($firstWord) >= 2) {
-            $query->whereRaw('LOWER(cotio_descripcion) LIKE ?', ['%' . $firstWord . '%']);
-        }
-
-        $candidates = $query->get();
+        $candidates = $this->indiceComponentesPorNombreClave[$nombreClave] ?? [];
+        $mejorCoincidencia = null;
 
         foreach ($candidates as $cand) {
-            // 1. Verificar Nombre Normalizado (Ambos lados normalizados en PHP)
-            $candNombreNorm = $this->normalizeText($cand->cotio_descripcion);
-            if ($candNombreNorm !== $nombreN) {
+            // Métodos equivalentes por código o por descripción normalizada
+            $candM = trim((string) $cand->metodo);
+            if (! $this->codigosMetodoEquivalentes($wantM, $candM)) {
                 continue;
             }
 
-            // 2. Verificar Métodos: Solo se tratan como distintos si literalmente
-            // tienen métodos distintos. Si uno de los dos no tiene método, se considera que coinciden
-            // y luego se tomará el que tenga los métodos.
-            $candM = trim((string)$cand->metodo);
-            if ($wantM !== '' && $candM !== '' && $wantM !== $candM) {
+            $candMs = trim((string) $cand->metodo_muestreo);
+            if (! $this->codigosMetodoEquivalentes($wantMs, $candMs)) {
                 continue;
             }
 
-            $candMs = trim((string)$cand->metodo_muestreo);
-            if ($wantMs !== '' && $candMs !== '' && $wantMs !== $candMs) {
-                continue;
-            }
-
-            // 3. Verificar Matriz en pivote o columna legacy
-            $matchedMatriz = false;
+            // 3. Matriz (Tipo): misma matriz aunque el pivote use otro código; en actualización
+            //    aceptamos ítems legacy sin matriz y se asocia al guardar.
+            $matchedMatriz = $wantMat === null;
             if ($wantMat !== null) {
-                // Primero ver pivot
-                $pivotCodes = DB::table('cotio_items_matriz')
-                    ->where('cotio_item_id', $cand->id)
-                    ->pluck('matriz_codigo')
-                    ->map(static fn ($c) => trim((string) $c));
-                
-                if ($pivotCodes->contains($wantMat)) {
+                $matchedMatriz = $this->itemMatrizCoincide((int) $cand->id, $wantMat);
+                if (! $matchedMatriz && $this->actualizarExistentes && $this->itemSinMatrizAsociada((int) $cand->id)) {
                     $matchedMatriz = true;
-                } else {
-                    // Ver columna legacy
-                    if (trim((string)$cand->matriz_codigo) === $wantMat) {
-                        $matchedMatriz = true;
-                    }
                 }
-            } else {
-                // Si no se pide matriz, consideramos que coincide (o podríamos ser más estrictos)
-                $matchedMatriz = true;
             }
 
-            if (!$matchedMatriz) {
+            if (! $matchedMatriz) {
                 continue;
             }
 
-            // 3. Verificar Unidades y Límites (si el usuario pide reutilización estricta)
-            // Normalizamos las unidades para la comparación
-            $candUnidad = $this->normalizeText($cand->unidad_medida);
-            $wantUnidad = $this->normalizeText($unidadMedida ?? '');
-            
-            if ($wantUnidad !== '' && $candUnidad !== $wantUnidad) {
-                continue;
-            }
+            if (! $this->actualizarExistentes) {
+                // Modo estricto: unidad y límite deben coincidir para reutilizar el ítem
+                $candUnidad = $this->normalizeText($cand->unidad_medida);
+                $wantUnidad = $this->normalizeText($unidadMedida ?? '');
 
-            // Comparación de límites (con tolerancia para decimales)
-            $candLim = (float)($cand->limite_cuantificacion ?? $cand->limites_establecidos ?? 0);
-            $wantLim = (float)($limiteCuantificacion ?? $limitesEstablecidos ?? 0);
-            
-            if (abs($candLim - $wantLim) > 0.000001) {
-                continue;
-            }
-
-            // Si llegamos aquí, coincide en lo técnico.
-            // Priorizamos si ya está vinculado a alguno de los agrupadores solicitados.
-            if (! empty($agrupadorIds)) {
-                $vinculadoAAlguno = false;
-                foreach ($agrupadorIds as $aid) {
-                    $existePivot = DB::table('cotio_item_component')
-                        ->where('agrupador_id', $aid)
-                        ->where('componente_id', $cand->id)
-                        ->exists();
-                    if ($existePivot) {
-                        $vinculadoAAlguno = true;
-                        break;
-                    }
+                if ($wantUnidad !== '' && $candUnidad !== $wantUnidad) {
+                    continue;
                 }
-                
-                // NOTA: No descartamos si no está vinculado a ninguno, porque el objetivo es REUTILIZAR
-                // si el componente es técnicamente el mismo.
+
+                $candLim = (float) ($cand->limite_cuantificacion ?? $cand->limites_establecidos ?? 0);
+                $wantLim = (float) ($limiteCuantificacion ?? $limitesEstablecidos ?? 0);
+
+                if (abs($candLim - $wantLim) > 0.000001) {
+                    continue;
+                }
             }
 
-            return $cand;
+            // Misma clave técnica: si hay varios registros legacy, reutilizar el más antiguo (no es criterio de match).
+            if ($mejorCoincidencia === null || (int) $cand->id < (int) $mejorCoincidencia->id) {
+                $mejorCoincidencia = $cand;
+            }
         }
 
-        return null;
+        return $mejorCoincidencia;
     }
 
     /**
@@ -1226,8 +1778,8 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
         $precio,
         $rowNumber
     ) {
-        $nombreNormalizado = $this->normalizeText($nombre);
-        if (empty($nombreNormalizado)) {
+        $nombreNormalizado = $this->normalizeNombreComponente($nombre);
+        if ($nombreNormalizado === '') {
             $this->errors[] = "Fila {$rowNumber}: El nombre del parámetro es requerido";
             $this->errorCount++;
             return null;
@@ -1237,53 +1789,78 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
         $agrupadorIdsSorted = array_values(array_unique(array_map('intval', $agrupadorIds)));
         sort($agrupadorIdsSorted);
 
-        // Usar cache extendido para incluir todos los criterios técnicos
-        $cacheKey = md5(implode('|', [
+        $cacheKeyParts = [
             $nombreNormalizado,
             $metodoCodigo ?? 'null',
             $metodoMuestreoCodigo ?? 'null',
             $matrizCodigoNorm ?? 'null',
-            $this->normalizeText($unidadMedida ?? 'null'),
-            (float)($limiteCuantificacion ?? $limitesEstablecidos ?? 0),
-            implode(',', $agrupadorIdsSorted),
-        ]));
+            $this->actualizarExistentes ? 'upd' : 'new',
+        ];
+        if (! $this->actualizarExistentes) {
+            $cacheKeyParts[] = $this->normalizeText($unidadMedida ?? 'null');
+            $cacheKeyParts[] = (string) (float) ($limiteCuantificacion ?? $limitesEstablecidos ?? 0);
+            $cacheKeyParts[] = implode(',', $agrupadorIdsSorted);
+        }
+        $cacheKey = md5(implode('|', $cacheKeyParts));
         if (isset($this->cacheComponentes[$cacheKey])) {
             return $this->cacheComponentes[$cacheKey];
         }
 
-        $componente = $this->findExistingComponenteForImportMatch(
-            $nombreNormalizado,
+        $componente = null;
+        $claveImportacion = $this->claveComponenteImportacion(
+            $nombre,
             $metodoCodigo,
             $metodoMuestreoCodigo,
-            $matrizCodigoNorm,
-            $agrupadorIdsSorted,
-            $unidadMedida,
-            $limitesEstablecidos,
-            $limiteCuantificacion
+            $matrizCodigoNorm
         );
 
-        if ($componente) {
-            // Tomamos el método que no sea nulo/vacío (el que tenga los métodos)
-            $finalMetodo = !empty($metodoCodigo) ? $metodoCodigo : $componente->metodo;
-            $finalMetodoMuestreo = !empty($metodoMuestreoCodigo) ? $metodoMuestreoCodigo : $componente->metodo_muestreo;
+        if ($this->actualizarExistentes) {
+            $componente = $this->findExistingComponenteForImportMatch(
+                $nombre,
+                $metodoCodigo,
+                $metodoMuestreoCodigo,
+                $matrizCodigoNorm,
+                $unidadMedida,
+                $limitesEstablecidos,
+                $limiteCuantificacion
+            );
+        }
 
-            // Actualizar componente existente (sin matriz_codigo)
-            $componente->update([
+        if ($componente) {
+            $finalMetodo = ! empty($metodoCodigo) ? $metodoCodigo : $componente->metodo;
+            $finalMetodoMuestreo = ! empty($metodoMuestreoCodigo) ? $metodoMuestreoCodigo : $componente->metodo_muestreo;
+            $despues = [
                 'metodo' => $finalMetodo,
                 'metodo_muestreo' => $finalMetodoMuestreo,
-                'matriz_codigo' => null, // Ya no se guarda aquí
                 'unidad_medida' => $unidadMedida,
                 'limites_establecidos' => $limitesEstablecidos,
                 'limite_cuantificacion' => $limiteCuantificacion,
-                'precio' => $precio
+            ];
+            $cambios = $this->diffCamposImportacion($componente, $despues);
+
+            $componente->update([
+                'metodo' => $finalMetodo,
+                'metodo_muestreo' => $finalMetodoMuestreo,
+                'matriz_codigo' => null,
+                'unidad_medida' => $unidadMedida,
+                'limites_establecidos' => $limitesEstablecidos,
+                'limite_cuantificacion' => $limiteCuantificacion,
+                'precio' => $precio,
             ]);
-            
-            // Asociar matriz en tabla pivote si existe
+
             if ($matrizCodigo) {
                 $this->asociarMatrizAItem($componente->id, $matrizCodigo);
             }
-            
-            Log::debug("ItemsImport: Componente actualizado: ID {$componente->id} - {$nombre}");
+
+            $this->auditarItemImportacion(
+                true,
+                $componente->fresh(),
+                $rowNumber,
+                'componente',
+                null,
+                $cambios,
+                $claveImportacion
+            );
         } else {
             // Crear nuevo componente
             $componente = CotioItems::create([
@@ -1304,7 +1881,16 @@ class ItemsImport implements ToCollection, WithHeadingRow, SkipsEmptyRows
                 $this->asociarMatrizAItem($componente->id, $matrizCodigo);
             }
             
-            Log::info("ItemsImport: Componente creado: ID {$componente->id} - {$nombre}");
+            $this->auditarItemImportacion(
+                false,
+                $componente,
+                $rowNumber,
+                'componente',
+                null,
+                null,
+                $claveImportacion
+            );
+            $this->agregarComponenteAlIndice($componente);
         }
 
         $this->cacheComponentes[$cacheKey] = $componente;

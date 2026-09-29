@@ -1,0 +1,143 @@
+/* =============================================================
+   Ventas — listado de cotizaciones
+   Paleta alineada con informes / facturación
+   ============================================================= */
+
+.ventas-page {
+    --vent-radius: 12px;
+    --vent-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+    --vent-ink: #2f3245;
+    --vent-muted: #7b7f95;
+    --vent-border: #eef0f3;
+}
+
+.ventas-page .vent-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: -.02em;
+    color: var(--vent-ink);
+}
+
+.ventas-page .vent-subtitle {
+    font-size: .875rem;
+    color: var(--vent-muted);
+}
+
+.stats-card-ventas {
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    border: 2px solid transparent;
+    border-radius: var(--vent-radius);
+    height: 100%;
+}
+
+.stats-card-ventas:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+}
+
+.stats-card-ventas.active {
+    border-color: rgba(255, 255, 255, 0.85);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+}
+
+.stats-card-ventas--neutral {
+    cursor: default;
+}
+
+.stats-card-ventas--neutral:hover {
+    transform: none;
+}
+
+.badge-estado {
+    padding: 0.35rem 0.65rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+
+.estado-E { background: #ffc107; color: #000; }
+.estado-A { background: #28a745; color: #fff; }
+.estado-R { background: #dc3545; color: #fff; }
+.estado-P { background: #17a2b8; color: #fff; }
+.estado-C { background: #6c757d; color: #fff; }
+.estado-S { background: #6f42c1; color: #fff; }
+.estado-CERR { background: #155724; color: #fff; }
+.estado-PROC { background: #0d6efd; color: #fff; }
+
+.ventas-det-icon {
+    transition: transform 0.2s ease;
+    font-size: 0.75rem;
+}
+
+.ventas-det-toggle[aria-expanded="true"] .ventas-det-icon {
+    transform: rotate(180deg);
+}
+
+.ventas-table-card .table thead th {
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--vent-muted);
+    border-bottom-width: 1px;
+    white-space: nowrap;
+}
+
+.ventas-table-card .table tbody td {
+    vertical-align: middle;
+    font-size: 0.875rem;
+}
+
+.ventas-table-card .action-buttons {
+    white-space: nowrap;
+}
+
+.ventas-table-card .action-buttons .btn {
+    padding: 0.25rem 0.5rem;
+}
+
+.ventas-canal-hint {
+    border-radius: var(--vent-radius);
+    border: 1px solid #bee5eb;
+    background: #f0f9ff;
+    color: #0c5460;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+}
+
+.ventas-kpi-scroll {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 0.75rem;
+    overflow-x: auto;
+    padding-bottom: 0.25rem;
+    margin-bottom: 1.5rem;
+    scrollbar-width: thin;
+}
+
+.ventas-kpi-scroll > .ventas-kpi-item {
+    flex: 0 0 auto;
+    min-width: 10.5rem;
+    max-width: 13rem;
+}
+
+.ventas-kpi-scroll > .ventas-kpi-item--wide {
+    min-width: 14rem;
+    max-width: 18rem;
+}
+
+@media (min-width: 1200px) {
+    .ventas-kpi-scroll {
+        flex-wrap: wrap;
+        overflow-x: visible;
+    }
+
+    .ventas-kpi-scroll > .ventas-kpi-item {
+        flex: 1 1 10.5rem;
+    }
+
+    .ventas-kpi-scroll > .ventas-kpi-item--wide {
+        flex: 1.4 1 16rem;
+    }
+}

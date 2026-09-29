@@ -213,11 +213,21 @@ final class OrdenesAccesoPorSector
 
                         $sectorQ->orWhere(function ($match) use ($sectorCodigo) {
                             $match->whereRaw('TRIM(u.sector_codigo) = ?', [$sectorCodigo])
-                                ->orWhereExists(function ($pivot) use ($sectorCodigo) {
-                                    $pivot->select(DB::raw(1))
-                                        ->from('user_sectors as us')
-                                        ->whereRaw('TRIM(us.usu_codigo) = TRIM(u.usu_codigo)')
-                                        ->whereRaw('TRIM(us.sector_codigo) = ?', [$sectorCodigo]);
+                                ->orWhere(function ($q) use ($sectorCodigo) {
+                                    // Coordinadores de lab: solo cuenta su sector primario (sector_codigo).
+                                    $q->where(function ($rolQ) {
+                                        $rolQ->whereNull('u.rol')
+                                            ->orWhereRaw("TRIM(u.rol) <> 'coordinador_lab'");
+                                    })->whereExists(function ($pivot) use ($sectorCodigo) {
+                                        $pivot->select(DB::raw(1))
+                                            ->from('user_sectors as us')
+                                            ->whereRaw('TRIM(us.usu_codigo) = TRIM(u.usu_codigo)')
+                                            ->whereRaw('TRIM(us.sector_codigo) = ?', [$sectorCodigo]);
+                                    });
+                                })
+                                ->orWhere(function ($sectorEntity) use ($sectorCodigo) {
+                                    $sectorEntity->whereRaw("TRIM(u.rol) = 'sector'")
+                                        ->whereRaw('TRIM(u.usu_codigo) = ?', [$sectorCodigo]);
                                 });
                         });
                     }

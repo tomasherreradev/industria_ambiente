@@ -81,6 +81,33 @@
     color: #fff !important;
 }
 
+.inf-segmented--informes .inf-segmented__btn--ingreso.active {
+    background: var(--primary-color, #4e73df);
+    color: #fff;
+}
+
+.inf-segmented--informes .inf-segmented__btn--listo.active {
+    background: #f6c23e;
+    color: #212529;
+    box-shadow: 0 2px 8px rgba(246, 194, 62, 0.45);
+}
+
+.inf-segmented--informes .inf-segmented__btn--listo.active .badge {
+    background: rgba(0, 0, 0, 0.12) !important;
+    color: #212529 !important;
+}
+
+.inf-segmented--informes .inf-segmented__btn--firmados.active {
+    background: #e74a3b;
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(231, 74, 59, 0.35);
+}
+
+.inf-badge-firma--listo {
+    background: #fff3cd;
+    color: #856404;
+}
+
 .inf-view-switch {
     display: inline-flex;
     background: #fff;
@@ -145,13 +172,15 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 3rem;
+    min-width: 0;
     padding: .35rem .65rem;
     border-radius: 8px;
     background: rgba(78, 115, 223, 0.1);
     color: var(--primary-color, #4e73df);
     font-weight: 700;
-    font-size: .85rem;
+    font-size: .72rem;
+    line-height: 1.2;
+    white-space: nowrap;
     flex-shrink: 0;
 }
 

@@ -225,67 +225,13 @@
     @endisset
 
     @isset($refsFacturacion)
-        <div class="ucrud-panel mb-4">
-            <div class="fact-panel-head">
-                <div>
-                    <h2 class="ucrud-panel-title">Referencias para facturación</h2>
-                    <small class="text-muted">Mismos datos que se imprimen en la factura</small>
-                </div>
-                <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modalEditarRefs">
-                    <x-heroicon-o-pencil-square style="width: 14px; height: 14px;" class="me-1" />
-                    Editar referencias
-                </button>
-            </div>
-            <div class="fact-panel-body">
-                @if (empty($refsFacturacion['puede_facturar']) && !empty($refsFacturacion['mensaje_bloqueo']))
-                    <div class="alert alert-warning mb-0">{{ $refsFacturacion['mensaje_bloqueo'] }}</div>
-                @endif
-                <div class="row g-3 small">
-                    <div class="col-md-4">
-                        <span class="text-muted d-block text-uppercase" style="font-size: 0.7rem; letter-spacing: 0.06em;">Remito (1.ª línea)</span>
-                        <span class="fw-semibold">{{ ($refsFacturacion['remito'] ?? '') !== '' ? $refsFacturacion['remito'] : '—' }}</span>
-                    </div>
-                    <div class="col-md-5">
-                        <span class="text-muted d-block text-uppercase" style="font-size: 0.7rem; letter-spacing: 0.06em;">Orden de compra (O.C.)</span>
-                        <span class="fw-semibold">{{ ($refsFacturacion['oc'] ?? '') !== '' ? $refsFacturacion['oc'] : '—' }}</span>
-                        @if (!empty($refsFacturacion['oc_obligatorio']))
-                            <span class="badge bg-dark ms-1">Obligatoria para facturar</span>
-                        @endif
-                    </div>
-                </div>
-                @php $filasRefs = $refsFacturacion['filas'] ?? []; @endphp
-                @if (count($filasRefs) > 0)
-                    <hr class="my-3">
-                    <span class="text-muted d-block mb-2 small">Referencias adicionales (hasta 4)</span>
-                    <div class="table-responsive">
-                        <table class="table table-sm table-bordered align-middle mb-0 bg-white">
-                            <thead class="table-light">
-                                <tr>
-                                    <th style="width:110px;">Tipo</th>
-                                    <th>Valor</th>
-                                    <th style="width:140px;">Oblig. facturar</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach ($filasRefs as $fila)
-                                    <tr>
-                                        <td class="fw-medium">{{ $fila['tipo'] ?? '' }}</td>
-                                        <td>{{ ($fila['valor'] ?? '') !== '' ? $fila['valor'] : '—' }}</td>
-                                        <td>
-                                            @if (!empty($fila['obligatorio_factura']))
-                                                <span class="badge bg-warning text-dark">Sí</span>
-                                            @else
-                                                <span class="text-muted">No</span>
-                                            @endif
-                                        </td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
-                    </div>
-                @endif
-            </div>
-        </div>
+        @include('facturacion.partials.referencias-facturacion-editable', [
+            'refsFacturacion' => $refsFacturacion,
+            'cotiNum' => $cotizacion->coti_num,
+            'updateUrl' => route('facturacion.update-referencias', ['cotizacion' => $cotizacion->coti_num]),
+            'suffix' => 'facturar',
+            'layout' => 'panel',
+        ])
     @endisset
 
     @include('cotizaciones.info')
@@ -521,6 +467,9 @@
                                 >
                                 <label class="sample-label" for="sample-{{ $instancia->id }}">
                                     Muestra (#{{$instancia->instance_number }})
+                                    @if($instancia->otn)
+                                        <span class="badge bg-secondary ms-1">OT {{ $instancia->otn }}</span>
+                                    @endif
                                     @if($facturada)
                                         <x-heroicon-o-check-circle style="width: 18px; height: 18px; color: green;" />
                                         <span class="badge bg-success">Facturada</span>
@@ -540,6 +489,7 @@
                                         <span class="badge bg-success">{{ $instancia->cotio_estado_analisis }}</span>
                                     </p> --}}
                                     <p><strong>Identificación:</strong> {{ $instancia->cotio_identificacion ?? 'N/A' }}</p>
+                                    <p><strong>OT:</strong> {{ $instancia->otn ? $instancia->otn : '—' }}</p>
                                     <p><strong>Fecha Muestreo:</strong> 
                                         {{ $instancia->fecha_muestreo ? \Carbon\Carbon::parse($instancia->fecha_muestreo)->format('d/m/Y H:i') : 'N/A' }}
                                     </p>
@@ -707,9 +657,14 @@
                         </button>
                     </span>
                 @else
+                    @php
+                        $tooltipFacturarInicial = $mensajeTooltipSinItemsFacturables
+                            ?? 'Seleccione al menos una cuota, muestra o análisis para facturar.';
+                    @endphp
                     <span id="btnFacturarWrap" class="d-inline-block fact-btn-facturar-wrap" tabindex="0"
                           data-bs-toggle="tooltip" data-bs-placement="top" data-bs-trigger="hover focus"
-                          title="Seleccione al menos una cuota, muestra o análisis para facturar.">
+                          data-sin-items-motivo="{{ $mensajeTooltipSinItemsFacturables ?? '' }}"
+                          title="{{ $tooltipFacturarInicial }}">
                         <button id="btnFacturar" type="submit" class="btn btn-secondary btn-lg" disabled style="pointer-events: none;">
                             <x-heroicon-o-currency-dollar style="width: 18px; height: 18px;" class="me-1" />
                             Facturar
@@ -721,53 +676,6 @@
     </form>
 </div>
     
-    <!-- Modal Editar Referencias -->
-    <div class="modal fade" id="modalEditarRefs" tabindex="-1" aria-labelledby="modalEditarRefsLabel" aria-hidden="true">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="modalEditarRefsLabel">Editar Referencias de Facturación</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <form id="formEditarRefs">
-                        <div class="mb-3">
-                            <label for="modal_coti_oc_referencia" class="form-label">Orden de Compra (O.C.)</label>
-                            <input type="text" class="form-control" id="modal_coti_oc_referencia" name="coti_oc_referencia" value="{{ $refsFacturacion['oc'] ?? '' }}">
-                            @if (!empty($refsFacturacion['oc_obligatorio']))
-                                <div class="form-text text-danger">Esta referencia es obligatoria para facturar.</div>
-                            @endif
-                        </div>
-
-                        <hr class="my-4">
-                        <div id="modalRefsContainer">
-                            @foreach ($filasRefs as $idx => $fila)
-                                <div class="row g-2 mb-2 ref-row">
-                                    <div class="col-md-4">
-                                        <label class="small text-muted">Tipo</label>
-                                        <input type="text" class="form-control form-control-sm ref-tipo" value="{{ $fila['tipo'] ?? '' }}" readonly>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="small text-muted">Valor</label>
-                                        <input type="text" class="form-control form-control-sm ref-valor" value="{{ $fila['valor'] ?? '' }}">
-                                        @if (!empty($fila['obligatorio_factura']))
-                                            <div class="form-text text-danger mt-0" style="font-size: 0.7rem;">Obligatoria</div>
-                                        @endif
-                                    </div>
-                                </div>
-                            @endforeach
-                        </div>
-                        <input type="hidden" name="coti_refs_facturacion_json" id="modal_coti_refs_facturacion_json">
-                    </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="button" class="btn btn-primary" id="btnGuardarRefs">Guardar Cambios</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <script>
         document.getElementById('btnGuardarNotas').addEventListener('click', function() {
             const observations = document.getElementById('observaciones').value;
@@ -797,51 +705,6 @@
                         btn.innerHTML = originalHtml;
                         btn.disabled = false;
                     }, 2000);
-                } else {
-                    alert('Error: ' + data.message);
-                    btn.innerHTML = originalHtml;
-                    btn.disabled = false;
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('Error al conectar con el servidor');
-                btn.innerHTML = originalHtml;
-                btn.disabled = false;
-            });
-        });
-
-        document.getElementById('btnGuardarRefs').addEventListener('click', function() {
-            const oc = document.getElementById('modal_coti_oc_referencia').value;
-            const rows = [];
-            document.querySelectorAll('#modalRefsContainer .ref-row').forEach(row => {
-                rows.push({
-                    tipo: row.querySelector('.ref-tipo').value,
-                    valor: row.querySelector('.ref-valor').value,
-                    obligatorio_factura: row.innerHTML.includes('Obligatoria')
-                });
-            });
-
-            const btn = this;
-            const originalHtml = btn.innerHTML;
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Guardando...';
-
-            fetch("{{ route('facturacion.update-referencias', ['cotizacion' => $cotizacion->coti_num]) }}", {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': '{{ csrf_token() }}'
-                },
-                body: JSON.stringify({
-                    coti_oc_referencia: oc,
-                    coti_refs_facturacion_json: JSON.stringify(rows)
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    location.reload();
                 } else {
                     alert('Error: ' + data.message);
                     btn.innerHTML = originalHtml;
@@ -928,7 +791,29 @@
         return Array.from(checks).some(cb => cb.checked);
     }
 
+    function hayItemsSeleccionablesFacturar() {
+        return document.querySelectorAll(
+            '.sample-checkbox:not(:disabled), .analysis-checkbox:not(:disabled), .cuota-checkbox:not(:disabled)'
+        ).length > 0;
+    }
+
+    function getSinItemsFacturarMotivo() {
+        const wrap = document.getElementById('btnFacturarWrap');
+        return (wrap && wrap.dataset.sinItemsMotivo ? wrap.dataset.sinItemsMotivo : '').trim();
+    }
+
     function getFacturarBloqueoMensaje(anyChecked, emailOk) {
+        const sinItemsMotivo = getSinItemsFacturarMotivo();
+        if (sinItemsMotivo && !hayItemsSeleccionablesFacturar()) {
+            if (!anyChecked && !emailOk) {
+                return sinItemsMotivo + ' Además, seleccione un email de envío de factura.';
+            }
+            if (!emailOk) {
+                return 'Seleccione al menos un email de envío de factura.';
+            }
+            return sinItemsMotivo;
+        }
+
         const esCuotas = document.querySelector('.cuota-checkbox') !== null;
         if (!anyChecked && !emailOk) {
             return esCuotas

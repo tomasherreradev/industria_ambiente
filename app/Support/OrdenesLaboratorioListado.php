@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Models\Coti;
 use App\Models\CotioInstancia;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -374,6 +375,155 @@ final class OrdenesLaboratorioListado
         }
     }
 
+    /**
+     * La muestra tiene al menos un parámetro de laboratorio (subitem > 0) coordinable en OT.
+     */
+    public static function muestraTieneAnalisisLaboratorioParaCoordinar(CotioInstancia $muestra): bool
+    {
+        if (TrabajoTecnicoCampo::instanciaEsEnsayoIndependienteTrabajoTecnico($muestra)) {
+            return false;
+        }
+
+        $cotizacion = $muestra->cotizacion;
+        if (! $cotizacion) {
+            return CotioInstancia::query()
+                ->where('cotio_numcoti', $muestra->cotio_numcoti)
+                ->where('cotio_item', $muestra->cotio_item)
+                ->where('instance_number', $muestra->instance_number)
+                ->where('cotio_subitem', '>', 0)
+                ->exists();
+        }
+
+        $matrizDesc = trim((string) (optional($cotizacion->matriz)->matriz_descripcion ?? ''));
+
+        return $cotizacion->tareas
+            ->where('cotio_item', $muestra->cotio_item)
+            ->where('cotio_subitem', '>', 0)
+            ->contains(fn ($t) => ! CotizacionCanalEnsayo::ensayoExcluidoDeOrdenes($t, $matrizDesc));
+    }
+
+    /**
+     * @param  Collection<string, Collection<int, CotioInstancia>>  $analisisActivosPorMuestra
+     */
+    public static function muestraEstaPendientePorCoordinar(CotioInstancia $muestra, Collection $analisisActivosPorMuestra): bool
+    {
+        if (! ($muestra->enable_ot ?? false)) {
+            return false;
+        }
+
+        if (! self::muestraTieneAnalisisLaboratorioParaCoordinar($muestra)) {
+            return false;
+        }
+
+        $key = $muestra->cotio_numcoti.'-'.$muestra->cotio_item.'-'.$muestra->instance_number;
+
+        if (($muestra->active_ot ?? false) && $analisisActivosPorMuestra->has($key)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Análisis (instancias subitem > 0) a listar en «pendiente por coordinar».
+     *
+     * @param  Collection<int, CotioInstancia>  $instanciasAnalisisMuestra
+     * @return Collection<int, CotioInstancia>
+     */
+    public static function filtrarAnalisisPendientesCoordinacionMuestra(
+        CotioInstancia $muestra,
+        Collection $instanciasAnalisisMuestra
+    ): Collection {
+        $matrizDesc = trim((string) (optional($muestra->cotizacion?->matriz)->matriz_descripcion ?? ''));
+        $tareas = $muestra->cotizacion?->tareas ?? collect();
+
+        return $instanciasAnalisisMuestra
+            ->filter(function (CotioInstancia $a) use ($tareas, $matrizDesc) {
+                $tarea = $tareas->first(
+                    fn ($t) => (int) $t->cotio_item === (int) $a->cotio_item
+                        && (int) $t->cotio_subitem === (int) $a->cotio_subitem
+                );
+                if ($tarea && CotizacionCanalEnsayo::ensayoExcluidoDeOrdenes($tarea, $matrizDesc)) {
+                    return false;
+                }
+
+                if (! ($muestra->active_ot ?? false)) {
+                    return true;
+                }
+
+                return ! ($a->active_ot ?? false);
+            })
+            ->values();
+    }
+
+    /**
+     * @param  Collection<int, CotioInstancia>  $muestras
+     * @return \Illuminate\Support\Collection<string, int>
+     */
+    public static function clavesMuestras(Collection $muestras): \Illuminate\Support\Collection
+    {
+        return $muestras->mapWithKeys(function (CotioInstancia $m) {
+            $key = (int) $m->cotio_numcoti.'-'.(int) $m->cotio_item.'-'.(int) $m->instance_number;
+
+            return [$key => true];
+        });
+    }
+
+    /**
+     * Restringe la query a las muestras indicadas (subitem 0). Usa whereIn por cotización + filtro en PHP cuando conviene.
+     *
+     * @param  Collection<int, CotioInstancia>  $muestras
+     */
+    public static function aplicarWhereInstanciasDeMuestras(Builder $query, Collection $muestras): void
+    {
+        if ($muestras->isEmpty()) {
+            $query->whereRaw('0 = 1');
+
+            return;
+        }
+
+        $cotizaciones = $muestras->pluck('cotio_numcoti')->unique()->filter()->values()->all();
+        $query->whereIn('cotio_numcoti', $cotizaciones);
+
+        $unicas = $muestras->unique(
+            fn (CotioInstancia $m) => (int) $m->cotio_numcoti.'-'.(int) $m->cotio_item.'-'.(int) $m->instance_number
+        )->values();
+
+        $query->where(function ($outer) use ($unicas) {
+            foreach ($unicas->chunk(40) as $chunk) {
+                $outer->orWhere(function ($q) use ($chunk) {
+                    foreach ($chunk as $muestra) {
+                        $q->orWhere(function ($sub) use ($muestra) {
+                            $sub->where('cotio_numcoti', $muestra->cotio_numcoti)
+                                ->where('cotio_item', $muestra->cotio_item)
+                                ->where('instance_number', $muestra->instance_number);
+                        });
+                    }
+                });
+            }
+        });
+    }
+
+    /**
+     * @param  Collection<int, CotioInstancia>  $instancias
+     * @param  Collection<int, CotioInstancia>  $muestras
+     * @return Collection<int, CotioInstancia>
+     */
+    public static function filtrarInstanciasPorMuestras(Collection $instancias, Collection $muestras): Collection
+    {
+        if ($muestras->isEmpty()) {
+            return collect();
+        }
+
+        $claves = self::clavesMuestras($muestras);
+
+        return $instancias->filter(function (CotioInstancia $instancia) use ($claves) {
+            $key = (int) $instancia->cotio_numcoti.'-'.(int) $instancia->cotio_item.'-'.(int) $instancia->instance_number;
+
+            return $claves->has($key);
+        })->values();
+    }
+
     public static function contarMuestrasPorEstado(Collection $muestras): array
     {
         return [
@@ -395,7 +545,7 @@ final class OrdenesLaboratorioListado
      *
      * @param  Collection<int, CotioInstancia>  $muestras
      */
-    public static function contarAnalisisPorEstado(Collection $muestras): array
+    public static function contarAnalisisPorEstado(Collection $muestras, ?User $user = null): array
     {
         if ($muestras->isEmpty()) {
             return [
@@ -407,30 +557,25 @@ final class OrdenesLaboratorioListado
             ];
         }
 
-        $analisisActivosPorMuestra = CotioInstancia::query()
+        $filtrarPorSector = OrdenesAccesoPorSector::debeFiltrarPorSector($user);
+
+        $queryAnalisis = CotioInstancia::query()
             ->where('cotio_subitem', '>', 0)
             ->where('active_ot', true)
-            ->where(function ($q) use ($muestras) {
-                foreach ($muestras as $muestra) {
-                    $q->orWhere(function ($subQ) use ($muestra) {
-                        $subQ->where('cotio_numcoti', $muestra->cotio_numcoti)
-                            ->where('cotio_item', $muestra->cotio_item)
-                            ->where('instance_number', $muestra->instance_number);
-                    });
-                }
-            })
-            ->get(['cotio_numcoti', 'cotio_item', 'instance_number', 'cotio_estado_analisis', 'time_annulled'])
-            ->groupBy(fn ($a) => $a->cotio_numcoti.'-'.$a->cotio_item.'-'.$a->instance_number);
+            ->whereIn('cotio_numcoti', $muestras->pluck('cotio_numcoti')->unique()->filter()->values()->all());
 
-        $pendientesCoordinar = $muestras->filter(function ($m) use ($analisisActivosPorMuestra) {
-            if (! ($m->enable_ot ?? false)) {
-                return false;
-            }
+        if ($filtrarPorSector) {
+            OrdenesAccesoPorSector::aplicarFiltroInstanciaPorSectoresUsuario($queryAnalisis, $user);
+        }
 
-            $key = $m->cotio_numcoti.'-'.$m->cotio_item.'-'.$m->instance_number;
+        $analisisActivosPorMuestra = self::filtrarInstanciasPorMuestras(
+            $queryAnalisis->get(['cotio_numcoti', 'cotio_item', 'instance_number', 'cotio_estado_analisis', 'time_annulled']),
+            $muestras
+        )->groupBy(fn ($a) => $a->cotio_numcoti.'-'.$a->cotio_item.'-'.$a->instance_number);
 
-            return ! ($m->active_ot ?? false) || ! $analisisActivosPorMuestra->has($key);
-        })->count();
+        $pendientesCoordinar = $filtrarPorSector ? 0 : $muestras->filter(
+            fn ($m) => self::muestraEstaPendientePorCoordinar($m, $analisisActivosPorMuestra)
+        )->count();
 
         $contarMuestrasConEstado = function (string $estado) use ($analisisActivosPorMuestra): int {
             return $analisisActivosPorMuestra->filter(

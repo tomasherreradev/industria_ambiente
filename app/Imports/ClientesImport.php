@@ -86,7 +86,9 @@ class MainClientesImport implements ToCollection, WithHeadingRow
             $cliente->cli_codigoprv = !empty($row['codigo_provincia']) ? str_pad(substr($row['codigo_provincia'], 0, 5), 5, ' ', STR_PAD_RIGHT) : null;
             $cliente->cli_cuit = !empty($row['cuit']) ? str_pad(substr($row['cuit'], 0, 13), 13, ' ', STR_PAD_RIGHT) : null;
             $cliente->cli_codigociva = !empty($row['condicion_iva_codigo']) ? str_pad(substr($row['condicion_iva_codigo'], 0, 5), 5, ' ', STR_PAD_RIGHT) : null;
-            $cliente->cli_codigopag = !empty($row['condicion_pago_codigo']) ? str_pad(substr($row['condicion_pago_codigo'], 0, 5), 5, ' ', STR_PAD_RIGHT) : null;
+            $cliente->cli_codigopag = ! empty($row['condicion_pago_codigo'])
+                ? substr(trim((string) $row['condicion_pago_codigo']), 0, 20)
+                : null;
             $cliente->cli_estado = (strtolower($row['estado_activo_inactivo'] ?? '') === 'inactivo') ? false : true;
             $cliente->cli_codigolp = !empty($row['lista_precio_codigo']) ? str_pad(substr($row['lista_precio_codigo'], 0, 5), 5, ' ', STR_PAD_RIGHT) : 'UNO  ';
             $cliente->cli_fechaalta = !empty($row['fecha_alta_aaaa_mm_dd']) ? $row['fecha_alta_aaaa_mm_dd'] : now()->format('Y-m-d');

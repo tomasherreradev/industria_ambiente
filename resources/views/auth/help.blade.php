@@ -1,293 +1,186 @@
 @extends('layouts.app')
 
+@section('title', 'Centro de ayuda')
+
+@php
+    $codigoUsuario = trim((string) $user->usu_codigo);
+    $mailtoSoporte = 'mailto:'.$soporteEmail
+        .'?subject='.rawurlencode('Soporte — '.$codigoUsuario)
+        .'&body='.rawurlencode("Hola,\n\nUsuario: {$codigoUsuario}\nNombre: {$user->usu_descripcion}\n\nConsulta:\n");
+@endphp
+
 @section('content')
-<div class="container py-4">
-    <div class="row justify-content-center">
-        <div class="col-lg-10">
-            <div class="card border-0 shadow-lg">
-                <div class="card-header bg-gradient-primary text-white">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <h3 class="mb-0"><i class="fas fa-life-ring me-2"></i> Centro de Ayuda</h3>
-                        <span class="badge bg-white text-primary rounded-pill fs-6">Usuario: {{ $user->usu_codigo }}</span>
-                    </div>
+@include('partials.ucrud-styles')
+
+<div class="container py-4 ucrud ucrud-perfil" data-ucrud-root>
+    <header class="ucrud-header">
+        <div class="ucrud-header__titles">
+            <h1 class="ucrud-title">Centro de ayuda</h1>
+            <p class="ucrud-subtitle">
+                {{ $user->usu_descripcion }}
+                <span class="text-muted">·</span>
+                <span class="ucrud-role-chip ucrud-role-chip--extra">{{ $codigoUsuario }}</span>
+            </p>
+        </div>
+        <div class="ucrud-header__actions">
+            <a href="{{ route('auth.show', $codigoUsuario) }}" class="ucrud-btn ucrud-btn--ghost">
+                <x-heroicon-o-arrow-left style="width: 16px; height: 16px;" />
+                Volver al perfil
+            </a>
+        </div>
+    </header>
+
+    <div class="ucrud-alert ucrud-alert--success mb-3">
+        <x-heroicon-o-information-circle style="width: 18px; height: 18px;" />
+        <span>Respuestas rápidas sobre tu cuenta y cómo contactar al equipo de soporte.</span>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-lg-7">
+            <div class="ucrud-panel h-100">
+                <div class="ucrud-detail-block mb-3">
+                    <h2 class="ucrud-detail-block__title d-flex align-items-center gap-2">
+                        <x-heroicon-o-question-mark-circle style="width: 18px; height: 18px;" />
+                        Preguntas frecuentes
+                    </h2>
                 </div>
-                
-                <div class="card-body p-4">
-                    <div class="row g-4">
-                        <!-- Banner de Bienvenida -->
-                        <div class="col-12">
-                            <div class="alert alert-primary bg-primary bg-opacity-10 border-0">
-                                <div class="d-flex align-items-center">
-                                    <div class="flex-shrink-0">
-                                        <i class="fas fa-info-circle fs-2 text-primary"></i>
-                                    </div>
-                                    <div class="flex-grow-1 ms-3">
-                                        <h5 class="alert-heading">¡Bienvenido al Centro de Ayuda!</h5>
-                                        <p class="mb-0">Aquí encontrarás toda la información y recursos necesarios para sacar el máximo provecho a nuestra plataforma.</p>
-                                    </div>
-                                </div>
+
+                <div class="ucrud-accordion" id="ayudaFaq">
+                    <div class="ucrud-accordion__item">
+                        <div class="ucrud-accordion__header" id="faqHeadingPassword">
+                            <button class="ucrud-accordion__toggle w-100" type="button"
+                                    data-bs-toggle="collapse"
+                                    data-bs-target="#faqPassword"
+                                    aria-expanded="true"
+                                    aria-controls="faqPassword">
+                                <x-heroicon-o-lock-closed style="width: 18px; height: 18px; flex-shrink: 0;" />
+                                ¿Cómo cambio mi contraseña?
+                            </button>
+                        </div>
+                        <div id="faqPassword" class="collapse show ucrud-accordion__body"
+                             aria-labelledby="faqHeadingPassword" data-bs-parent="#ayudaFaq">
+                            <div class="p-3 text-muted" style="font-size: 0.9375rem; line-height: 1.55;">
+                                <ol class="mb-3 ps-3">
+                                    <li>Abrí <strong>Seguridad y contraseña</strong> desde el menú de tu usuario o el perfil.</li>
+                                    <li>Ingresá la contraseña actual.</li>
+                                    <li>Escribí y confirmá la nueva contraseña (mínimo 4 caracteres).</li>
+                                    <li>Pulsá <strong>Actualizar contraseña</strong>.</li>
+                                </ol>
+                                <a href="{{ route('auth.security', ['id' => $codigoUsuario]) }}" class="ucrud-btn ucrud-btn--primary">
+                                    <x-heroicon-o-lock-closed style="width: 16px; height: 16px;" />
+                                    Ir a seguridad
+                                </a>
                             </div>
                         </div>
+                    </div>
 
-                        <!-- Preguntas Frecuentes -->
-                        <div class="col-lg-6">
-                            <div class="card h-100 border-0 shadow-sm">
-                                <div class="card-header bg-light">
-                                    <h5 class="mb-0"><i class="fas fa-question-circle me-2 text-primary"></i> Preguntas Frecuentes</h5>
-                                </div>
-                                <div class="card-body">
-                                    <div class="accordion accordion-flush" id="faqAccordion">
-                                        <div class="accordion-item border-0 mb-2 shadow-sm rounded">
-                                            <h2 class="accordion-header" id="headingOne">
-                                                <button class="accordion-button collapsed rounded" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOne">
-                                                    <i class="fas fa-key me-2 text-primary"></i> ¿Cómo cambio mi contraseña?
-                                                </button>
-                                            </h2>
-                                            <div id="collapseOne" class="accordion-collapse collapse" aria-labelledby="headingOne" data-bs-parent="#faqAccordion">
-                                                <div class="accordion-body">
-                                                    <p>Para cambiar tu contraseña:</p>
-                                                    <ol>
-                                                        <li>Ve a tu perfil de usuario</li>
-                                                        <li>Selecciona "Seguridad y Contraseña"</li>
-                                                        <li>Ingresa tu contraseña actual</li>
-                                                        <li>Crea y confirma tu nueva contraseña</li>
-                                                        <li>Guarda los cambios</li>
-                                                    </ol>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        
-                                        <div class="accordion-item border-0 mb-2 shadow-sm rounded">
-                                            <h2 class="accordion-header" id="headingTwo">
-                                                <button class="accordion-button collapsed rounded" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTwo">
-                                                    <i class="fas fa-user-lock me-2 text-primary"></i> ¿Qué es la autenticación 2FA?
-                                                </button>
-                                            </h2>
-                                            <div id="collapseTwo" class="accordion-collapse collapse" aria-labelledby="headingTwo" data-bs-parent="#faqAccordion">
-                                                <div class="accordion-body">
-                                                    <p>La autenticación de dos factores (2FA) añade una capa adicional de seguridad a tu cuenta. Requiere:</p>
-                                                    <ul>
-                                                        <li>Algo que sabes (tu contraseña)</li>
-                                                        <li>Algo que tienes (un código temporal)</li>
-                                                    </ul>
-                                                    <p>Puedes activarla en la sección de Seguridad de tu perfil.</p>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        
-                                        <div class="accordion-item border-0 mb-2 shadow-sm rounded">
-                                            <h2 class="accordion-header" id="headingThree">
-                                                <button class="accordion-button collapsed rounded" type="button" data-bs-toggle="collapse" data-bs-target="#collapseThree">
-                                                    <i class="fas fa-file-export me-2 text-primary"></i> ¿Cómo exporto mis datos?
-                                                </button>
-                                            </h2>
-                                            <div id="collapseThree" class="accordion-collapse collapse" aria-labelledby="headingThree" data-bs-parent="#faqAccordion">
-                                                <div class="accordion-body">
-                                                    <p>Para exportar tus datos:</p>
-                                                    <ol>
-                                                        <li>Ve a Configuración de cuenta</li>
-                                                        <li>Selecciona "Exportar datos"</li>
-                                                        <li>Elige el formato (CSV, Excel o PDF)</li>
-                                                        <li>Haz clic en "Generar exportación"</li>
-                                                        <li>Descarga el archivo cuando esté listo</li>
-                                                    </ol>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
+                    <div class="ucrud-accordion__item">
+                        <div class="ucrud-accordion__header" id="faqHeadingSession">
+                            <button class="ucrud-accordion__toggle w-100" type="button"
+                                    data-bs-toggle="collapse"
+                                    data-bs-target="#faqSession"
+                                    aria-expanded="false"
+                                    aria-controls="faqSession">
+                                <x-heroicon-o-arrow-right-on-rectangle style="width: 18px; height: 18px; flex-shrink: 0;" />
+                                ¿Por qué se cerró mi sesión sola?
+                            </button>
+                        </div>
+                        <div id="faqSession" class="collapse ucrud-accordion__body"
+                             aria-labelledby="faqHeadingSession" data-bs-parent="#ayudaFaq">
+                            <div class="p-3 text-muted" style="font-size: 0.9375rem; line-height: 1.55;">
+                                <p class="mb-0">
+                                    El sistema permite <strong>una sola sesión activa</strong> por usuario. Si iniciás sesión en otro navegador o dispositivo,
+                                    la sesión anterior se cierra. Podés revisar el estado en
+                                    <a href="{{ route('auth.security', ['id' => $codigoUsuario]) }}">Seguridad y contraseña</a>.
+                                </p>
                             </div>
                         </div>
+                    </div>
 
-                        <!-- Contactar al Soporte -->
-                        <div class="col-lg-6">
-                            <div class="card h-100 border-0 shadow-sm">
-                                <div class="card-header bg-light">
-                                    <h5 class="mb-0"><i class="fas fa-headset me-2 text-primary"></i> Soporte Directo</h5>
-                                </div>
-                                <div class="card-body">
-                                    <form class="needs-validation" novalidate>
-                                        <div class="mb-3">
-                                            <label class="form-label">Asunto</label>
-                                            <select class="form-select" required>
-                                                <option value="" selected disabled>Seleccione un tema</option>
-                                                <option>Problema técnico</option>
-                                                <option>Consulta sobre funcionalidades</option>
-                                                <option>Solicitud de característica</option>
-                                                <option>Reporte de error</option>
-                                                <option>Otro</option>
-                                            </select>
-                                        </div>
-                                        <div class="mb-3">
-                                            <label class="form-label">Mensaje</label>
-                                            <textarea class="form-control" rows="5" placeholder="Describa su consulta o problema en detalle..." required></textarea>
-                                        </div>
-                                        <div class="mb-3">
-                                            <label class="form-label">Adjuntos (opcional)</label>
-                                            <div class="file-upload-wrapper">
-                                                <input type="file" class="form-control" id="supportAttachments" multiple>
-                                                <div class="file-upload-preview mt-2"></div>
-                                            </div>
-                                        </div>
-                                        <button type="submit" class="btn btn-primary w-100 py-2">
-                                            <i class="fas fa-paper-plane me-2"></i> Enviar Mensaje
-                                        </button>
-                                    </form>
-                                </div>
-                            </div>
+                    <div class="ucrud-accordion__item">
+                        <div class="ucrud-accordion__header" id="faqHeadingProfile">
+                            <button class="ucrud-accordion__toggle w-100" type="button"
+                                    data-bs-toggle="collapse"
+                                    data-bs-target="#faqProfile"
+                                    aria-expanded="false"
+                                    aria-controls="faqProfile">
+                                <x-heroicon-o-user-circle style="width: 18px; height: 18px; flex-shrink: 0;" />
+                                ¿Cómo actualizo mis datos de perfil?
+                            </button>
                         </div>
-
-                        <!-- Recursos Adicionales -->
-                        <div class="col-12">
-                            <div class="card border-0 shadow-sm">
-                                <div class="card-header bg-light">
-                                    <h5 class="mb-0"><i class="fas fa-box-open me-2 text-primary"></i> Recursos Adicionales</h5>
-                                </div>
-                                <div class="card-body">
-                                    <div class="row g-4">
-                                        <div class="col-md-4">
-                                            <div class="card h-100 border-0 shadow-sm hover-shadow transition-all">
-                                                <div class="card-body text-center p-4">
-                                                    <div class="bg-primary bg-opacity-10 p-3 rounded-circle d-inline-block mb-3">
-                                                        <i class="fas fa-file-pdf text-primary fs-3"></i>
-                                                    </div>
-                                                    <h5 class="card-title">Manual de Usuario</h5>
-                                                    <p class="card-text small text-muted">Guía completa con todas las funcionalidades del sistema</p>
-                                                    <a href="#" class="btn btn-sm btn-outline-primary stretched-link">
-                                                        <i class="fas fa-download me-1"></i> Descargar PDF
-                                                    </a>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-4">
-                                            <div class="card h-100 border-0 shadow-sm hover-shadow transition-all">
-                                                <div class="card-body text-center p-4">
-                                                    <div class="bg-primary bg-opacity-10 p-3 rounded-circle d-inline-block mb-3">
-                                                        <i class="fas fa-video text-primary fs-3"></i>
-                                                    </div>
-                                                    <h5 class="card-title">Tutoriales en Video</h5>
-                                                    <p class="card-text small text-muted">Aprende con nuestros videos paso a paso</p>
-                                                    <a href="#" class="btn btn-sm btn-outline-primary stretched-link">
-                                                        <i class="fas fa-play me-1"></i> Ver Tutoriales
-                                                    </a>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-4">
-                                            <div class="card h-100 border-0 shadow-sm hover-shadow transition-all">
-                                                <div class="card-body text-center p-4">
-                                                    <div class="bg-primary bg-opacity-10 p-3 rounded-circle d-inline-block mb-3">
-                                                        <i class="fas fa-comments text-primary fs-3"></i>
-                                                    </div>
-                                                    <h5 class="card-title">Comunidad</h5>
-                                                    <p class="card-text small text-muted">Únete a nuestra comunidad de usuarios</p>
-                                                    <a href="#" class="btn btn-sm btn-outline-primary stretched-link">
-                                                        <i class="fas fa-users me-1"></i> Acceder
-                                                    </a>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
+                        <div id="faqProfile" class="collapse ucrud-accordion__body"
+                             aria-labelledby="faqHeadingProfile" data-bs-parent="#ayudaFaq">
+                            <div class="p-3 text-muted" style="font-size: 0.9375rem; line-height: 1.55;">
+                                <p class="mb-3">
+                                    Desde tu perfil podés ver código, roles y estado. Los cambios de nombre (y otros datos administrativos, si aplican)
+                                    se hacen en <strong>Editar perfil</strong>.
+                                </p>
+                                <a href="{{ route('auth.edit', $codigoUsuario) }}" class="ucrud-btn ucrud-btn--ghost">
+                                    <x-heroicon-o-pencil-square style="width: 16px; height: 16px;" />
+                                    Editar perfil
+                                </a>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
+
+        <div class="col-lg-5">
+            <div class="ucrud-panel h-100">
+                <div class="ucrud-detail-block">
+                    <h2 class="ucrud-detail-block__title d-flex align-items-center gap-2">
+                        <x-heroicon-o-paper-airplane style="width: 18px; height: 18px;" />
+                        Contacto con soporte
+                    </h2>
+                    <p class="text-muted mt-2 mb-3" style="font-size: 0.9375rem; line-height: 1.55;">
+                        Para problemas técnicos, consultas sobre el uso del sistema o reportes de error, escribinos por correo.
+                        Incluí tu usuario, qué pantalla estabas usando y el mayor detalle posible.
+                    </p>
+
+                    <div class="ucrud-detail-grid mb-3">
+                        <div>
+                            <div class="ucrud-detail-item__label">Correo de soporte</div>
+                            <div class="ucrud-detail-item__value">
+                                <a href="{{ $mailtoSoporte }}">{{ $soporteEmail }}</a>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="d-flex flex-wrap gap-2">
+                        <a href="{{ $mailtoSoporte }}" class="ucrud-btn ucrud-btn--primary">
+                            <x-heroicon-o-paper-airplane style="width: 16px; height: 16px;" />
+                            Enviar correo
+                        </a>
+                        <button type="button" class="ucrud-btn ucrud-btn--ghost" id="copySupportEmail" data-email="{{ $soporteEmail }}">
+                            <x-heroicon-o-clipboard-document style="width: 16px; height: 16px;" />
+                            Copiar correo
+                        </button>
+                    </div>
+                    <p class="small text-muted mb-0 mt-3" id="copySupportEmailFeedback" role="status" aria-live="polite"></p>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
+@endsection
 
-<style>
-    .accordion-button:not(.collapsed) {
-        background-color: rgba(13, 110, 253, 0.1);
-        color: #0d6efd;
-    }
-    .accordion-button:focus {
-        box-shadow: none;
-        border-color: rgba(0,0,0,.125);
-    }
-    .file-upload-wrapper {
-        position: relative;
-    }
-    .file-upload-preview {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-    }
-    .file-upload-preview .file-preview-item {
-        background: #f8f9fa;
-        border-radius: 5px;
-        padding: 5px 10px;
-        font-size: 0.8rem;
-        display: flex;
-        align-items: center;
-    }
-    .file-upload-preview .file-preview-item .remove-file {
-        margin-left: 5px;
-        cursor: pointer;
-        color: #dc3545;
-    }
-    .hover-shadow:hover {
-        box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.1) !important;
-        transform: translateY(-2px);
-    }
-    .transition-all {
-        transition: all 0.3s ease;
-    }
-</style>
-
-@section('scripts')
+@push('scripts')
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        // File upload preview
-        const fileInput = document.getElementById('supportAttachments');
-        const previewDiv = document.querySelector('.file-upload-preview');
-        
-        fileInput.addEventListener('change', function() {
-            previewDiv.innerHTML = '';
-            if (this.files.length > 0) {
-                Array.from(this.files).forEach(file => {
-                    const fileItem = document.createElement('div');
-                    fileItem.className = 'file-preview-item';
-                    fileItem.innerHTML = `
-                        <span>${file.name}</span>
-                        <span class="remove-file" data-file="${file.name}">
-                            <i class="fas fa-times"></i>
-                        </span>
-                    `;
-                    previewDiv.appendChild(fileItem);
-                });
-            }
-        });
+    document.addEventListener('DOMContentLoaded', function () {
+        const btn = document.getElementById('copySupportEmail');
+        const feedback = document.getElementById('copySupportEmailFeedback');
+        if (!btn || !feedback) return;
 
-        // Remove file from preview
-        previewDiv.addEventListener('click', function(e) {
-            if (e.target.closest('.remove-file')) {
-                const fileName = e.target.closest('.remove-file').getAttribute('data-file');
-                e.target.closest('.file-preview-item').remove();
-                
-                // Remove from file input (would need more complex handling in real app)
-                const dt = new DataTransfer();
-                Array.from(fileInput.files).forEach(file => {
-                    if (file.name !== fileName) dt.items.add(file);
-                });
-                fileInput.files = dt.files;
+        btn.addEventListener('click', async function () {
+            const email = btn.getAttribute('data-email') || '';
+            try {
+                await navigator.clipboard.writeText(email);
+                feedback.textContent = 'Correo copiado al portapapeles.';
+            } catch (e) {
+                feedback.textContent = 'No se pudo copiar. Usá el enlace «Enviar correo».';
             }
-        });
-
-        // Form validation
-        const forms = document.querySelectorAll('.needs-validation');
-        Array.from(forms).forEach(form => {
-            form.addEventListener('submit', function(event) {
-                if (!form.checkValidity()) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                }
-                form.classList.add('was-validated');
-            }, false);
         });
     });
 </script>
-@endsection
-@endsection
+@endpush

@@ -1137,6 +1137,7 @@ public function updateResultado(Request $request, $cotio_numcoti, $cotio_item, $
         'observacion_resultado_final' => 'nullable|string|max:255',
         'observaciones_ot' => 'nullable|string|max:1000',
         'image_resultado_final' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp',
+        'u_med_resultado' => 'nullable|string|max:50',
     ]);
 
     DB::beginTransaction();
@@ -1249,6 +1250,11 @@ public function updateResultado(Request $request, $cotio_numcoti, $cotio_item, $
             $instancia->observaciones_ot = $request->observaciones_ot;
         }
 
+        if ($request->has('u_med_resultado')) {
+            $unidad = trim((string) $request->input('u_med_resultado'));
+            $instancia->cotio_codigoum = $unidad !== '' ? $unidad : null;
+        }
+
         if ($instancia->request_review) {
             $instancia->request_review = false;
         }
@@ -1322,6 +1328,7 @@ public function onlyUpdateResultado(Request $request, $cotio_numcoti, $cotio_ite
         'observacion_resultado_final' => 'nullable|string|max:255',
         'observaciones_ot' => 'nullable|string|max:1000',
         'image_resultado_final' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp',
+        'u_med_resultado' => 'nullable|string|max:50',
     ]);
 
     DB::beginTransaction();
@@ -1339,6 +1346,11 @@ public function onlyUpdateResultado(Request $request, $cotio_numcoti, $cotio_ite
             $filename = time() . '_' . $file->getClientOriginalName();
             $path = $file->storeAs('uploads/analisis', $filename, 'public');
             $instancia->image_resultado_final = $path; // Store the file path in the `image` column
+        }
+
+        if ($request->has('u_med_resultado')) {
+            $unidad = trim((string) $request->input('u_med_resultado'));
+            $instancia->cotio_codigoum = $unidad !== '' ? $unidad : null;
         }
 
         // Update other fields

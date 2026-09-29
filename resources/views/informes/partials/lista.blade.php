@@ -1,7 +1,5 @@
 @php
-    $user = Auth::user();
     $isInformes = userHasRole('informes');
-    $isFirmador = userHasRole('firmador');
     $vistaActiva = $vistaActiva ?? 'pendientes';
 @endphp
 
@@ -18,7 +16,7 @@
             <article class="inf-coti-card">
                 <div class="inf-coti-card__main">
                     <div class="inf-coti-card__info">
-                        <span class="inf-coti-card__badge">#{{ $numCoti }}</span>
+                        <span class="inf-coti-card__badge">{{ etiquetaNumeroCotizacion($numCoti) }}</span>
                         <div>
                             <h6 class="inf-coti-card__title mb-0">
                                 {{ \App\Support\CotizacionClienteEtiqueta::paraLista($coti) }}
@@ -67,6 +65,7 @@
                                     || str_contains($descUpper, 'APARATOS SOMETIDOS A PRESION')
                                     || str_contains($descUpper, 'CLARKE');
                                 $tipoInforme = $muestra->tipo_informe ?? 'final';
+                                $puedeEditarInformeEnBandeja = ! $muestra->firmado && ! $muestra->listo_para_firmar;
                             @endphp
                             <div class="inf-muestra-row">
                                 <div class="inf-muestra-row__id">
@@ -81,8 +80,10 @@
                                     </span>
                                     @if($muestra->firmado)
                                         <span class="inf-badge-firma inf-badge-firma--firmado ms-1">Firmado</span>
+                                    @elseif($muestra->listo_para_firmar)
+                                        <span class="inf-badge-firma inf-badge-firma--listo ms-1">Listo para firmar</span>
                                     @else
-                                        <span class="inf-badge-firma inf-badge-firma--pendiente ms-1">Pendiente firma</span>
+                                        <span class="inf-badge-firma inf-badge-firma--pendiente ms-1">En bandeja</span>
                                     @endif
                                 </div>
                                 @if($muestra->identificador_documento_firma)
@@ -93,7 +94,7 @@
                                     <div class="inf-muestra-row__firma d-none d-lg-block">—</div>
                                 @endif
                                 <div class="inf-muestra-row__actions">
-                                    @if($isInformes && !$isSpecialMuestra)
+                                    @if($isInformes && !$isSpecialMuestra && $puedeEditarInformeEnBandeja)
                                         <button type="button" class="btn btn-sm btn-outline-primary preview-informe-btn"
                                                 data-cotizacion="{{ $numCoti }}"
                                                 data-item="{{ $muestra->cotio_item }}"
@@ -102,7 +103,7 @@
                                             <x-heroicon-o-eye style="width: 15px; height: 15px;" />
                                         </button>
                                     @endif
-                                    @if(userCanEditInformeProtocoloPdf() && !$isSpecialMuestra)
+                                    @if(userCanEditInformeProtocoloPdf() && !$isSpecialMuestra && $puedeEditarInformeEnBandeja)
                                         <a href="{{ route('informes.protocolo-pdf.edit', [
                                             'cotio_numcoti' => $numCoti,
                                             'cotio_item' => $muestra->cotio_item,
@@ -122,7 +123,7 @@
                                        title="{{ $muestra->firmado ? 'Descargar PDF firmado' : 'Descargar PDF' }}">
                                         <x-heroicon-o-document-arrow-down style="width: 15px; height: 15px;" />
                                     </a>
-                                    @if(!$muestra->firmado && $isFirmador)
+                                    @if(userPuedeFirmarInforme($muestra))
                                         <a href="{{ route('informes.firmar', [
                                             'cotio_numcoti' => $numCoti,
                                             'cotio_item' => $muestra->cotio_item,

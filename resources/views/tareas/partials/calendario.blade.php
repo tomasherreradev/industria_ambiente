@@ -14,6 +14,11 @@
     </div>
 
     @if($events->isNotEmpty())
+        <div class="op-calendario__view-tabs" id="tareas-calendar-view-tabs" role="group" aria-label="Vista del calendario">
+            <button type="button" class="op-calendario__view-tab" data-cal-view="dayGridMonth">Mes</button>
+            <button type="button" class="op-calendario__view-tab" data-cal-view="timeGridWeek">Semana</button>
+            <button type="button" class="op-calendario__view-tab is-active" data-cal-view="timeGridDay">Día</button>
+        </div>
         <div id="calendar" class="tareas-calendario-widget"></div>
     @else
         <div class="ucrud-alert ucrud-alert--info mb-0" role="status">
@@ -33,6 +38,15 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function isMobileView() {
         return mobileQuery.matches;
+    }
+
+    function canHoverTooltip() {
+        return window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+    }
+
+    function goToDayView(date) {
+        calendar.changeView('timeGridDay', date);
+        syncMobileViewTabs('timeGridDay');
     }
 
     const calendar = new FullCalendar.Calendar(calendarEl, {
@@ -66,22 +80,33 @@ document.addEventListener('DOMContentLoaded', function () {
                 center: 'title',
                 right: 'dayGridMonth,timeGridWeek,timeGridDay',
             },
-        footerToolbar: isMobileView()
-            ? {
-                center: 'dayGridMonth,timeGridWeek,timeGridDay',
-            }
-            : false,
         buttonText: {
             today: 'Hoy',
             month: 'Mes',
             week: 'Semana',
             day: 'Día',
         },
+        navLinks: true,
+        navLinkDayClick: function (date, jsEvent) {
+            jsEvent.preventDefault();
+            goToDayView(date);
+        },
+        dayMaxEvents: true,
+        moreLinkClick: function (info) {
+            info.jsEvent.preventDefault();
+            goToDayView(info.date);
+        },
+        dateClick: function (info) {
+            if (calendar.view.type === 'dayGridMonth') {
+                goToDayView(info.date);
+            }
+        },
         events: @json($events),
         eventClick: function (info) {
             info.jsEvent.preventDefault();
-            if (info.event.url) {
-                window.location.href = info.event.url;
+            const url = info.event.url;
+            if (url) {
+                window.location.assign(url);
             }
         },
         eventDidMount: function (info) {
@@ -93,6 +118,11 @@ document.addEventListener('DOMContentLoaded', function () {
                     badge.textContent = info.event.extendedProps.analisis_count;
                     titleEl.appendChild(badge);
                 }
+            }
+
+            if (!canHoverTooltip()) {
+                info.el.setAttribute('title', info.event.extendedProps.empresa || info.event.title);
+                return;
             }
 
             const responsables = info.event.extendedProps.responsables || [];
@@ -115,11 +145,42 @@ document.addEventListener('DOMContentLoaded', function () {
                 placement: 'bottom',
                 html: true,
                 container: 'body',
+                trigger: 'hover',
             });
         },
     });
 
+    function syncMobileViewTabs(activeView) {
+        const tabsRoot = document.getElementById('tareas-calendar-view-tabs');
+        if (!tabsRoot) {
+            return;
+        }
+        tabsRoot.querySelectorAll('[data-cal-view]').forEach(function (btn) {
+            btn.classList.toggle('is-active', btn.dataset.calView === activeView);
+        });
+    }
+
     calendar.render();
+
+    const viewTabsRoot = document.getElementById('tareas-calendar-view-tabs');
+    if (viewTabsRoot) {
+        viewTabsRoot.querySelectorAll('[data-cal-view]').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                const view = btn.dataset.calView;
+                if (!view) {
+                    return;
+                }
+                calendar.changeView(view);
+                syncMobileViewTabs(view);
+            });
+        });
+    }
+
+    calendar.on('datesSet', function () {
+        if (isMobileView()) {
+            syncMobileViewTabs(calendar.view.type);
+        }
+    });
 
     const goToday = function () {
         calendar.today();
@@ -137,10 +198,10 @@ document.addEventListener('DOMContentLoaded', function () {
         calendar.setOption('headerToolbar', isMobileView()
             ? { left: 'prev,next', center: 'title', right: 'today' }
             : { left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek,timeGridDay' });
-        calendar.setOption('footerToolbar', isMobileView()
-            ? { center: 'dayGridMonth,timeGridWeek,timeGridDay' }
-            : false);
         calendar.changeView(isMobileView() ? 'timeGridDay' : 'timeGridWeek');
+        if (isMobileView()) {
+            syncMobileViewTabs(calendar.view.type);
+        }
     });
 });
 </script>

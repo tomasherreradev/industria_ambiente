@@ -16,6 +16,7 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
         $middleware->alias([
             'puede.cargar.items' => \App\Http\Middleware\EnsurePuedeCargarItems::class,
+            'puede.autorizar.facturacion' => \App\Http\Middleware\EnsurePuedeAutorizarFacturacion::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

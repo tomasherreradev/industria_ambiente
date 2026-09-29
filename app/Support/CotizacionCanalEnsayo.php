@@ -62,6 +62,16 @@ class CotizacionCanalEnsayo
     }
 
     /**
+     * Ensayo del canal Clarke Fire (matriz, descripción o cotio_canal_especial).
+     *
+     * @param  \App\Models\Cotio|object  $tarea
+     */
+    public static function esEnsayoClarkeFire($tarea, ?string $matrizDescripcionCoti = null): bool
+    {
+        return self::resolverCanalEnsayo($tarea, $matrizDescripcionCoti) === 'clarke_fire';
+    }
+
+    /**
      * Muestra de ensayo mediciones ya enviada al módulo de documentación.
      */
     public static function instanciaMedicionesEnDocumentacion($instancia): bool
@@ -614,5 +624,50 @@ class CotizacionCanalEnsayo
         }
 
         return null;
+    }
+
+    public static function etiquetaCanalEnsayo(?string $canal): string
+    {
+        return match (strtolower(trim((string) $canal))) {
+            'consultoria' => 'Consultoría',
+            'asp' => 'ASP',
+            'clarke_fire' => 'Clarke Fire',
+            'mediciones' => 'Mediciones',
+            default => 'Laboratorio',
+        };
+    }
+
+    /**
+     * URL de detalle operativo según el canal del ensayo (lab, mediciones, portales directos).
+     */
+    public static function urlDetalleInstanciaMuestra(\App\Models\CotioInstancia $instancia): string
+    {
+        $cotizacion = \App\Models\Coti::with('matriz')->find($instancia->cotio_numcoti);
+        $cotio = \App\Models\Cotio::query()
+            ->where('cotio_numcoti', $instancia->cotio_numcoti)
+            ->where('cotio_item', $instancia->cotio_item)
+            ->where('cotio_subitem', 0)
+            ->first();
+
+        $canal = self::resolverCanalEnsayo(
+            $cotio ?? $instancia,
+            $cotizacion?->matriz?->matriz_descripcion
+        );
+
+        return match ($canal) {
+            'mediciones' => route('mediciones.ver', [
+                'cotizacion' => $instancia->cotio_numcoti,
+                'item' => $instancia->cotio_item,
+                'instance' => $instancia->instance_number,
+            ]),
+            'consultoria', 'asp', 'clarke_fire' => route('muestras.show', [
+                'coti_num' => $instancia->cotio_numcoti,
+            ]),
+            default => route('categoria.verOrden', [
+                'cotizacion' => $instancia->cotio_numcoti,
+                'item' => $instancia->cotio_item,
+                'instance' => $instancia->instance_number,
+            ]),
+        };
     }
 }

@@ -4,6 +4,16 @@
 @php
     $vistaActiva = $vista ?? 'pendientes';
     $hayFiltrosFacturas = $request->filled('estado') || $request->filled('cotizacion') || $request->filled('fecha_desde') || $request->filled('fecha_hasta');
+    $resumenFactTodo = $resumenFacturarTodo ?? ['total_facturas' => 0, 'items' => []];
+    $filasFacturablesTodo = collect($resumenFactTodo['items'] ?? [])->where('puede_facturar', true)->values();
+    $idsFacturablesTodo = $filasFacturablesTodo->pluck('cotizacion_id')->map(fn ($id) => (int) $id)->values()->all();
+    $etiquetasFacturablesTodo = $filasFacturablesTodo->mapWithKeys(fn ($f) => [(int) $f['cotizacion_id'] => (string) $f['cliente']])->all();
+
+    $resumenFactTodoCuotas = $resumenFacturarTodoCuotas ?? ['total_facturas' => 0, 'items' => []];
+    $filasFacturablesTodoCuotas = collect($resumenFactTodoCuotas['items'] ?? [])->where('puede_facturar', true)->values();
+    $idsFacturablesTodoCuotas = $filasFacturablesTodoCuotas->pluck('cotizacion_id')->map(fn ($id) => (int) $id)->values()->all();
+    $etiquetasFacturablesTodoCuotas = $filasFacturablesTodoCuotas->mapWithKeys(fn ($f) => [(int) $f['cotizacion_id'] => (string) $f['cliente']])->all();
+    $facturasFacturarTodoCuotas = (int) ($resumenFactTodoCuotas['total_facturas'] ?? 0);
 @endphp
 
 <div class="container py-4 facturacion-page">
@@ -27,7 +37,7 @@
 
     {{-- KPIs --}}
     <div class="row g-3 mb-4">
-        <div class="col-md-4">
+        <div class="col-md-6 col-lg-3">
             <div class="card text-white bg-primary stats-card-facturacion {{ $vistaActiva === 'facturas' ? 'active' : '' }}"
                  data-vista="facturas" role="button" tabindex="0" aria-label="Ver facturas emitidas">
                 <div class="card-body py-3">
@@ -42,7 +52,7 @@
                 </div>
             </div>
         </div>
-        <div class="col-md-4">
+        <div class="col-md-6 col-lg-3">
             <div class="card text-white bg-warning stats-card-facturacion {{ $vistaActiva === 'pendientes' ? 'active' : '' }}"
                  data-vista="pendientes" role="button" tabindex="0" aria-label="Ver muestras por facturar">
                 <div class="card-body py-3">
@@ -53,26 +63,47 @@
                         </div>
                         <x-heroicon-o-clock style="width: 28px; height: 28px;" class="opacity-50" />
                     </div>
-                    <small class="opacity-75">{{ $informesPorCotizacion->count() }} cotizaciones con pendientes</small>
+                    <small class="opacity-75">
+                        {{ number_format($estadisticas['cotizaciones_pendientes'] ?? 0, 0, ',', '.') }} cotizaciones
+                        · {{ number_format($estadisticas['facturas_pendientes'], 0, ',', '.') }} muestras
+                    </small>
                 </div>
             </div>
         </div>
-        <div class="col-md-4">
+        <div class="col-md-6 col-lg-3">
+            <div class="card text-white bg-secondary stats-card-facturacion {{ $vistaActiva === 'cuotas' ? 'active' : '' }}"
+                 data-vista="cuotas" role="button" tabindex="0" aria-label="Ver cotizaciones en cuotas">
+                <div class="card-body py-3">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <h6 class="card-title mb-1 opacity-75">Por cuotas</h6>
+                            <h3 class="card-text mb-0 fw-bold">{{ number_format($estadisticas['cotizaciones_cuotas'] ?? 0, 0, ',', '.') }}</h3>
+                        </div>
+                        <x-heroicon-o-calendar-days style="width: 28px; height: 28px;" class="opacity-50" />
+                    </div>
+                    <small class="opacity-75">
+                        {{ number_format($estadisticas['cotizaciones_cuotas_facturables'] ?? 0, 0, ',', '.') }}
+                        con cuota habilitada este mes
+                    </small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 col-lg-3">
             <div class="card text-white bg-info">
                 <div class="card-body py-3">
                     <div class="d-flex justify-content-between align-items-start">
                         <div>
                             <h6 class="card-title mb-1 opacity-75">
-                                {{ $vistaActiva === 'pendientes' ? 'Monto por facturar' : 'Monto facturado' }}
+                                {{ in_array($vistaActiva, ['pendientes', 'cuotas'], true) ? 'Monto por facturar' : 'Monto facturado' }}
                             </h6>
                             <h3 class="card-text mb-0 fw-bold">
-                                ${{ number_format($vistaActiva === 'pendientes' ? $estadisticas['monto_por_facturar'] : $estadisticas['monto_facturado'], 2, ',', '.') }}
+                                ${{ number_format(in_array($vistaActiva, ['pendientes', 'cuotas'], true) ? $estadisticas['monto_por_facturar'] : $estadisticas['monto_facturado'], 2, ',', '.') }}
                             </h3>
                         </div>
                         <x-heroicon-o-banknotes style="width: 28px; height: 28px;" class="opacity-50" />
                     </div>
                     <small class="opacity-75">
-                        @if($vistaActiva === 'pendientes')
+                        @if(in_array($vistaActiva, ['pendientes', 'cuotas'], true))
                             Total histórico facturado: ${{ number_format($estadisticas['monto_facturado'], 2, ',', '.') }}
                         @else
                             Pendiente de facturar: ${{ number_format($estadisticas['monto_por_facturar'], 2, ',', '.') }}
@@ -92,7 +123,7 @@
             <form method="GET" action="{{ route('facturacion.index') }}" id="filterFormFacturacion">
                 <input type="hidden" name="vista" id="vistaInput" value="{{ $vistaActiva }}">
                 <div class="row g-3 align-items-end">
-                    <div class="col-md-3 filtros-facturas {{ $vistaActiva === 'pendientes' ? 'd-none' : '' }}">
+                    <div class="col-md-3 filtros-facturas {{ $vistaActiva === 'facturas' ? '' : 'd-none' }}">
                         <label for="estado" class="form-label small fw-semibold text-muted">Estado</label>
                         <select name="estado" id="estado" class="form-select">
                             <option value="">Todos</option>
@@ -107,12 +138,12 @@
                         <input type="number" name="cotizacion" id="cotizacion" class="form-control"
                                value="{{ $request->cotizacion }}" placeholder="Núm. cotización">
                     </div>
-                    <div class="col-md-3 filtros-facturas {{ $vistaActiva === 'pendientes' ? 'd-none' : '' }}">
+                    <div class="col-md-3 filtros-facturas {{ $vistaActiva === 'facturas' ? '' : 'd-none' }}">
                         <label for="fecha_desde" class="form-label small fw-semibold text-muted">Fecha desde</label>
                         <input type="date" name="fecha_desde" id="fecha_desde" class="form-control"
                                value="{{ $request->fecha_desde }}">
                     </div>
-                    <div class="col-md-3 filtros-facturas {{ $vistaActiva === 'pendientes' ? 'd-none' : '' }}">
+                    <div class="col-md-3 filtros-facturas {{ $vistaActiva === 'facturas' ? '' : 'd-none' }}">
                         <label for="fecha_hasta" class="form-label small fw-semibold text-muted">Fecha hasta</label>
                         <input type="date" name="fecha_hasta" id="fecha_hasta" class="form-control"
                                value="{{ $request->fecha_hasta }}">
@@ -137,8 +168,21 @@
                     data-vista="pendientes" role="tab" aria-selected="{{ $vistaActiva === 'pendientes' ? 'true' : 'false' }}">
                 <x-heroicon-o-clipboard-document-list style="width: 18px; height: 18px;" />
                 Por facturar
-                @if($estadisticas['facturas_pendientes'] > 0)
-                    <span class="badge rounded-pill bg-warning text-dark ms-1">{{ $estadisticas['facturas_pendientes'] }}</span>
+                @if(($estadisticas['cotizaciones_pendientes'] ?? 0) > 0)
+                    <span class="badge rounded-pill bg-warning text-dark ms-1"
+                          title="{{ number_format($estadisticas['facturas_pendientes'], 0, ',', '.') }} muestras pendientes">
+                        {{ $estadisticas['cotizaciones_pendientes'] }}
+                    </span>
+                @endif
+            </button>
+            <button type="button" class="fact-segmented__btn {{ $vistaActiva === 'cuotas' ? 'active' : '' }}"
+                    data-vista="cuotas" role="tab" aria-selected="{{ $vistaActiva === 'cuotas' ? 'true' : 'false' }}">
+                <x-heroicon-o-calendar-days style="width: 18px; height: 18px;" />
+                Cuotas
+                @if(($estadisticas['cotizaciones_cuotas'] ?? 0) > 0)
+                    <span class="badge rounded-pill bg-info text-dark ms-1">
+                        {{ $estadisticas['cotizaciones_cuotas'] }}
+                    </span>
                 @endif
             </button>
             <button type="button" class="fact-segmented__btn {{ $vistaActiva === 'facturas' ? 'active' : '' }}"
@@ -154,6 +198,23 @@
 
     {{-- Workspace: Muestras por facturar --}}
     <div class="fact-workspace-panel {{ $vistaActiva === 'pendientes' ? '' : 'd-none' }}" id="panelPendientes" role="tabpanel">
+        @php
+            $totalFacturarTodo = $totalCotizacionesPendientesFacturarTodo ?? 0;
+            $facturasFacturarTodo = (int) ($resumenFactTodo['total_facturas'] ?? 0);
+        @endphp
+        @if($totalFacturarTodo > 0)
+            <div class="d-flex justify-content-end mb-3">
+                <button type="button"
+                        class="btn btn-success fw-semibold js-abrir-facturar-todo"
+                        id="btnFacturarTodo"
+                        data-modal-target="#modalFacturarTodoResumen"
+                        data-alcance="muestras">
+                    <x-heroicon-o-bolt style="width: 18px; height: 18px;" class="me-1" />
+                    FACTURAR TODO
+                    <span class="badge bg-white text-success ms-1">{{ $totalFacturarTodo }}</span>
+                </button>
+            </div>
+        @endif
         @if($informesPorCotizacion->isEmpty())
             <div class="fact-empty-state">
                 <div class="fact-empty-state__icon">
@@ -164,7 +225,7 @@
                     @if($request->filled('cotizacion'))
                         No se encontraron muestras por facturar para la cotización #{{ $request->cotizacion }}.
                     @else
-                        Todas las muestras con informe habilitado ya fueron facturadas.
+                        No hay muestras aprobadas en revisión de facturación pendientes de emitir.
                     @endif
                 </p>
             </div>
@@ -180,7 +241,7 @@
                         <article class="fact-coti-card">
                             <div class="fact-coti-card__main">
                                 <div class="fact-coti-card__info">
-                                    <span class="fact-coti-card__badge">#{{ $numCoti }}</span>
+                                    <span class="fact-coti-card__badge">{{ etiquetaNumeroCotizacion($numCoti) }}</span>
                                     <div>
                                         <h6 class="fact-coti-card__title mb-0">
                                             {{ \App\Support\CotizacionClienteEtiqueta::paraLista($coti) }}
@@ -216,6 +277,9 @@
                                             <div class="fact-muestra-row__desc">
                                                 {{ $muestra->cotio_descripcion }}
                                                 <span class="text-muted">#{{ $muestra->instance_number }}</span>
+                                                @if($muestra->otn)
+                                                    <span class="badge bg-secondary ms-1">OT {{ $muestra->otn }}</span>
+                                                @endif
                                             </div>
                                         </div>
                                     @endforeach
@@ -229,6 +293,101 @@
             @if($muestrasPagination->hasPages())
                 <div class="d-flex justify-content-center mt-4">
                     {{ $muestrasPagination->appends(request()->query())->links() }}
+                </div>
+            @endif
+        @endif
+    </div>
+
+    {{-- Workspace: Cotizaciones en cuotas --}}
+    <div class="fact-workspace-panel {{ $vistaActiva === 'cuotas' ? '' : 'd-none' }}" id="panelCuotas" role="tabpanel">
+        @php
+            $totalFacturarTodoCuotas = $totalCotizacionesCuotasFacturarTodo ?? 0;
+            $facturasFacturarTodoCuotas = (int) ($resumenFactTodoCuotas['total_facturas'] ?? 0);
+        @endphp
+        @if(($cotizacionesCuotasListado ?? collect())->isNotEmpty())
+            <div class="d-flex justify-content-end mb-3">
+                <button type="button"
+                        class="btn btn-success fw-semibold js-abrir-facturar-todo"
+                        id="btnFacturarTodoCuotas"
+                        data-modal-target="#modalFacturarTodoCuotasResumen"
+                        data-alcance="cuotas">
+                    <x-heroicon-o-bolt style="width: 18px; height: 18px;" class="me-1" />
+                    FACTURAR TODO
+                    @if($facturasFacturarTodoCuotas > 0)
+                        <span class="badge bg-white text-success ms-1">{{ $facturasFacturarTodoCuotas }}</span>
+                    @endif
+                </button>
+            </div>
+        @endif
+        @if(($cotizacionesCuotasListado ?? collect())->isEmpty())
+            <div class="fact-empty-state">
+                <div class="fact-empty-state__icon">
+                    <x-heroicon-o-calendar style="width: 48px; height: 48px;" />
+                </div>
+                <h5 class="fw-semibold mb-2">No hay cotizaciones en cuotas</h5>
+                <p class="text-muted mb-0">
+                    @if($request->filled('cotizacion'))
+                        No se encontró la cotización #{{ $request->cotizacion }} con condición de pago en cuotas.
+                    @else
+                        Aparecerán aquí las cotizaciones cuya condición de pago es abono en cuotas.
+                    @endif
+                </p>
+            </div>
+        @else
+            <div class="row g-3">
+                @foreach($cotizacionesCuotasListado as $itemCuota)
+                    @php
+                        $coti = $itemCuota['cotizacion'];
+                        $infoCuotas = $itemCuota['cuotas'];
+                        $numCoti = $coti->coti_num;
+                        $matrizNombre = optional(optional($coti)->matriz)->matriz_descripcion ?? '—';
+                        $estadoCuota = $infoCuotas['estado_corriente'] ?? 'no_habilitada';
+                        $badgeCuota = match ($estadoCuota) {
+                            'lista' => ['bg-success', 'Lista para facturar'],
+                            'futura' => ['bg-secondary', 'Cuota futura'],
+                            'completa' => ['bg-dark', 'Cuotas completas'],
+                            'fuera_periodo' => ['bg-warning text-dark', 'Fuera de período'],
+                            'sin_cuotas_pendientes' => ['bg-light text-muted border', 'Sin pendientes'],
+                            default => ['bg-warning text-dark', 'No habilitada'],
+                        };
+                    @endphp
+                    <div class="col-12">
+                        <article class="fact-coti-card">
+                            <div class="fact-coti-card__main">
+                                <div class="fact-coti-card__info">
+                                    <span class="fact-coti-card__badge">{{ etiquetaNumeroCotizacion($numCoti) }}</span>
+                                    <div>
+                                        <h6 class="fact-coti-card__title mb-0">
+                                            {{ \App\Support\CotizacionClienteEtiqueta::paraLista($coti) }}
+                                        </h6>
+                                        <p class="fact-coti-card__meta mb-0">
+                                            {{ $matrizNombre }}
+                                            · {{ $infoCuotas['total'] ?? 1 }} cuotas
+                                            · {{ count($infoCuotas['facturadas'] ?? []) }} facturada(s)
+                                        </p>
+                                        @if(!empty($infoCuotas['etiqueta_corriente']))
+                                            <p class="small mb-0 mt-1">
+                                                <span class="badge {{ $badgeCuota[0] }}">{{ $badgeCuota[1] }}</span>
+                                                <span class="text-muted ms-1">{{ $infoCuotas['etiqueta_corriente'] }}</span>
+                                            </p>
+                                        @endif
+                                    </div>
+                                </div>
+                                <div class="fact-coti-card__actions">
+                                    <a href="{{ route('facturacion.show', ['cotizacion' => $numCoti]) }}"
+                                       class="btn btn-sm btn-primary fact-btn-facturar">
+                                        <x-heroicon-o-currency-dollar style="width: 16px; height: 16px;" />
+                                        Facturar
+                                    </a>
+                                </div>
+                            </div>
+                        </article>
+                    </div>
+                @endforeach
+            </div>
+            @if(isset($cuotasPagination) && $cuotasPagination->hasPages())
+                <div class="d-flex justify-content-center mt-4">
+                    {{ $cuotasPagination->appends(request()->query())->links() }}
                 </div>
             @endif
         @endif
@@ -282,10 +441,10 @@
                                             @if($factura->cotizacion)
                                                 <a href="{{ route('facturacion.show', $factura->cotizacion_id) }}"
                                                    class="badge bg-primary-subtle text-primary text-decoration-none">
-                                                    #{{ $factura->cotizacion_id }}
+                                                    {{ etiquetaNumeroCotizacion($factura->cotizacion_id) }}
                                                 </a>
                                             @else
-                                                <span class="text-muted">#{{ $factura->cotizacion_id }}</span>
+                                                <span class="text-muted">{{ etiquetaNumeroCotizacion($factura->cotizacion_id) }}</span>
                                             @endif
                                         </td>
                                         <td>
@@ -449,13 +608,16 @@
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        min-width: 52px;
+        min-width: 0;
+        max-width: 100%;
         padding: 6px 10px;
         background: #eef2ff;
         color: var(--primary-color, #4e73df);
         border-radius: 8px;
         font-weight: 700;
-        font-size: 0.85rem;
+        font-size: 0.72rem;
+        line-height: 1.2;
+        white-space: nowrap;
         flex-shrink: 0;
     }
 
@@ -578,6 +740,31 @@
             font-size: 0.82rem;
         }
     }
+
+    .fact-facturar-todo-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 2000;
+        background: rgba(15, 23, 42, 0.55);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1.5rem;
+    }
+
+    .fact-facturar-todo-overlay__panel {
+        background: #fff;
+        border-radius: 12px;
+        padding: 1.75rem 2rem;
+        max-width: 420px;
+        width: 100%;
+        text-align: center;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
+    }
+
+    .fact-facturar-todo-overlay .progress {
+        border-radius: 999px;
+    }
 </style>
 
 <script>
@@ -654,6 +841,171 @@ document.querySelectorAll('.fact-btn-facturar').forEach(link => {
 });
 </script>
 
+@if(($totalFacturarTodo ?? 0) > 0)
+<div class="modal fade" id="modalFacturarTodoResumen" tabindex="-1" aria-labelledby="modalFacturarTodoResumenLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title fw-semibold" id="modalFacturarTodoResumenLabel">Resumen — Facturar todo</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-3">
+                    Se emitirá <strong>una factura por cotización</strong>.
+                    @if($facturasFacturarTodo < $totalFacturarTodo)
+                        <span class="text-warning d-block mt-1">
+                            {{ $facturasFacturarTodo }} de {{ $totalFacturarTodo }} se facturarán automáticamente; el resto requiere acción manual.
+                        </span>
+                    @else
+                        <span class="d-block mt-1">{{ $facturasFacturarTodo }} factura(s) en total.</span>
+                    @endif
+                </p>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0 fact-resumen-facturar-todo">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 72px;">Coti.</th>
+                                <th>Cliente / detalle</th>
+                                <th style="width: 110px;" class="text-center">Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach($resumenFactTodo['items'] ?? [] as $fila)
+                                <tr class="{{ $fila['puede_facturar'] ? '' : 'table-warning' }}">
+                                    <td><span class="badge bg-secondary">{{ etiquetaNumeroCotizacion($fila['cotizacion_id']) }}</span></td>
+                                    <td>
+                                        <div class="fw-semibold">{{ $fila['cliente'] }}</div>
+                                        <div class="small text-muted mb-1">{{ $fila['matriz'] }}</div>
+                                        <ul class="small mb-0 ps-3">
+                                            @foreach($fila['lineas'] as $linea)
+                                                <li>{{ $linea }}</li>
+                                            @endforeach
+                                        </ul>
+                                        @if(! $fila['puede_facturar'] && ! empty($fila['advertencia']))
+                                            <div class="small text-danger mt-1">{{ $fila['advertencia'] }}</div>
+                                        @endif
+                                    </td>
+                                    <td class="text-center">
+                                        @if($fila['puede_facturar'])
+                                            <span class="badge bg-success-subtle text-success border border-success-subtle">Incluida</span>
+                                        @else
+                                            <span class="badge bg-warning text-dark">Omitida</span>
+                                        @endif
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button"
+                        class="btn btn-success fw-semibold js-confirmar-facturar-todo"
+                        id="btnConfirmarFacturarTodo"
+                        data-alcance="muestras"
+                        @if($facturasFacturarTodo < 1) disabled @endif>
+                    Confirmar y facturar ({{ $facturasFacturarTodo }})
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+@endif
+
+@if(($totalCotizacionesCuotasFacturarTodo ?? 0) > 0)
+<div class="modal fade" id="modalFacturarTodoCuotasResumen" tabindex="-1" aria-labelledby="modalFacturarTodoCuotasResumenLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title fw-semibold" id="modalFacturarTodoCuotasResumenLabel">Resumen — Facturar cuotas</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-3">
+                    Se emitirá <strong>una factura por cotización</strong>, facturando únicamente la <strong>cuota habilitada</strong> (mes de cobro en curso o vencido, sin facturar).
+                    @if($facturasFacturarTodoCuotas < ($totalCotizacionesCuotasFacturarTodo ?? 0))
+                        <span class="text-warning d-block mt-1">
+                            {{ $facturasFacturarTodoCuotas }} de {{ $totalCotizacionesCuotasFacturarTodo }} se facturarán; el resto requiere acción manual o aún no está en su mes.
+                        </span>
+                    @else
+                        <span class="d-block mt-1">{{ $facturasFacturarTodoCuotas }} factura(s) en total.</span>
+                    @endif
+                </p>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0 fact-resumen-facturar-todo">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 72px;">Coti.</th>
+                                <th>Cliente / cuota</th>
+                                <th style="width: 110px;" class="text-center">Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach($resumenFactTodoCuotas['items'] ?? [] as $fila)
+                                <tr class="{{ $fila['puede_facturar'] ? '' : 'table-warning' }}">
+                                    <td><span class="badge bg-secondary">{{ etiquetaNumeroCotizacion($fila['cotizacion_id']) }}</span></td>
+                                    <td>
+                                        <div class="fw-semibold">{{ $fila['cliente'] }}</div>
+                                        <div class="small text-muted mb-1">{{ $fila['matriz'] }}</div>
+                                        <ul class="small mb-0 ps-3">
+                                            @foreach($fila['lineas'] as $linea)
+                                                <li>{{ $linea }}</li>
+                                            @endforeach
+                                        </ul>
+                                        @if(! $fila['puede_facturar'] && ! empty($fila['advertencia']))
+                                            <div class="small text-danger mt-1">{{ $fila['advertencia'] }}</div>
+                                        @endif
+                                    </td>
+                                    <td class="text-center">
+                                        @if($fila['puede_facturar'])
+                                            <span class="badge bg-success-subtle text-success border border-success-subtle">Incluida</span>
+                                        @else
+                                            <span class="badge bg-warning text-dark">Omitida</span>
+                                        @endif
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button"
+                        class="btn btn-success fw-semibold js-confirmar-facturar-todo"
+                        id="btnConfirmarFacturarTodoCuotas"
+                        data-alcance="cuotas"
+                        @if($facturasFacturarTodoCuotas < 1) disabled @endif>
+                    Confirmar y facturar ({{ $facturasFacturarTodoCuotas }})
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+@endif
+
+<div id="facturarTodoOverlay" class="fact-facturar-todo-overlay d-none" role="dialog" aria-modal="true" aria-labelledby="facturarTodoOverlayTitle">
+    <div class="fact-facturar-todo-overlay__panel">
+        <div class="spinner-border text-success mb-3" style="width: 2.75rem; height: 2.75rem;" role="status">
+            <span class="visually-hidden">Procesando…</span>
+        </div>
+        <h6 class="fw-semibold mb-1" id="facturarTodoOverlayTitle">Facturando cotizaciones…</h6>
+        <p class="text-muted small mb-2" id="facturarTodoProgressText">0 / 0</p>
+        <div class="progress mb-2" style="height: 10px;">
+            <div class="progress-bar progress-bar-striped progress-bar-animated bg-success"
+                 id="facturarTodoProgressBar"
+                 role="progressbar"
+                 style="width: 0%;"
+                 aria-valuenow="0"
+                 aria-valuemin="0"
+                 aria-valuemax="100"></div>
+        </div>
+        <p class="small text-muted mb-0 text-truncate" id="facturarTodoCurrentLabel" title=""></p>
+        <p class="small text-muted mt-2 mb-0">No cierre esta ventana. Cada factura se procesa por separado.</p>
+    </div>
+</div>
+
 <!-- Modal Exportar IVA Ventas -->
 <div class="modal fade" id="exportIvaModal" tabindex="-1" aria-labelledby="exportIvaModalLabel" aria-hidden="true">
     <div class="modal-dialog">
@@ -689,3 +1041,288 @@ document.querySelectorAll('.fact-btn-facturar').forEach(link => {
     </div>
 </div>
 @endsection
+
+@push('scripts')
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const STORAGE_KEY = 'facturacion.facturarTodo.resultado';
+
+    try {
+        const raw = sessionStorage.getItem(STORAGE_KEY);
+        if (raw) {
+            sessionStorage.removeItem(STORAGE_KEY);
+            const data = JSON.parse(raw);
+            const container = document.querySelector('.facturacion-page');
+            if (container && data) {
+                if (Array.isArray(data.exitos) && data.exitos.length > 0) {
+                    const el = document.createElement('div');
+                    el.className = 'alert alert-success alert-dismissible fade show';
+                    el.setAttribute('role', 'alert');
+                    el.innerHTML = 'Se generaron ' + data.exitos.length + ' factura(s): ' + data.exitos.join(' · ')
+                        + '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>';
+                    container.insertBefore(el, container.firstElementChild?.nextElementSibling || container.firstChild);
+                }
+                if (Array.isArray(data.errores) && data.errores.length > 0) {
+                    const el = document.createElement('div');
+                    el.className = 'alert alert-danger alert-dismissible fade show';
+                    el.setAttribute('role', 'alert');
+                    el.innerHTML = data.errores.join(' | ')
+                        + '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>';
+                    container.insertBefore(el, container.firstElementChild?.nextElementSibling || container.firstChild);
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('No se pudo restaurar resultado de facturación múltiple', e);
+    }
+
+    const overlay = document.getElementById('facturarTodoOverlay');
+    const progressText = document.getElementById('facturarTodoProgressText');
+    const progressBar = document.getElementById('facturarTodoProgressBar');
+    const currentLabel = document.getElementById('facturarTodoCurrentLabel');
+    const urlProcesar = @json(route('facturacion.facturar-todo.cotizacion'));
+    const urlIndexBase = @json(route('facturacion.index'));
+    const filtroCotizacion = @json($request->cotizacion ?? null);
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+    const configsFacturarTodo = {
+        muestras: {
+            ids: @json($idsFacturablesTodo ?? []),
+            etiquetas: @json($etiquetasFacturablesTodo ?? []),
+            modalId: 'modalFacturarTodoResumen',
+            vista: 'pendientes',
+            soloCuotaCorriente: false,
+            swalIntro: {
+                title: 'Facturar todo — muestras',
+                html: '<p class="text-start mb-2">Este proceso genera <strong>una factura por cotización</strong> con las muestras aprobadas en revisión de facturación y sus análisis pendientes.</p>'
+                    + '<ul class="text-start small mb-0">'
+                    + '<li>No incluye cotizaciones en modalidad <strong>cuotas</strong> (use la solapa Cuotas).</li>'
+                    + '<li>Se omiten cotizaciones con referencias incompletas o sin email de envío definido.</li>'
+                    + '<li>Verá un resumen antes de la confirmación final.</li>'
+                    + '</ul>',
+            },
+            swalConfirm: {
+                title: '¿Confirmar facturación masiva?',
+                html: '<p class="mb-0">Se procesará cada cotización incluida en el resumen, una por una. No cierre la ventana hasta finalizar.</p>',
+            },
+        },
+        cuotas: {
+            ids: @json($idsFacturablesTodoCuotas ?? []),
+            etiquetas: @json($etiquetasFacturablesTodoCuotas ?? []),
+            modalId: 'modalFacturarTodoCuotasResumen',
+            vista: 'cuotas',
+            soloCuotaCorriente: true,
+            swalIntro: {
+                title: 'Facturar todo — cuotas',
+                html: '<p class="text-start mb-2">Este proceso genera <strong>una factura por cotización</strong> en modalidad abono en cuotas.</p>'
+                    + '<ul class="text-start small mb-0">'
+                    + '<li>Solo se factura la <strong>cuota habilitada</strong>: mes de cobro en curso o vencido, aún no facturada y dentro del período del contrato.</li>'
+                    + '<li>Las cuotas futuras o ya emitidas se omiten automáticamente.</li>'
+                    + '<li>Verá un resumen con las cotizaciones incluidas u omitidas antes de confirmar.</li>'
+                    + '</ul>',
+            },
+            swalConfirm: {
+                title: '¿Confirmar facturación de cuotas?',
+                html: '<p class="mb-0">Se emitirá como máximo una cuota por cotización. El proceso puede tardar varios minutos.</p>',
+            },
+            swalSinFacturables: {
+                title: 'Sin cuotas habilitadas para facturar',
+                html: '<p class="text-start mb-0">Ninguna cotización tiene una cuota en su <strong>mes de cobro</strong> lista para emitir (cuota futura, ya facturada, referencias incompletas o email de envío pendiente). Puede abrir el <strong>resumen</strong> para ver el motivo de cada una.</p>',
+            },
+        },
+    };
+
+    configsFacturarTodo.muestras.swalSinFacturables = {
+        title: 'Sin cotizaciones listas para facturar',
+        html: '<p class="text-start mb-0">No hay cotizaciones que cumplan todos los requisitos automáticos. Abra el resumen para ver advertencias por cotización.</p>',
+    };
+
+    function urlIndexConVista(vista) {
+        const url = new URL(urlIndexBase, window.location.origin);
+        url.searchParams.set('vista', vista);
+        if (filtroCotizacion) {
+            url.searchParams.set('cotizacion', String(filtroCotizacion));
+        }
+        return url.toString();
+    }
+
+    function mostrarOverlay() {
+        if (overlay) {
+            overlay.classList.remove('d-none');
+        }
+        document.body.classList.add('overflow-hidden');
+    }
+
+    function actualizarProgreso(actual, total, etiqueta) {
+        const pct = total > 0 ? Math.round((actual / total) * 100) : 0;
+        if (progressText) {
+            progressText.textContent = actual + ' / ' + total;
+        }
+        if (progressBar) {
+            progressBar.style.width = pct + '%';
+            progressBar.setAttribute('aria-valuenow', String(pct));
+        }
+        if (currentLabel) {
+            const txt = etiqueta ? ('Cotización #' + actual + ': ' + etiqueta) : '';
+            currentLabel.textContent = txt;
+            currentLabel.title = txt;
+        }
+    }
+
+    async function procesarCotizacion(cotizacionId, sincronizar, soloCuotaCorriente) {
+        const body = new FormData();
+        body.append('_token', csrfToken);
+        body.append('cotizacion_id', String(cotizacionId));
+        if (sincronizar) {
+            body.append('sincronizar_trabajo_campo', '1');
+        }
+        if (soloCuotaCorriente) {
+            body.append('solo_cuota_corriente', '1');
+        }
+
+        const response = await fetch(urlProcesar, {
+            method: 'POST',
+            body,
+            headers: {
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            credentials: 'same-origin',
+        });
+
+        let data = null;
+        try {
+            data = await response.json();
+        } catch (e) {
+            throw new Error('Respuesta inválida del servidor (HTTP ' + response.status + ').');
+        }
+
+        if (!response.ok && (!data || !data.error)) {
+            throw new Error((data && data.error) || ('Error HTTP ' + response.status));
+        }
+
+        return data;
+    }
+
+    async function swalPaso(opciones) {
+        if (typeof Swal === 'undefined') {
+            return window.confirm((opciones.title || '') + '\n\n' + (opciones.fallbackText || ''));
+        }
+        const result = await Swal.fire({
+            icon: opciones.icon || 'info',
+            title: opciones.title || '',
+            html: opciones.html || '',
+            showCancelButton: opciones.showCancelButton !== false,
+            confirmButtonText: opciones.confirmButtonText || 'Continuar',
+            cancelButtonText: opciones.cancelButtonText || 'Cancelar',
+            confirmButtonColor: opciones.confirmButtonColor || '#198754',
+            reverseButtons: true,
+            focusCancel: true,
+        });
+        return result.isConfirmed;
+    }
+
+    document.querySelectorAll('.js-abrir-facturar-todo').forEach(function (btn) {
+        btn.addEventListener('click', async function () {
+            const alcance = btn.dataset.alcance || 'muestras';
+            const cfg = configsFacturarTodo[alcance];
+            if (!cfg) {
+                return;
+            }
+
+            const modalEl = document.getElementById(cfg.modalId);
+
+            if (cfg.ids.length === 0) {
+                const tieneModal = modalEl && window.bootstrap;
+                const verResumen = await swalPaso({
+                    ...(cfg.swalSinFacturables || {}),
+                    icon: 'warning',
+                    showCancelButton: tieneModal,
+                    confirmButtonText: tieneModal ? 'Ver resumen' : 'Entendido',
+                    cancelButtonText: 'Cerrar',
+                });
+                if (verResumen && tieneModal) {
+                    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+                }
+                return;
+            }
+
+            const continuar = await swalPaso({
+                ...cfg.swalIntro,
+                icon: 'info',
+                confirmButtonText: 'Ver resumen',
+            });
+            if (!continuar) {
+                return;
+            }
+
+            if (modalEl && window.bootstrap) {
+                bootstrap.Modal.getOrCreateInstance(modalEl).show();
+            }
+        });
+    });
+
+    document.querySelectorAll('.js-confirmar-facturar-todo').forEach(function (btnConfirmar) {
+        btnConfirmar.addEventListener('click', async function () {
+            const alcance = btnConfirmar.dataset.alcance || 'muestras';
+            const cfg = configsFacturarTodo[alcance];
+            if (!cfg || cfg.ids.length === 0 || btnConfirmar.disabled) {
+                return;
+            }
+
+            const confirmar = await swalPaso({
+                ...cfg.swalConfirm,
+                icon: 'question',
+                confirmButtonText: 'Sí, facturar',
+            });
+            if (!confirmar) {
+                return;
+            }
+
+            btnConfirmar.disabled = true;
+            btnConfirmar.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Iniciando…';
+
+            const modalEl = document.getElementById(cfg.modalId);
+            if (modalEl && window.bootstrap) {
+                bootstrap.Modal.getInstance(modalEl)?.hide();
+            }
+
+            const idsFacturables = cfg.ids;
+            const etiquetasPorId = cfg.etiquetas;
+            const total = idsFacturables.length;
+            const exitos = [];
+            const errores = [];
+
+            mostrarOverlay();
+            actualizarProgreso(0, total, '');
+
+            for (let i = 0; i < total; i++) {
+                const cotiId = idsFacturables[i];
+                const etiqueta = etiquetasPorId[cotiId] || etiquetasPorId[String(cotiId)] || '';
+                actualizarProgreso(i + 1, total, etiqueta);
+
+                try {
+                    const data = await procesarCotizacion(cotiId, i === 0, cfg.soloCuotaCorriente);
+                    if (data && data.success) {
+                        const num = data.numero_factura || '';
+                        exitos.push('#' + cotiId + ' (' + (data.cliente || etiqueta) + '): factura ' + num);
+                    } else {
+                        errores.push('Cotización #' + cotiId + ': ' + ((data && data.error) || 'Error desconocido'));
+                    }
+                } catch (err) {
+                    errores.push('Cotización #' + cotiId + ': ' + (err.message || String(err)));
+                }
+            }
+
+            try {
+                sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ exitos, errores }));
+            } catch (e) {
+                console.warn(e);
+            }
+
+            window.location.href = urlIndexConVista(cfg.vista);
+        });
+    });
+});
+</script>
+@endpush

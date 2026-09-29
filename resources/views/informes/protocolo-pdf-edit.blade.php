@@ -227,10 +227,19 @@
             </div>
 
             <div class="sticky-bottom bg-white border-top py-3 mt-4" style="z-index: 1020;">
-                <div class="d-flex justify-content-end gap-2">
-                    <button type="submit" class="btn btn-primary px-4">
+                <div class="d-flex flex-wrap justify-content-end align-items-center gap-2">
+                    @if($muestra->listo_para_firmar && !$muestra->firmado)
+                        <span class="text-muted small me-auto">En bandeja «Listo para firmar».</span>
+                    @endif
+                    @if(!$muestra->firmado)
+                        <button type="submit" name="accion" value="guardar_y_enviar" class="btn btn-danger px-4">
+                            <x-heroicon-o-paper-airplane style="width: 20px; height: 20px;" class="me-1" />
+                            Guardar y enviar
+                        </button>
+                    @endif
+                    <button type="submit" name="accion" value="guardar" class="btn btn-primary px-4">
                         <x-heroicon-o-check style="width: 20px; height: 20px;" class="me-1" />
-                        Guardar Cambios
+                        Guardar cambios
                     </button>
                 </div>
             </div>

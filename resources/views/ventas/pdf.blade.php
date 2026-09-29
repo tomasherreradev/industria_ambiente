@@ -548,6 +548,9 @@
                                 @foreach($item['componentes'] as $componente)
                                     <div class="component-inline">
                                         <span>• {{ $componente['descripcion'] }}</span>
+                                        @if((float) ($componente['cantidad'] ?? 1) > 1)
+                                            <span class="text-muted"> (cant. {{ number_format((float) $componente['cantidad'], 0, ',', '.') }})</span>
+                                        @endif
 
                                         @if(!empty($componente['metodo']))
                                             <span class="comp-metodo">[{{ $componente['metodo'] }}]</span>

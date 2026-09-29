@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Models\Coti;
 use App\Models\Ventas;
 
 class CotizacionReferenciasFacturacion
@@ -139,6 +140,54 @@ class CotizacionReferenciasFacturacion
         $decoded = json_decode($raw, true);
 
         return is_array($decoded) ? self::normalizeRows($decoded) : [];
+    }
+
+    /**
+     * @return array{
+     *     remito: string,
+     *     oc: string,
+     *     oc_obligatorio: bool,
+     *     filas: array<int, array{tipo: string, valor: string, obligatorio_factura: bool}>,
+     *     puede_facturar: bool,
+     *     mensaje_bloqueo: ?string
+     * }
+     */
+    public static function datosParaVista($cot): array
+    {
+        $bloqueo = self::mensajeSiNoPuedeFacturar($cot);
+
+        return [
+            'remito' => self::textoPrimerRemitoParaFactura($cot),
+            'oc' => trim((string) ($cot->coti_oc_referencia ?? '')),
+            'oc_obligatorio' => (bool) ($cot->coti_oc_requerido_factura ?? false),
+            'filas' => self::rowsFromModel($cot),
+            'puede_facturar' => $bloqueo === null,
+            'mensaje_bloqueo' => $bloqueo,
+        ];
+    }
+
+    /**
+     * @param  array{coti_oc_referencia?: string|null, coti_refs_facturacion_json?: string|array|null}  $input
+     */
+    public static function guardarReferenciasDesdeFacturacion(int $cotiNum, array $input): Coti
+    {
+        $cotizacion = Ventas::findOrFail($cotiNum);
+
+        if (array_key_exists('coti_oc_referencia', $input)) {
+            $cotizacion->coti_oc_referencia = $input['coti_oc_referencia'];
+        }
+
+        if (array_key_exists('coti_refs_facturacion_json', $input)) {
+            $raw = $input['coti_refs_facturacion_json'];
+            $decoded = is_string($raw) ? json_decode($raw, true) : $raw;
+            $rows = is_array($decoded) ? self::normalizeRows($decoded) : [];
+            $cotizacion->coti_refs_facturacion_json = count($rows) > 0 ? $rows : null;
+            self::sincronizarColumnasLegacyDesdeFilas($cotizacion, $rows);
+        }
+
+        $cotizacion->save();
+
+        return Coti::findOrFail($cotiNum);
     }
 
     public static function mensajeSiNoPuedeFacturar($cot): ?string

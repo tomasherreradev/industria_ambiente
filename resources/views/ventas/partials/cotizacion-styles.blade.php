@@ -1,3 +1,5 @@
+<link rel="stylesheet" href="{{ asset('css/usuarios-crud.css') }}?v={{ filemtime(public_path('css/usuarios-crud.css')) }}">
+<link rel="stylesheet" href="{{ asset('css/ventas-cotizacion.css') }}?v={{ filemtime(public_path('css/ventas-cotizacion.css')) }}">
 <style>
     /* Estilos personalizados para las solapas */
     .nav-tabs-custom {
@@ -104,8 +106,8 @@
     }
 
     /* Estilos para resaltar ensayos */
-    .table tbody tr[data-tipo="ensayo"] {
-        background-color: #e7f3ff;
+    .ventas-cotizacion-card .table tbody tr[data-tipo="ensayo"] {
+        background-color: #f0f4ff;
         font-weight: 600;
     }
 

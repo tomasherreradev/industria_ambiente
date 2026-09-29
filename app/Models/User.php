@@ -34,6 +34,7 @@ class User extends Authenticatable
         'bandeja_solo_informes',
         'puede_cargar_items',
         'puede_gestionar_ordenes',
+        'puede_autorizar_facturacion',
     ];
 
     protected $casts = [
@@ -41,6 +42,7 @@ class User extends Authenticatable
         'bandeja_solo_informes' => 'boolean',
         'puede_cargar_items' => 'boolean',
         'puede_gestionar_ordenes' => 'boolean',
+        'puede_autorizar_facturacion' => 'boolean',
     ];
 
     // public function getAuthPassword()
@@ -69,6 +71,15 @@ class User extends Authenticatable
         }
 
         return (bool) ($this->puede_gestionar_ordenes ?? false);
+    }
+
+    public function puedeAutorizarFacturacion(): bool
+    {
+        if ((int) ($this->usu_nivel ?? 0) >= 900) {
+            return true;
+        }
+
+        return (bool) ($this->puede_autorizar_facturacion ?? false);
     }
 
     public function tareas()

@@ -1,33 +1,35 @@
 @extends('layouts.app')
 
+@section('title', 'Editar cotización')
+
 @section('content')
+@include('ventas.partials.cotizacion-styles')
 <div id="cotizacionLoadingOverlay" class="cotizacion-loading-overlay">
     <div class="spinner-border text-primary" role="status">
         <span class="visually-hidden">Cargando...</span>
     </div>
 </div>
-<div class="container-fluid">
-    <div class="row">
-        <div class="col-12">
-                <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4 gap-2">
-                <div class="d-flex align-items-center gap-2">
-                    <h2 class="h4 mb-0">
-                        Editar Cotización #{{ $cotizacion->coti_num }}
-                        @if($cotizacion->coti_version != 1)
-                            <small class="text-muted ms-2">.{{ $cotizacion->coti_version ?? 1 }}</small>
-                        @endif
-                    </h2>
-                </div>
-                <div class="d-flex gap-2 align-items-center">
-                    <select id="selectorVersion" class="form-select form-select-sm" style="width: auto; min-width: 200px;">
-                        <option value="">Cargando versiones...</option>
-                    </select>
-                    <a href="{{ route('ventas.index') }}" class="btn btn-secondary">
-                        <x-heroicon-o-arrow-left style="width: 16px; height: 16px;" class="me-1" />
-                        Volver
-                    </a>
-                </div>
-            </div>
+<div class="container-fluid px-3 px-lg-4 py-4 ucrud ucrud-layout--fluid ventas-cotizacion-page" data-ucrud-root>
+    <header class="ucrud-header">
+        <div class="ucrud-header__titles">
+            <h1 class="ucrud-title">
+                Cotización #{{ $cotizacion->coti_num }}
+                @if($cotizacion->coti_version != 1)
+                    <span class="ucrud-count">v{{ $cotizacion->coti_version ?? 1 }}</span>
+                @endif
+            </h1>
+            <p class="ucrud-subtitle">Edición de presupuesto, ítems y condiciones comerciales</p>
+        </div>
+        <div class="ucrud-header__actions">
+            <select id="selectorVersion" class="ucrud-select form-select-sm" style="width: auto; min-width: 200px;">
+                <option value="">Cargando versiones...</option>
+            </select>
+            <a href="{{ route('ventas.index') }}" class="ucrud-btn ucrud-btn--ghost">
+                <x-heroicon-o-arrow-left style="width: 16px; height: 16px;" />
+                Volver
+            </a>
+        </div>
+    </header>
 
             <!-- Mensajes de éxito y error -->
             @if(session('success'))
@@ -57,14 +59,14 @@
             @endif
 
             @if(!($edicionCompletaPermitida ?? true) && ($soloReferenciasFacturacion ?? false))
-                <div class="alert alert-warning mb-0 mx-4 mt-3 mb-3">
+                <div class="alert alert-warning mb-4">
                     Este presupuesto está <strong>Aprobado</strong>. Solo puede modificar:
                     orden de compra, número de recepción (remito), condición de pago, contactos y la norma de comparación de cada ítem.
                 </div>
             @endif
 
-            <div class="card shadow-sm">
-                <div class="card-body p-0">
+            <div class="ucrud-panel ventas-cotizacion-card">
+                <div class="p-0">
                     <form method="POST"
                           action="{{ route('ventas.update', $cotizacion->coti_num) }}"
                           id="cotizacionForm"
@@ -74,7 +76,7 @@
                         @method('PUT')
                         
                         <!-- Header con información básica -->
-                        <div class="border-bottom px-4 py-3 bg-light">
+                        <div class="cotizacion-form-header">
                             <div class="row align-items-center">
                                 <div class="col-md-2">
                                     <label for="cliente_codigo" class="form-label fw-semibold mb-1">Cliente:</label>
@@ -547,29 +549,24 @@
                         </div>
 
                         <!-- Botones de acción -->
-                        <div class="card-footer bg-light border-top presupuesto-form-acciones">
-                            <div class="d-flex justify-content-between">
-                                <div class="d-flex gap-2">
-                                    <a href="{{ route('ventas.index') }}" class="btn btn-secondary">
-                                        <x-heroicon-o-x-mark style="width: 16px; height: 16px;" class="me-1" />
-                                        Cancelar
-                                    </a>
-                                    <button type="submit" class="btn btn-primary" id="btnGuardarPresupuesto">
-                                        <x-heroicon-o-check style="width: 16px; height: 16px;" class="me-1" />
-                                        @if($soloReferenciasFacturacion ?? false)
-                                            Guardar cambios 
-                                        @else
-                                            Actualizar
-                                        @endif
-                                    </button>
-                                </div>
+                        <div class="ventas-cotizacion-card__footer presupuesto-form-acciones">
+                            <div class="d-flex flex-wrap gap-2 justify-content-end">
+                                <a href="{{ route('ventas.index') }}" class="ucrud-btn ucrud-btn--secondary">
+                                    Cancelar
+                                </a>
+                                <button type="submit" class="ucrud-btn ucrud-btn--primary" id="btnGuardarPresupuesto">
+                                    <x-heroicon-o-check style="width: 16px; height: 16px;" />
+                                    @if($soloReferenciasFacturacion ?? false)
+                                        Guardar cambios
+                                    @else
+                                        Actualizar cotización
+                                    @endif
+                                </button>
                             </div>
                         </div>
                     </form>
                 </div>
             </div>
-        </div>
-    </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -578,7 +575,6 @@
 
 
 @include('ventas.partials.cotizacion-modals')
-@include('ventas.partials.cotizacion-styles')
 
 <script>
     @php

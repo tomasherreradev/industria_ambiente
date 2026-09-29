@@ -19,6 +19,7 @@ use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\MuestrasMuestreoExport;
 use App\Exports\AnalisisExport;
 use App\Models\Matriz;
+use App\Support\OrdenesAccesoPorSector;
 use App\Support\OrdenesLaboratorioListado;
 use App\Support\PrioridadListado;
 use App\Support\CotizacionClienteEtiqueta;
@@ -411,6 +412,7 @@ public function exportarMuestrasMuestreo(Request $request)
 
 public function dashboardAnalisis(Request $request)
 {
+    $user = Auth::user();
     $metodoFiltro = trim((string) $request->get('metodo', ''));
     $estadoUi = $request->get('estado', 'all');
     if ($estadoUi === null || $estadoUi === '') {
@@ -420,25 +422,22 @@ public function dashboardAnalisis(Request $request)
     $queryParams = collect($request->query())->except('estado')->all();
     $queryRequest = Request::create($request->url(), 'GET', $queryParams);
 
-    $cotizaciones = OrdenesLaboratorioListado::baseCotiQuery($queryRequest)
-        ->orderBy('coti_num', 'desc')
-        ->get();
+    $baseQuery = OrdenesLaboratorioListado::baseCotiQuery($queryRequest);
+    if (OrdenesAccesoPorSector::debeFiltrarPorSector($user)) {
+        OrdenesAccesoPorSector::aplicarFiltroCotiPorSectoresUsuario($baseQuery, $user);
+    }
+
+    $cotizaciones = $baseQuery->orderBy('coti_num', 'desc')->get();
 
     $ordenes = OrdenesLaboratorioListado::construirOrdenesDesdeCotizaciones($cotizaciones);
+    if (OrdenesAccesoPorSector::debeFiltrarPorSector($user)) {
+        $ordenes = OrdenesAccesoPorSector::filtrarOrdenesPorSector($ordenes, $user);
+    }
     $muestras = OrdenesLaboratorioListado::muestrasDesdeOrdenes($ordenes);
 
-    $analisisAgrupados = $this->agruparAnalisisDashboard($muestras, $metodoFiltro, $estadoUi);
+    $analisisAgrupados = $this->agruparAnalisisDashboard($muestras, $metodoFiltro, $estadoUi, $user);
 
-    $requestStats = Request::create(
-        $request->url(),
-        'GET',
-        collect($request->query())->except('estado')->all()
-    );
-    $cotizacionesStats = OrdenesLaboratorioListado::baseCotiQuery($requestStats)->get();
-    $muestrasStats = OrdenesLaboratorioListado::muestrasDesdeOrdenes(
-        OrdenesLaboratorioListado::construirOrdenesDesdeCotizaciones($cotizacionesStats)
-    );
-    $conteos = OrdenesLaboratorioListado::contarAnalisisPorEstado($muestrasStats);
+    $conteos = OrdenesLaboratorioListado::contarAnalisisPorEstado($muestras, $user);
 
     $pendientesPorCoordinar = $conteos['pendientes_coordinar'];
     $pendientesDeAnalisis = $conteos['coordinado analisis'];
@@ -446,10 +445,16 @@ public function dashboardAnalisis(Request $request)
     $finalizados = $conteos['analizado'];
     $anulados = $conteos['anulados'];
 
-    $codigosMetodos = CotioInstancia::where('cotio_subitem', '>', 0)
+    $queryMetodos = CotioInstancia::where('cotio_subitem', '>', 0)
         ->where('active_ot', true)
-        ->whereNotNull('cotio_codigometodo_analisis')
-        ->whereIn('cotio_numcoti', $muestras->pluck('cotio_numcoti')->unique()->filter())
+        ->whereNotNull('cotio_codigometodo_analisis');
+    OrdenesLaboratorioListado::aplicarWhereInstanciasDeMuestras($queryMetodos, $muestras);
+
+    if (OrdenesAccesoPorSector::debeFiltrarPorSector($user)) {
+        OrdenesAccesoPorSector::aplicarFiltroInstanciaPorSectoresUsuario($queryMetodos, $user);
+    }
+
+    $codigosMetodos = $queryMetodos
         ->distinct()
         ->pluck('cotio_codigometodo_analisis')
         ->map(fn ($codigo) => trim((string) $codigo))
@@ -462,7 +467,7 @@ public function dashboardAnalisis(Request $request)
         ->orderBy('metodo_descripcion')
         ->get();
 
-    $analisisProximosAgrupados = $this->agruparAnalisisDashboard($muestrasStats, $metodoFiltro, 'proximos');
+    $analisisProximosAgrupados = $this->agruparAnalisisDashboard($muestras, $metodoFiltro, 'proximos', $user);
 
     $herramientasEnUso = InventarioLab::whereHas('cotioInstancias', function ($q) {
         $q->where('cotio_instancias.cotio_subitem', '>', 0)
@@ -495,29 +500,30 @@ public function dashboardAnalisis(Request $request)
 /**
  * @param  \Illuminate\Support\Collection<int, CotioInstancia>  $muestras
  */
-private function agruparAnalisisDashboard($muestras, ?string $metodoFiltro = '', ?string $estadoUi = 'all'): \Illuminate\Support\Collection
+private function agruparAnalisisDashboard($muestras, ?string $metodoFiltro = '', ?string $estadoUi = 'all', ?User $user = null): \Illuminate\Support\Collection
 {
     if ($muestras->isEmpty()) {
         return collect();
     }
 
     $estadoUi = $estadoUi ?? 'all';
+    $filtrarPorSector = OrdenesAccesoPorSector::debeFiltrarPorSector($user);
 
     if ($estadoUi === 'pendientes_coordinar') {
+        if ($filtrarPorSector) {
+            return collect();
+        }
+
         return $this->agruparMuestrasPendientesCoordinarDashboard($muestras, $metodoFiltro);
     }
 
     $queryAnalisis = CotioInstancia::where('cotio_subitem', '>', 0)
-        ->where('active_ot', true)
-        ->where(function ($q) use ($muestras) {
-            foreach ($muestras as $muestra) {
-                $q->orWhere(function ($subQ) use ($muestra) {
-                    $subQ->where('cotio_numcoti', $muestra->cotio_numcoti)
-                        ->where('cotio_item', $muestra->cotio_item)
-                        ->where('instance_number', $muestra->instance_number);
-                });
-            }
-        });
+        ->where('active_ot', true);
+    OrdenesLaboratorioListado::aplicarWhereInstanciasDeMuestras($queryAnalisis, $muestras);
+
+    if ($filtrarPorSector) {
+        OrdenesAccesoPorSector::aplicarFiltroInstanciaPorSectoresUsuario($queryAnalisis, $user);
+    }
 
     if ($metodoFiltro !== '') {
         $queryAnalisis->where('cotio_codigometodo_analisis', $metodoFiltro);
@@ -533,8 +539,15 @@ private function agruparAnalisisDashboard($muestras, ?string $metodoFiltro = '',
     }
 
     $analisis = $queryAnalisis
-        ->with(['cotizacion', 'responsablesAnalisis', 'herramientasLab'])
+        ->with(['responsablesAnalisis'])
         ->get();
+
+    if ($filtrarPorSector) {
+        $sectoresUsuario = OrdenesAccesoPorSector::sectoresUsuario($user);
+        $analisis = $analisis->filter(
+            fn (CotioInstancia $item) => OrdenesAccesoPorSector::instanciaTieneResponsablesEnSectores($item, $sectoresUsuario)
+        )->values();
+    }
 
     $muestrasPorClave = $muestras->keyBy(function ($m) {
         return $m->cotio_numcoti.'-'.$m->cotio_item.'-'.$m->instance_number;
@@ -544,6 +557,9 @@ private function agruparAnalisisDashboard($muestras, ?string $metodoFiltro = '',
         $muestraKey = $item->cotio_numcoti.'-'.$item->cotio_item.'-'.$item->instance_number;
         $muestra = $muestrasPorClave->get($muestraKey);
         $item->setRelation('muestra', $muestra);
+        if ($muestra?->cotizacion) {
+            $item->setRelation('cotizacion', $muestra->cotizacion);
+        }
         $item->muestra_instance_number = $muestra?->instance_number;
     });
 
@@ -551,7 +567,7 @@ private function agruparAnalisisDashboard($muestras, ?string $metodoFiltro = '',
         return $item->cotio_numcoti.'-'.$item->cotio_item.'-'.$item->muestra_instance_number;
     });
 
-    if (in_array($estadoUi, ['all', '', null], true) && $metodoFiltro === '') {
+    if (! $filtrarPorSector && in_array($estadoUi, ['all', '', null], true) && $metodoFiltro === '') {
         $pendientesCoordinar = $this->agruparMuestrasPendientesCoordinarDashboard($muestras, '');
 
         foreach ($pendientesCoordinar as $key => $grupo) {
@@ -573,42 +589,56 @@ private function agruparMuestrasPendientesCoordinarDashboard($muestras, ?string 
         return collect();
     }
 
-    $muestrasConAnalisisActivos = CotioInstancia::query()
+    $queryActivos = CotioInstancia::query()
         ->where('cotio_subitem', '>', 0)
         ->where('active_ot', true)
-        ->where(function ($q) use ($muestras) {
-            foreach ($muestras as $muestra) {
-                $q->orWhere(function ($subQ) use ($muestra) {
-                    $subQ->where('cotio_numcoti', $muestra->cotio_numcoti)
-                        ->where('cotio_item', $muestra->cotio_item)
-                        ->where('instance_number', $muestra->instance_number);
-                });
-            }
-        })
-        ->get(['cotio_numcoti', 'cotio_item', 'instance_number'])
-        ->groupBy(fn ($a) => $a->cotio_numcoti.'-'.$a->cotio_item.'-'.$a->instance_number);
+        ->whereIn('cotio_numcoti', $muestras->pluck('cotio_numcoti')->unique()->filter()->values()->all());
+
+    $muestrasConAnalisisActivos = OrdenesLaboratorioListado::filtrarInstanciasPorMuestras(
+        $queryActivos->get(['cotio_numcoti', 'cotio_item', 'instance_number']),
+        $muestras
+    )->groupBy(fn ($a) => $a->cotio_numcoti.'-'.$a->cotio_item.'-'.$a->instance_number);
+
+    $muestrasPendientes = $muestras->filter(
+        fn ($muestra) => OrdenesLaboratorioListado::muestraEstaPendientePorCoordinar($muestra, $muestrasConAnalisisActivos)
+    )->values();
+
+    if ($muestrasPendientes->isEmpty()) {
+        return collect();
+    }
+
+    $queryAnalisisPendientes = CotioInstancia::query()
+        ->where('cotio_subitem', '>', 0)
+        ->whereIn('cotio_numcoti', $muestrasPendientes->pluck('cotio_numcoti')->unique()->filter()->values()->all());
+
+    $analisisPorMuestra = OrdenesLaboratorioListado::filtrarInstanciasPorMuestras(
+        $queryAnalisisPendientes->with(['responsablesAnalisis'])->get(),
+        $muestrasPendientes
+    )->groupBy(fn ($a) => $a->cotio_numcoti.'-'.$a->cotio_item.'-'.$a->instance_number);
 
     $analisisAgrupados = collect();
 
-    foreach ($muestras as $muestra) {
-        if (! ($muestra->enable_ot ?? false)) {
-            continue;
-        }
-
+    foreach ($muestrasPendientes as $muestra) {
         $key = $muestra->cotio_numcoti.'-'.$muestra->cotio_item.'-'.$muestra->instance_number;
+        $grupo = OrdenesLaboratorioListado::filtrarAnalisisPendientesCoordinacionMuestra(
+            $muestra,
+            $analisisPorMuestra->get($key, collect())
+        );
 
-        if (($muestra->active_ot ?? false) && $muestrasConAnalisisActivos->has($key)) {
+        if ($grupo->isEmpty()) {
             continue;
         }
 
-        $analisisFicticio = new CotioInstancia();
-        $analisisFicticio->setRelation('muestra', $muestra);
-        $analisisFicticio->cotio_numcoti = $muestra->cotio_numcoti;
-        $analisisFicticio->cotio_item = $muestra->cotio_item;
-        $analisisFicticio->instance_number = $muestra->instance_number;
-        $analisisFicticio->muestra_instance_number = $muestra->instance_number;
-        $analisisAgrupados->put($key, collect([$analisisFicticio]));
+        $grupo->each(function ($item) use ($muestra) {
+            $item->setRelation('muestra', $muestra);
+            $item->setRelation('cotizacion', $muestra->cotizacion);
+            $item->muestra_instance_number = $muestra->instance_number;
+        });
+
+        $analisisAgrupados->put($key, $grupo);
     }
+
+    unset($muestrasConAnalisisActivos, $analisisPorMuestra, $muestrasPendientes);
 
     return $this->ordenarGruposAnalisisDashboard($analisisAgrupados);
 }

@@ -16,7 +16,9 @@
             $componentes = $tareasCollection->where('cotio_subitem', '>', 0);
 
             $cotiReqCadenaRel = (bool) ($cotizacion->coti_req_cadena_custodia_relacionada ?? false);
-            
+            $cotizacion->loadMissing('matriz');
+            $matrizDescripcionCoti = optional($cotizacion->matriz)->matriz_descripcion;
+
             // Detectar si estamos usando la nueva lógica de agrupadores (basado en si algún componente tiene el flag)
             $esNuevaLogicaPrecio = $tareasCollection->contains(function($t) {
                 return (bool)($t->de_agrupador ?? false);
@@ -54,15 +56,24 @@
                 $cotioPrecioRaw = $ensayo->cotio_precio ?? null;
                 $precioUnitarioTotal = \App\Support\CotizacionPrecioEnsayo::precioUnitarioLineaEnsayo((float) $sumaComponentesUnitaria, $cotioPrecioRaw, $esPackAgrupador);
                 $importeEnsayoFila = $cantidadMuestras * $precioUnitarioTotal;
+                $esClarkeFire = \App\Support\CotizacionCanalEnsayo::esEnsayoClarkeFire($ensayo, $matrizDescripcionCoti);
 
                 $componentesConMetodos = [];
                 \App\Support\MetodoAnalisisItemCatalogo::preload();
                 foreach ($componentesDelEnsayo as $componente) {
                     $metodoTexto = \App\Support\MetodoAnalisisItemCatalogo::etiquetaParaLineaCotio($componente);
+                    $cantidadComp = (float) ($componente->cotio_cantidad ?? 1);
+                    if ($cantidadComp <= 0) {
+                        $cantidadComp = 1;
+                    }
+                    $precioComp = (float) ($componente->cotio_precio ?? 0);
 
                     $componentesConMetodos[] = [
                         'descripcion' => $componente->cotio_descripcion ?? '',
                         'metodo' => $metodoTexto,
+                        'cantidad' => $cantidadComp,
+                        'precio' => $precioComp,
+                        'importe' => $precioComp * $cantidadComp,
                         'de_agrupador' => (bool) ($componente->de_agrupador ?? false),
                         'req_cadena_custodia' => (bool) ($componente->req_cadena_custodia ?? false),
                         'req_prot_mapba' => (bool) ($componente->req_prot_mapba ?? false),
@@ -76,6 +87,7 @@
                     'cantidad' => $cantidadMuestras,
                     'precio_unitario' => $precioUnitarioTotal,
                     'importe' => $importeEnsayoFila,
+                    'es_clarke_fire' => $esClarkeFire,
                     'componentes' => $componentesConMetodos,
                     'notas' => $ensayo->notasImprimiblesList(),
                     'req_cadena_custodia' => (bool) ($ensayo->req_cadena_custodia ?? false),
@@ -412,6 +424,9 @@
                                                 @foreach($item['componentes'] as $componente)
                                                     <div class="component-item component-bullet">
                                                         <span>• {{ $componente['descripcion'] }}</span>
+                                                        @if(!empty($item['es_clarke_fire']) && (float) ($componente['cantidad'] ?? 1) > 1)
+                                                            <span class="text-muted ms-1">(cant. {{ number_format((float) $componente['cantidad'], 0, ',', '.') }})</span>
+                                                        @endif
 
                                                         @if(!empty($componente['metodo']))
                                                             <span class="component-method-bracket">[{{ $componente['metodo'] }}]</span>
@@ -479,7 +494,12 @@
                                     <div class="card-components">
                                         @foreach($item['componentes'] as $componente)
                                             <div class="card-component-item">
-                                                <div class="card-component-name">• {{ $componente['descripcion'] }}</div>
+                                                <div class="card-component-name">
+                                                    • {{ $componente['descripcion'] }}
+                                                    @if(!empty($item['es_clarke_fire']) && (float) ($componente['cantidad'] ?? 1) > 1)
+                                                        <span class="text-muted">(cant. {{ number_format((float) $componente['cantidad'], 0, ',', '.') }})</span>
+                                                    @endif
+                                                </div>
                                                 @if(!empty($componente['metodo']))
                                                     <div class="card-component-method">{{ $componente['metodo'] }}</div>
                                                 @endif

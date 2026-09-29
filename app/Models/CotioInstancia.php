@@ -84,7 +84,13 @@ class CotioInstancia extends Model
         'aprobado_informe',
         'fecha_aprobacion_informe',
         'aprobado_informe_usuario',
+        'facturacion_aprobada',
+        'fecha_facturacion_aprobada',
+        'facturacion_aprobada_usuario',
         'firmado',
+        'listo_para_firmar',
+        'fecha_listo_para_firmar',
+        'listo_para_firmar_usuario',
         'identificador_documento_firma',
         'fecha_firma',
         'image_resultado_final',
@@ -111,9 +117,13 @@ class CotioInstancia extends Model
         'enable_modulo_mediciones' => 'boolean',
         'es_priori' => 'boolean',
         'aprobado_informe' => 'boolean',
+        'facturacion_aprobada' => 'boolean',
         'firmado' => 'boolean',
+        'listo_para_firmar' => 'boolean',
+        'fecha_listo_para_firmar' => 'datetime',
         'fecha_firma' => 'datetime',
         'fecha_aprobacion_informe' => 'datetime',
+        'fecha_facturacion_aprobada' => 'datetime',
         'protocolo_informe_json' => 'array',
         'analista_fecha_inicio' => 'date',
         'analista_fecha_fin' => 'date',
@@ -389,9 +399,26 @@ class CotioInstancia extends Model
         $this->loadMissing('tarea');
         $canal = trim((string) ($this->tarea->cotio_canal_especial ?? ''));
 
-        return !in_array($canal, ['asp', 'clarke_fire', 'consultoria']);
+        return ! in_array($canal, ['asp', 'clarke_fire', 'consultoria'], true);
     }
 
+    /**
+     * Asigna número OT al aprobar para facturación (todos los canales, incl. consultoría, ASP y Clarke).
+     */
+    public function asignarOtnParaFacturacionSiPendiente(): bool
+    {
+        if ((int) $this->cotio_subitem !== 0) {
+            return false;
+        }
+
+        if (trim((string) ($this->otn ?? '')) !== '') {
+            return false;
+        }
+
+        $this->otn = self::generarNumeroOT();
+
+        return true;
+    }
 
     public function metodoAnalisis()
     {

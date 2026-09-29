@@ -17,6 +17,69 @@
 }
 
 @media (max-width: 767.98px) {
+    /* ── Filtros acordeón (Mis muestras) ── */
+    .tareas-muestreo-page .ucrud-filters--collapsible {
+        padding: 0;
+    }
+
+    .tareas-muestreo-page .ucrud-filters__mobile-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        width: 100%;
+        min-height: 48px;
+        padding: 0.75rem 1rem;
+        border: none;
+        background: transparent;
+        color: var(--ucrud-ink, #2f3245);
+        font-size: 0.9375rem;
+        font-weight: 600;
+        text-align: left;
+        cursor: pointer;
+    }
+
+    .tareas-muestreo-page .ucrud-filters__mobile-toggle:focus-visible {
+        outline: 2px solid var(--ucrud-primary, #4e73df);
+        outline-offset: -2px;
+        border-radius: var(--ucrud-radius, 1rem);
+    }
+
+    .tareas-muestreo-page .ucrud-filters__mobile-toggle-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .tareas-muestreo-page .ucrud-filters__active-badge {
+        font-size: 0.6875rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        padding: 0.15rem 0.45rem;
+        border-radius: 999px;
+        background: rgba(78, 115, 223, 0.12);
+        color: var(--ucrud-primary, #4e73df);
+    }
+
+    .tareas-muestreo-page .ucrud-filters__mobile-chevron {
+        flex-shrink: 0;
+        color: var(--ucrud-muted, #7b7f95);
+        transition: transform 0.25s ease;
+    }
+
+    .tareas-muestreo-page .ucrud-filters__mobile-toggle[aria-expanded="true"] .ucrud-filters__mobile-chevron {
+        transform: rotate(180deg);
+    }
+
+    .tareas-muestreo-page .ucrud-filters__collapsible-inner {
+        padding: 0 1rem 1rem;
+    }
+
+    .tareas-muestreo-page .ucrud-filters__collapsible-panel.collapsing {
+        transition: height 0.3s ease;
+    }
+
     /* ── Página listado ── */
     .tareas-muestreo-page {
         margin-top: 0.75rem;
@@ -131,6 +194,41 @@
     }
 
     /* ── Calendario móvil ── */
+    .op-calendario__view-tabs {
+        display: flex;
+        gap: 0.35rem;
+        margin-bottom: 0.75rem;
+        padding: 0.25rem;
+        background: #f0f2f8;
+        border-radius: 0.625rem;
+    }
+
+    .op-calendario__view-tab {
+        flex: 1;
+        min-height: 40px;
+        padding: 0.4rem 0.5rem;
+        border: none;
+        border-radius: 0.5rem;
+        background: transparent;
+        color: #6b7085;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        line-height: 1.2;
+        cursor: pointer;
+        transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .op-calendario__view-tab.is-active {
+        background: #fff;
+        color: var(--ucrud-primary, #4e73df);
+        box-shadow: 0 1px 3px rgba(16, 24, 40, 0.08);
+    }
+
+    .op-calendario__view-tab:focus-visible {
+        outline: 2px solid var(--ucrud-primary, #4e73df);
+        outline-offset: 1px;
+    }
+
     .tareas-calendario-wrap {
         padding: 0;
         max-width: none;
@@ -213,6 +311,23 @@
         font-size: 0.75rem;
         padding: 0.15rem 0.35rem;
         border-radius: 0.25rem;
+        touch-action: manipulation;
+        cursor: pointer;
+    }
+
+    .tareas-calendario-widget .fc-daygrid-event {
+        min-height: 1.65rem;
+        margin-bottom: 0.15rem;
+    }
+
+    .tareas-calendario-widget .fc-daygrid-day-number,
+    .tareas-calendario-widget .fc-daygrid-more-link {
+        touch-action: manipulation;
+        cursor: pointer;
+    }
+
+    .tareas-calendario-widget .fc-daygrid-day-frame {
+        cursor: pointer;
     }
 
     .tareas-calendario-widget .fc-event-title {
@@ -825,6 +940,24 @@
 }
 
 @media (min-width: 768px) {
+    .op-calendario__view-tabs {
+        display: none;
+    }
+
+    .tareas-muestreo-page .ucrud-filters__collapsible-panel.collapse:not(.show) {
+        display: block !important;
+        height: auto !important;
+        visibility: visible;
+    }
+
+    .tareas-muestreo-page .ucrud-filters--collapsible {
+        padding: 1rem 1.15rem;
+    }
+
+    .tareas-muestreo-page .ucrud-filters__collapsible-inner {
+        padding: 0;
+    }
+
     .tareas-mobile-header {
         display: none !important;
     }

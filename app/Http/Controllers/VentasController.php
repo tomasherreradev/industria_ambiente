@@ -229,7 +229,7 @@ class VentasController extends Controller {
     private function aplicarCondicionPagoVentasDesdeRequest(Request $request, Ventas $cotizacion): void
     {
         $cotizacion->coti_cond_pago = $request->filled('coti_cond_pago')
-            ? $this->sanitizeNullableString($request->coti_cond_pago, 10)
+            ? $this->sanitizeNullableString($request->coti_cond_pago, 20)
             : null;
         $esCuotas = ($cotizacion->coti_cond_pago === 'CUOTAS');
         $cotizacion->coti_cuotas = $esCuotas;
@@ -1095,7 +1095,31 @@ class VentasController extends Controller {
         if ($request->filled('fecha_hasta')) {
             $query->whereDate('coti_fechaalta', '<=', $request->fecha_hasta);
         }
-        
+
+        if ($request->filled('search')) {
+            $search = trim((string) $request->search);
+            $query->where(function ($q) use ($search) {
+                if (preg_match('/^(\d+)\.(\d+)$/', $search, $coincidencia)) {
+                    $q->where('coti_num', (int) $coincidencia[1])
+                        ->where('coti_version', (int) $coincidencia[2]);
+
+                    return;
+                }
+
+                if (ctype_digit($search)) {
+                    $q->where('coti_num', (int) $search);
+
+                    return;
+                }
+
+                $searchLike = '%' . strtolower($search) . '%';
+                $q->where('coti_num', 'like', '%' . $search . '%')
+                    ->orWhereRaw('LOWER(coti_descripcion) LIKE ?', [$searchLike])
+                    ->orWhereRaw('LOWER(coti_empresa) LIKE ?', [$searchLike])
+                    ->orWhereRaw('LOWER(coti_establecimiento) LIKE ?', [$searchLike]);
+            });
+        }
+
         // Ordenar y paginar
         $cotizaciones = $query->with(['cliente', 'empresaRelacionada', 'sucursal'])
             ->orderBy('coti_num', 'desc')

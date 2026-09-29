@@ -14,6 +14,11 @@
     </div>
 
     @if($events->isNotEmpty())
+        <div class="op-calendario__view-tabs" id="ordenes-calendar-view-tabs" role="group" aria-label="Vista del calendario">
+            <button type="button" class="op-calendario__view-tab" data-cal-view="dayGridMonth">Mes</button>
+            <button type="button" class="op-calendario__view-tab" data-cal-view="timeGridWeek">Semana</button>
+            <button type="button" class="op-calendario__view-tab is-active" data-cal-view="timeGridDay">Día</button>
+        </div>
         <div id="calendar" class="tareas-calendario-widget"></div>
     @else
         <div class="ucrud-alert ucrud-alert--info mb-0" role="status">
@@ -66,11 +71,6 @@ document.addEventListener('DOMContentLoaded', function () {
                 center: 'title',
                 right: 'dayGridMonth,timeGridWeek,timeGridDay',
             },
-        footerToolbar: isMobileView()
-            ? {
-                center: 'dayGridMonth,timeGridWeek,timeGridDay',
-            }
-            : false,
         buttonText: {
             today: 'Hoy',
             month: 'Mes',
@@ -97,7 +97,37 @@ document.addEventListener('DOMContentLoaded', function () {
         },
     });
 
+    function syncMobileViewTabs(activeView) {
+        const tabsRoot = document.getElementById('ordenes-calendar-view-tabs');
+        if (!tabsRoot) {
+            return;
+        }
+        tabsRoot.querySelectorAll('[data-cal-view]').forEach(function (btn) {
+            btn.classList.toggle('is-active', btn.dataset.calView === activeView);
+        });
+    }
+
     calendar.render();
+
+    const viewTabsRoot = document.getElementById('ordenes-calendar-view-tabs');
+    if (viewTabsRoot) {
+        viewTabsRoot.querySelectorAll('[data-cal-view]').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                const view = btn.dataset.calView;
+                if (!view) {
+                    return;
+                }
+                calendar.changeView(view);
+                syncMobileViewTabs(view);
+            });
+        });
+    }
+
+    calendar.on('datesSet', function () {
+        if (isMobileView()) {
+            syncMobileViewTabs(calendar.view.type);
+        }
+    });
 
     const goToday = function () {
         calendar.today();
@@ -116,10 +146,10 @@ document.addEventListener('DOMContentLoaded', function () {
         calendar.setOption('headerToolbar', isMobileView()
             ? { left: 'prev,next', center: 'title', right: 'today' }
             : { left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek,timeGridDay' });
-        calendar.setOption('footerToolbar', isMobileView()
-            ? { center: 'dayGridMonth,timeGridWeek,timeGridDay' }
-            : false);
         calendar.changeView(isMobileView() ? 'timeGridDay' : 'timeGridWeek');
+        if (isMobileView()) {
+            syncMobileViewTabs(calendar.view.type);
+        }
     });
 });
 </script>

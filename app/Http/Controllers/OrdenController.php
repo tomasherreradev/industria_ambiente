@@ -32,6 +32,7 @@ use App\Support\OrdenesLaboratorioListado;
 use App\Support\OrdenesAccesoPorSector;
 use App\Support\AnalisisResultadoValidacion;
 use App\Support\FechaAnalisisInformePdf;
+use App\Support\VariablesMedicionInstancia;
 use App\Models\Metodo;
 
 class OrdenController extends Controller
@@ -1127,14 +1128,10 @@ public function verOrden($cotizacion, $item, $instance = null)
             $instanciaMuestra->instance_number
         );
         $instanciaMuestra->refresh();
+        $instanciaMuestra->load('valoresVariables');
     }
 
-    $variablesOrdenadas = collect();
-    if ($instanciaMuestra && $instanciaMuestra->valoresVariables) {
-        $variablesOrdenadas = $instanciaMuestra->valoresVariables
-            ->sortBy('variable')
-            ->values();
-    }
+    $variablesOrdenadas = VariablesMedicionInstancia::paraVista($instanciaMuestra);
 
     // Obtener herramientas manualmente para la instancia de muestra
     $herramientasMuestra = collect();
@@ -1216,7 +1213,8 @@ public function verOrden($cotizacion, $item, $instance = null)
     }
 
     // Obtener tareas (análisis)
-    $tareas = Cotio::where('cotio_numcoti', $cotizacion->coti_num)
+    $tareas = Cotio::with(['itemCatalogo', 'metodoLegacy', 'metodoMuestreo', 'metodoAnalisis'])
+                ->where('cotio_numcoti', $cotizacion->coti_num)
                 ->where('cotio_item', $item)
                 ->where('cotio_subitem', '!=', 0)
                 ->orderBy('cotio_subitem')
@@ -1600,6 +1598,7 @@ public function showOrdenesAll(Request $request, $cotio_numcoti, $cotio_item, $c
                 'analisis' => collect(),
                 'instanceNumber' => $instance,
                 'allHerramientas' => $allHerramientas,
+                'variablesMuestra' => collect(),
                 'error' => 'No se encontró la muestra principal.',
                 'puedeAlternarVistaAsignaciones' => $puedeAlternarVistaAsignaciones,
                 'soloMisAsignaciones' => $soloMisAsignaciones,
@@ -1613,7 +1612,7 @@ public function showOrdenesAll(Request $request, $cotio_numcoti, $cotio_item, $c
 
         // Obtener análisis - coordinadores pueden ver todos, otros solo los asignados
         $analisisQuery = CotioInstancia::with([
-            'tarea' => fn ($q) => $q->with(['metodoLegacy', 'metodoMuestreo', 'metodoAnalisis']),
+            'tarea' => fn ($q) => $q->with(['metodoLegacy', 'metodoMuestreo', 'metodoAnalisis', 'itemCatalogo']),
             'tarea.cotizacion',
             'responsablesAnalisis',
             'herramientasLab' => function ($query) {
@@ -1639,12 +1638,15 @@ public function showOrdenesAll(Request $request, $cotio_numcoti, $cotio_item, $c
             $item->setRelation('vehiculo', null);
         });
 
+        $variablesMuestra = VariablesMedicionInstancia::paraVista($instanciaMuestra);
+
         if ($soloMisAsignaciones && $analisis->isEmpty()) {
             return view('mis-ordenes.show-by-categoria', [
                 'instancia' => $instanciaMuestra,
                 'analisis' => collect(),
                 'instanceNumber' => $instance,
                 'allHerramientas' => $allHerramientas,
+                'variablesMuestra' => $variablesMuestra,
                 'error' => 'No tiene análisis asignados en esta muestra.',
                 'puedeAlternarVistaAsignaciones' => $puedeAlternarVistaAsignaciones,
                 'soloMisAsignaciones' => $soloMisAsignaciones,
@@ -1672,6 +1674,7 @@ public function showOrdenesAll(Request $request, $cotio_numcoti, $cotio_item, $c
             'analisis' => $analisis,
             'instanceNumber' => $instance,
             'allHerramientas' => $allHerramientas,
+            'variablesMuestra' => $variablesMuestra,
             'puedeAlternarVistaAsignaciones' => $puedeAlternarVistaAsignaciones,
             'soloMisAsignaciones' => $soloMisAsignaciones,
         ]);
@@ -1691,6 +1694,7 @@ public function showOrdenesAll(Request $request, $cotio_numcoti, $cotio_item, $c
             'analisis' => collect(),
             'instanceNumber' => $instance,
             'allHerramientas' => $allHerramientas,
+            'variablesMuestra' => collect(),
             'error' => 'Error al cargar la muestra: ' . $e->getMessage(),
             'puedeAlternarVistaAsignaciones' => $puedeAlternarVistaAsignaciones ?? false,
             'soloMisAsignaciones' => $soloMisAsignaciones ?? true,
@@ -1807,26 +1811,23 @@ public function updateAnalistaFechasAnalisis(Request $request, CotioInstancia $i
         abort(403, 'No se pueden editar fechas: la muestra ya está analizada.');
     }
 
-    $inicio = $request->input('analista_fecha_inicio');
-    $fin = $request->input('analista_fecha_fin');
+    $fecha = $request->input('analista_fecha_fin');
     $request->merge([
-        'analista_fecha_inicio' => ($inicio !== null && $inicio !== '') ? $inicio : null,
-        'analista_fecha_fin' => ($fin !== null && $fin !== '') ? $fin : null,
+        'analista_fecha_fin' => ($fecha !== null && $fecha !== '') ? $fecha : null,
     ]);
 
     $validated = $request->validate([
-        'analista_fecha_inicio' => 'nullable|date',
-        'analista_fecha_fin' => 'nullable|date|after_or_equal:analista_fecha_inicio',
+        'analista_fecha_fin' => 'nullable|date',
     ]);
 
     $instancia->update([
-        'analista_fecha_inicio' => $validated['analista_fecha_inicio'] ?? null,
         'analista_fecha_fin' => $validated['analista_fecha_fin'] ?? null,
+        'analista_fecha_inicio' => null,
     ]);
 
     return redirect()
         ->back()
-        ->with('success', 'Fechas de análisis para el informe guardadas correctamente.');
+        ->with('success', 'Fecha de análisis para el informe guardada correctamente.');
 }
 
 
@@ -2722,17 +2723,45 @@ public function disableInforme(Request $request)
         $instancia = CotioInstancia::where([
             'cotio_numcoti' => $request->cotio_numcoti,
             'cotio_item' => $request->cotio_item,
-            'cotio_subitem' => $request->cotio_subitem, 
+            'cotio_subitem' => $request->cotio_subitem,
             'instance_number' => $request->instance,
         ])->firstOrFail();
 
+        if (! $instancia->enable_inform) {
+            return redirect()->back()->with('info', 'El informe ya está deshabilitado.');
+        }
+
+        $muestra = (int) $instancia->cotio_subitem === 0
+            ? $instancia
+            : CotioInstancia::where([
+                'cotio_numcoti' => $instancia->cotio_numcoti,
+                'cotio_item' => $instancia->cotio_item,
+                'cotio_subitem' => 0,
+                'instance_number' => $instancia->instance_number,
+            ])->firstOrFail();
+
         DB::beginTransaction();
-        $instancia->enable_inform = false;
-        $instancia->fecha_creacion_inform = null;
-        $instancia->save();
+
+        CotioInstancia::where('cotio_numcoti', $muestra->cotio_numcoti)
+            ->where('cotio_item', $muestra->cotio_item)
+            ->where('instance_number', $muestra->instance_number)
+            ->where('cotio_subitem', '>', 0)
+            ->where('active_ot', true)
+            ->where('cotio_estado_analisis', 'analizado')
+            ->update(['cotio_estado_analisis' => 'en revision analisis']);
+
+        $muestra->update([
+            'enable_inform' => false,
+            'fecha_creacion_inform' => null,
+            'aprobado_informe' => false,
+            'fecha_aprobacion_informe' => null,
+            'aprobado_informe_usuario' => null,
+            'cotio_estado_analisis' => 'en revision analisis',
+        ]);
+
         DB::commit();
 
-        return redirect()->back()->with('success', 'Informe deshabilitado exitosamente.');
+        return redirect()->back()->with('success', 'Informe deshabilitado. La muestra volvió a pendiente de revisión.');
     } catch (\Exception $e) {
         DB::rollBack();
         return redirect()->back()->with('error', 'Error al deshabilitar el informe: ' . $e->getMessage());

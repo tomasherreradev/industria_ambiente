@@ -132,6 +132,19 @@ if (! function_exists('userPuedeGestionarOrdenes')) {
     }
 }
 
+if (! function_exists('userPuedeAutorizarFacturacion')) {
+    function userPuedeAutorizarFacturacion(): bool
+    {
+        if (! Auth::check()) {
+            return false;
+        }
+
+        $user = Auth::user();
+
+        return $user && $user->puedeAutorizarFacturacion();
+    }
+}
+
 if (! function_exists('userDebeVerOrdenesPorSector')) {
     function userDebeVerOrdenesPorSector(): bool
     {
@@ -142,6 +155,37 @@ if (! function_exists('userDebeVerOrdenesPorSector')) {
         $user = Auth::user();
 
         return $user && \App\Support\OrdenesAccesoPorSector::debeFiltrarPorSector($user);
+    }
+}
+
+if (! function_exists('userEsAdminNivel')) {
+    function userEsAdminNivel(): bool
+    {
+        if (! Auth::check()) {
+            return false;
+        }
+
+        return (int) (Auth::user()?->usu_nivel ?? 0) >= 900;
+    }
+}
+
+/**
+ * Puede iniciar la firma digital de un informe (firmador con envío a firma, o administrador).
+ */
+if (! function_exists('userPuedeFirmarInforme')) {
+    function userPuedeFirmarInforme($muestra): bool
+    {
+        if (! Auth::check() || ! $muestra || (bool) ($muestra->firmado ?? false)) {
+            return false;
+        }
+
+        if (userEsAdminNivel()) {
+            return true;
+        }
+
+        $user = Auth::user();
+
+        return $user && $user->hasRole('firmador') && (bool) ($muestra->listo_para_firmar ?? false);
     }
 }
 
@@ -171,6 +215,20 @@ if (! function_exists('userCanEditInformeProtocoloPdf')) {
             'asp',
             'clarke_fire',
         ]);
+    }
+}
+
+if (! function_exists('etiquetaNumeroCotizacion')) {
+    /**
+     * Texto estándar para badges y etiquetas de número de cotización.
+     */
+    function etiquetaNumeroCotizacion(int|string|null $numero): string
+    {
+        if ($numero === null || $numero === '' || $numero === '—') {
+            return '—';
+        }
+
+        return 'Cotización N°' . trim((string) $numero);
     }
 }
 

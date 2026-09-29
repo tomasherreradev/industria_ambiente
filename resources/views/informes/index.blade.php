@@ -8,10 +8,13 @@
 @php
     $vistaActiva = $vistaActiva ?? 'pendientes';
     $estadisticas = $estadisticas ?? [
-        'pendientes_firma' => 0,
+        'bandeja_ingreso' => 0,
+        'listos_firmar' => 0,
         'firmados' => 0,
+        'pendientes_firma' => 0,
         'total' => 0,
         'cotizaciones_pendientes' => 0,
+        'cotizaciones_listos_firmar' => 0,
     ];
     $viewType = $viewType ?? 'lista';
     $hayFiltros = request()->filled('search')
@@ -36,11 +39,13 @@
             <h1 class="inf-title mb-1">Informes de Muestras</h1>
             <p class="inf-subtitle mb-0">
                 @if($vistaActiva === 'pendientes')
-                    Bandeja de ingreso — informes pendientes de firma digital
+                    Bandeja de ingreso — protocolos en preparación
+                @elseif($vistaActiva === 'listos_firmar')
+                    Informes listos para firma digital
                 @elseif($vistaActiva === 'firmados')
                     Informes ya firmados y disponibles para descarga
                 @else
-                    Todos los informes aprobados del sistema
+                    Todos los informes habilitados del sistema
                 @endif
             </p>
         </div>
@@ -90,22 +95,37 @@
     {{-- KPIs --}}
     <div class="row g-3 mb-4">
         <div class="col-md-4">
-            <div class="card text-white bg-warning stats-card-informes {{ $vistaActiva === 'pendientes' ? 'active' : '' }}"
-                 data-vista="pendientes" role="button" tabindex="0" aria-label="Ver pendientes de firma">
+            <div class="card text-white bg-primary stats-card-informes {{ $vistaActiva === 'pendientes' ? 'active' : '' }}"
+                 data-vista="pendientes" role="button" tabindex="0" aria-label="Ver bandeja de ingreso">
                 <div class="card-body py-3">
                     <div class="d-flex justify-content-between align-items-start">
                         <div>
-                            <h6 class="card-title mb-1 opacity-75">Pendientes de firma</h6>
-                            <h3 class="card-text mb-0 fw-bold">{{ number_format($estadisticas['pendientes_firma'], 0, ',', '.') }}</h3>
+                            <h6 class="card-title mb-1 opacity-75">Bandeja de ingreso</h6>
+                            <h3 class="card-text mb-0 fw-bold">{{ number_format($estadisticas['bandeja_ingreso'] ?? 0, 0, ',', '.') }}</h3>
                         </div>
-                        <x-heroicon-o-pencil-square style="width: 28px; height: 28px;" class="opacity-50" />
+                        <x-heroicon-o-inbox style="width: 28px; height: 28px;" class="opacity-50" />
                     </div>
-                    <small class="opacity-75">{{ $estadisticas['cotizaciones_pendientes'] }} cotizaciones con pendientes</small>
+                    <small class="opacity-75">{{ $estadisticas['cotizaciones_pendientes'] ?? 0 }} cotizaciones en preparación</small>
                 </div>
             </div>
         </div>
         <div class="col-md-4">
-            <div class="card text-white bg-success stats-card-informes {{ $vistaActiva === 'firmados' ? 'active' : '' }}"
+            <div class="card text-dark bg-warning stats-card-informes {{ $vistaActiva === 'listos_firmar' ? 'active' : '' }}"
+                 data-vista="listos_firmar" role="button" tabindex="0" aria-label="Ver listos para firmar">
+                <div class="card-body py-3">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <h6 class="card-title mb-1 opacity-75">Listo para firmar</h6>
+                            <h3 class="card-text mb-0 fw-bold">{{ number_format($estadisticas['listos_firmar'] ?? 0, 0, ',', '.') }}</h3>
+                        </div>
+                        <x-heroicon-o-pencil-square style="width: 28px; height: 28px;" class="opacity-50" />
+                    </div>
+                    <small class="opacity-75">{{ $estadisticas['cotizaciones_listos_firmar'] ?? 0 }} cotizaciones enviadas a firma</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card text-white bg-danger stats-card-informes {{ $vistaActiva === 'firmados' ? 'active' : '' }}"
                  data-vista="firmados" role="button" tabindex="0" aria-label="Ver informes firmados">
                 <div class="card-body py-3">
                     <div class="d-flex justify-content-between align-items-start">
@@ -116,21 +136,6 @@
                         <x-heroicon-o-check-badge style="width: 28px; height: 28px;" class="opacity-50" />
                     </div>
                     <small class="opacity-75">Listos para entrega al cliente</small>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-4">
-            <div class="card text-white bg-primary stats-card-informes {{ $vistaActiva === 'todos' ? 'active' : '' }}"
-                 data-vista="todos" role="button" tabindex="0" aria-label="Ver todos los informes">
-                <div class="card-body py-3">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div>
-                            <h6 class="card-title mb-1 opacity-75">Total informes</h6>
-                            <h3 class="card-text mb-0 fw-bold">{{ number_format($estadisticas['total'], 0, ',', '.') }}</h3>
-                        </div>
-                        <x-heroicon-o-document-text style="width: 28px; height: 28px;" class="opacity-50" />
-                    </div>
-                    <small class="opacity-75">Aprobados y habilitados para informe</small>
                 </div>
             </div>
         </div>
@@ -195,27 +200,30 @@
     {{-- Selector de bandeja --}}
     @if(in_array($viewType, ['lista', 'documento'], true))
         <div class="mb-4">
-            <div class="inf-segmented" role="tablist" aria-label="Bandeja de informes">
-                <button type="button" class="inf-segmented__btn {{ $vistaActiva === 'pendientes' ? 'active' : '' }}"
+            <div class="inf-segmented inf-segmented--informes" role="tablist" aria-label="Bandeja de informes">
+                <button type="button" class="inf-segmented__btn inf-segmented__btn--ingreso {{ $vistaActiva === 'pendientes' ? 'active' : '' }}"
                         data-vista="pendientes" role="tab" aria-selected="{{ $vistaActiva === 'pendientes' ? 'true' : 'false' }}">
                     <x-heroicon-o-inbox style="width: 18px; height: 18px;" />
                     Bandeja de ingreso
-                    @if($estadisticas['pendientes_firma'] > 0)
-                        <span class="badge rounded-pill bg-warning text-dark ms-1">{{ $estadisticas['pendientes_firma'] }}</span>
+                    @if(($estadisticas['bandeja_ingreso'] ?? 0) > 0)
+                        <span class="badge rounded-pill bg-primary ms-1">{{ $estadisticas['bandeja_ingreso'] }}</span>
                     @endif
                 </button>
-                <button type="button" class="inf-segmented__btn {{ $vistaActiva === 'firmados' ? 'active' : '' }}"
+                <button type="button" class="inf-segmented__btn inf-segmented__btn--listo {{ $vistaActiva === 'listos_firmar' ? 'active' : '' }}"
+                        data-vista="listos_firmar" role="tab" aria-selected="{{ $vistaActiva === 'listos_firmar' ? 'true' : 'false' }}">
+                    <x-heroicon-o-paper-airplane style="width: 18px; height: 18px;" />
+                    Listo para firmar
+                    @if(($estadisticas['listos_firmar'] ?? 0) > 0)
+                        <span class="badge rounded-pill bg-warning text-dark ms-1">{{ $estadisticas['listos_firmar'] }}</span>
+                    @endif
+                </button>
+                <button type="button" class="inf-segmented__btn inf-segmented__btn--firmados {{ $vistaActiva === 'firmados' ? 'active' : '' }}"
                         data-vista="firmados" role="tab" aria-selected="{{ $vistaActiva === 'firmados' ? 'true' : 'false' }}">
                     <x-heroicon-o-check-circle style="width: 18px; height: 18px;" />
                     Firmados
                     @if($estadisticas['firmados'] > 0)
-                        <span class="badge rounded-pill bg-success ms-1">{{ $estadisticas['firmados'] }}</span>
+                        <span class="badge rounded-pill bg-danger ms-1">{{ $estadisticas['firmados'] }}</span>
                     @endif
-                </button>
-                <button type="button" class="inf-segmented__btn {{ $vistaActiva === 'todos' ? 'active' : '' }}"
-                        data-vista="todos" role="tab" aria-selected="{{ $vistaActiva === 'todos' ? 'true' : 'false' }}">
-                    <x-heroicon-o-queue-list style="width: 18px; height: 18px;" />
-                    Todos
                 </button>
             </div>
         </div>
@@ -232,7 +240,9 @@
             </div>
             <h5 class="fw-semibold mb-2">
                 @if($vistaActiva === 'pendientes')
-                    No hay informes pendientes de firma
+                    No hay informes en bandeja de ingreso
+                @elseif($vistaActiva === 'listos_firmar')
+                    No hay informes listos para firmar
                 @elseif($vistaActiva === 'firmados')
                     No hay informes firmados
                 @else
@@ -243,7 +253,9 @@
                 @if($hayFiltros)
                     Probá ajustar los filtros o limpiarlos para ver más resultados.
                 @elseif($vistaActiva === 'pendientes')
-                    Cuando un informe se firma, desaparece de esta bandeja y pasa a la sección «Firmados».
+                    Editá el protocolo y usá «Guardar y enviar» para pasarlo a «Listo para firmar».
+                @elseif($vistaActiva === 'listos_firmar')
+                    Los informes enviados desde el editor de protocolo aparecerán aquí para la firma digital.
                 @else
                     Los informes aparecerán aquí cuando estén aprobados y habilitados.
                 @endif

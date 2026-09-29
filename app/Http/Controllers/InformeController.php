@@ -20,6 +20,7 @@ use App\Support\LeyNormativaPresentacion;
 use App\Support\ProtocoloInformePdfCabecera;
 use App\Support\CotizacionCanalEnsayo;
 use App\Support\CotizacionClienteEtiqueta;
+use Illuminate\Support\Facades\Auth;
 
 
 class InformeController extends Controller
@@ -52,6 +53,18 @@ class InformeController extends Controller
     }
 
     /**
+     * Muestras principales visibles en /informes: pasadas a informes y aprobadas en OT.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder  $query
+     */
+    protected function aplicarScopeMuestraVisibleEnInformes($query): void
+    {
+        $query->where('cotio_subitem', 0)
+            ->where('enable_inform', true)
+            ->where('aprobado_informe', true);
+    }
+
+    /**
      * Genera un PDF masivo con todos los informes de una cotización
      */
     public function generarPdfMasivo($cotizacion)
@@ -78,10 +91,8 @@ class InformeController extends Controller
             'cotizacion.cliente',
             'cotizacion.sucursal',
         ])
-        ->where('cotio_numcoti', $cotizacion)
-        ->where('enable_inform', true)
-        ->where('aprobado_informe', true)
-        ->where('cotio_subitem', 0);
+        ->where('cotio_numcoti', $cotizacion);
+        $this->aplicarScopeMuestraVisibleEnInformes($muestras);
 
         CotizacionCanalEnsayo::aplicarWhereInstanciaVisibleEnInformes($muestras);
 
@@ -317,12 +328,16 @@ class InformeController extends Controller
 
     protected function resolverVistaInformes(Request $request): string
     {
-        if ($request->filled('vista') && in_array($request->vista, ['pendientes', 'firmados', 'todos'], true)) {
+        if ($request->filled('vista') && in_array($request->vista, ['pendientes', 'listos_firmar', 'firmados', 'todos'], true)) {
             return $request->vista;
         }
 
         if ($request->filled('estado_firma')) {
-            return $request->estado_firma === 'firmados' ? 'firmados' : 'pendientes';
+            return match ($request->estado_firma) {
+                'firmados' => 'firmados',
+                'listos_firmar' => 'listos_firmar',
+                default => 'pendientes',
+            };
         }
 
         return 'pendientes';
@@ -339,10 +354,8 @@ class InformeController extends Controller
                 $q->where('enable_inform', true)->orderBy('cotio_subitem');
             },
             'cotizacion.instancias',
-        ])
-            ->where('enable_inform', true)
-            ->where('aprobado_informe', true)
-            ->where('cotio_subitem', 0);
+        ]);
+        $this->aplicarScopeMuestraVisibleEnInformes($query);
 
         CotizacionCanalEnsayo::aplicarWhereInstanciaVisibleEnInformes($query);
 
@@ -389,29 +402,46 @@ class InformeController extends Controller
             return;
         }
 
+        if ($vista === 'listos_firmar') {
+            $query->where(function ($q) {
+                $q->where('firmado', false)->orWhereNull('firmado');
+            })->where('listo_para_firmar', true);
+
+            return;
+        }
+
         if ($vista === 'pendientes') {
             $query->where(function ($q) {
                 $q->where('firmado', false)->orWhereNull('firmado');
+            })->where(function ($q) {
+                $q->where('listo_para_firmar', false)->orWhereNull('listo_para_firmar');
             });
         }
     }
 
     protected function calcularEstadisticasInformesIndex($baseQuery): array
     {
-        $pendientesQuery = clone $baseQuery;
-        $this->aplicarFiltroFirmaVista($pendientesQuery, 'pendientes');
+        $bandejaQuery = clone $baseQuery;
+        $this->aplicarFiltroFirmaVista($bandejaQuery, 'pendientes');
+
+        $listosQuery = clone $baseQuery;
+        $this->aplicarFiltroFirmaVista($listosQuery, 'listos_firmar');
 
         $firmadosQuery = clone $baseQuery;
         $this->aplicarFiltroFirmaVista($firmadosQuery, 'firmados');
 
-        $pendientes = $pendientesQuery->count();
+        $bandeja = $bandejaQuery->count();
+        $listosFirmar = $listosQuery->count();
         $firmados = $firmadosQuery->count();
 
         return [
-            'pendientes_firma' => $pendientes,
+            'bandeja_ingreso' => $bandeja,
+            'listos_firmar' => $listosFirmar,
             'firmados' => $firmados,
-            'total' => $pendientes + $firmados,
-            'cotizaciones_pendientes' => (clone $pendientesQuery)->pluck('cotio_numcoti')->unique()->count(),
+            'pendientes_firma' => $bandeja + $listosFirmar,
+            'total' => $bandeja + $listosFirmar + $firmados,
+            'cotizaciones_pendientes' => (clone $bandejaQuery)->pluck('cotio_numcoti')->unique()->count(),
+            'cotizaciones_listos_firmar' => (clone $listosQuery)->pluck('cotio_numcoti')->unique()->count(),
         ];
     }
 
@@ -426,9 +456,8 @@ class InformeController extends Controller
      */
     protected function getMuestrasPorTipoInforme($tipo)
     {
-        $query = CotioInstancia::where('enable_inform', true)
-            ->where('aprobado_informe', true)
-            ->where('cotio_subitem', 0);
+        $query = CotioInstancia::query();
+        $this->aplicarScopeMuestraVisibleEnInformes($query);
 
         CotizacionCanalEnsayo::aplicarWhereInstanciaVisibleEnInformes($query);
 
@@ -473,9 +502,9 @@ class InformeController extends Controller
         ])
                     ->where('cotio_numcoti', $cotio_numcoti)
                     ->where('cotio_item', $cotio_item)
-                    ->where('instance_number', $instance_number)
-                    ->where('cotio_subitem', 0)
-                    ->firstOrFail();
+                    ->where('instance_number', $instance_number);
+        $this->aplicarScopeMuestraVisibleEnInformes($muestra);
+        $muestra = $muestra->firstOrFail();
 
         $tipoInforme = $this->determinarTipoInforme($muestra);
 
@@ -508,9 +537,9 @@ class InformeController extends Controller
         ])
         ->where('cotio_numcoti', $cotio_numcoti)
         ->where('cotio_item', $cotio_item)
-        ->where('instance_number', $instance_number)
-        ->where('cotio_subitem', 0)
-        ->firstOrFail();
+        ->where('instance_number', $instance_number);
+        $this->aplicarScopeMuestraVisibleEnInformes($muestra);
+        $muestra = $muestra->firstOrFail();
 
         if (!empty($muestra->archivo_informe) && Storage::disk('public')->exists($muestra->archivo_informe)) {
             $path = Storage::disk('public')->path($muestra->archivo_informe);
@@ -628,13 +657,23 @@ class InformeController extends Controller
     {
         $muestra = CotioInstancia::where('cotio_numcoti', $cotio_numcoti)
             ->where('cotio_item', $cotio_item)
-            ->where('instance_number', $instance_number)
-            ->where('cotio_subitem', 0)
-            ->firstOrFail();
+            ->where('instance_number', $instance_number);
+        $this->aplicarScopeMuestraVisibleEnInformes($muestra);
+        $muestra = $muestra->firstOrFail();
 
         // Si ya está firmado, no hacer nada
         if ($muestra->firmado) {
             return response()->json(['error' => 'Este informe ya está firmado'], 400);
+        }
+
+        if (! userPuedeFirmarInforme($muestra)) {
+            $mensaje = Auth::user()?->hasRole('firmador')
+                ? 'El informe debe enviarse con «Guardar y enviar» antes de firmarlo.'
+                : 'No tiene permiso para firmar este informe.';
+
+            return redirect()
+                ->route('informes.index', ['view' => 'lista', 'vista' => 'listos_firmar'])
+                ->with('error', $mensaje);
         }
 
         // Usar PDF subido manualmente si existe; si no, generar protocolo automático
@@ -881,9 +920,9 @@ class InformeController extends Controller
         ])
         ->where('cotio_numcoti', $cotio_numcoti)
         ->where('cotio_item', $cotio_item)
-        ->where('instance_number', $instance_number)
-        ->where('cotio_subitem', 0)
-        ->firstOrFail();
+        ->where('instance_number', $instance_number);
+        $this->aplicarScopeMuestraVisibleEnInformes($muestra);
+        $muestra = $muestra->firstOrFail();
 
         CotizacionClienteEtiqueta::precargarEmpresasRelacionadas([$muestra->cotizacion]);
         $cotizacionData = $muestra->cotizacion->toArray();
@@ -933,9 +972,11 @@ class InformeController extends Controller
             // Actualizar muestra principal
             $muestra = CotioInstancia::where('cotio_numcoti', $cotio_numcoti)
                         ->where('cotio_item', $cotio_item)
-                        ->where('instance_number', $instance_number)
-                        ->where('cotio_subitem', 0)
-                        ->firstOrFail();
+                        ->where('instance_number', $instance_number);
+            $this->aplicarScopeMuestraVisibleEnInformes($muestra);
+            $muestra = $muestra->firstOrFail();
+
+            $this->abortSiProtocoloNoEditableEnBandeja($muestra);
             
             $muestra->update([
                 'resultado' => $request->input('muestra.resultado'),
@@ -1107,12 +1148,12 @@ class InformeController extends Controller
         try {
             $muestra = CotioInstancia::where('cotio_numcoti', $cotio_numcoti)
                 ->where('cotio_item', $cotio_item)
-                ->where('instance_number', $instance_number)
-                ->where('cotio_subitem', 0)
-                ->first();
+                ->where('instance_number', $instance_number);
+            $this->aplicarScopeMuestraVisibleEnInformes($muestra);
+            $muestra = $muestra->first();
                 
             if (!$muestra) {
-                return redirect()->route('informes.index')->with('error', 'Muestra no encontrada');
+                return redirect()->route('informes.index')->with('error', 'Muestra no encontrada o informe no aprobado');
             }
             
             if (!$muestra->firmado || !$muestra->identificador_documento_firma) {
@@ -1163,6 +1204,32 @@ class InformeController extends Controller
         return "documento-firmado-{$timestamp}.pdf";
     }
 
+    protected function redirectSiProtocoloNoEditableEnBandeja(CotioInstancia $muestra): ?\Illuminate\Http\RedirectResponse
+    {
+        if ($muestra->firmado) {
+            return redirect()
+                ->route('informes.index', ['view' => 'lista', 'vista' => 'firmados'])
+                ->with('error', 'El informe ya está firmado y no puede editarse.');
+        }
+
+        if ($muestra->listo_para_firmar) {
+            return redirect()
+                ->route('informes.index', ['view' => 'lista', 'vista' => 'listos_firmar'])
+                ->with('error', 'El protocolo ya fue enviado a firma. Solo puede editarse en bandeja de ingreso.');
+        }
+
+        return null;
+    }
+
+    protected function abortSiProtocoloNoEditableEnBandeja(CotioInstancia $muestra): void
+    {
+        if ($muestra->firmado || $muestra->listo_para_firmar) {
+            abort(403, $muestra->listo_para_firmar
+                ? 'El protocolo ya fue enviado a firma. Solo puede editarse en bandeja de ingreso.'
+                : 'El informe ya está firmado y no puede editarse.');
+        }
+    }
+
     /**
      * Formulario para editar la cabecera del PDF (recuadro de datos del protocolo).
      */
@@ -1179,10 +1246,13 @@ class InformeController extends Controller
         ])
             ->where('cotio_numcoti', $cotio_numcoti)
             ->where('cotio_item', $cotio_item)
-            ->where('instance_number', $instance_number)
-            ->where('cotio_subitem', 0)
-            ->where('enable_inform', true)
-            ->firstOrFail();
+            ->where('instance_number', $instance_number);
+        $this->aplicarScopeMuestraVisibleEnInformes($muestra);
+        $muestra = $muestra->firstOrFail();
+
+        if ($redirect = $this->redirectSiProtocoloNoEditableEnBandeja($muestra)) {
+            return $redirect;
+        }
 
         $analisis = CotioInstancia::with([
             'tarea.leyNormativa',
@@ -1231,10 +1301,11 @@ class InformeController extends Controller
 
         $muestra = CotioInstancia::where('cotio_numcoti', $cotio_numcoti)
             ->where('cotio_item', $cotio_item)
-            ->where('instance_number', $instance_number)
-            ->where('cotio_subitem', 0)
-            ->where('enable_inform', true)
-            ->firstOrFail();
+            ->where('instance_number', $instance_number);
+        $this->aplicarScopeMuestraVisibleEnInformes($muestra);
+        $muestra = $muestra->firstOrFail();
+
+        $this->abortSiProtocoloNoEditableEnBandeja($muestra);
 
         $rules = [
             'observaciones_ot' => 'nullable|string',
@@ -1250,7 +1321,19 @@ class InformeController extends Controller
         }
         $validated = $request->validate($rules);
 
-        DB::transaction(function () use ($muestra, $validated, $request) {
+        $enviarAFirma = $request->input('accion') === 'guardar_y_enviar';
+
+        if ($enviarAFirma && $muestra->firmado) {
+            return redirect()
+                ->route('informes.protocolo-pdf.edit', [
+                    'cotio_numcoti' => $cotio_numcoti,
+                    'cotio_item' => $cotio_item,
+                    'instance_number' => $instance_number,
+                ])
+                ->with('error', 'Este informe ya está firmado.');
+        }
+
+        DB::transaction(function () use ($muestra, $validated, $request, $enviarAFirma) {
             // 1. Actualizar campos de cabecera en JSON
             $defaults = ProtocoloInformePdfCabecera::defaults($muestra);
             $json = [];
@@ -1286,6 +1369,13 @@ class InformeController extends Controller
             if ($request->has('observaciones_ot')) {
                 $muestra->observaciones_ot = $request->input('observaciones_ot');
             }
+
+            if ($enviarAFirma) {
+                $muestra->listo_para_firmar = true;
+                $muestra->fecha_listo_para_firmar = now();
+                $muestra->listo_para_firmar_usuario = trim((string) Auth::user()->usu_codigo);
+            }
+
             $muestra->save();
 
             // 3. Actualizar resultados de análisis
@@ -1308,6 +1398,12 @@ class InformeController extends Controller
             }
         });
 
+        if ($enviarAFirma) {
+            return redirect()
+                ->route('informes.index', ['view' => 'lista', 'vista' => 'listos_firmar'])
+                ->with('success', 'Informe guardado y enviado a la bandeja «Listo para firmar».');
+        }
+
         return redirect()
             ->route('informes.protocolo-pdf.edit', [
                 'cotio_numcoti' => $cotio_numcoti,
@@ -1323,10 +1419,11 @@ class InformeController extends Controller
 
         $muestra = CotioInstancia::where('cotio_numcoti', $cotio_numcoti)
             ->where('cotio_item', $cotio_item)
-            ->where('instance_number', $instance_number)
-            ->where('cotio_subitem', 0)
-            ->where('enable_inform', true)
-            ->firstOrFail();
+            ->where('instance_number', $instance_number);
+        $this->aplicarScopeMuestraVisibleEnInformes($muestra);
+        $muestra = $muestra->firstOrFail();
+
+        $this->abortSiProtocoloNoEditableEnBandeja($muestra);
 
         $muestra->protocolo_informe_json = null;
         $muestra->save();

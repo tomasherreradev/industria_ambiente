@@ -599,7 +599,12 @@ class ItemController extends Controller
             ]);
 
             $import = new ItemsImport();
-            
+            $import->setActualizarExistentes($request->boolean('actualizar_existentes', true));
+
+            Log::info('ItemsImport opciones', [
+                'actualizar_existentes' => $import->getActualizarExistentes(),
+            ]);
+
             // Importar solo la primera hoja usando toCollection y luego procesar manualmente
             $collection = Excel::toCollection($import, $request->file('archivo'))->first();
             
@@ -618,6 +623,20 @@ class ItemController extends Controller
             ]);
 
             $message = "Importación completada. {$successCount} determinación(es) procesada(s) correctamente.";
+
+            if (config('app.debug')) {
+                $debugReport = $import->getDebugReport();
+                $message .= sprintf(
+                    ' [DEBUG] %d componente(s) con cambios, %d componente(s) creado(s), %d agrupador(es) creado(s).',
+                    $debugReport['componentes_actualizados_total'] ?? 0,
+                    $debugReport['componentes_creados_total'] ?? 0,
+                    $debugReport['agrupadores_creados_total'] ?? 0
+                );
+                $txtPath = $debugReport['archivo_log_texto'] ?? null;
+                if ($txtPath) {
+                    $message .= ' Detalle: storage/logs/items-import/'.basename($txtPath);
+                }
+            }
             
             if ($successCount == 0 && $errorCount == 0) {
                 $message = "No se encontraron datos para importar. Verifica que el archivo tenga datos en la primera hoja (después de los encabezados).";

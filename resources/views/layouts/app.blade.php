@@ -353,14 +353,14 @@
                                 </a>
                             </li>
                             <li>
-                                <a class="dropdown-item d-flex align-items-center gap-2" href="{{ url('/auth/' . Auth::user()->usu_codigo) . '/seguridad' }}">
+                                <a class="dropdown-item d-flex align-items-center gap-2" href="{{ route('auth.security', ['id' => trim(Auth::user()->usu_codigo)]) }}">
                                     <x-heroicon-o-lock-closed style="width: 16px; height: 16px;" />
                                     Seguridad y contraseña
                                 </a>
                             </li>
                             <li><hr class="dropdown-divider"></li>
                             <li>
-                                <a class="dropdown-item d-flex align-items-center gap-2" href="{{ url('/auth/' . Auth::user()->usu_codigo) . '/ayuda' }}">
+                                <a class="dropdown-item d-flex align-items-center gap-2" href="{{ route('auth.help', ['id' => trim(Auth::user()->usu_codigo)]) }}">
                                     <x-heroicon-o-question-mark-circle style="width: 16px; height: 16px;" />
                                     Ayuda y soporte
                                 </a>
@@ -685,6 +685,12 @@
                             </a>
                         @endif
 
+                        @if(userPuedeAutorizarFacturacion())
+                            <a class="nav-link" href="{{ route('facturacion-revision.index') }}">
+                                Revisión facturación
+                            </a>
+                        @endif
+
                         @if(Auth::user()->usu_nivel >= 900 || userHasRole('facturador'))
                             <a class="nav-link" href="{{ url('/facturacion') }}">
                                 Facturación
@@ -851,14 +857,14 @@
                         </a>
                     </li>
                     <li>
-                        <a class="dropdown-item d-flex align-items-center gap-2" href="{{ url('/auth/' . Auth::user()->usu_codigo) . '/seguridad' }}">
+                        <a class="dropdown-item d-flex align-items-center gap-2" href="{{ route('auth.security', ['id' => trim(Auth::user()->usu_codigo)]) }}">
                             <x-heroicon-o-lock-closed style="width: 16px; height: 16px;" />
                             Seguridad y contraseña
                         </a>
                     </li>
                     <li><hr class="dropdown-divider"></li>
                     <li>
-                        <a class="dropdown-item d-flex align-items-center gap-2" href="{{ url('/auth/' . Auth::user()->usu_codigo) . '/ayuda' }}">
+                        <a class="dropdown-item d-flex align-items-center gap-2" href="{{ route('auth.help', ['id' => trim(Auth::user()->usu_codigo)]) }}">
                             <x-heroicon-o-question-mark-circle style="width: 16px; height: 16px;" />
                             Ayuda y soporte
                         </a>

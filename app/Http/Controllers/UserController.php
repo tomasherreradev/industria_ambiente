@@ -118,6 +118,7 @@ class UserController extends Controller
             $rules['bandeja_solo_informes'] = 'nullable|boolean';
             $rules['puede_cargar_items'] = 'nullable|boolean';
             $rules['puede_gestionar_ordenes'] = 'nullable|boolean';
+            $rules['puede_autorizar_facturacion'] = 'nullable|boolean';
 
             $validated = $request->validate($rules);
             Log::debug('Validation passed for new user');
@@ -194,6 +195,7 @@ class UserController extends Controller
             $usuario->puede_cargar_items = $request->boolean('puede_cargar_items');
             $usuario->puede_gestionar_ordenes = $this->usuarioTieneRolCoordinadorLab($rolFinal, $rolesAdicionalesGuardados)
                 && $request->boolean('puede_gestionar_ordenes');
+            $usuario->puede_autorizar_facturacion = $request->boolean('puede_autorizar_facturacion');
             $usuario->save();
 
             Log::info('User created successfully', ['user_id' => $usuario->usu_codigo]);
@@ -274,6 +276,7 @@ class UserController extends Controller
         $rules['bandeja_solo_informes'] = 'nullable|boolean';
         $rules['puede_cargar_items'] = 'nullable|boolean';
         $rules['puede_gestionar_ordenes'] = 'nullable|boolean';
+        $rules['puede_autorizar_facturacion'] = 'nullable|boolean';
 
         $validated = $request->validate($rules);
 
@@ -338,6 +341,7 @@ class UserController extends Controller
         $usuario->puede_cargar_items = $request->boolean('puede_cargar_items');
         $usuario->puede_gestionar_ordenes = $this->usuarioTieneRolCoordinadorLab($rolFinal, $rolesAdicionalesGuardados)
             && $request->boolean('puede_gestionar_ordenes');
+        $usuario->puede_autorizar_facturacion = $request->boolean('puede_autorizar_facturacion');
 
         $usuario->save();
 
@@ -493,6 +497,7 @@ class UserController extends Controller
         return [
             'laboratorio', 'muestreador', 'coordinador_lab', 'coordinador_muestreo', 'facturador',
             'ventas', 'firmador', 'coordinador_consul', 'coordinador_mediciones', 'asp', 'clarke_fire', 'cliente',
+            'cadena_custodia',
         ];
     }
 

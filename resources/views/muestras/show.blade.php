@@ -163,6 +163,10 @@
                                         $responsables = $item['responsables'] ?? collect();
                                         $descripcion = $categoria->cotio_descripcion;
                                         $esFacturacionDirectaEnsayo = ! empty($categoria->facturacion_directa);
+                                        $esClarkeFireEnsayo = \App\Support\CotizacionCanalEnsayo::esEnsayoClarkeFire(
+                                            $categoria,
+                                            optional($cotizacion->matriz)->matriz_descripcion
+                                        );
                                         $esEnsayoMediciones = ($categoria->canal_ensayo ?? '') === 'mediciones';
                                         $esPrioriEfectiva = \App\Support\PrioridadListado::prioridadEfectivaMuestreo($categoria, $cotizacion, $instancia);
                                         $isTecnicoCampo = ! empty($categoria->es_trabajo_tecnico_campo)
@@ -487,6 +491,9 @@
 
                                                                     <div class="d-flex gap-2 align-items-start justify-content-center">
                                                                         {{ $tarea->cotio_descripcion }}
+                                                                        @if($esClarkeFireEnsayo && (float) ($tarea->cotio_cantidad ?? 1) > 1)
+                                                                            <span class="badge bg-light text-dark border" title="Cantidad cotizada">× {{ (int) $tarea->cotio_cantidad }}</span>
+                                                                        @endif
                                                                         @if(! $esFacturacionDirectaEnsayo)
                                                                             <div>
                                                                                 @php
@@ -2437,7 +2444,6 @@ function cancelarMuestreo(cotiNum) {
             background-color: #f8f9fa;
             border-radius: 8px;
             padding: 12px;
-            border-left: 4px solid #0d6efd;
         }
 
         .category-header {
@@ -2453,10 +2459,6 @@ function cancelarMuestreo(cotiNum) {
         .variable-card:hover {
             box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
             transform: translateY(-2px);
-        }
-
-        .variable-card.border-primary {
-            border-left: 3px solid #0d6efd;
         }
 
         .variable-name {

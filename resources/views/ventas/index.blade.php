@@ -1,9 +1,21 @@
 @extends('layouts.app')
 
+@section('title', 'Cotizaciones')
+
 @section('content')
 
+<link rel="stylesheet" href="{{ asset('css/usuarios-crud.css') }}?v={{ filemtime(public_path('css/usuarios-crud.css')) }}">
+<link rel="stylesheet" href="{{ asset('css/ventas-page.css') }}?v={{ filemtime(public_path('css/ventas-page.css')) }}">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+
+@php
+    $hayFiltrosVentas = request()->hasAny(['cliente', 'vendedor', 'sucursal', 'estado', 'fecha_desde', 'fecha_hasta', 'search']);
+@endphp
+
+<div class="container-fluid px-3 px-lg-4 py-4 ventas-page ucrud ucrud-layout--fluid" data-ucrud-root>
+
 @if(!empty($canalVistaVentas))
-    <div class="alert alert-info mb-3">
+    <div class="alert alert-info border-0 shadow-sm mb-3" role="status">
         @if($canalVistaVentas === 'consultoria')
             Solo se listan cotizaciones que incluyen al menos un ensayo de <strong>consultoría</strong>.
         @elseif($canalVistaVentas === 'asp')
@@ -17,150 +29,6 @@
     </div>
 @endif
 
-<!-- SweetAlert2 CSS -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
-
-<style>
-.dashboard-header {
-    background-color: #0d6efd;
-    color: white;
-    padding: 2rem;
-    border-radius: 10px;
-    margin-bottom: 2rem;
-}
-
-.stats-card {
-    border: none;
-    border-radius: 10px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    transition: transform 0.2s, box-shadow 0.2s;
-    cursor: pointer;
-}
-
-.stats-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-}
-
-.stats-card.active {
-    border: 2px solid #0d6efd;
-    box-shadow: 0 4px 15px rgba(13, 110, 253, 0.3);
-    background: linear-gradient(135deg, rgba(13, 110, 253, 0.05) 0%, rgba(13, 110, 253, 0.1) 100%);
-}
-
-.stats-card-monto {
-    border-radius: 10px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    transition: transform 0.2s, box-shadow 0.2s;
-    cursor: default;
-}
-
-.stats-card-monto:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-}
-
-.stats-icon {
-    font-size: 2.5rem;
-    opacity: 0.8;
-}
-
-.table-container {
-    background: white;
-    border-radius: 10px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    overflow: hidden;
-}
-
-.table-header {
-    background: #f8f9fa;
-    padding: 1rem;
-    border-bottom: 2px solid #dee2e6;
-}
-
-.badge-estado {
-    padding: 0.35rem 0.65rem;
-    border-radius: 20px;
-    font-size: 0.75rem;
-    font-weight: 600;
-}
-
-.estado-E { background: #ffc107; color: #000; }
-.estado-A { background: #28a745; color: #fff; }
-.estado-R { background: #dc3545; color: #fff; }
-.estado-P { background: #17a2b8; color: #fff; }
-.estado-C { background: #6c757d; color: #fff; }
-.estado-S { background: #6f42c1; color: #fff; }
-.estado-CERR { background: #155724; color: #fff; }
-.estado-PROC { background: #0d6efd; color: #fff; }
-
-.badge-counter {
-    display: inline-block;
-    padding: 0.25rem 0.5rem;
-    background: rgba(255,255,255,0.2);
-    border-radius: 50%;
-    min-width: 2rem;
-    text-align: center;
-}
-
-.search-filter-bar {
-    padding: 1rem;
-    background: #f8f9fa;
-    border-bottom: 1px solid #dee2e6;
-}
-
-.action-buttons {
-    white-space: nowrap;
-}
-
-.action-buttons .btn {
-    padding: 0.25rem 0.5rem;
-    font-size: 0.875rem;
-}
-
-.filter-active {
-    background: #e7f3ff;
-    padding: 0.5rem;
-    border-radius: 5px;
-}
-
-.ventas-det-icon {
-    transition: transform 0.2s ease;
-    font-size: 0.75rem;
-}
-.ventas-det-toggle[aria-expanded="true"] .ventas-det-icon {
-    transform: rotate(180deg);
-}
-
-@media (max-width: 768px) {
-    .stats-card {
-        margin-bottom: 1rem;
-    }
-    
-    .row.g-2 > div {
-        margin-bottom: 0.5rem;
-    }
-}
-
-/* Tarjetas de resumen /ventas: una sola franja flexible (evita filas extra por wrap del grid) */
-.ventas-stats-strip {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: stretch;
-    gap: 0.75rem;
-    margin-bottom: 1.5rem;
-}
-.ventas-stats-strip .ventas-stats-metric {
-    flex: 1 1 9.5rem;
-    min-width: 9rem;
-    max-width: 14rem;
-}
-.ventas-stats-strip .ventas-stats-monto-wrap {
-    flex: 1 1 18rem;
-    min-width: 16rem;
-}
-</style>
-
 @php
     $cv = $conteosVentasTarjetas ?? [];
     $totalCotizaciones = (int) ($cv['total'] ?? 0);
@@ -172,278 +40,208 @@
     $procesoDeriv = (int) ($cv['procesoDeriv'] ?? 0);
 @endphp
 
-<div class="container-fluid py-4">
-    <!-- Header -->
-    <div class="dashboard-header">
-        <div class="d-flex justify-content-between align-items-center flex-wrap">
-            <div>
-                <h1 class="mb-1"><x-heroicon-o-chart-bar class="me-2" style="width: 16px; height: 16px;" />Dashboard de Cotizaciones</h1>
-                <p class="mb-0 opacity-75">Gestión y análisis de cotizaciones</p>
-            </div>
-            <a href="{{ route('ventas.create') }}" class="btn btn-light btn-lg" style="font-size: 14px;">
-                <x-heroicon-o-plus class="me-2" style="width: 16px; height: 16px;" /> Nueva Cotización
+    <header class="ucrud-header">
+        <div class="ucrud-header__titles">
+            <h1 class="ucrud-title">
+                Cotizaciones
+                <span class="ucrud-count">{{ number_format($totalCotizaciones) }}</span>
+            </h1>
+            <p class="ucrud-subtitle">Gestión de presupuestos, estados y montos</p>
+        </div>
+        <div class="ucrud-header__actions">
+            <a href="{{ route('ventas.create') }}" class="ucrud-btn ucrud-btn--primary">
+                <x-heroicon-o-plus style="width: 16px; height: 16px;" />
+                Nueva cotización
             </a>
         </div>
-    </div>
+    </header>
 
-    <!-- Estadísticas (una sola tira; sin segunda fila duplicada Cerrada/Proceso) -->
     <div class="ventas-stats-strip">
-        <div class="ventas-stats-metric">
-            <div class="card stats-card h-100 {{ !request('estado') ? 'active' : '' }}" 
-                 onclick="filtrarPorEstado('')" 
-                 data-estado="">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <h6 class="text-muted mb-2">Total</h6>
-                            <h3 class="mb-0 text-primary">{{ number_format($totalCotizaciones) }}</h3>
-                        </div>
-                        <div class="stats-icon text-primary">
-                            <i class="fas fa-file-invoice-dollar"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="ventas-stats-metric">
-            <div class="card stats-card h-100 {{ request('estado') == 'E' ? 'active' : '' }}" 
-                 onclick="filtrarPorEstado('E')" 
-                 data-estado="E">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <h6 class="text-muted mb-2">En Espera</h6>
-                            <h3 class="mb-0 text-warning">{{ number_format($enEspera) }}</h3>
-                        </div>
-                        <div class="stats-icon text-warning">
-                            <i class="fas fa-clock"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="ventas-stats-metric">
-            <div class="card stats-card h-100 {{ request('estado') == 'A' ? 'active' : '' }}" 
-                 onclick="filtrarPorEstado('A')" 
-                 data-estado="A">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <h6 class="text-muted mb-2">Aprobadas</h6>
-                            <h3 class="mb-0 text-success">{{ number_format($aprobadas) }}</h3>
-                        </div>
-                        <div class="stats-icon text-success">
-                            <i class="fas fa-check-circle"></i>
+        @php
+            $kpiVentas = [
+                ['key' => '', 'label' => 'Total', 'value' => $totalCotizaciones, 'mod' => 'total', 'icon' => 'document-text'],
+                ['key' => 'E', 'label' => 'En espera', 'value' => $enEspera, 'mod' => 'espera', 'icon' => 'clock'],
+                ['key' => 'A', 'label' => 'Aprobadas', 'value' => $aprobadas, 'mod' => 'aprobada', 'icon' => 'check-circle'],
+                ['key' => 'R', 'label' => 'Rechazadas', 'value' => $rechazadas, 'mod' => 'rechazada', 'icon' => 'x-circle'],
+                ['key' => '_PROCESO', 'label' => 'En proceso', 'value' => $procesoDeriv, 'mod' => 'proceso', 'icon' => 'arrow-path'],
+                ['key' => 'S', 'label' => 'Suspendidas', 'value' => $suspendidas, 'mod' => 'suspendida', 'icon' => 'pause-circle'],
+                ['key' => '_CERRADA', 'label' => 'Cerradas', 'value' => $cerradasDeriv, 'mod' => 'cerrada', 'icon' => 'flag'],
+            ];
+        @endphp
+        @foreach($kpiVentas as $kpi)
+            @php
+                $estadoReq = request('estado');
+                $activo = ($kpi['key'] === '' && !$estadoReq) || ($estadoReq === $kpi['key']);
+            @endphp
+            <div class="ventas-stats-metric">
+                <div class="stats-card-ventas stats-card-ventas--{{ $kpi['mod'] }} h-100 {{ $activo ? 'active' : '' }}"
+                     onclick="filtrarPorEstado('{{ $kpi['key'] }}')"
+                     role="button" tabindex="0" aria-label="Filtrar {{ $kpi['label'] }}">
+                    <div class="card-body py-3 px-3">
+                        <div class="d-flex justify-content-between align-items-start gap-2">
+                            <div>
+                                <div class="stats-card-ventas__label">{{ $kpi['label'] }}</div>
+                                <p class="stats-card-ventas__value mb-0">{{ number_format($kpi['value']) }}</p>
+                            </div>
+                            @switch($kpi['icon'])
+                                @case('document-text') <x-heroicon-o-document-text class="stats-card-ventas__icon" style="width: 24px; height: 24px;" /> @break
+                                @case('clock') <x-heroicon-o-clock class="stats-card-ventas__icon" style="width: 24px; height: 24px;" /> @break
+                                @case('check-circle') <x-heroicon-o-check-circle class="stats-card-ventas__icon" style="width: 24px; height: 24px;" /> @break
+                                @case('x-circle') <x-heroicon-o-x-circle class="stats-card-ventas__icon" style="width: 24px; height: 24px;" /> @break
+                                @case('arrow-path') <x-heroicon-o-arrow-path class="stats-card-ventas__icon" style="width: 24px; height: 24px;" /> @break
+                                @case('pause-circle') <x-heroicon-o-pause-circle class="stats-card-ventas__icon" style="width: 24px; height: 24px;" /> @break
+                                @default <x-heroicon-o-flag class="stats-card-ventas__icon" style="width: 24px; height: 24px;" />
+                            @endswitch
                         </div>
                     </div>
                 </div>
             </div>
-        </div>
-
-        <div class="ventas-stats-metric">
-            <div class="card stats-card h-100 {{ request('estado') == 'R' ? 'active' : '' }}" 
-                 onclick="filtrarPorEstado('R')" 
-                 data-estado="R">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <h6 class="text-muted mb-2">Rechazadas</h6>
-                            <h3 class="mb-0 text-danger">{{ number_format($rechazadas) }}</h3>
-                        </div>
-                        <div class="stats-icon text-danger">
-                            <i class="fas fa-times-circle"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="ventas-stats-metric">
-            <div class="card stats-card h-100 {{ request('estado') == '_PROCESO' ? 'active' : '' }}"
-                 onclick="filtrarPorEstado('_PROCESO')"
-                 data-estado="_PROCESO">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <h6 class="text-muted mb-2">En Proceso</h6>
-                            <h3 class="mb-0 text-info">{{ number_format($procesoDeriv) }}</h3>
-                        </div>
-                        <div class="stats-icon text-info">
-                            <i class="fas fa-spinner"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="ventas-stats-metric">
-            <div class="card stats-card h-100 {{ request('estado') == 'S' ? 'active' : '' }}"
-                 onclick="filtrarPorEstado('S')"
-                 data-estado="S">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <h6 class="text-muted mb-2">Suspendidas</h6>
-                            <h3 class="mb-0" style="color: #6f42c1;">{{ number_format($suspendidas) }}</h3>
-                        </div>
-                        <div class="stats-icon" style="color: #6f42c1;">
-                            <i class="fas fa-pause-circle"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="ventas-stats-metric">
-            <div class="card stats-card h-100 {{ request('estado') == '_CERRADA' ? 'active' : '' }}"
-                 onclick="filtrarPorEstado('_CERRADA')"
-                 data-estado="_CERRADA">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <h6 class="text-muted mb-2">Cerradas</h6>
-                            <h3 class="mb-0 text-success">{{ number_format($cerradasDeriv) }}</h3>
-                        </div>
-                        <div class="stats-icon text-success">
-                            <i class="fas fa-flag-checkered"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
+        @endforeach
         <div class="ventas-stats-monto-wrap">
-            <div class="card stats-card-monto bg-white text-info h-100">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center">
+            <div class="stats-card-ventas stats-card-ventas--static stats-card-ventas--monto h-100">
+                <div class="card-body py-3 px-3">
+                    <div class="d-flex justify-content-between align-items-start gap-2">
                         <div>
-                            <h6 class="mb-2 opacity-75">Monto Total</h6>
-                            <h2 class="mb-0 fw-bold" style="font-size: 26px;">${{ number_format($montoMostrar, 2, ',', '.') }}</h2>
+                            <div class="stats-card-ventas__label">Monto total</div>
+                            <p class="stats-card-ventas__value mb-0">${{ number_format($montoMostrar, 2, ',', '.') }}</p>
                         </div>
-                        <div class="stats-icon" style="opacity: 0.3;">
-                            <i class="fas fa-dollar-sign" style="font-size: 3rem;"></i>
-                        </div>
+                        <x-heroicon-o-banknotes class="stats-card-ventas__icon" style="width: 24px; height: 24px;" />
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Tabla de Cotizaciones -->
-    <div class="table-container">
-        <div class="table-header">
-            <div class="mb-3">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <h5 class="mb-0"><i class="fas fa-list me-2"></i>Cotizaciones</h5>
-                    @if(request()->hasAny(['cliente', 'vendedor', 'sucursal', 'estado', 'fecha_desde', 'fecha_hasta']))
-                        <small class="text-muted">
-                            <i class="fas fa-filter me-1"></i>Filtros activos
-                        </small>
-                    @endif
-                </div>
-                
-                <!-- Filtros -->
-                <form method="GET" action="{{ route('ventas.index') }}" id="filterForm">
-                    <div class="row g-2">
-                        <div class="col-md-3">
-                            <label class="form-label small text-muted mb-1">Cliente</label>
-                            <select name="cliente" class="form-select form-select-sm js-select2-cliente" data-placeholder="Todos los clientes">
-                                <option value="">Todos los clientes</option>
-                                @foreach($clientes as $cliente)
-                                    <option value="{{ $cliente->cli_codigo }}" {{ request('cliente') == $cliente->cli_codigo ? 'selected' : '' }}>
-                                        {{ trim($cliente->cli_codigo) }} - {{ trim($cliente->cli_razonsocial) }}
-                                    </option>
-                                @endforeach
-                            </select>
-                        </div>
-
-                        <div class="col-md-3">
-                            <label class="form-label small text-muted mb-1">Vendedor</label>
-                            <select name="vendedor" class="form-select form-select-sm js-select2-vendedor" data-placeholder="Todos los vendedores">
-                                <option value="">Todos los vendedores</option>
-                                @foreach(($vendedores ?? []) as $vendedor)
-                                    <option value="{{ trim((string) $vendedor->usu_codigo) }}" {{ request('vendedor') == trim((string) $vendedor->usu_codigo) ? 'selected' : '' }}>
-                                        {{ trim($vendedor->usu_codigo) }} - {{ trim($vendedor->usu_descripcion ?? '') }}
-                                    </option>
-                                @endforeach
-                            </select>
-                        </div>
-
-                        <div class="col-md-2">
-                            <label class="form-label small text-muted mb-1">Sucursal</label>
-                            <select name="sucursal" class="form-select form-select-sm js-select2-sucursal" data-placeholder="Todas" onchange="this.form.submit()" {{ request('cliente') ? '' : 'disabled' }}>
-                                <option value="">Todas</option>
-                                @if(request('cliente'))
-                                    <option value="_SIN_" {{ request('sucursal') === '_SIN_' ? 'selected' : '' }}>Sin sucursal</option>
-                                    @foreach(($sucursales ?? collect()) as $suc)
-                                        @php
-                                            $cod = trim((string) ($suc->cli_codigo ?? ''));
-                                            $rs = trim((string) ($suc->cli_razonsocial ?? 'Sucursal'));
-                                            $dir = trim((string) ($suc->cli_direccion ?? ''));
-                                            $loc = trim((string) ($suc->cli_localidad ?? ''));
-                                            $part = trim((string) ($suc->cli_partido ?? ''));
-                                            $locLine = $loc;
-                                            if ($part !== '') {
-                                                $locLine = $locLine !== '' ? ($locLine . ' - ' . $part) : $part;
-                                            }
-                                            $detalle = trim(implode(' · ', array_filter([$dir, $locLine])));
-                                            $label = $detalle !== '' ? ($cod . ' - ' . $rs . ' · ' . $detalle) : ($cod . ' - ' . $rs);
-                                        @endphp
-                                        <option value="{{ $cod }}" {{ request('sucursal') === $cod ? 'selected' : '' }}>
-                                            {{ $label }}
-                                        </option>
-                                    @endforeach
-                                @endif
-                            </select>
-                            @if(!request('cliente'))
-                                <small class="text-muted">Elegí un cliente para ver sucursales.</small>
-                            @endif
-                        </div>
-                        
-                        <div class="col-md-2">
-                            <label class="form-label small text-muted mb-1">Estado</label>
-                            <select name="estado" class="form-select form-select-sm js-select2-estado" data-placeholder="Todos los estados">
-                                <option value="">Todos los estados</option>
-                                <option value="E" {{ request('estado') == 'E' ? 'selected' : '' }}>En Espera</option>
-                                <option value="A" {{ request('estado') == 'A' ? 'selected' : '' }}>Aprobado</option>
-                                <option value="P" {{ request('estado') == 'P' ? 'selected' : '' }}>En Proceso</option>
-                                <option value="R" {{ request('estado') == 'R' ? 'selected' : '' }}>Rechazado</option>
-                                <option value="S" {{ request('estado') == 'S' ? 'selected' : '' }}>Suspendida</option>
-                                <option value="_CERRADA" {{ request('estado') == '_CERRADA' ? 'selected' : '' }}>Cerrada (operativa)</option>
-                                <option value="_PROCESO" {{ request('estado') == '_PROCESO' ? 'selected' : '' }}>Proceso (operativa)</option>
-                            </select>
-                        </div>
-                        
-                        <div class="col-md-2">
-                            <label class="form-label small text-muted mb-1">Fecha Desde</label>
-                            <input type="date" name="fecha_desde" class="form-control form-control-sm" value="{{ request('fecha_desde') }}" onchange="this.form.submit()">
-                        </div>
-                        
-                        <div class="col-md-2">
-                            <label class="form-label small text-muted mb-1">Fecha Hasta</label>
-                            <input type="date" name="fecha_hasta" class="form-control form-control-sm" value="{{ request('fecha_hasta') }}" onchange="this.form.submit()">
-                        </div>
-                        
-                        <div class="col-md-2 d-flex align-items-end">
-                            <button type="button" onclick="limpiarFiltros()" class="btn btn-sm btn-outline-secondary w-100">
-                                <i class="fas fa-times me-1"></i>Limpiar
-                            </button>
-                        </div>
-                        
-                        <div class="col-md-1 d-flex align-items-end">
-                            <div class="input-group input-group-sm">
-                                <span class="input-group-text"><i class="fas fa-search"></i></span>
-                                <input type="text" id="searchInput" class="form-control" placeholder="Buscar..." value="{{ request('search') }}">
-                            </div>
-                        </div>
+    <div class="ucrud-filters mb-4">
+        <p class="ucrud-filters__title">
+            Filtros
+            @if($hayFiltrosVentas)
+                <span class="badge bg-primary-subtle text-primary border border-primary-subtle ms-2">Activos</span>
+            @endif
+        </p>
+        <form method="GET" action="{{ route('ventas.index') }}" id="filterForm">
+            <div class="row g-3 ventas-filters-row ventas-filters-row--primary">
+                <div class="col-xl-3 col-lg-4 col-md-6">
+                    <div class="ventas-filter-field">
+                    <label for="filtro-cliente" class="form-label">Cliente</label>
+                    <select id="filtro-cliente" name="cliente" class="form-select js-select2-cliente" data-placeholder="Todos los clientes">
+                        <option value="">Todos los clientes</option>
+                        @foreach($clientes as $cliente)
+                            <option value="{{ $cliente->cli_codigo }}" {{ request('cliente') == $cliente->cli_codigo ? 'selected' : '' }}>
+                                {{ trim($cliente->cli_codigo) }} - {{ trim($cliente->cli_razonsocial) }}
+                            </option>
+                        @endforeach
+                    </select>
                     </div>
-                </form>
-            </div>
-        </div>
+                </div>
 
-        <div class="table-responsive">
-            <table class="table table-hover mb-0">
-                <thead class="table-light">
+                <div class="col-xl-3 col-lg-4 col-md-6">
+                    <div class="ventas-filter-field">
+                    <label for="filtro-vendedor" class="form-label">Vendedor</label>
+                    <select id="filtro-vendedor" name="vendedor" class="form-select js-select2-vendedor" data-placeholder="Todos los vendedores">
+                        <option value="">Todos los vendedores</option>
+                        @foreach(($vendedores ?? []) as $vendedor)
+                            <option value="{{ trim((string) $vendedor->usu_codigo) }}" {{ request('vendedor') == trim((string) $vendedor->usu_codigo) ? 'selected' : '' }}>
+                                {{ trim($vendedor->usu_codigo) }} - {{ trim($vendedor->usu_descripcion ?? '') }}
+                            </option>
+                        @endforeach
+                    </select>
+                    </div>
+                </div>
+
+                <div class="col-xl-3 col-lg-4 col-md-6">
+                    <div class="ventas-filter-field">
+                    <label for="filtro-sucursal" class="form-label" title="{{ request('cliente') ? '' : 'Elegí un cliente para ver sucursales.' }}">
+                        Sucursal
+                        @if(!request('cliente'))
+                            <span class="ventas-filter-label-hint">(elegí cliente)</span>
+                        @endif
+                    </label>
+                    <select id="filtro-sucursal" name="sucursal" class="form-select js-select2-sucursal" data-placeholder="Todas" onchange="this.form.submit()" {{ request('cliente') ? '' : 'disabled' }}>
+                        <option value="">Todas</option>
+                        @if(request('cliente'))
+                            <option value="_SIN_" {{ request('sucursal') === '_SIN_' ? 'selected' : '' }}>Sin sucursal</option>
+                            @foreach(($sucursales ?? collect()) as $suc)
+                                @php
+                                    $cod = trim((string) ($suc->cli_codigo ?? ''));
+                                    $rs = trim((string) ($suc->cli_razonsocial ?? 'Sucursal'));
+                                    $dir = trim((string) ($suc->cli_direccion ?? ''));
+                                    $loc = trim((string) ($suc->cli_localidad ?? ''));
+                                    $part = trim((string) ($suc->cli_partido ?? ''));
+                                    $locLine = $loc;
+                                    if ($part !== '') {
+                                        $locLine = $locLine !== '' ? ($locLine . ' - ' . $part) : $part;
+                                    }
+                                    $detalle = trim(implode(' · ', array_filter([$dir, $locLine])));
+                                    $label = $detalle !== '' ? ($cod . ' - ' . $rs . ' · ' . $detalle) : ($cod . ' - ' . $rs);
+                                @endphp
+                                <option value="{{ $cod }}" {{ request('sucursal') === $cod ? 'selected' : '' }}>
+                                    {{ $label }}
+                                </option>
+                            @endforeach
+                        @endif
+                    </select>
+                    </div>
+                </div>
+
+                <div class="col-xl-3 col-lg-4 col-md-6">
+                    <div class="ventas-filter-field">
+                    <label for="filtro-estado" class="form-label">Estado</label>
+                    <select id="filtro-estado" name="estado" class="form-select js-select2-estado" data-placeholder="Todos los estados">
+                        <option value="">Todos los estados</option>
+                        <option value="E" {{ request('estado') == 'E' ? 'selected' : '' }}>En Espera</option>
+                        <option value="A" {{ request('estado') == 'A' ? 'selected' : '' }}>Aprobado</option>
+                        <option value="P" {{ request('estado') == 'P' ? 'selected' : '' }}>En Proceso</option>
+                        <option value="R" {{ request('estado') == 'R' ? 'selected' : '' }}>Rechazado</option>
+                        <option value="S" {{ request('estado') == 'S' ? 'selected' : '' }}>Suspendida</option>
+                        <option value="_CERRADA" {{ request('estado') == '_CERRADA' ? 'selected' : '' }}>Cerrada (operativa)</option>
+                        <option value="_PROCESO" {{ request('estado') == '_PROCESO' ? 'selected' : '' }}>Proceso (operativa)</option>
+                    </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row g-3 ventas-filters-row ventas-filters-row--secondary align-items-end">
+                <div class="col-xl-2 col-lg-3 col-md-4 col-sm-6">
+                    <div class="ventas-filter-field">
+                    <label for="filtro-fecha-desde" class="form-label">Fecha desde</label>
+                    <input type="date" id="filtro-fecha-desde" name="fecha_desde" class="form-control" value="{{ request('fecha_desde') }}" onchange="this.form.submit()">
+                    </div>
+                </div>
+
+                <div class="col-xl-2 col-lg-3 col-md-4 col-sm-6">
+                    <div class="ventas-filter-field">
+                    <label for="filtro-fecha-hasta" class="form-label">Fecha hasta</label>
+                    <input type="date" id="filtro-fecha-hasta" name="fecha_hasta" class="form-control" value="{{ request('fecha_hasta') }}" onchange="this.form.submit()">
+                    </div>
+                </div>
+
+                <div class="col-xl col-lg col-md-8">
+                    <div class="ventas-filter-field">
+                    <label for="searchInput" class="form-label">Buscar</label>
+                    <input type="text" id="searchInput" name="search" class="form-control"
+                           placeholder="Nº cotización, empresa…" value="{{ request('search') }}">
+                    </div>
+                </div>
+
+                <div class="col-xl-auto col-lg-auto col-md-4 ms-xl-auto d-flex gap-2 flex-wrap justify-content-md-end pb-1">
+                    @if($hayFiltrosVentas)
+                        <button type="button" onclick="limpiarFiltros()" class="ucrud-btn ucrud-btn--ghost">Limpiar</button>
+                    @endif
+                    <button type="submit" class="ucrud-btn ucrud-btn--primary">Buscar</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <div class="ventas-table-panel ucrud-panel">
+        <div class="ventas-table-panel__head d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h2 class="ventas-table-panel__title">Listado de cotizaciones</h2>
+            <span class="text-muted small">{{ $cotizaciones->total() }} resultado(s)</span>
+        </div>
+        <div class="table-responsive ucrud-tablewrap">
+            <table class="ucrud-table ucrud-table--sticky-actions mb-0">
+                <thead>
                     <tr>
                         <th>ID</th>
                         <th>Descripción</th>
@@ -465,7 +263,7 @@
                         $esAprobadaRow = $estCotiRow !== '' && strtoupper($estCotiRow[0]) === 'A';
                         $detalleVentas = $esAprobadaRow ? (($detalleMuestrasVentas ?? [])[$cotizacion->coti_num] ?? []) : [];
                     @endphp
-                    <tr class="{{ ($esAprobadaRow && count($detalleVentas) > 0) ? 'ventas-row-clickable' : '' }}" style="{{ ($esAprobadaRow && count($detalleVentas) > 0) ? 'cursor:pointer;' : '' }}">
+                    <tr class="{{ ($esAprobadaRow && count($detalleVentas) > 0) ? 'ventas-row-clickable' : '' }}">
                         <td>
                             @if($esAprobadaRow && count($detalleVentas) > 0)
                                 <button type="button"
@@ -502,31 +300,35 @@
                             @endif
                         </td>
                         <td>{{ $cotizacion->coti_fechaalta ? $cotizacion->coti_fechaalta->format('d/m/Y') : '-' }}</td>
-                        <td class="text-end action-buttons">
-                            <a href="{{ route('cotizaciones.ver-detalle', $cotizacion->coti_num) }}" class="btn btn-sm btn-outline-info" title="Ver">
-                                <x-heroicon-o-eye style="width: 16px; height: 16px;" />
-                            </a>
-                            <a href="{{ route('ventas.edit', $cotizacion->coti_num) }}" class="btn btn-sm btn-outline-primary" title="Ver/Editar">
-                                <x-heroicon-o-pencil style="width: 16px; height: 16px;" />
-                            </a>
-                            @php
-                                $estaAprobadaRow = !$cotizacion->cancelada && !empty($cotizacion->coti_estado) && strtoupper(trim((string) $cotizacion->coti_estado))[0] === 'A';
-                            @endphp
-                            @if($estaAprobadaRow)
-                                <button type="button"
-                                   class="btn btn-sm btn-outline-danger"
-                                   title="No se puede eliminar una cotización aprobada"
-                                   disabled>
-                                    <x-heroicon-o-trash style="width: 16px; height: 16px;" />
-                                </button>
-                            @else
-                                <button type="button" 
-                                   class="btn btn-sm btn-outline-danger" 
-                                   onclick="confirmarEliminacion({{ $cotizacion->coti_num }})"
-                                   title="Eliminar">
-                                    <x-heroicon-o-trash style="width: 16px; height: 16px;" />
-                                </button>
-                            @endif
+                        <td>
+                            <div class="ucrud-actions">
+                                <a href="{{ route('cotizaciones.ver-detalle', $cotizacion->coti_num) }}" class="ucrud-iconbtn" title="Ver detalle" aria-label="Ver detalle">
+                                    <x-heroicon-o-eye style="width: 16px; height: 16px;" />
+                                </a>
+                                <a href="{{ route('ventas.edit', $cotizacion->coti_num) }}" class="ucrud-iconbtn" title="Editar" aria-label="Editar">
+                                    <x-heroicon-o-pencil style="width: 16px; height: 16px;" />
+                                </a>
+                                @php
+                                    $estaAprobadaRow = !$cotizacion->cancelada && !empty($cotizacion->coti_estado) && strtoupper(trim((string) $cotizacion->coti_estado))[0] === 'A';
+                                @endphp
+                                @if($estaAprobadaRow)
+                                    <button type="button"
+                                       class="ucrud-iconbtn ucrud-iconbtn--danger"
+                                       title="No se puede eliminar una cotización aprobada"
+                                       aria-label="Eliminar (no permitido)"
+                                       disabled>
+                                        <x-heroicon-o-trash style="width: 16px; height: 16px;" />
+                                    </button>
+                                @else
+                                    <button type="button"
+                                       class="ucrud-iconbtn ucrud-iconbtn--danger"
+                                       onclick="confirmarEliminacion({{ $cotizacion->coti_num }})"
+                                       title="Eliminar"
+                                       aria-label="Eliminar">
+                                        <x-heroicon-o-trash style="width: 16px; height: 16px;" />
+                                    </button>
+                                @endif
+                            </div>
                         </td>
                     </tr>
                     @if($esAprobadaRow && count($detalleVentas) > 0)
@@ -567,9 +369,14 @@
                     
                     @if($cotizaciones->isEmpty())
                     <tr>
-                        <td colspan="6" class="text-center py-4">
-                            <x-heroicon-o-document-text class="me-2" style="width: 32px; height: 32px; color: #6c757d;" />
-                            <p class="text-muted">No hay cotizaciones registradas</p>
+                        <td colspan="6" class="text-center py-5">
+                            <div class="ucrud-empty py-3">
+                                <div class="ucrud-empty__icon mx-auto mb-2">
+                                    <x-heroicon-o-document-text style="width: 28px; height: 28px;" />
+                                </div>
+                                <p class="ucrud-empty__title mb-1">No hay cotizaciones</p>
+                                <p class="ucrud-empty__text mb-0">{{ $hayFiltrosVentas ? 'Probá ajustar los filtros.' : 'Creá la primera cotización.' }}</p>
+                            </div>
                         </td>
                     </tr>
                     @endif
@@ -578,12 +385,12 @@
         </div>
 
         @if($cotizaciones->hasPages())
-        <div class="p-3 border-top">
+        <div class="p-3 border-top bg-white">
             {{ $cotizaciones->links() }}
         </div>
         @endif
     </div>
-</div>
+</div>{{-- .ventas-page --}}
 
 <!-- SweetAlert2 JS -->
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -625,9 +432,11 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     const $sucursal = jQuery('.js-select2-sucursal');
-    if ($sucursal.length && !$sucursal.prop('disabled')) {
+    if ($sucursal.length) {
         $sucursal.select2({ ...commonOpts, placeholder: $sucursal.data('placeholder') || 'Todas' });
-        bindSubmitOnChange($sucursal);
+        if (!$sucursal.prop('disabled')) {
+            bindSubmitOnChange($sucursal);
+        }
     }
 });
 
@@ -695,26 +504,23 @@ function limpiarFiltros() {
     window.location.href = '{{ route("ventas.index") }}';
 }
 
-// Búsqueda simple en tabla (filtra resultados visibles)
-document.getElementById('searchInput').addEventListener('keyup', function() {
-    const search = this.value.toLowerCase();
-    const rows = document.querySelectorAll('tbody tr');
-    
-    rows.forEach(row => {
-        const text = row.textContent.toLowerCase();
-        row.style.display = text.includes(search) ? '' : 'none';
-    });
+let searchSubmitTimer = null;
+const searchInput = document.getElementById('searchInput');
+const filterForm = document.getElementById('filterForm');
+
+searchInput.addEventListener('keydown', function(event) {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        filterForm.submit();
+    }
 });
 
-// Mostrar contador de resultados
-function actualizarContador() {
-    const filasVisibles = document.querySelectorAll('tbody tr:not([style*="display: none"])').length;
-    const total = {{ $cotizaciones->count() }};
-    // Puedes agregar un contador visual aquí si lo necesitas
-}
-
-// Llamar después de la búsqueda
-document.getElementById('searchInput').addEventListener('keyup', actualizarContador);
+searchInput.addEventListener('input', function() {
+    clearTimeout(searchSubmitTimer);
+    searchSubmitTimer = setTimeout(function() {
+        filterForm.submit();
+    }, 500);
+});
 
 // Función para confirmar eliminación con SweetAlert
 function confirmarEliminacion(cotiNum) {
